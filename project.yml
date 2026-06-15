@@ -1,0 +1,36 @@
+name: Meowsic
+options:
+  bundleIdPrefix: com.meowsic
+  deploymentTarget:
+    iOS: "18.0"
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: ""          # set your free Apple ID team in Xcode
+    TARGETED_DEVICE_FAMILY: "2"   # 2 = iPad only (optimized for iPad Pro)
+targets:
+  Meowsic:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - Sources
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleDisplayName: Meowsic
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIRequiresFullScreen: false
+        NSPhotoLibraryUsageDescription: "Meowsic reads your photo library to find and organize your sheet music."
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.meowsic.app
+        GENERATE_INFOPLIST_FILE: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
