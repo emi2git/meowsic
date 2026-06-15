@@ -17,7 +17,6 @@ struct BackupDocument: FileDocument {
 struct SettingsView: View {
     @Environment(AnalysisCoordinator.self) private var coordinator
     @Environment(\.dismiss) private var dismiss
-    @State private var apiKey = KeychainStore.load() ?? ""
     @State private var showWipeConfirm = false
 
     @State private var exportDoc: BackupDocument?
@@ -29,20 +28,13 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
-                    SecureField("sk-ant-...", text: $apiKey)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Button("Save key") {
-                        KeychainStore.save(apiKey.trimmingCharacters(in: .whitespacesAndNewlines))
-                        dismiss()
-                    }
+                    Text("Songs are detected entirely on your device — titles via on-device text recognition, tags by matching your tag list against the page text. No photos leave your iPad and no API key is needed.")
+                        .font(.footnote).foregroundStyle(.secondary)
                 } header: {
-                    Text("Anthropic API Key")
-                } footer: {
-                    Text("Each candidate photo is sent to Claude (Haiku) for analysis, billed to this key. Stored in the device Keychain.")
+                    Text("How it works")
                 }
 
-                Section("Last scan") {
+                Section("Last added") {
                     if let date = coordinator.lastScanDate {
                         Text(date.formatted(date: .abbreviated, time: .shortened))
                     } else {
@@ -67,7 +59,7 @@ struct SettingsView: View {
                         showWipeConfirm = true
                     }
                 } footer: {
-                    Text("Deletes all detected songs, titles, tag assignments, and merges, and resets the last-scan time so the next Scan New re-analyzes every photo from the beginning. Your tag list and your photos are not affected.")
+                    Text("Deletes all detected songs, titles, tag assignments, and merges, so every photo can be re-added from scratch with Add Songs. Your tag list and your photos are not affected.")
                 }
             }
             .navigationTitle("Settings")
@@ -81,7 +73,7 @@ struct SettingsView: View {
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("This permanently deletes all Meowsic song data and the last-scan timestamp. Your photos and your tag list are not affected. The next Scan New will scan every photo from the beginning.")
+                Text("This permanently deletes all Meowsic song data. Your photos and your tag list are not affected. You can re-add any photos afterward with Add Songs.")
             }
             .fileExporter(isPresented: $showExporter, document: exportDoc,
                           contentType: .json, defaultFilename: "meowsic-backup") { result in

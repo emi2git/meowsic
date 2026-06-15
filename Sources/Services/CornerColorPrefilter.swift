@@ -1,10 +1,9 @@
 import CoreImage
 import UIKit
 
-/// Cheap on-device gate: a photo is a *possible* music sheet only if its four
+/// Cheap on-device gate: a photo is treated as a music sheet only if its four
 /// corners share (near-)the same color — a uniform paper background filling the
-/// frame. Anything else is skipped before paying for a Claude call. Lenient by
-/// design — Claude makes the final music-sheet decision on the survivors.
+/// frame. Anything else is ignored during Add Songs.
 struct CornerColorPrefilter {
     /// Max allowed per-channel difference (0–255) between any two corner colors.
     var tolerance: Double = 22
@@ -14,7 +13,7 @@ struct CornerColorPrefilter {
     private static let context = CIContext(options: [.workingColorSpace: NSNull()])
 
     func looksLikeSheet(_ image: UIImage) -> Bool {
-        guard let cg = image.cgImage else { return true }   // can't tell → let Claude decide
+        guard let cg = image.cgImage else { return true }   // can't tell → accept
         let w = CGFloat(cg.width), h = CGFloat(cg.height)
         guard w > 0, h > 0 else { return true }
 

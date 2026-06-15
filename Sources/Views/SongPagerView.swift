@@ -11,6 +11,7 @@ struct SongPagerView: View {
     @State private var draftTitle = ""
     @State private var showTags = false
     @State private var showDelete = false
+    @State private var newSongPageID: String?
 
     private var isDeleted: Bool { song.tags.contains(AnalysisCoordinator.deletedTag) }
 
@@ -49,7 +50,7 @@ struct SongPagerView: View {
                 Menu {
                     if selection > 0 {
                         Button {
-                            coordinator.setBoundary(song.pageAssetIDs[selection], isStart: true); dismiss()
+                            newSongPageID = song.pageAssetIDs[selection]
                         } label: { Label("Start new song from this page", systemImage: "scissors") }
                     }
                     Button {
@@ -65,6 +66,14 @@ struct SongPagerView: View {
             }
         }
         .sheet(isPresented: $showTags) { TagEditorView(song: song) }
+        .sheet(isPresented: Binding(
+            get: { newSongPageID != nil },
+            set: { if !$0 { newSongPageID = nil } }
+        )) {
+            if let id = newSongPageID {
+                NewSongView(pageAssetID: id) { dismiss() }
+            }
+        }
         .confirmationDialog(isDeleted ? "Permanently delete “\(song.title)”?" : "Move “\(song.title)” to Deleted?",
                             isPresented: $showDelete, titleVisibility: .visible) {
             if isDeleted {

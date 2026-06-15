@@ -2,7 +2,8 @@ import Foundation
 import Photos
 import SwiftData
 
-/// Drives the scan pipeline (prefilter → Claude → cache) and exposes the grouped songs.
+/// Drives the on-device Add Songs pipeline (corner prefilter → Vision OCR → cache)
+/// and exposes the grouped songs.
 @MainActor
 @Observable
 final class AnalysisCoordinator {
@@ -11,7 +12,7 @@ final class AnalysisCoordinator {
     var progressDone = 0
     var progressTotal = 0
     var lastError: String?
-    var lastScanMessage: String?
+    var lastReport: AddSongsReport?   // result of the most recent Add Songs run (drives the report sheet)
     var lastScanDate: Date?        // newest sheet photo currently in the song list (derived)
     var scanStatus: String?
     var sheetsFound = 0
@@ -35,7 +36,7 @@ final class AnalysisCoordinator {
 
     private let context: ModelContext
     private let library: PhotoLibraryService
-    private let claude = ClaudeClient()
+    private let recognizer = SheetTextRecognizer()
     private let prefilter = CornerColorPrefilter()
 
     init(context: ModelContext, library: PhotoLibraryService) {
@@ -46,58 +47,56 @@ final class AnalysisCoordinator {
         refreshTagNames()
     }
 
-    // MARK: - Scanning
+    // MARK: - Add Songs
 
-    /// Incremental: only photos newer than the most recently scanned one
-    /// (first scan → all photos).
-    func scanNew(apiKey: String) async {
-        await run(assets: library.assetsToScan(after: latestScannedDate()), apiKey: apiKey)
-    }
-
-    private func run(assets toScan: [PHAsset], apiKey: String) async {
+    /// Turn an explicit set of user-picked photos into songs, regardless of
+    /// capture date. Fully on-device — no network, no API key. A photo is ignored
+    /// when it is already in the database, when its four corners don't match (not a
+    /// uniform-background sheet), or when it can't be loaded. Everything else
+    /// becomes a page; titles/tags come from on-device OCR. Grouping reuses the
+    /// capture-time + heading heuristic. Publishes `lastReport`.
+    func addSongs(from assets: [PHAsset]) async {
         guard !isScanning else { return }
         isScanning = true
         lastError = nil
-        scanStatus = nil
         sheetsFound = 0
         lastItemDate = nil
         progressDone = 0
-        progressTotal = toScan.count
+        progressTotal = assets.count
+        scanStatus = "Reading sheet music…"
         defer { isScanning = false; scanStatus = nil }
 
+        var report = AddSongsReport(selected: assets.count)
         let songIDsBefore = Set(songs.map(\.id))
-        let existing = Set(all(PhotoAnalysis.self).map(\.assetLocalIdentifier))
-        let toProcess = toScan.filter { !existing.contains($0.localIdentifier) }
-        progressDone += toScan.count - toProcess.count
 
-        // One concurrent pipeline: on-device prefilter → real-time Claude call for
-        // anything that passes. Progress advances per photo as each finishes.
+        // Skip anything already in the database up front.
+        let existing = Set(all(PhotoAnalysis.self).map(\.assetLocalIdentifier))
+        let fresh = assets.filter { !existing.contains($0.localIdentifier) }
+        for asset in assets where existing.contains(asset.localIdentifier) {
+            report.ignored.append(.init(assetID: asset.localIdentifier, reason: .alreadyAdded))
+            progressDone += 1
+        }
+
         let vocabulary = tagNames.filter { !Self.specialTags.contains($0) }   // never auto-tag Star/Deleted
-        scanStatus = "Analyzing photos with Anthropic…"
-        await withTaskGroup(of: AssetOutcome.self) { group in
+        await withTaskGroup(of: AddOutcome.self) { group in
             var index = 0
             func addNext() {
-                guard index < toProcess.count else { return }
-                let asset = toProcess[index]; index += 1
-                group.addTask { await self.analyze(asset, vocabulary: vocabulary, apiKey: apiKey) }
+                guard index < fresh.count else { return }
+                let asset = fresh[index]; index += 1
+                group.addTask { await self.analyzeForAdd(asset, vocabulary: vocabulary) }
             }
-            for _ in 0 ..< min(Self.maxConcurrent, toProcess.count) { addNext() }
+            for _ in 0 ..< min(Self.maxConcurrent, fresh.count) { addNext() }
 
             for await outcome in group {
                 if Task.isCancelled { break }
                 switch outcome {
-                case let .notSheet(id, date):
-                    store(id: id, date: date, sheet: false, start: false, title: nil)
+                case let .added(id, date, r):
+                    store(id: id, date: date, sheet: true, start: r.isSongStart,
+                          title: r.title, tags: r.tags)
+                    sheetsFound += 1
                     lastItemDate = date
-                case let .analyzed(id, date, c):
-                    store(id: id, date: date, sheet: c.is_music_sheet, start: c.is_song_start,
-                          title: c.title, tags: c.tags ?? [])
-                    if c.is_music_sheet { sheetsFound += 1 }
-                    lastItemDate = date
-                case let .failed(message):
-                    lastError = message   // left unanalyzed → retried next scan
-                case .skip:
-                    break
+                case let .ignored(id, reason):
+                    report.ignored.append(.init(assetID: id, reason: reason))
                 }
                 progressDone += 1
                 addNext()
@@ -105,47 +104,27 @@ final class AnalysisCoordinator {
             group.cancelAll()
         }
 
-        let cancelled = Task.isCancelled
         rebuildSongs()
-        let added = songs.filter { !songIDsBefore.contains($0.id) }.count
-        if cancelled {
-            lastScanMessage = "Scan stopped. \(added) song\(added == 1 ? "" : "s") added so far."
-        } else {
-            lastScanMessage = progressTotal == 0
-                ? "No new photos to scan."
-                : "Scanned \(progressTotal) photo\(progressTotal == 1 ? "" : "s"). Added \(added) song\(added == 1 ? "" : "s")."
-        }
+        report.sheetsAdded = sheetsFound
+        report.songsCreated = songs.filter { !songIDsBefore.contains($0.id) }.count
+        report.stopped = Task.isCancelled
+        lastReport = report
     }
 
-    private enum AssetOutcome: Sendable {
-        case notSheet(String, Date)
-        case analyzed(String, Date, ClaudeClient.Classification)
-        case failed(String)
-        case skip(String)
+    private enum AddOutcome: Sendable {
+        case added(String, Date, SheetTextRecognizer.Result)
+        case ignored(String, AddSongsReport.IgnoreReason)
     }
 
-    /// Prefilter one asset on-device; if it passes, download the full image and
-    /// classify it in real time via Claude.
-    private func analyze(_ asset: PHAsset, vocabulary: [String], apiKey: String) async -> AssetOutcome {
+    /// On-device only: corner check, then Vision OCR for title/tags. Corner
+    /// mismatch or a missing image yield `ignored`; everything else is a page.
+    private func analyzeForAdd(_ asset: PHAsset, vocabulary: [String]) async -> AddOutcome {
         let id = asset.localIdentifier
         let date = asset.creationDate ?? .distantPast
-        if let thumb = await library.prefilterThumbnail(for: asset), !prefilter.looksLikeSheet(thumb) {
-            return .notSheet(id, date)
-        }
-        guard let image = await library.analysisImage(for: asset),
-              let jpeg = image.jpegData(compressionQuality: 0.7) else { return .skip(id) }
-        do {
-            let c = try await claude.classify(jpeg: jpeg, vocabulary: vocabulary, apiKey: apiKey)
-            return .analyzed(id, date, c)
-        } catch {
-            return .failed(error.localizedDescription)
-        }
-    }
-
-    private func latestScannedDate() -> Date? {
-        var descriptor = FetchDescriptor<PhotoAnalysis>(sortBy: [SortDescriptor(\.creationDate, order: .reverse)])
-        descriptor.fetchLimit = 1
-        return (try? context.fetch(descriptor))?.first?.creationDate
+        guard let image = await library.analysisImage(for: asset) else { return .ignored(id, .noImage) }
+        guard prefilter.looksLikeSheet(image) else { return .ignored(id, .cornersDiffer) }
+        let result = await recognizer.analyze(image, vocabulary: vocabulary)
+        return .added(id, date, result)
     }
 
     private func store(id: String, date: Date, sheet: Bool, start: Bool, title: String?, tags: [String] = []) {
@@ -171,11 +150,38 @@ final class AnalysisCoordinator {
 
     /// Manually mark a page as the start of a new song (true) or part of the previous song (false).
     func setBoundary(_ assetID: String, isStart: Bool) {
+        markBoundary(assetID, isStart: isStart)
+        saveAndRebuild()
+    }
+
+    private func markBoundary(_ assetID: String, isStart: Bool) {
         if let existing = (try? context.fetch(FetchDescriptor<PageBoundary>(predicate: #Predicate { $0.assetID == assetID })))?.first {
             existing.isStart = isStart
         } else {
             context.insert(PageBoundary(assetID: assetID, isStart: isStart))
         }
+    }
+
+    /// The on-device-detected heading and tags for a single page, used to
+    /// pre-fill the "new song" review form.
+    func detectedInfo(forPage assetID: String) -> (title: String, tags: [String]) {
+        let analysis = all(PhotoAnalysis.self).first { $0.assetLocalIdentifier == assetID }
+        let title = (analysis?.title?.isEmpty == false) ? analysis!.title! : ""
+        let tags = (analysis?.tags ?? []).filter { !Self.specialTags.contains($0) }
+        return (title, tags)
+    }
+
+    /// Split a new song off starting at `assetID`, applying a user-reviewed title
+    /// and tag list. The new song's key is its start page id, so the overrides
+    /// attach to it once regrouped.
+    func startNewSong(at assetID: String, title: String, tags: [String]) {
+        markBoundary(assetID, isStart: true)
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            if let rename = songTagRename(assetID) { rename.customTitle = trimmed }
+            else { context.insert(SongRename(songKey: assetID, customTitle: trimmed)) }
+        }
+        setTagsRaw(tags.filter { !Self.specialTags.contains($0) }, forKey: assetID)
         saveAndRebuild()
     }
 
@@ -253,8 +259,8 @@ final class AnalysisCoordinator {
         return true
     }
 
-    /// Wipe all song data and the last-scan timestamp, so the next "Scan New"
-    /// re-analyzes the whole library. The tag vocabulary and photos are untouched.
+    /// Wipe all song data so photos can be re-added from scratch via "Add Songs".
+    /// The tag vocabulary and photos are untouched.
     func wipeDatabase() {
         wipeSongData(includingTags: false)
         saveAndRebuild()

@@ -1,4 +1,5 @@
 import SwiftUI
+import Photos
 
 struct SongListView: View {
     @Environment(AnalysisCoordinator.self) private var coordinator
@@ -16,7 +17,8 @@ struct SongListView: View {
 
     @State private var taggingTag: String?            // non-nil → selection mode for this tag
     @State private var selectedSongIDs: Set<String> = []
-    @State private var scanTask: Task<Void, Never>?
+    @State private var addTask: Task<Void, Never>?
+    @State private var showPicker = false
 
     private let dateWidth: CGFloat = 92
     private let pagesWidth: CGFloat = 52
@@ -109,13 +111,18 @@ struct SongListView: View {
                     showTags = false
                 }
             }
-            .alert("Scan complete", isPresented: Binding(
-                get: { coordinator.lastScanMessage != nil },
-                set: { if !$0 { coordinator.lastScanMessage = nil } }
+            .sheet(isPresented: $showPicker) {
+                PhotoPicker { assets in
+                    showPicker = false
+                    runAddSongs(assets)
+                }
+                .ignoresSafeArea()
+            }
+            .sheet(isPresented: Binding(
+                get: { coordinator.lastReport != nil },
+                set: { if !$0 { coordinator.lastReport = nil } }
             )) {
-                Button("OK") { coordinator.lastScanMessage = nil }
-            } message: {
-                Text(coordinator.lastScanMessage ?? "")
+                if let report = coordinator.lastReport { AddSongsReportView(report: report) }
             }
             .task { coordinator.rebuildSongs() }
         }
@@ -141,9 +148,9 @@ struct SongListView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 if coordinator.isScanning {
-                    Button("Stop", role: .destructive) { scanTask?.cancel() }
+                    Button("Stop", role: .destructive) { addTask?.cancel() }
                 } else {
-                    Button("Scan New") { scan() }
+                    Button("Add Songs") { startAddSongs() }
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -186,7 +193,7 @@ struct SongListView: View {
         let pct = Int(Double(coordinator.progressDone) / Double(total) * 100)
         return VStack(alignment: .leading, spacing: 4) {
             ProgressView(value: Double(coordinator.progressDone), total: Double(total)) {
-                Text("Scanning photos \(coordinator.progressDone)/\(coordinator.progressTotal) (\(pct)%)")
+                Text("Adding songs \(coordinator.progressDone)/\(coordinator.progressTotal) (\(pct)%)")
             }
             if let status = coordinator.scanStatus {
                 Text(status).font(.caption).foregroundStyle(.secondary)
@@ -206,7 +213,7 @@ struct SongListView: View {
     @ViewBuilder private var emptyState: some View {
         if coordinator.songs.isEmpty {
             ContentUnavailableView("No songs yet", systemImage: "music.note.list",
-                                   description: Text("Tap Scan New to analyze your photos."))
+                                   description: Text("Tap Add Songs to pick sheet-music photos."))
         } else {
             ContentUnavailableView("No matches", systemImage: "magnifyingglass",
                                    description: Text("No songs match your search or tag filter."))
@@ -384,16 +391,12 @@ struct SongListView: View {
         exitSelection()
     }
 
-    private func scan() {
-        guard let key = apiKeyOrPromptSettings() else { return }
-        scanTask = Task { await coordinator.scanNew(apiKey: key) }
+    private func startAddSongs() {
+        showPicker = true
     }
 
-    private func apiKeyOrPromptSettings() -> String? {
-        guard let key = KeychainStore.load(), !key.isEmpty else {
-            showSettings = true
-            return nil
-        }
-        return key
+    private func runAddSongs(_ assets: [PHAsset]) {
+        guard !assets.isEmpty else { return }
+        addTask = Task { await coordinator.addSongs(from: assets) }
     }
 }

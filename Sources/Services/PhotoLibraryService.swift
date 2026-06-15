@@ -44,22 +44,6 @@ final class PhotoLibraryService {
         return a
     }
 
-    /// Photos to scan next:
-    /// - first ever scan (`after == nil`) → all photos in the library
-    /// - otherwise → only photos newer than the last one scanned
-    func assetsToScan(after date: Date?) -> [PHAsset] {
-        let options = PHFetchOptions()
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
-        if let date {
-            options.predicate = NSPredicate(format: "creationDate > %@", date as NSDate)
-        }
-        let result = PHAsset.fetchAssets(with: .image, options: options)
-        var arr: [PHAsset] = []
-        result.enumerateObjects { a, _, _ in arr.append(a) }
-        for a in arr { byID[a.localIdentifier] = a }
-        return arr
-    }
-
     func thumbnail(for asset: PHAsset, size: CGSize) async -> UIImage? {
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = true
@@ -75,26 +59,7 @@ final class PhotoLibraryService {
         return await requestImage(asset, targetSize: PHImageManagerMaximumSize, contentMode: .aspectFit, options: options)
     }
 
-    /// Cheap, on-device-only thumbnail for the corner-color pre-filter — does NOT
-    /// download from iCloud, so non-sheet photos are rejected without a download.
-    /// Returns nil if no cached thumbnail exists (then we fall back to the full image).
-    func prefilterThumbnail(for asset: PHAsset) async -> UIImage? {
-        let options = PHImageRequestOptions()
-        options.isNetworkAccessAllowed = false
-        options.deliveryMode = .fastFormat
-        options.resizeMode = .fast
-        return await withCheckedContinuation { continuation in
-            var resumed = false
-            manager.requestImage(for: asset, targetSize: CGSize(width: 256, height: 256),
-                                 contentMode: .aspectFit, options: options) { image, _ in
-                guard !resumed else { return }
-                resumed = true
-                continuation.resume(returning: image)
-            }
-        }
-    }
-
-    /// Downscaled image (downloads from iCloud if needed) for the Claude call.
+    /// Downscaled image (downloads from iCloud if needed) for on-device OCR.
     func analysisImage(for asset: PHAsset) async -> UIImage? {
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = true
