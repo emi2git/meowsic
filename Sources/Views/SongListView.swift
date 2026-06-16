@@ -10,7 +10,7 @@ struct SongListView: View {
     @State private var showTags = false
 
     @State private var searchText = ""
-    @State private var sortColumn: SortColumn = .date
+    @State private var sortColumn: SongSort = .date
     @State private var sortAscending = false
     @State private var filterTags: Set<String> = []
     @State private var currentPage = 0
@@ -19,6 +19,7 @@ struct SongListView: View {
     @State private var selectedSongIDs: Set<String> = []
     @State private var addTask: Task<Void, Never>?
     @State private var showPicker = false
+    @State private var openSong: Song?                // non-nil → song viewer overlay
 
     private let dateWidth: CGFloat = 92
     private let pagesWidth: CGFloat = 52
@@ -27,27 +28,9 @@ struct SongListView: View {
     private let pagerHeight: CGFloat = 44
     private let maxVisibleTags = 2
 
-    enum SortColumn { case title, date, pages }
-
     private var displayedSongs: [Song] {
-        var list = coordinator.songs
-        // Hide soft-deleted songs unless the Deleted tag is being filtered on.
-        if !filterTags.contains(AnalysisCoordinator.deletedTag) {
-            list = list.filter { !$0.tags.contains(AnalysisCoordinator.deletedTag) }
-        }
-        if !searchText.isEmpty {
-            list = list.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
-        }
-        if !filterTags.isEmpty {
-            list = list.filter { !filterTags.isDisjoint(with: Set($0.tags)) }
-        }
-        switch sortColumn {
-        case .title: list.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        case .date:  list.sort { $0.firstPageDate < $1.firstPageDate }
-        case .pages: list.sort { $0.pageAssetIDs.count < $1.pageAssetIDs.count }
-        }
-        if !sortAscending { list.reverse() }
-        return list
+        SongQuery.run(coordinator.songs, search: searchText, tags: filterTags,
+                      sort: sortColumn, ascending: sortAscending)
     }
 
     var body: some View {
@@ -91,7 +74,6 @@ struct SongListView: View {
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(for: Song.self) { SongPagerView(song: $0) }
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always),
                         prompt: "Search song name")
             .onChange(of: searchText) { currentPage = 0 }
@@ -125,6 +107,12 @@ struct SongListView: View {
                 if let report = coordinator.lastReport { AddSongsReportView(report: report) }
             }
             .task { coordinator.rebuildSongs() }
+        }
+        .overlay {
+            if let openSong {
+                SongPagerView(song: openSong) { self.openSong = nil }
+                    .ignoresSafeArea()
+            }
         }
     }
 
@@ -179,11 +167,13 @@ struct SongListView: View {
     }
 
     private func resetView() {
-        filterTags.removeAll()
-        searchText = ""
-        sortColumn = .date
-        sortAscending = false
-        currentPage = 0
+        withoutAnimation {
+            filterTags.removeAll()
+            searchText = ""
+            sortColumn = .date
+            sortAscending = false
+            currentPage = 0
+        }
     }
 
     // MARK: - Sections
@@ -231,7 +221,7 @@ struct SongListView: View {
         .padding(.horizontal, 16).padding(.vertical, 6)
     }
 
-    private func sortHeader(_ label: String, _ column: SortColumn) -> some View {
+    private func sortHeader(_ label: String, _ column: SongSort) -> some View {
         Button {
             if sortColumn == column { sortAscending.toggle() }
             else { sortColumn = column; sortAscending = (column == .title) }
@@ -274,7 +264,7 @@ struct SongListView: View {
                     .frame(width: 28)
             } else {
                 let starred = song.tags.contains(AnalysisCoordinator.starTag)
-                Button { coordinator.toggleStar(song) } label: {
+                Button { withoutAnimation { coordinator.toggleStar(song) } } label: {
                     Image(systemName: starred ? "star.fill" : "star")
                         .foregroundStyle(starred ? Color.yellow : Color.secondary)
                 }
@@ -301,7 +291,7 @@ struct SongListView: View {
         if selecting {
             content
         } else {
-            NavigationLink(value: song) { content.contentShape(Rectangle()) }
+            Button { openSong = song } label: { content.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
         }
     }
@@ -373,7 +363,9 @@ struct SongListView: View {
     // MARK: - Actions
 
     private func toggleFilter(_ tag: String) {
-        if filterTags.contains(tag) { filterTags.remove(tag) } else { filterTags.insert(tag) }
+        withoutAnimation {
+            if filterTags.contains(tag) { filterTags.remove(tag) } else { filterTags.insert(tag) }
+        }
     }
 
     private func toggleSelect(_ song: Song) {
@@ -387,7 +379,7 @@ struct SongListView: View {
     }
 
     private func applyTag(_ tag: String) {
-        coordinator.addTag(tag, toSongIDs: selectedSongIDs)
+        withoutAnimation { coordinator.addTag(tag, toSongIDs: selectedSongIDs) }
         exitSelection()
     }
 

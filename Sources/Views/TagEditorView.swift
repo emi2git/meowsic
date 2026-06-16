@@ -17,19 +17,48 @@ struct TagEditorView: View {
         _selected = State(initialValue: Set(song.tags))
     }
 
+    /// Existing vocabulary tags matching what's typed (prefix matches first),
+    /// excluding ones already on the song.
+    private var suggestions: [String] {
+        let q = newTag.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return [] }
+        return coordinator.tagNames
+            .filter { !AnalysisCoordinator.specialTags.contains($0) && !selected.contains($0) && $0.lowercased().contains(q) }
+            .sorted { a, b in
+                let ap = a.lowercased().hasPrefix(q), bp = b.lowercased().hasPrefix(q)
+                if ap != bp { return ap }
+                return a.localizedCaseInsensitiveCompare(b) == .orderedAscending
+            }
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                HStack {
-                    TextField("New tag", text: $newTag).autocorrectionDisabled()
-                    Button("Add") {
-                        let t = newTag.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !t.isEmpty else { return }
-                        coordinator.addVocabTag(t)
-                        selected.insert(t)
-                        newTag = ""
+                VStack(spacing: 8) {
+                    HStack {
+                        TextField("Add or search tags", text: $newTag)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .onSubmit { addTyped() }
+                        Button("Add") { addTyped() }
+                            .disabled(newTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
-                    .disabled(newTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    if !suggestions.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(suggestions, id: \.self) { tag in
+                                    Button { withoutAnimation { selected.insert(tag); newTag = "" } } label: {
+                                        Label(tag, systemImage: "plus.circle")
+                                            .font(.subheadline)
+                                            .padding(.horizontal, 10).padding(.vertical, 6)
+                                            .background(Color(.secondarySystemBackground))
+                                            .clipShape(Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                    }
                 }
                 .padding()
                 Divider()
@@ -39,7 +68,7 @@ struct TagEditorView: View {
                         ForEach(coordinator.tagNames.filter { !AnalysisCoordinator.specialTags.contains($0) }, id: \.self) { tag in
                             let on = selected.contains(tag)
                             Button {
-                                if on { selected.remove(tag) } else { selected.insert(tag) }
+                                withoutAnimation { if on { selected.remove(tag) } else { selected.insert(tag) } }
                             } label: {
                                 Text(tag)
                                     .font(.subheadline)
@@ -62,11 +91,27 @@ struct TagEditorView: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        coordinator.setTags(selected.sorted(), for: song)
+                        withoutAnimation { coordinator.setTags(selected.sorted(), for: song) }
                         dismiss()
                     }
                 }
             }
+        }
+    }
+
+    /// Apply the typed text: select an existing tag (case-insensitive) if one
+    /// matches, otherwise create it in the vocabulary and select it.
+    private func addTyped() {
+        let t = newTag.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        withoutAnimation {
+            if let existing = coordinator.tagNames.first(where: { $0.caseInsensitiveCompare(t) == .orderedSame }) {
+                selected.insert(existing)
+            } else {
+                coordinator.addVocabTag(t)
+                selected.insert(t)
+            }
+            newTag = ""
         }
     }
 }

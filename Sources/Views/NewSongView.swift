@@ -77,7 +77,7 @@ struct NewSongView: View {
             ForEach(coordinator.tagNames.filter { !AnalysisCoordinator.specialTags.contains($0) }, id: \.self) { tag in
                 let on = selected.contains(tag)
                 Button {
-                    if on { selected.remove(tag) } else { selected.insert(tag) }
+                    withoutAnimation { if on { selected.remove(tag) } else { selected.insert(tag) } }
                 } label: {
                     Text(tag)
                         .font(.subheadline)
@@ -96,8 +96,10 @@ struct NewSongView: View {
     private func addTag() {
         let t = newTag.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { return }
-        coordinator.addVocabTag(t)
-        selected.insert(t)
-        newTag = ""
+        withoutAnimation {
+            coordinator.addVocabTag(t)
+            selected.insert(t)
+            newTag = ""
+        }
     }
 }

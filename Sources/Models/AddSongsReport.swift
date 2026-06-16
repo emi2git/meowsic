@@ -3,9 +3,8 @@ import Foundation
 /// Summary of one "Add Songs" run, shown to the user when it finishes.
 struct AddSongsReport {
     enum IgnoreReason: String, CaseIterable {
-        case alreadyAdded  = "Already in your library"
-        case cornersDiffer = "Corners differ — not a uniform sheet"
-        case noImage       = "Couldn't load the photo"
+        case alreadyAdded = "Already in your library"
+        case noImage      = "Couldn't load the photo"
     }
 
     struct Ignored: Identifiable {

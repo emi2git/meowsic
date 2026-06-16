@@ -11,14 +11,13 @@ struct PrintView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedTag = ""
-    @State private var order: PrintOrder = .evenFirst
+    @State private var order: PrintOrder = .alphabetical
     @State private var exporting = false
     @State private var pdfURL: URL?
     @State private var showShare = false
     @State private var message: String?
 
     enum PrintOrder: String, CaseIterable, Identifiable {
-        case evenFirst = "Even songs first (fewest blanks)"
         case alphabetical = "Alphabetical"
         case byDate = "By date taken"
         var id: String { rawValue }
@@ -36,31 +35,14 @@ struct PrintView: View {
             return songs.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
         case .byDate:
             return songs.sorted { $0.firstPageDate < $1.firstPageDate }
-        case .evenFirst:
-            let byTitle: (Song, Song) -> Bool = { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-            let evens = songs.filter { $0.pageAssetIDs.count % 2 == 0 }.sorted(by: byTitle)
-            let odds  = songs.filter { $0.pageAssetIDs.count % 2 == 1 }.sorted(by: byTitle)
-            return evens + odds
         }
     }
 
-    /// PDF page plan. A blank (nil) is inserted before a song when the running
-    /// page count is even, so each song starts on a verso (left) page → facing pairs.
+    /// PDF page plan, minimizing blanks (single-page songs fill parity gaps so
+    /// multi-page songs still start on a facing left page). See `PrintPlanner`.
     private var plan: (pages: [String?], lines: [(text: String, blank: Bool)]) {
-        var pages: [String?] = []
-        var lines: [(String, Bool)] = []
-        for song in orderedSongs {
-            // Only multi-page songs need verso alignment to keep their pages facing.
-            if song.pageAssetIDs.count >= 2, pages.count % 2 == 0 {
-                pages.append(nil)
-                lines.append(("(blank page)", true))
-            }
-            for i in song.pageAssetIDs.indices {
-                pages.append(song.pageAssetIDs[i])
-                lines.append(("\(song.title) — page \(i + 1)", false))
-            }
-        }
-        return (pages, lines)
+        let entries = PrintPlanner.plan(orderedSongs)
+        return (entries.map(\.assetID), entries.map { ($0.text, $0.blank) })
     }
 
     var body: some View {

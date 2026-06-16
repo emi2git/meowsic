@@ -60,12 +60,14 @@ final class PhotoLibraryService {
     }
 
     /// Downscaled image (downloads from iCloud if needed) for on-device OCR.
+    /// Larger than a thumbnail so titles read cleanly and relative font sizes
+    /// stay accurate; still small enough for fast Vision passes.
     func analysisImage(for asset: PHAsset) async -> UIImage? {
         let options = PHImageRequestOptions()
         options.isNetworkAccessAllowed = true
         options.deliveryMode = .highQualityFormat
         options.resizeMode = .exact
-        return await requestImage(asset, targetSize: CGSize(width: 640, height: 640),
+        return await requestImage(asset, targetSize: CGSize(width: 1600, height: 1600),
                                   contentMode: .aspectFit, options: options)
     }
 

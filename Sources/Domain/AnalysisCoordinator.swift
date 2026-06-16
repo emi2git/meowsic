@@ -2,8 +2,8 @@ import Foundation
 import Photos
 import SwiftData
 
-/// Drives the on-device Add Songs pipeline (corner prefilter → Vision OCR → cache)
-/// and exposes the grouped songs.
+/// Drives the on-device Add Songs pipeline (Vision OCR → cache) and exposes the
+/// grouped songs.
 @MainActor
 @Observable
 final class AnalysisCoordinator {
@@ -37,7 +37,6 @@ final class AnalysisCoordinator {
     private let context: ModelContext
     private let library: PhotoLibraryService
     private let recognizer = SheetTextRecognizer()
-    private let prefilter = CornerColorPrefilter()
 
     init(context: ModelContext, library: PhotoLibraryService) {
         self.context = context
@@ -51,10 +50,9 @@ final class AnalysisCoordinator {
 
     /// Turn an explicit set of user-picked photos into songs, regardless of
     /// capture date. Fully on-device — no network, no API key. A photo is ignored
-    /// when it is already in the database, when its four corners don't match (not a
-    /// uniform-background sheet), or when it can't be loaded. Everything else
-    /// becomes a page; titles/tags come from on-device OCR. Grouping reuses the
-    /// capture-time + heading heuristic. Publishes `lastReport`.
+    /// when it is already in the database or when it can't be loaded. Everything
+    /// else becomes a page; titles/tags come from on-device OCR. Grouping reuses
+    /// the capture-time + heading heuristic. Publishes `lastReport`.
     func addSongs(from assets: [PHAsset]) async {
         guard !isScanning else { return }
         isScanning = true
@@ -78,12 +76,13 @@ final class AnalysisCoordinator {
         }
 
         let vocabulary = tagNames.filter { !Self.specialTags.contains($0) }   // never auto-tag Star/Deleted
+        let customWords = knownWords()   // bias OCR toward titles/tags already in the library
         await withTaskGroup(of: AddOutcome.self) { group in
             var index = 0
             func addNext() {
                 guard index < fresh.count else { return }
                 let asset = fresh[index]; index += 1
-                group.addTask { await self.analyzeForAdd(asset, vocabulary: vocabulary) }
+                group.addTask { await self.analyzeForAdd(asset, vocabulary: vocabulary, customWords: customWords) }
             }
             for _ in 0 ..< min(Self.maxConcurrent, fresh.count) { addNext() }
 
@@ -116,15 +115,21 @@ final class AnalysisCoordinator {
         case ignored(String, AddSongsReport.IgnoreReason)
     }
 
-    /// On-device only: corner check, then Vision OCR for title/tags. Corner
-    /// mismatch or a missing image yield `ignored`; everything else is a page.
-    private func analyzeForAdd(_ asset: PHAsset, vocabulary: [String]) async -> AddOutcome {
+    /// On-device only: Vision OCR for title/tags. A missing image yields
+    /// `ignored`; every loadable photo becomes a page.
+    private func analyzeForAdd(_ asset: PHAsset, vocabulary: [String], customWords: [String]) async -> AddOutcome {
         let id = asset.localIdentifier
         let date = asset.creationDate ?? .distantPast
         guard let image = await library.analysisImage(for: asset) else { return .ignored(id, .noImage) }
-        guard prefilter.looksLikeSheet(image) else { return .ignored(id, .cornersDiffer) }
-        let result = await recognizer.analyze(image, vocabulary: vocabulary)
+        let result = await recognizer.analyze(image, vocabulary: vocabulary, customWords: customWords)
         return .added(id, date, result)
+    }
+
+    /// Titles and tag names already in the library, fed to Vision as custom words
+    /// so repeated songs and known vocabulary read more accurately.
+    private func knownWords() -> [String] {
+        let titles = songs.map(\.title).filter { !$0.isEmpty && $0 != "Untitled" }
+        return Array(Set(titles + tagNames))
     }
 
     private func store(id: String, date: Date, sheet: Bool, start: Bool, title: String?, tags: [String] = []) {
@@ -272,6 +277,18 @@ final class AnalysisCoordinator {
     func tagSongCounts() -> [String: Int] {
         var counts: [String: Int] = [:]
         for song in songs {
+            for tag in song.tags { counts[tag, default: 0] += 1 }
+        }
+        return counts
+    }
+
+    /// Co-occurrence counts: among the songs that already match `selected` (AND
+    /// semantics, soft-deleted hidden unless Deleted is selected), how many carry
+    /// each tag. With nothing selected this matches `tagSongCounts`.
+    func tagSongCounts(matching selected: Set<String>) -> [String: Int] {
+        let base = SongQuery.run(songs, search: "", tags: selected, sort: .title, ascending: true)
+        var counts: [String: Int] = [:]
+        for song in base {
             for tag in song.tags { counts[tag, default: 0] += 1 }
         }
         return counts
