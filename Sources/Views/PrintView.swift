@@ -1,16 +1,17 @@
 import SwiftUI
 
-/// Pick a tag + order, preview the page plan, then export to PDF.
+/// Pick an order, preview the page plan, then export to PDF.
+/// Songs are passed in from the multi-select toolbar (no in-view picker).
 /// Read as a book (two facing pages per spread, first page alone on the right):
 /// a blank is inserted only before a MULTI-page song that would otherwise start on a
 /// right-hand page, so its pages face each other (no mid-song flip). Single-page songs
 /// never need a blank — they can share a sheet (one song per side).
 struct PrintView: View {
-    @Environment(AnalysisCoordinator.self) private var coordinator
     @Environment(PhotoLibraryService.self) private var library
     @Environment(\.dismiss) private var dismiss
 
-    @State private var selectedTag = ""
+    let songs: [Song]
+
     @State private var order: PrintOrder = .alphabetical
     @State private var exporting = false
     @State private var pdfURL: URL?
@@ -23,13 +24,7 @@ struct PrintView: View {
         var id: String { rawValue }
     }
 
-    private var taggedSongs: [Song] {
-        guard !selectedTag.isEmpty else { return [] }
-        return coordinator.songs.filter { $0.tags.contains(selectedTag) }
-    }
-
     private var orderedSongs: [Song] {
-        let songs = taggedSongs
         switch order {
         case .alphabetical:
             return songs.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
@@ -40,20 +35,11 @@ struct PrintView: View {
 
     /// PDF page plan, minimizing blanks (single-page songs fill parity gaps so
     /// multi-page songs still start on a facing left page). See `PrintPlanner`.
-    private var plan: (pages: [String?], lines: [(text: String, blank: Bool)]) {
-        let entries = PrintPlanner.plan(orderedSongs)
-        return (entries.map(\.assetID), entries.map { ($0.text, $0.blank) })
-    }
+    private var entries: [PrintPlanner.Entry] { PrintPlanner.plan(orderedSongs) }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Tag") {
-                    Picker("Tag", selection: $selectedTag) {
-                        Text("Select a tag").tag("")
-                        ForEach(coordinator.tagNames, id: \.self) { Text($0).tag($0) }
-                    }
-                }
                 Section("Order") {
                     Picker("Order", selection: $order) {
                         ForEach(PrintOrder.allCases) { Text($0.rawValue).tag($0) }
@@ -62,31 +48,29 @@ struct PrintView: View {
                     .labelsHidden()
                 }
 
-                if !selectedTag.isEmpty {
-                    let p = plan
-                    if orderedSongs.isEmpty {
-                        Section { Text("No songs have this tag.").foregroundStyle(.secondary) }
-                    } else {
-                        let blanks = p.pages.filter { $0 == nil }.count
-                        let musicPages = p.pages.count - blanks
-                        let total = p.pages.count
-                        let sheets = (total + 1) / 2
+                let entries = entries
+                if orderedSongs.isEmpty {
+                    Section { Text("No songs selected.").foregroundStyle(.secondary) }
+                } else {
+                    let blanks = entries.filter(\.blank).count
+                    let musicPages = entries.count - blanks
+                    let total = entries.count
+                    let sheets = (total + 1) / 2
 
-                        Section("Summary") {
-                            summaryRow("Songs", orderedSongs.count)
-                            summaryRow("Music pages", musicPages)
-                            summaryRow("Blank pages", blanks)
-                            summaryRow("Total pages", total)
-                            summaryRow("Sheets (double-sided)", sheets)
-                        }
+                    Section("Summary") {
+                        summaryRow("Songs", orderedSongs.count)
+                        summaryRow("Music pages", musicPages)
+                        summaryRow("Blank pages", blanks)
+                        summaryRow("Total pages", total)
+                        summaryRow("Sheets (double-sided)", sheets)
+                    }
 
-                        Section("Pages") {
-                            ForEach(Array(p.lines.enumerated()), id: \.offset) { _, line in
-                                Text(line.text)
-                                    .font(.callout)
-                                    .foregroundStyle(line.blank ? .secondary : .primary)
-                                    .italic(line.blank)
-                            }
+                    Section("Pages") {
+                        ForEach(Array(entries.enumerated()), id: \.offset) { _, e in
+                            Text(e.text)
+                                .font(.callout)
+                                .foregroundStyle(e.blank ? .secondary : .primary)
+                                .italic(e.blank)
                         }
                     }
                 }
@@ -124,10 +108,9 @@ struct PrintView: View {
     private func export() async {
         exporting = true
         defer { exporting = false }
-        let data = await PDFExporter(library: library).pdf(plan: plan.pages)
+        let data = await PDFExporter(library: library).pdf(plan: entries)
         guard !data.isEmpty else { message = "Could not load any page images."; return }
-        let safeTag = selectedTag.replacingOccurrences(of: "/", with: "-")
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("meowsic-\(safeTag).pdf")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("meowsic-songs.pdf")
         do {
             try data.write(to: url)
             pdfURL = url

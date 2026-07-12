@@ -9,7 +9,7 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: "X3YM4YB4ZJ"  # Apple ID team (emi2everything@gmail.com)
-    TARGETED_DEVICE_FAMILY: "2"   # 2 = iPad only (optimized for iPad Pro)
+    TARGETED_DEVICE_FAMILY: "1,2"   # universal: iPhone + iPad (iPad-optimized)
 targets:
   Meowsic:
     type: application

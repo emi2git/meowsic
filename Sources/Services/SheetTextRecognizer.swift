@@ -17,8 +17,9 @@ struct SheetTextRecognizer {
 
     private let tagger = LocalTagger()
 
-    /// Only the upper part of the page can hold a title (Vision y is bottom-up).
-    private let titleTopFraction: CGFloat = 0.5
+    /// Only the top 15% of the page can hold a title (Vision y is bottom-up),
+    /// so body text and lyrics lower on the page are never mistaken for a heading.
+    private let titleTopFraction: CGFloat = 0.85
     /// The winning line must be at least this much taller than the median line.
     private let titleHeightRatio: Double = 1.15
     /// Latin-script languages only — never auto-detect (that's what lets Vision
@@ -56,7 +57,7 @@ struct SheetTextRecognizer {
 
         // Pass 2: zoom into just the title block and re-read it (correction on).
         let refined = await refineTitle(in: cg, region: unionBox(block), customWords: customWords)
-        let title = (refined?.isEmpty == false) ? refined! : fallback
+        let title = ((refined?.isEmpty == false) ? refined! : fallback).titleCased
         return Result(isSongStart: !title.isEmpty, title: title.isEmpty ? nil : title, tags: tags)
     }
 

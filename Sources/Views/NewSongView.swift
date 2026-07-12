@@ -8,12 +8,15 @@ struct NewSongView: View {
     @Environment(\.dismiss) private var dismiss
 
     let pageAssetID: String
-    var onCreated: () -> Void
+    /// Called after the new song is created with its id (== pageAssetID), so the
+    /// pager can auto-open it.
+    var onCreated: (String) -> Void
 
     @State private var title = ""
     @State private var selected: Set<String> = []
     @State private var newTag = ""
     @State private var loaded = false
+    @State private var titleSelectAllTrigger = 0
 
     private let columns = [GridItem(.adaptive(minimum: 90), spacing: 8)]
 
@@ -30,10 +33,21 @@ struct NewSongView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 12))
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Song name").font(.subheadline.bold())
-                            TextField("Song name", text: $title)
-                                .textFieldStyle(.roundedBorder)
-                                .autocorrectionDisabled()
+                            HStack(spacing: 10) {
+                                Text("Song name").font(.subheadline.bold())
+                                Button { titleSelectAllTrigger += 1 } label: {
+                                    Image(systemName: "highlighter").imageScale(.large)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Highlight all text")
+                                Spacer()
+                            }
+                            SelectAllTextField(text: $title, placeholder: "Song name",
+                                               autoSelectOnAppear: false,
+                                               selectAllTrigger: titleSelectAllTrigger)
+                                .frame(height: 24)
+                                .padding(.horizontal, 10).padding(.vertical, 8)
+                                .background(RoundedRectangle(cornerRadius: 8).stroke(Color(.separator)))
                         }
 
                         VStack(alignment: .leading, spacing: 8) {
@@ -57,7 +71,7 @@ struct NewSongView: View {
                     Button("Create") {
                         coordinator.startNewSong(at: pageAssetID, title: trimmedTitle, tags: selected.sorted())
                         dismiss()
-                        onCreated()
+                        onCreated(pageAssetID)
                     }
                     .disabled(trimmedTitle.isEmpty)
                 }

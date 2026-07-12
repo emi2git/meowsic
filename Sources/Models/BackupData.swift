@@ -17,6 +17,20 @@ struct BackupData: Codable {
     struct TagSetDTO: Codable { var songKey: String; var tags: [String] }
     struct GroupDTO: Codable { var assetID: String; var groupKey: String }
     struct BoundaryDTO: Codable { var assetID: String; var isStart: Bool }
+    struct MetaDTO: Codable {
+        var songKey: String
+        var isHidden: Bool
+        // JSON key stays `isDeleted` for backward compat with existing cloud snapshots.
+        enum CodingKeys: String, CodingKey { case songKey; case isHidden = "isDeleted" }
+    }
+    struct ChordSongDTO: Codable {
+        var id: String
+        var title: String
+        var artist: String?
+        var chordText: String
+        var sourceURL: String?
+        var createdAt: Date
+    }
     /// local asset id ↔ stable iCloud cloud-identifier (cloud nil if not in iCloud).
     struct AssetRef: Codable { var local: String; var cloud: String? }
 
@@ -28,4 +42,6 @@ struct BackupData: Codable {
     var tags: [String]
     var tagCategories: [String: String]?
     var assetMap: [AssetRef]?
+    var chordSongs: [ChordSongDTO]?
+    var metas: [MetaDTO]?
 }

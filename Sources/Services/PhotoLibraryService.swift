@@ -37,6 +37,17 @@ final class PhotoLibraryService {
         return out
     }
 
+    /// Every image asset in the library, newest first — drives Auto Scan.
+    func allImagesNewestFirst() -> [PHAsset] {
+        let options = PHFetchOptions()
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
+        let result = PHAsset.fetchAssets(with: .image, options: options)
+        var assets: [PHAsset] = []
+        assets.reserveCapacity(result.count)
+        result.enumerateObjects { asset, _, _ in assets.append(asset) }
+        return assets
+    }
+
     func asset(for id: String) -> PHAsset? {
         if let a = byID[id] { return a }
         let a = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject

@@ -7,7 +7,6 @@ struct TagsView: View {
     @Environment(AnalysisCoordinator.self) private var coordinator
     @Environment(\.dismiss) private var dismiss
     @Binding var filter: Set<String>
-    var onTagSongs: (String) -> Void
 
     @State private var newTag = ""
     @State private var renameTarget: String?
@@ -83,7 +82,6 @@ struct TagsView: View {
                     bubble(tag, count: counts[tag, default: 0])
                         .draggable(tag)
                         .contextMenu {
-                            Button { onTagSongs(tag) } label: { Label("Tag songs…", systemImage: "music.note.list") }
                             Button { renameTarget = tag; renameText = tag } label: { Label("Rename…", systemImage: "pencil") }
                             Button(role: .destructive) { withoutAnimation { coordinator.deleteVocabTag(tag) } } label: { Label("Delete tag", systemImage: "trash") }
                         }
