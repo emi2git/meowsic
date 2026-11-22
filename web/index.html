@@ -23,5 +23,9 @@
 <div id="toast" class="toast" role="status" hidden></div>
 <div id="print-root" aria-hidden="true"></div>
 <script type="module" src="js/app.js"></script>
+<script>
+  // offline library (needs https or localhost)
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
 </body>
 </html>
