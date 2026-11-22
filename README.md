@@ -26,3 +26,13 @@ the same Wi-Fi. The microphone (tuner) needs https, which arrives with the serve
       js/audio.js        piano playback, metronome, tuner
       js/views/          library, item viewers, performance, add, organize, print, stats/tools/settings
       vendor/            OpenSheetMusicDisplay, Salamander piano samples (CC BY 3.0)
+
+## Tools (Mac)
+
+    uv venv tools/.venv --python 3.12 && uv pip install --python tools/.venv/bin/python model2vec numpy
+    node tools/dump_mock.mjs > /tmp/items.json
+    tools/.venv/bin/python tools/pick_icons.py /tmp/items.json > web/js/item-icons.js
+
+`pick_icons.py` chooses each song's icon offline: the song title is matched to icon keywords by a small local model
+(model2vec potion-base-8M, cached in `~/ai/models` via `HF_HUB_CACHE`), then tag rules, then a default by type.
+Models are never committed; icons are Phosphor (MIT, see `web/vendor/phosphor/LICENSE`).

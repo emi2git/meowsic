@@ -4,6 +4,12 @@ import { esc, icon, sheet, toast, menu, promptSheet, tagPicker, KIND } from '../
 import { go } from '../app.js';
 import { sheetUrl } from '../sheet-art.js';
 import { VERSIONS } from '../musicxml.js';
+import { ITEM_ICONS } from '../item-icons.js';
+
+// each song's icon, chosen offline on the Mac (tools/pick_icons.py); new music gets the default by type
+const ICON_BASE = new URL('../../vendor/phosphor/', import.meta.url).href;
+const DEFAULT_ICON = { sheet: 'file-text', score: 'music-notes', chords: 'guitar' };
+export const songIcon = (it) => `<span class="song-ic" aria-hidden="true" style="--ic:url(${ICON_BASE}${it.icon || ITEM_ICONS[it.title] || DEFAULT_ICON[it.kind]}.svg)"></span>`;
 
 export function thumbHtml(it) {
   if (it.kind === 'sheet') {
