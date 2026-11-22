@@ -17,15 +17,15 @@ export function itemView(main, { parts }) {
   main.innerHTML = `
     <div class="viewer k-${it.kind}">
       <header class="top item-top">
-        <a class="icon-btn back" href="${back}" aria-label="Back">${icon('back')}</a>
+        <a class="icon-btn back" href="${back}" aria-label="Back">‹ Back</a>
         <div class="item-title">
           <h1 id="it-title" title="Rename">${esc(it.title)}</h1>
           <div class="row-sub">${badge(it.kind)}<span>${esc(it.artist || '')}</span></div>
         </div>
         <span class="grow"></span>
-        <button class="icon-btn" id="it-perform" title="Performance mode">${icon('perform')}<span class="hide-s">Perform</span></button>
-        <button class="icon-btn" id="it-info" title="Details">${icon('info')}</button>
-        <button class="icon-btn" id="it-more" aria-label="More">${icon('more')}</button>
+        <button class="icon-btn" id="it-perform" title="Performance mode">${icon('perform')}<span>Perform</span></button>
+        <button class="icon-btn" id="it-info" title="Details">Details</button>
+        <button class="icon-btn" id="it-more" aria-label="More">More</button>
       </header>
       <div class="toolbar" id="it-bar"></div>
       <div class="viewer-body">
@@ -55,7 +55,7 @@ export function itemView(main, { parts }) {
     // annotate scores too
     const ink = document.createElement('button');
     ink.className = 'icon-btn';
-    ink.innerHTML = `${icon('pen')}<span class="hide-s">Annotate</span>`;
+    ink.innerHTML = `${icon('pen')}<span>Annotate</span>`;
     ink.onclick = () => startInk(view, $('.viewer', main));
     $('#it-info', main).before(ink);
   }
@@ -65,7 +65,7 @@ export function itemView(main, { parts }) {
     const plays = store.plays(it.id);
     const total = plays.reduce((s, p) => s + (p.closedAt - p.openedAt), 0);
     details.innerHTML = `
-      <div class="details-head"><h2>Details</h2><button class="icon-btn" id="dt-close" aria-label="Close details">${icon('close')}</button></div>
+      <div class="details-head"><h2>Details</h2><button class="icon-btn" id="dt-close" aria-label="Close details">Close</button></div>
       <dl>
         <dt>Type</dt><dd>${badge(it.kind)} ${metaText(it)}</dd>
         ${it.kind === 'chords' ? `<dt>Source</dt><dd><a href="${esc(it.url)}" target="_blank" rel="noopener">${it.source === 'hopamchuan' ? 'Hợp Âm Chuẩn' : 'Ultimate Guitar'}</a></dd>` : ''}

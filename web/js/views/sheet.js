@@ -16,9 +16,9 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
 
   root.innerHTML = `
     <div class="pages ${perform ? 'perform' : ''}" id="pages" tabindex="-1">
-      <button class="turn prev" aria-label="Previous page">${icon('left')}</button>
+      <button class="turn prev" aria-label="Previous page">‹</button>
       <div class="page-row" id="page-row"></div>
-      <button class="turn next" aria-label="Next page">${icon('right')}</button>
+      <button class="turn next" aria-label="Next page">›</button>
     </div>
     ${perform ? '' : `<div class="strip" id="strip">${Array.from({ length: it.pages }, (_, i) =>
       `<button data-p="${i + 1}" aria-label="Page ${i + 1}"><img src="${pageSrc(it, i + 1)}" alt="" loading="lazy"><span>${i + 1}</span></button>`).join('')}</div>`}`;
@@ -90,8 +90,8 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
 export function sheetToolbar(bar, it, view) {
   bar.innerHTML = `
     <span class="pageno" id="pageno"></span>
-    <button class="icon-btn hide-phone" id="sv-spread" title="One or two pages">${icon('library')}<span class="hide-s" id="sv-spread-l"></span></button>
-    <button class="icon-btn" id="sv-ink" title="Annotate">${icon('pen')}<span class="hide-s">Annotate</span></button>`;
+    <button class="icon-btn hide-phone" id="sv-spread" title="One or two pages"><span id="sv-spread-l"></span></button>
+    <button class="icon-btn" id="sv-ink" title="Annotate">${icon('pen')}<span>Annotate</span></button>`;
   const setL = () => ($('#sv-spread-l', bar).textContent = view.spread ? '2 pages' : '1 page');
   setL();
   $('#sv-spread', bar).onclick = () => { view.setSpread(!view.spread); setL(); };

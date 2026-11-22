@@ -36,7 +36,7 @@ export function statsView(main) {
         <div class="tile"><small>Practice, last 30 days</small><b>${mins(total30)}</b></div>
         <div class="tile"><small>Sessions, last 30 days</small><b>${last30.length}</b></div>
         <div class="tile"><small>Pieces played, all time</small><b>${per.size}</b></div>
-        <div class="tile"><small>Day streak</small><b>${streak} ${icon('paw', 'paw-ic')}</b></div>
+        <div class="tile"><small>Day streak</small><b>${streak}</b></div>
       </div>
       <section class="card">
         <h2>Practice minutes per week</h2>
@@ -90,7 +90,7 @@ export function settingsView(main) {
       <section class="card"><h2>${icon('info')} Mock data</h2>
         <p class="muted small">This is the UI preview. Everything you change is kept in this browser only.</p>
         <button class="danger-text" id="st-reset">Reset mock data</button></section>
-      <p class="center muted">${CAT}<br>Meowsic 2.0 · UI preview</p>
+      <p class="center muted">Meowsic 2.0 · UI preview</p>
     </div>`;
   $('#st-theme', main).onclick = (e) => {
     const b = e.target.closest('[data-t]');

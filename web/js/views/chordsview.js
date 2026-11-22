@@ -11,7 +11,7 @@ export function chordsBody(root, it, { perform = false } = {}) {
   root.innerHTML = `<div class="chart ${perform ? 'perform' : ''}" id="chart" style="--chart-size:${perform ? size + 6 : size}px">
       <div class="diagrams" id="diagrams" aria-label="Ukulele chords"></div>
       <div class="lyrics" id="lyrics"></div>
-      <div class="chart-end">${icon('paw')}</div>
+      
     </div>`;
   const draw = () => {
     $('#diagrams', root).innerHTML = diagramsHtml(it);

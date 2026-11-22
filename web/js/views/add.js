@@ -16,7 +16,7 @@ let pending = null; // [{title, tags, pages:[{name, url, pdf}] , dup}]
 export function addSheetsView(main) {
   if (pending) return reviewSheets(main);
   main.innerHTML = `
-    <header class="top"><a class="icon-btn back" href="#/library" aria-label="Back">${icon('back')}</a><h1>Add sheet music</h1></header>
+    <header class="top"><a class="icon-btn back" href="#/library" aria-label="Back">‹ Back</a><h1>Add sheet music</h1></header>
     <div class="pad narrow">
       <label class="drop" id="drop">
         ${CAT}
@@ -49,7 +49,7 @@ export function addSheetsView(main) {
 
 function analyse(main, files) {
   if (!files.length) return;
-  main.innerHTML = `<header class="top"><h1>Reading pages…</h1></header><div class="pad narrow center"><div class="spinner-cat">${CAT}</div>
+  main.innerHTML = `<header class="top"><h1>Reading pages…</h1></header><div class="pad narrow center">
     <p id="an-msg">Reading page 1 of ${files.length}</p><progress id="an-prog" max="${files.length}" value="0"></progress></div>`;
   files.sort((a, b) => a.lastModified - b.lastModified);
   let i = 0;
@@ -84,7 +84,7 @@ function reviewSheets(main) {
   const groups = pending;
   const live = () => groups.filter((g) => !g.skip && g.pages.length);
   main.innerHTML = `
-    <header class="top"><button class="icon-btn back" id="rv-cancel" aria-label="Cancel">${icon('close')}</button><h1>Check your sheets</h1><span class="grow"></span>
+    <header class="top"><button class="icon-btn back" id="rv-cancel" aria-label="Cancel">Cancel</button><h1>Check your sheets</h1><span class="grow"></span>
       <button class="primary" id="rv-add"></button></header>
     <p class="pad muted hint">Tap <b>${icon('split')} New sheet here</b> between pages to split, or <b>${icon('merge')} Join</b> to put a sheet's pages onto the one before.</p>
     <div class="review" id="review"></div>`;
@@ -93,7 +93,7 @@ function reviewSheets(main) {
       <section class="rv-card ${g.skip ? 'skipped' : ''}" data-g="${gi}">
         <div class="rv-head">
           <input class="rv-title" value="${esc(g.title)}" aria-label="Title" data-f="title">
-          ${gi > 0 ? `<button class="icon-btn" data-act="join" title="Join onto the sheet before">${icon('merge')}<span class="hide-s">Join</span></button>` : ''}
+          ${gi > 0 ? `<button class="icon-btn" data-act="join" title="Join onto the sheet before">${icon('merge')}<span>Join</span></button>` : ''}
           <button class="icon-btn" data-act="skip">${g.skip ? 'Include' : 'Skip'}</button>
         </div>
         ${g.dup ? `<p class="warn">${icon('info')} A sheet called “${esc(g.title)}” is already in your library.</p>` : ''}
@@ -101,7 +101,7 @@ function reviewSheets(main) {
           ${pi > 0 ? `<button class="rv-split" data-act="split" data-p="${pi}" title="Start a new sheet at this page">${icon('split')}<span>New sheet here</span></button>` : ''}
           <figure class="rv-page">${p.pdf ? `<div class="pdf">PDF<br><small>${g.pdfPages} pages</small></div>` : `<img src="${p.url}" alt="">`}
             <figcaption>${esc(p.name)}</figcaption>
-            <button class="rv-x" data-act="drop" data-p="${pi}" aria-label="Remove page">${icon('close')}</button></figure>`).join('')}
+            <button class="rv-x" data-act="drop" data-p="${pi}" aria-label="Remove page">Remove</button></figure>`).join('')}
         </div>
         <div class="rv-tags"><span class="muted">Tags</span> <span class="rv-tagslot"></span></div>
       </section>`).join('');
@@ -144,7 +144,7 @@ const chordState = { q: '', src: 'auto', picked: null };
 
 export function addChordsView(main) {
   main.innerHTML = `
-    <header class="top"><a class="icon-btn back" href="#/library" aria-label="Back">${icon('back')}</a><h1>Add chords</h1></header>
+    <header class="top"><a class="icon-btn back" href="#/library" aria-label="Back">‹ Back</a><h1>Add chords</h1></header>
     <div class="split-pane">
       <div class="pane-l">
         <form class="pad" id="cs-form">
@@ -175,7 +175,7 @@ export function addChordsView(main) {
     const ul = $('#cs-results', main);
     if (!chordState.q.trim()) { ul.innerHTML = `<li class="muted pad">Try “grace”, “danny”, “cò lả” or “clementine”.</li>`; return; }
     ul.innerHTML = r.length ? r.map((c, i) => `<li class="row" data-i="${all.indexOf(c)}">
-        <span class="thumb t-chords">${icon('chords')}</span>
+        <span class="thumb t-chords">${esc(c.key)}</span>
         <div class="row-main"><div class="row-title">${esc(c.title)}</div>
         <div class="row-sub"><span>${esc(c.artist)}</span><span class="dot">·</span><span>${c.source === 'hopamchuan' ? 'Hợp Âm Chuẩn' : 'Ultimate Guitar'}</span><span class="dot">·</span><span>Key ${c.key}</span></div></div>
         ${inLib.has(fold(c.title)) ? '<span class="pill">In library</span>' : ''}</li>`).join('')
@@ -234,7 +234,7 @@ export const STAGES = ['Download audio', 'Separate voice and instruments', 'Find
 export function addScoreView(main) {
   const f = { src: 'yt', output: 'Piano', method: 'Direct transcription' };
   main.innerHTML = `
-    <header class="top"><a class="icon-btn back" href="#/library" aria-label="Back">${icon('back')}</a><h1>Make a score from a recording</h1></header>
+    <header class="top"><a class="icon-btn back" href="#/library" aria-label="Back">‹ Back</a><h1>Make a score from a recording</h1></header>
     <form class="pad narrow form" id="sf">
       <div class="seg" id="sf-src"><button type="button" data-s="yt" class="on">${icon('link')}YouTube link</button><button type="button" data-s="file">${icon('upload')}Audio file</button></div>
       <div id="sf-yt"><input id="sf-url" type="url" placeholder="https://www.youtube.com/watch?v=…" aria-label="YouTube link"></div>
@@ -271,7 +271,7 @@ export function jobsView(main) {
     $('#jobs', main).innerHTML = jobs.length ? jobs.map((j) => `
       <section class="job ${j.status}">
         <div class="job-head"><div><b>${esc(j.title)}</b><small>${esc(j.source)} · ${esc(j.output)} · ${esc(j.method)}</small></div>
-          ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : j.status === 'done' ? `<a class="btn primary" href="#/item/${j.itemId}">Open score</a><button data-dismiss="${j.id}" aria-label="Dismiss">${icon('close')}</button>` : `<button data-dismiss="${j.id}">Dismiss</button>`}</div>
+          ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : j.status === 'done' ? `<a class="btn primary" href="#/item/${j.itemId}">Open score</a><button data-dismiss="${j.id}" aria-label="Dismiss">Dismiss</button>` : `<button data-dismiss="${j.id}">Dismiss</button>`}</div>
         <ol class="stages">${STAGES.map((s, i) => `<li class="${i < j.stage || j.status === 'done' ? 'done' : i === j.stage && j.status === 'running' ? 'now' : ''}">${i < j.stage || j.status === 'done' ? icon('check') : ''}<span>${s}</span>${i === j.stage && j.status === 'running' ? `<progress max="1" value="${j.progress}"></progress>` : ''}</li>`).join('')}</ol>
         <small class="muted">${j.status === 'running' ? `Started ${ago(j.startedAt)}` : j.status === 'done' ? `Finished ${ago(j.doneAt)}` : 'Cancelled'}</small>
       </section>`).join('') : `<div class="empty">${CAT}<p>No transcriptions yet.</p><a class="btn primary" href="#/add-score">Make a score from a recording</a></div>`;

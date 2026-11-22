@@ -25,13 +25,13 @@ export function libraryView(main, { q }) {
     <header class="top">
       <h1>${kind ? KIND[kind].plural : 'All music'}</h1>
       <label class="search">${icon('search')}<input type="search" id="lib-q" placeholder="Search titles, artists, tags" value="${esc(state.q)}" aria-label="Search"></label>
-      <button class="icon-btn" id="lib-select" title="Select">${icon('select')}<span class="hide-s">Select</span></button>
+      <button class="icon-btn" id="lib-select" title="Select">${icon('select')}<span>Select</span></button>
       <button class="primary hide-phone" id="lib-add">${icon('plus')}Add</button>
     </header>
     <div class="filters">
       <div class="seg" role="tablist">${[['', 'All'], ['sheet', 'Sheets'], ['chords', 'Chords'], ['score', 'Scores']].map(([k, l]) =>
         `<button role="tab" class="${kind === k ? 'on' : ''}" data-kind="${k}">${k ? icon(KIND[k].icon) : ''}${l}</button>`).join('')}</div>
-      <button class="chip-btn ${tag ? 'on' : ''}" id="lib-tag">${icon('tag')}${tag ? esc(tag) : 'Any tag'}${tag ? `<span class="x" id="lib-tag-x" aria-label="Clear tag">${icon('close')}</span>` : ''}</button>
+      <button class="chip-btn ${tag ? 'on' : ''}" id="lib-tag">${icon('tag')}${tag ? esc(tag) : 'Any tag'}${tag ? `<span class="x" id="lib-tag-x" aria-label="Clear tag">×</span>` : ''}</button>
       ${tag ? `<button class="icon-btn" id="lib-perform">${icon('perform')}<span>Play all</span></button><a class="icon-btn btn" href="#/print?tag=${encodeURIComponent(tag)}">${icon('print')}<span>Print all</span></a>` : ''}
       <span class="grow"></span>
       <label class="sort">Sort <select id="lib-sort">${Object.entries(SORTS).map(([k, [l]]) => `<option value="${k}" ${state.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
@@ -59,7 +59,7 @@ export function libraryView(main, { q }) {
             ${it.tags.length ? `<div class="row-tags">${it.tags.slice(0, 4).map((t) => `<span class="tagchip">${esc(t)}</span>`).join('')}${it.tags.length > 4 ? `<span class="tagchip more">+${it.tags.length - 4}</span>` : ''}</div>` : ''}
           </div>
           <div class="row-when hide-s">${state.sort === 'most' ? `${store.playCount(it.id)} plays` : state.sort === 'played' ? ago(store.lastPlayed(it.id)) : ago(it.createdAt)}</div>
-          ${state.select ? '' : `<button class="icon-btn row-more" aria-label="More for ${esc(it.title)}">${icon('more')}</button>`}
+          ${state.select ? '' : `<button class="icon-btn row-more" aria-label="More for ${esc(it.title)}">More</button>`}
         </li>`).join('') +
         (list.length > state.shown ? `<li class="more-row"><button id="lib-more">Show ${Math.min(PAGE, list.length - state.shown)} more of ${list.length - state.shown}</button></li>` : '') +
         `<li class="count-row">${list.length} item${list.length === 1 ? '' : 's'}</li>`;
@@ -74,9 +74,9 @@ export function libraryView(main, { q }) {
     if (!state.select) return;
     const ids = [...state.sel];
     bar.innerHTML = `<button id="sb-all">${state.sel.size === list.length ? 'None' : 'All'}</button><b>${ids.length} selected</b><span class="grow"></span>
-      <button ${ids.length ? '' : 'disabled'} id="sb-tag">${icon('tag')}<span class="hide-s">Tags</span></button>
-      <button ${ids.length ? '' : 'disabled'} id="sb-print">${icon('print')}<span class="hide-s">Print</span></button>
-      <button ${ids.length ? '' : 'disabled'} class="danger-text" id="sb-bin">${icon('bin')}<span class="hide-s">Bin</span></button>
+      <button ${ids.length ? '' : 'disabled'} id="sb-tag">${icon('tag')}<span>Tags</span></button>
+      <button ${ids.length ? '' : 'disabled'} id="sb-print">${icon('print')}<span>Print</span></button>
+      <button ${ids.length ? '' : 'disabled'} class="danger-text" id="sb-bin">${icon('bin')}<span>Bin</span></button>
       <button class="primary" id="sb-done">Done</button>`;
     $('#sb-all', bar).onclick = () => { if (state.sel.size === list.length) state.sel.clear(); else list.forEach((x) => state.sel.add(x.id)); draw(); };
     $('#sb-tag', bar).onclick = () => editTags(ids);

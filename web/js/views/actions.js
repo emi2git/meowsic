@@ -9,7 +9,7 @@ export function thumbHtml(it) {
     const src = it.upload ? store.sessionImage(`${it.id}:1`) || sheetUrl(it.title, 1, it.pages) : sheetUrl(it.title, 1, it.pages, { artist: it.artist });
     return `<span class="thumb t-sheet"><img src="${src}" alt="" loading="lazy"></span>`;
   }
-  return `<span class="thumb t-${it.kind}">${icon(KIND[it.kind].icon)}</span>`;
+  return `<span class="thumb t-${it.kind}">${esc(String(it.key).split(' ')[0])}</span>`;
 }
 
 export function metaText(it) {

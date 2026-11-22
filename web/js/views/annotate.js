@@ -99,8 +99,8 @@ export function inkToolbar(onTool, onAction, initial = 'red') {
   bar.className = 'inkbar';
   bar.innerHTML = Object.entries(TOOLS).map(([k, t]) =>
     `<button data-tool="${k}" class="${k === initial ? 'on' : ''}" title="${k === 'eraser' ? 'Eraser' : k === 'yellow' || k === 'green' ? 'Highlighter' : 'Pen'}">${
-      k === 'eraser' ? icon('eraser') : `<span class="swatch ${k === 'yellow' || k === 'green' ? 'hl' : ''}" style="background:${t.color}"></span>`}</button>`).join('') +
-    `<span class="sep"></span><button data-act="undo" title="Undo">${icon('undo')}</button><button data-act="clear">Clear page</button><button data-act="done" class="primary">Done</button>`;
+      k === 'eraser' ? 'Eraser' : `<span class="swatch ${k === 'yellow' || k === 'green' ? 'hl' : ''}" style="background:${t.color}"></span>`}</button>`).join('') +
+    `<span class="sep"></span><button data-act="undo" title="Undo">Undo</button><button data-act="clear">Clear page</button><button data-act="done" class="primary">Done</button>`;
   bar.onclick = (e) => {
     const t = e.target.closest('[data-tool]');
     if (t) { bar.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b === t)); onTool(t.dataset.tool); return; }

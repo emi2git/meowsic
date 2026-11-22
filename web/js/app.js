@@ -49,7 +49,7 @@ export function renderSide() {
   const on = (cond) => (cond ? ' on' : '');
   const running = store.jobs().filter((j) => j.status === 'running').length;
   $('#side').innerHTML = `
-    <a class="brand" href="#/library">${CAT}<span><b>Meowsic</b><small>2.0</small></span></a>
+    <a class="brand" href="#/library"><span><b>Meowsic</b><small>2.0</small></span></a>
     <button class="add-btn primary" id="side-add">${icon('plus')}Add music</button>
     <nav aria-label="Library">
       <a class="nav${on(kind === '')}" href="#/library">${icon('library')}<span>All music</span><i>${items.length}</i></a>
@@ -68,7 +68,7 @@ export function renderSide() {
   $('#tabbar').innerHTML =
     tab('#/library', 'library', 'Library', v === 'library' || v === 'item') +
     tab('#/tags', 'tag', 'Tags', v === 'tags') +
-    `<button id="tab-add" class="tab-add" aria-label="Add music">${icon('plus')}</button>` +
+    `<button id="tab-add" class="tab-add" aria-label="Add music">Add</button>` +
     tab('#/stats', 'stats', 'Stats', v === 'stats') +
     `<button id="tab-more" class="${['bin', 'settings', 'jobs', 'print'].includes(v) ? 'on' : ''}">${icon('more')}<span>More</span></button>`;
   $('#tab-add').onclick = (e) => addMenu(e.currentTarget);

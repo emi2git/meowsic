@@ -3,8 +3,8 @@
   "short_name": "Meowsic",
   "start_url": "./#/library",
   "display": "standalone",
-  "background_color": "#fff7ec",
-  "theme_color": "#f08c3a",
+  "background_color": "#ffffff",
+  "theme_color": "#0a66d8",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
     { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" },

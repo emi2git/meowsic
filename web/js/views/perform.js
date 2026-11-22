@@ -21,9 +21,9 @@ export function performView(main, { parts, q }) {
         <button class="icon-btn" id="pf-exit" aria-label="Exit performance mode">${icon('close')}<span>Exit</span></button>
         <div class="pf-title"><b>${esc(it.title)}</b>${set ? `<small>${esc(set.name)} · ${idx + 1} of ${ids.length}</small>` : ''}<small id="pf-page"></small></div>
         <div class="pf-ctl" id="pf-ctl"></div>
-        ${set ? `<button class="icon-btn" id="pf-prev" ${idx ? '' : 'disabled'} aria-label="Previous song">${icon('left')}</button><button class="icon-btn" id="pf-next" ${idx < ids.length - 1 ? '' : 'disabled'} aria-label="Next song">${icon('right')}</button>` : ''}
+        ${set ? `<button class="icon-btn" id="pf-prev" ${idx ? '' : 'disabled'} aria-label="Previous song">‹ Previous</button><button class="icon-btn" id="pf-next" ${idx < ids.length - 1 ? '' : 'disabled'} aria-label="Next song">Next ›</button>` : ''}
       </div>
-      <button class="pf-handle" id="pf-handle" aria-label="Show controls">${icon('more')}</button>
+      <button class="pf-handle" id="pf-handle" aria-label="Show controls">Controls</button>
       <div class="scroll-host pf-body" id="pf-body"></div>
     </div>`;
 
@@ -34,7 +34,7 @@ export function performView(main, { parts, q }) {
   if (it.kind === 'sheet') {
     view = sheetBody(body, it, { perform: true, onEnd: nextItem });
     $('#pf', main).addEventListener('pagechange', (e) => ($('#pf-page', main).textContent = `Page ${e.detail.show.join('–')} of ${e.detail.pages}`));
-    ctl.innerHTML = `<button class="icon-btn" id="pf-spread">${icon('library')}<span>${view.spread ? '2 pages' : '1 page'}</span></button><button class="icon-btn" id="pf-ink">${icon('pen')}</button>`;
+    ctl.innerHTML = `<button class="icon-btn" id="pf-spread">${icon('library')}<span>${view.spread ? '2 pages' : '1 page'}</span></button><button class="icon-btn" id="pf-ink">Annotate</button>`;
     $('#pf-spread', ctl).onclick = (e) => { view.setSpread(!view.spread); e.currentTarget.querySelector('span').textContent = view.spread ? '2 pages' : '1 page'; };
     $('#pf-ink', ctl).onclick = () => startInk(view, $('#pf', main));
     view.goTo(1);
@@ -45,7 +45,7 @@ export function performView(main, { parts, q }) {
     ctl.innerHTML = `<button class="icon-btn" id="pf-scroll">${icon('play')}<span>Auto-scroll</span></button>
       <div class="stepper"><button id="pf-slow" aria-label="Slower">−</button><span id="pf-speed">off</span><button id="pf-fast" aria-label="Faster">+</button></div>
       <div class="stepper"><button id="pf-sm">A−</button><button id="pf-lg">A+</button></div>`;
-    const setS = (i) => { si = Math.max(0, Math.min(speeds.length - 1, i)); view.setSpeed(speeds[si]); $('#pf-speed', ctl).textContent = si ? `${speeds[si]}×` : 'off'; $('#pf-scroll', ctl).innerHTML = `${icon(si ? 'pause' : 'play')}<span>Auto-scroll</span>`; };
+    const setS = (i) => { si = Math.max(0, Math.min(speeds.length - 1, i)); view.setSpeed(speeds[si]); $('#pf-speed', ctl).textContent = si ? `${speeds[si]}×` : 'off'; $('#pf-scroll', ctl).innerHTML = `<span>${si ? 'Stop scrolling' : 'Auto-scroll'}</span>`; };
     $('#pf-scroll', ctl).onclick = () => setS(si ? 0 : 2);
     $('#pf-slow', ctl).onclick = () => setS(si - 1);
     $('#pf-fast', ctl).onclick = () => setS(si + 1);
@@ -61,7 +61,7 @@ export function performView(main, { parts, q }) {
     view = scoreBody(body, it, { perform: true });
     ctl.innerHTML = `<button class="icon-btn" id="pf-play">${icon('play')}<span>Play</span></button>`;
     const pb = $('#pf-play', ctl);
-    const setP = () => (pb.innerHTML = `${icon(view.player.playing ? 'pause' : 'play')}<span>${view.player.playing ? 'Pause' : 'Play'}</span>`);
+    const setP = () => (pb.innerHTML = `<span>${view.player.playing ? 'Pause' : 'Play'}</span>`);
     pb.onclick = async () => { view.player.playing ? view.player.pause() : await view.player.play(); setP(); };
     $('#pf', main).addEventListener('ended', setP);
   }

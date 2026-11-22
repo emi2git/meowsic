@@ -44,13 +44,12 @@ function pageHtml(pg, full) {
   return `<div class="pp chordpage"><div class="frame">
       ${page === 1 ? `<h1>${esc(it.title)}</h1><p class="meta">${esc(it.artist || '')}</p>` : `<p class="meta">${esc(it.title)} (${page}/${of})</p>`}
       <div class="diagrams">${diagramsHtml(it)}</div>
-      ${full || page === 1 ? `<div class="lyrics">${linesHtml(it)}</div>` : '<div class="lyrics muted">…</div>'}
-      <span class="pcat">${CAT}</span></div></div>`;
+      ${full || page === 1 ? `<div class="lyrics">${linesHtml(it)}</div>` : '<div class="lyrics muted">…</div>'}</div></div>`;
 }
 
 export function printView(main, { q }) {
   const src = sourceOf(q);
-  main.innerHTML = `<header class="top"><button class="icon-btn back" onclick="history.back()" aria-label="Back">${icon('back')}</button><h1>Print · ${esc(src.name)}</h1><span class="grow"></span>
+  main.innerHTML = `<header class="top"><button class="icon-btn back" onclick="history.back()" aria-label="Back">‹ Back</button><h1>Print · ${esc(src.name)}</h1><span class="grow"></span>
       <button class="primary" id="pr-go">${icon('print')}Print</button></header>
     <div class="toolbar">
       <label class="ctl">Paper <select id="pr-paper"><option ${opts.paper === 'A4' ? 'selected' : ''}>A4</option><option ${opts.paper === 'Letter' ? 'selected' : ''}>Letter</option></select></label>

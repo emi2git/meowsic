@@ -51,16 +51,11 @@ const P = {
   restore: '<path d="M3 12a9 9 0 109-9 9 9 0 00-7 3.3M3 3v4h4"/>',
   paw: '<ellipse cx="12" cy="16" rx="4.5" ry="3.8" fill="currentColor"/><circle cx="6" cy="10" r="2" fill="currentColor"/><circle cx="10" cy="6.5" r="2" fill="currentColor"/><circle cx="14" cy="6.5" r="2" fill="currentColor"/><circle cx="18" cy="10" r="2" fill="currentColor"/>',
 };
-export const icon = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[name] || ''}</svg>`;
+// Icons are switched off for now (user request); every control carries a text label instead.
+export const ICONS_ON = false;
+export const icon = (name, cls = '') => (ICONS_ON ? `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[name] || ''}</svg>` : '');
 
-export const CAT = `<svg class="cat" viewBox="0 0 64 64" aria-hidden="true">
-  <path d="M10 26 L12 6 L26 18 Q32 16 38 18 L52 6 L54 26 Q58 34 54 44 Q46 58 32 58 Q18 58 10 44 Q6 34 10 26Z" class="cat-face"/>
-  <path d="M15 12 L16 22 L22 18Z M49 12 L48 22 L42 18Z" class="cat-ear"/>
-  <ellipse cx="23" cy="34" rx="3.2" ry="4.2" class="cat-eye"/><ellipse cx="41" cy="34" rx="3.2" ry="4.2" class="cat-eye"/>
-  <path d="M29 42 L35 42 L32 45Z" class="cat-nose"/>
-  <path d="M32 45 Q29 49 25 47 M32 45 Q35 49 39 47" class="cat-line"/>
-  <path d="M6 38 L20 40 M6 44 L20 43 M58 38 L44 40 M58 44 L44 43" class="cat-line"/>
-  <path d="M40 6 q3 -4 6 0 M43 3 v6" class="cat-note"/></svg>`;
+export const CAT = ''; // mascot removed for now
 
 export const KIND = {
   sheet: { label: 'Sheet', plural: 'Sheets', icon: 'sheet' },

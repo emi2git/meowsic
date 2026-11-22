@@ -12,7 +12,7 @@ export function tagsView(main) {
     const counts = store.tagCounts();
     const tags = [...store.db.tags].sort((a, b) => (counts.get(b) || 0) - (counts.get(a) || 0) || a.localeCompare(b));
     $('#tg', main).innerHTML = tags.map((t) => `<div class="tag-card"><a href="#/library?tag=${encodeURIComponent(t)}"><b>${esc(t)}</b><span>${counts.get(t) || 0}</span></a>
-      <button class="icon-btn" data-t="${esc(t)}" aria-label="More for ${esc(t)}">${icon('more')}</button></div>`).join('');
+      <button class="icon-btn" data-t="${esc(t)}" aria-label="More for ${esc(t)}">More</button></div>`).join('');
   };
   $('#tg', main).onclick = (e) => {
     const b = e.target.closest('[data-t]');
@@ -40,7 +40,7 @@ export function binView(main) {
     $('#bn-empty', main).disabled = !items.length;
     $('#bn', main).innerHTML = items.map((it) => `<li class="row" data-id="${it.id}">${thumbHtml(it)}
       <div class="row-main"><div class="row-title">${esc(it.title)}</div><div class="row-sub">${badge(it.kind)}<span>Deleted ${ago(it.deletedAt)}</span></div></div>
-      <button data-act="restore">${icon('restore')}<span class="hide-s">Restore</span></button><button class="danger-text" data-act="purge">${icon('bin')}<span class="hide-s">Delete</span></button></li>`).join('') ||
+      <button data-act="restore">${icon('restore')}<span>Restore</span></button><button class="danger-text" data-act="purge">${icon('bin')}<span>Delete</span></button></li>`).join('') ||
       `<li class="empty">${CAT}<p>The bin is empty.</p></li>`;
   };
   $('#bn', main).onclick = async (e) => {

@@ -128,7 +128,7 @@ export function scoreToolbar(bar, it, view) {
   bar.innerHTML = `
     <label class="ctl">Version <select id="sc-ver">${it.versions.map((v) => `<option value="${v}" ${v === view.version ? 'selected' : ''}>${VERSIONS[v]}</option>`).join('')}</select></label>
     <div class="transport">
-      <button class="play" id="sc-play" aria-label="Play">${icon('play')}</button>
+      <button class="play" id="sc-play" aria-label="Play">Play</button>
       <input type="range" id="sc-pos" min="0" max="${total}" step="0.25" value="0" aria-label="Position">
       <span class="time" id="sc-time">0:00 / ${fmt(secs(total))}</span>
     </div>
@@ -137,11 +137,11 @@ export function scoreToolbar(bar, it, view) {
     <span class="loop-bars" id="sc-loopbars" ${view.player.loop ? '' : 'hidden'}>bars <input type="number" id="sc-la" min="1" max="${bars}" value="${view.player.loop ? view.player.loop[0] / t.beats + 1 : 1}"> to <input type="number" id="sc-lb" min="1" max="${bars}" value="${view.player.loop ? view.player.loop[1] / t.beats : Math.min(4, bars)}"></span>
     <div class="stepper" aria-label="Transpose"><button id="sc-tdown" aria-label="Transpose down">♭</button><span id="sc-tval">${it.transpose ? (it.transpose > 0 ? '+' : '') + it.transpose : '0'}</span><button id="sc-tup" aria-label="Transpose up">♯</button></div>
     <div class="stepper" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out">−</button><button id="sc-zin" aria-label="Zoom in">+</button></div>
-    <button class="icon-btn" id="sc-dl" title="Download">${icon('download')}<span class="hide-s">Files</span></button>`;
+    <button class="icon-btn" id="sc-dl" title="Download">${icon('download')}<span>Files</span></button>`;
 
   const p = () => view.player;
   const playBtn = $('#sc-play', bar);
-  const setPlay = () => { playBtn.innerHTML = icon(p().playing ? 'pause' : 'play'); playBtn.setAttribute('aria-label', p().playing ? 'Pause' : 'Play'); };
+  const setPlay = () => { playBtn.textContent = p().playing ? 'Pause' : 'Play'; playBtn.setAttribute('aria-label', p().playing ? 'Pause' : 'Play'); };
   playBtn.onclick = async () => { p().playing ? p().pause() : await p().play(); setPlay(); };
   const pos = $('#sc-pos', bar), time = $('#sc-time', bar);
   const host = bar.closest('.viewer') || document;
