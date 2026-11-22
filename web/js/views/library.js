@@ -9,9 +9,14 @@ const SORTS = {
   title: ['Title A–Z', (a, b) => a.title.localeCompare(b.title)],
   played: ['Recently played', (a, b) => store.lastPlayed(b.id) - store.lastPlayed(a.id)],
   most: ['Most played', (a, b) => store.playCount(b.id) - store.playCount(a.id)],
+  artist: ['Artist A–Z', (a, b) => (a.artist || '').localeCompare(b.artist || '') || a.title.localeCompare(b.title)],
+  kind: ['Type', (a, b) => a.kind.localeCompare(b.kind) || a.title.localeCompare(b.title)],
 };
+// table columns (Mac / iPad); clicking a heading sorts, clicking it again reverses
+const COLS = [['title', 'Title'], ['artist', 'Artist'], ['kind', 'Type'], [null, 'Tags'], [null, 'Key / Pages'], ['added', 'Added']];
+const wide = () => matchMedia('(min-width: 761px)').matches;
 const PAGE = 60;
-const state = { q: '', sort: 'added', select: false, sel: new Set(), shown: PAGE, anchor: null };
+const state = { q: '', sort: 'added', dir: 1, select: false, sel: new Set(), shown: PAGE, anchor: null };
 try { state.sort = localStorage.getItem('meowsic-sort') || 'added'; } catch {}
 
 const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase();
@@ -34,14 +39,14 @@ export function libraryView(main, { q }) {
       ${tags.length > 1 ? `<button class="link clear-tags" id="lib-tags-clear">Clear all</button>` : ''}
       ${tags.length ? `<a class="icon-btn btn" href="#/print?tags=${encodeURIComponent(tags.join(','))}">Print all</a>` : ''}
       
-      <button class="chip-btn" id="lib-sort" aria-haspopup="menu">Sort: ${SORTS[state.sort][0]} ▾</button>
+      <button class="chip-btn phone-only" id="lib-sort" aria-haspopup="menu">Sort: ${SORTS[state.sort][0]} ▾</button>
     
       <label class="search">${icon('search')}<input type="search" id="lib-q" placeholder="Search titles, artists, tags" value="${esc(state.q)}" aria-label="Search"></label>
       <button class="icon-btn tag-btn ${tags.length ? 'on' : ''}" id="lib-tag" title="Filter by tag" aria-label="Filter by tag">${iconOn('tag')}</button>
       <button class="icon-btn touch-only" id="lib-select">Select</button>
     </header>
 
-    <ul class="rows" id="lib-rows"></ul>`;
+    <div id="lib-rows"></div>`;
   let shownList = [];
 
   const draw = () => {
@@ -49,14 +54,42 @@ export function libraryView(main, { q }) {
     let list = store.items().filter((it) => (!kind || it.kind === kind) && tags.every((t) => it.tags.includes(t)));
     if (words.length) list = list.filter((it) => { const hay = fold([it.title, it.artist, ...it.tags, KIND[it.kind].label].join(' ')); return words.every((w) => hay.includes(w)); });
     list.sort(SORTS[state.sort][1]);
+    if (state.dir < 0) list.reverse();
     const rows = $('#lib-rows', main);
     if (!list.length) {
-      rows.innerHTML = `<li class="empty">${CAT}<p>${state.q || tags.length ? 'No music matches.' : 'Nothing here yet.'}</p>${state.q || tags.length ? '' : '<button class="primary" id="empty-add">Add music</button>'}</li>`;
+      rows.innerHTML = `<ul class="rows"><li class="empty">${CAT}<p>${state.q || tags.length ? 'No music matches.' : 'Nothing here yet.'}</p>${state.q || tags.length ? '' : '<button class="primary" id="empty-add">Add music</button>'}</li></ul>`;
       $('#empty-add', main)?.addEventListener('click', (e) => addMenu(e.currentTarget));
     } else {
       shownList = list.slice(0, state.shown);
-      rows.classList.toggle('selecting', selecting());
-      rows.innerHTML = list.slice(0, state.shown).map((it) => `
+      const more = list.length > state.shown ? `<button id="lib-more">Show ${Math.min(PAGE, list.length - state.shown)} more of ${list.length - state.shown}</button>` : '';
+      const cnt = `${list.length} item${list.length === 1 ? '' : 's'}`;
+      if (wide()) {
+        // ▲ = A→Z / oldest first, ▼ = Z→A / newest first; Added starts newest first
+        const arrow = (k) => (state.sort !== k ? '' : (k === 'added') === (state.dir > 0) ? ' ▼' : ' ▲');
+        rows.innerHTML = `<table class="lib-table ${selecting() ? 'selecting' : ''}"><thead><tr><th class="c-pick"></th>${COLS.map(([k, l]) =>
+          `<th>${k ? `<button class="th-sort ${state.sort === k ? 'on' : ''}" data-sort="${k}">${l}${arrow(k)}</button>` : l}</th>`).join('')}<th></th></tr></thead><tbody>${shownList.map((it) => `
+          <tr class="row ${state.sel.has(it.id) ? 'sel' : ''}" data-id="${it.id}">
+            <td class="c-pick"><label class="pick" title="Select (Shift-click for a range)"><input type="checkbox" ${state.sel.has(it.id) ? 'checked' : ''} aria-label="Select ${esc(it.title)}"></label></td>
+            <td class="c-title row-title">${esc(it.title)}</td>
+            <td class="c-artist">${esc(it.artist || '')}</td>
+            <td>${badge(it.kind)}</td>
+            <td class="c-tags">${it.tags.slice(0, 3).map((t) => `<span class="tagchip">${esc(t)}</span>`).join('')}${it.tags.length > 3 ? `<span class="tagchip more">+${it.tags.length - 3}</span>` : ''}</td>
+            <td class="c-meta">${metaText(it)}</td>
+            <td class="c-when">${ago(it.createdAt)}</td>
+            <td class="c-more"><button class="icon-btn row-more" aria-label="More for ${esc(it.title)}" title="More">${iconOn('more')}</button></td>
+          </tr>`).join('')}</tbody></table><p class="count-row">${cnt} ${more}</p>`;
+        $('#lib-more', main)?.addEventListener('click', () => { state.shown += PAGE; draw(); });
+        rows.querySelectorAll('[data-sort]').forEach((b) => (b.onclick = () => {
+          const k = b.dataset.sort;
+          state.dir = state.sort === k ? -state.dir : 1;
+          state.sort = k;
+          try { localStorage.setItem('meowsic-sort', k); } catch {}
+          draw();
+        }));
+        drawSelbar(list);
+        return;
+      }
+      rows.innerHTML = `<ul class="rows ${selecting() ? 'selecting' : ''}">` + list.slice(0, state.shown).map((it) => `
         <li class="row ${state.sel.has(it.id) ? 'sel' : ''}" data-id="${it.id}">
           <label class="pick" title="Select (Shift-click for a range)"><input type="checkbox" ${state.sel.has(it.id) ? 'checked' : ''} aria-label="Select ${esc(it.title)}"></label>
           ${thumbHtml(it)}
@@ -68,8 +101,8 @@ export function libraryView(main, { q }) {
           <div class="row-when hide-s">${state.sort === 'most' ? `${store.playCount(it.id)} plays` : state.sort === 'played' ? ago(store.lastPlayed(it.id)) : ago(it.createdAt)}</div>
           <button class="icon-btn row-more" aria-label="More for ${esc(it.title)}" title="More">${iconOn('more')}</button>
         </li>`).join('') +
-        (list.length > state.shown ? `<li class="more-row"><button id="lib-more">Show ${Math.min(PAGE, list.length - state.shown)} more of ${list.length - state.shown}</button></li>` : '') +
-        `<li class="count-row">${list.length} item${list.length === 1 ? '' : 's'}</li>`;
+        (more ? `<li class="more-row">${more}</li>` : '') +
+        `<li class="count-row">${cnt}</li></ul>`;
       $('#lib-more', main)?.addEventListener('click', () => { state.shown += PAGE; draw(); });
     }
     drawSelbar(list);
@@ -118,7 +151,7 @@ export function libraryView(main, { q }) {
   $('#lib-tags-clear', main)?.addEventListener('click', () => setTags([]));
   $('#lib-sort', main).onclick = (e) => menu(e.currentTarget, Object.entries(SORTS).map(([k, [l]]) => ({
     label: (state.sort === k ? '✓ ' : '   ') + l,
-    run: () => { state.sort = k; try { localStorage.setItem('meowsic-sort', k); } catch {} $('#lib-sort', main).textContent = `Sort: ${l} ▾`; draw(); },
+    run: () => { state.sort = k; state.dir = 1; try { localStorage.setItem('meowsic-sort', k); } catch {} $('#lib-sort', main).textContent = `Sort: ${l} ▾`; draw(); },
   })));
   $('#lib-q', main).oninput = (e) => { state.q = e.target.value; state.shown = PAGE; draw(); };
   $('#lib-select', main).onclick = () => { state.select = true; draw(); };
@@ -150,8 +183,10 @@ export function libraryView(main, { q }) {
   };
   document.addEventListener('keydown', onKey);
   draw();
+  const mq = matchMedia('(min-width: 761px)');
+  mq.addEventListener('change', draw);
   const off = store.on(draw);
-  return () => { off(); document.removeEventListener('keydown', onKey); };
+  return () => { off(); mq.removeEventListener('change', draw); document.removeEventListener('keydown', onKey); };
 }
 
 // tag filter: a list of checkboxes that stays open while you tick; live counts; Clear all
