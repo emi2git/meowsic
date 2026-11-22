@@ -15,3 +15,16 @@ Researched 2026-11-22. Current = what Emi Music Note uses today. Test each candi
 | Lyrics | mlx-whisper large-v3-turbo | — | |
 
 Sources: arXiv 2610.29222 (transkun SOTA), 2605.24291 (Rubato), 2310.01809 (Mel-Band RoFormer), 2409.04702 (Mel-RoFormer vocal melody), 2511.16228 (difficulty simplification), 2211.00895 (Pop2Piano), 2509.16522 (Etude), 2512.22621 (chord recognition review), 2506.19065 / 2607.05769 (LEGATO).
+
+## Test recordings (from the user, 2026-11-22)
+
+Use these when comparing models side by side.
+
+| # | Link | What it is |
+|---|---|---|
+| 1 | https://www.youtube.com/watch?v=b5qFDGFqiUA | Vocals + piano |
+| 2 | https://www.youtube.com/watch?v=-gY_3HaIK44 | Piano |
+| 3 | https://www.facebook.com/reel/1048625037748000 | Piano |
+| 4 | https://www.facebook.com/reel/1477861190079337 | Live recording; long to fetch |
+
+Notes: YouTube links are trimmed to the video (playlist/radio parameters dropped). Facebook reels need a downloader that supports Facebook (yt-dlp does).
