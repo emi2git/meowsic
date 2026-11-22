@@ -2,7 +2,7 @@
 import { store } from '../store.js';
 import { $, esc, icon, iconOn, badge, ago, mins, CAT } from '../ui.js';
 import { go } from '../app.js';
-import { itemMenu, editTags, rename, metaText, songIcon } from './actions.js';
+import { itemMenu, editTags, rename, metaText } from './actions.js';
 import { sheetBody, sheetToolbar, sheetExtraMenu, startInk } from './sheet.js';
 import { chordsBody, chordsToolbar } from './chordsview.js';
 import { scoreBody, scoreToolbar, scoreExportMenu, scoreTools } from './score.js';
@@ -18,7 +18,7 @@ export function itemView(main, { parts }) {
     <div class="viewer k-${it.kind}">
       <header class="top item-top">
         <a class="icon-btn back" href="${back}" aria-label="Back">‹ Back</a>
-        ${songIcon(it)}<h1 class="item-title" id="it-title" title="${esc(it.title)}${it.artist ? ' — ' + esc(it.artist) : ''} (tap to rename)">${esc(it.title)}</h1>
+        <h1 class="item-title" id="it-title" title="${esc(it.title)}${it.artist ? ' — ' + esc(it.artist) : ''} (tap to rename)">${esc(it.title)}</h1>
         <div class="toolbar inline" id="it-bar"></div>
         ${document.fullscreenEnabled || document.webkitFullscreenEnabled ? `<button class="icon-btn" id="it-full" aria-label="Full screen" title="Full screen">${iconOn('perform')}</button>` : ''}
         <button class="icon-btn" id="it-more" aria-label="More" title="More">${iconOn('more')}</button>

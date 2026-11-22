@@ -21,7 +21,14 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
 `;
 
   // two pages side by side only in a Mac browser (mouse / trackpad and a wide window); iPad and iPhone show one
-  const twoUp = () => it.pages > 1 && matchMedia('(pointer: fine)').matches && root.clientWidth > 900;
+  const pages = $('#pages', root);
+  // zoom steps: on a Mac browser the first step is two pages side by side; then one page fitted
+  // to the screen; then bigger, and the page scrolls. iPad / iPhone start at one page.
+  const canTwo = () => it.pages > 1 && matchMedia('(pointer: fine)').matches && root.clientWidth > 900;
+  const levels = () => (canTwo() ? ['two', 1, 1.5, 2, 3] : [1, 1.5, 2, 3]);
+  let zoom = it.zoom ?? levels()[0];
+  if (!levels().includes(zoom)) zoom = levels()[0];
+  const twoUp = () => zoom === 'two' && canTwo();
 
   const draw = () => {
     if (twoUp() && page % 2 === 0) page--;
@@ -29,6 +36,9 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
     layers = [];
     const show = twoUp() ? [page, page + 1].filter((p) => p <= it.pages) : [page];
     const row = $('#page-row', root);
+    const big = typeof zoom === 'number' && zoom > 1;
+    pages.classList.toggle('zoomed', big);
+    row.style.height = big ? `${zoom * 100}%` : '';
     row.innerHTML = show.map((p) => `<div class="page" data-p="${p}"><img src="${pageSrc(it, p)}" alt="Page ${p} of ${esc(it.title)}" draggable="false"></div>`).join('');
     row.querySelectorAll('.page').forEach((w) => {
       const img = w.querySelector('img');
@@ -49,9 +59,8 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
   $('#strip', root)?.addEventListener('click', (e) => { const b = e.target.closest('[data-p]'); if (b) { page = +b.dataset.p; draw(); } });
 
   // swipe, and in performance mode a tap on the left / right half turns the page
-  const pages = $('#pages', root);
   let sx = null, sy = 0;
-  pages.addEventListener('pointerdown', (e) => { if (tool) return; sx = e.clientX; sy = e.clientY; });
+  pages.addEventListener('pointerdown', (e) => { if (tool || pages.classList.contains('zoomed')) { sx = null; return; } sx = e.clientX; sy = e.clientY; });
   pages.addEventListener('pointerup', (e) => {
     if (sx === null || tool) return;
     const dx = e.clientX - sx, dy = e.clientY - sy;
@@ -78,6 +87,16 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
     undo() { layers.at(-1)?.undo(); },
     clear() { layers.forEach((l) => l.clear()); },
     goTo(p) { page = p; draw(); },
+    zoomBy(d) {
+      const L = levels();
+      const i = Math.max(0, Math.min(L.length - 1, L.indexOf(zoom) + d));
+      if (L[i] === zoom) return;
+      zoom = L[i];
+      store.update(it.id, { zoom });
+      pages.scrollTo({ top: 0, left: 0 });
+      draw();
+    },
+    get zoomLabel() { return zoom === 'two' ? '2 pages' : zoom === 1 ? 'Fit' : `${Math.round(zoom * 100)}%`; },
     destroy() { document.removeEventListener('keydown', onKey); ro.disconnect(); layers.forEach((l) => l.destroy()); },
   };
 }
@@ -85,8 +104,11 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
 export function sheetToolbar(bar, it, view) {
   bar.innerHTML = `
     <span class="pageno" id="pageno"></span>
+    <div class="stepper zoom" aria-label="Zoom"><button id="sv-zout" aria-label="Zoom out" title="Zoom out">${iconOn('zoomout')}</button><button id="sv-zin" aria-label="Zoom in" title="Zoom in">${iconOn('zoomin')}</button></div>
     <button class="icon-btn ink-toggle" id="sv-ink" title="Annotate" aria-label="Annotate">${iconOn('write')}</button>`;
   $('#sv-ink', bar).onclick = () => startInk(view, document.querySelector('.viewer'));
+  $('#sv-zout', bar).onclick = () => view.zoomBy(-1);
+  $('#sv-zin', bar).onclick = () => view.zoomBy(1);
 }
 
 // the Annotate button toggles: first click opens the pen bar, second click closes it

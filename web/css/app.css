@@ -655,8 +655,10 @@ p.count-row { text-align: center; }
 }
 @media (pointer: coarse) { .lib-table:not(.selecting) .c-pick { display: none; } }
 
-/* song icons (Phosphor, MIT) drawn in the theme colour */
-.song-ic { display: inline-block; width: 20px; height: 20px; margin-right: 10px; vertical-align: -4px; flex: none; background: var(--acc); -webkit-mask: var(--ic) center / contain no-repeat; mask: var(--ic) center / contain no-repeat; }
-.item-top .song-ic { margin-right: 0; width: 22px; height: 22px; }
 .fun ul { margin: 0; padding-left: 20px; line-height: 1.8; }
 .fun b { color: var(--acc-text); }
+
+/* sheet zoom: bigger than the screen scrolls in both directions */
+.pages.zoomed { overflow: auto; align-items: flex-start; justify-content: flex-start; padding: 8px; touch-action: pan-x pan-y pinch-zoom; }
+.pages.zoomed .page-row { margin: 0 auto; }
+.pages.zoomed .page { max-width: none; }

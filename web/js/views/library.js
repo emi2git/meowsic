@@ -2,7 +2,7 @@
 import { store } from '../store.js';
 import { $, esc, icon, iconOn, badge, ago, menu, KIND, CAT } from '../ui.js';
 import { go, addMenu } from '../app.js';
-import { thumbHtml, metaText, itemMenu, editTags, binItems, songIcon } from './actions.js';
+import { thumbHtml, metaText, itemMenu, editTags, binItems } from './actions.js';
 
 const SORTS = {
   added: ['Recently added', (a, b) => b.createdAt - a.createdAt],
@@ -70,7 +70,7 @@ export function libraryView(main, { q }) {
           `<th>${k ? `<button class="th-sort ${state.sort === k ? 'on' : ''}" data-sort="${k}">${l}${arrow(k)}</button>` : l}</th>`).join('')}<th></th></tr></thead><tbody>${shownList.map((it) => `
           <tr class="row ${state.sel.has(it.id) ? 'sel' : ''}" data-id="${it.id}">
             <td class="c-pick"><label class="pick" title="Select (Shift-click for a range)"><input type="checkbox" ${state.sel.has(it.id) ? 'checked' : ''} aria-label="Select ${esc(it.title)}"></label></td>
-            <td class="c-title row-title">${songIcon(it)}${esc(it.title)}</td>
+            <td class="c-title row-title">${esc(it.title)}</td>
             <td class="c-artist">${esc(it.artist || '')}</td>
             <td>${badge(it.kind)}</td>
             <td class="c-tags">${it.tags.slice(0, 3).map((t) => `<span class="tagchip">${esc(t)}</span>`).join('')}${it.tags.length > 3 ? `<span class="tagchip more">+${it.tags.length - 3}</span>` : ''}</td>

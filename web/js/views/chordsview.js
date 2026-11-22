@@ -1,7 +1,7 @@
 // Chord chart viewer: easiest-key default, key list with original marked, ukulele diagrams
 // pinned at the top, text size, auto-scroll (used in performance mode).
 import { store } from '../store.js';
-import { $, esc, icon } from '../ui.js';
+import { $, esc, icon, iconOn } from '../ui.js';
 import { keyInfo, keyAt, STEPS, linesHtml, diagramsHtml } from '../chordchart.js';
 
 let size = 18;
@@ -55,7 +55,7 @@ export function keySelect(it) {
 export function chordsToolbar(bar, it, view) {
   const drawBar = () => {
     bar.innerHTML = `${keySelect(it)}
-      <div class="stepper" aria-label="Text size"><button id="cv-sm" aria-label="Smaller text">A−</button><button id="cv-lg" aria-label="Larger text">A+</button></div>`;
+      <div class="stepper" aria-label="Text size"><button id="cv-sm" aria-label="Smaller text" title="Smaller">${iconOn('zoomout')}</button><button id="cv-lg" aria-label="Larger text" title="Larger">${iconOn('zoomin')}</button></div>`;
     $('#cv-key', bar).onchange = (e) => store.update(it.id, { transpose: +e.target.value });
     $('#cv-sm', bar).onclick = () => view.setSize(view.size - 2);
     $('#cv-lg', bar).onclick = () => view.setSize(view.size + 2);
