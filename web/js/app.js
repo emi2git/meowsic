@@ -101,6 +101,8 @@ applyTheme();
 // re-render the side when data changes; views subscribe themselves
 store.on(() => renderSide());
 addEventListener('hashchange', route);
+// new scores from a finished job → offer tags for review
+addEventListener('meowsic-new-items', (e) => { if (e.detail?.length) import('./views/autotag.js').then((m) => m.autoTag(e.detail, { quiet: true })); });
 route();
 
 // mock transcription progress: advance running jobs while the app is open

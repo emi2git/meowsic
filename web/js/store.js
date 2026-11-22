@@ -215,7 +215,9 @@ export const store = {
     const wasRunning = new Set(db.jobs.filter((x) => x.status === 'running' || x.status === 'queued').map((x) => x.id));
     db.jobs = j;
     // a job just finished: its new scores are on the Mac — pull them into the library
-    if (j.some((x) => wasRunning.has(x.id) && x.status === 'done')) {
+    const finished = j.filter((x) => wasRunning.has(x.id) && x.status === 'done');
+    if (finished.length) dispatchEvent(new CustomEvent('meowsic-new-items', { detail: finished.flatMap((x) => x.result || []) }));
+    if (finished.length) {
       const items = await api('GET', '/items', undefined, { queue: false });
       if (items) { for (const it of items) this.putItem(it); }
     }

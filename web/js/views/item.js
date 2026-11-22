@@ -3,6 +3,7 @@ import { store } from '../store.js';
 import { $, esc, icon, iconOn, badge, ago, mins, CAT } from '../ui.js';
 import { go } from '../app.js';
 import { itemMenu, editTags, rename, metaText } from './actions.js';
+import { autoTag } from './autotag.js';
 import { sheetBody, sheetToolbar, sheetExtraMenu, startInk } from './sheet.js';
 import { chordsBody, chordsToolbar } from './chordsview.js';
 import { scoreBody, scoreToolbar, scoreExportMenu, scoreTools } from './score.js';
@@ -91,7 +92,7 @@ export function itemView(main, { parts }) {
   $('#it-title', main).onclick = () => rename(it.id);
   $('#it-more', main).onclick = (e) => itemMenu(e.currentTarget, it.id, {
     viewer: true, info: toggleDetails,
-    tools: it.kind === 'sheet' ? sheetExtraMenu(it, view) : it.kind === 'score' ? scoreTools(it, view) : [],
+    tools: [...(store.mode === 'server' ? [{ label: 'Auto-tag…', icon: 'tag', run: () => autoTag([it.id]) }] : []), ...(it.kind === 'sheet' ? sheetExtraMenu(it, view) : it.kind === 'score' ? scoreTools(it, view) : [])],
     exports: it.kind === 'score' ? scoreExportMenu(it, view) : [],
   });
 

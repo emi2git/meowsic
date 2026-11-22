@@ -4,6 +4,7 @@
 import { store } from '../store.js';
 import { $, esc, toast, sheet as modal, badge } from '../ui.js';
 import { go } from '../app.js';
+import { aiCall } from './autotag.js';
 
 const OPTIONS = [
   ['work', 'Movie or musical', 'Frozen, Les Misérables, Cats…'],
@@ -73,6 +74,12 @@ export function makeTagsView(main) {
   $('#mt', main).onsubmit = (e) => {
     e.preventDefault();
     main.innerHTML = `<header class="top"><h1>Generating tags…</h1></header><div class="pad narrow center"><p id="mt-msg">Reading song titles</p><progress id="mt-p" max="1" value="0"></progress></div>`;
+    if (store.mode === 'server') { // the Mac's offline AI groups the songs
+      aiCall('/ai/collections', { scope, look: [...opts] }, (j) => { const m = $('#mt-msg', main); const b = $('#mt-p', main); if (m) m.textContent = j.log?.at(-1)?.msg || 'Working…'; if (b) b.value = j.progress || 0; })
+        .then((res) => review(main, (res.groups || []).map((g) => ({ name: g.name, why: g.why || '', ids: (g.ids || []).filter((id) => store.get(id)), on: true })).filter((g) => g.ids.length)))
+        .catch((err) => { main.innerHTML = `<header class="top"><a class="icon-btn back" href="#/make-tags">‹ Back</a><h1>Generate tags</h1></header><p class="pad">${esc(err.message)}</p>`; });
+      return;
+    }
     let p = 0;
     const t = setInterval(() => {
       p += 0.2;

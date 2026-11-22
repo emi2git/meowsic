@@ -750,3 +750,6 @@ p.count-row { text-align: center; }
 .pp.scorepage svg { width: 100%; height: 100%; display: block; }
 .pp.scorepage.loading { display: flex; align-items: center; justify-content: center; color: #999; font-size: 12px; }
 #print-root .pp.scorepage svg { width: 100%; height: 100%; }
+.at-list { display: flex; flex-direction: column; gap: 10px; max-height: 60dvh; overflow-y: auto; }
+.at-row { border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+.at-title { display: flex; flex-direction: column; margin-bottom: 6px; }

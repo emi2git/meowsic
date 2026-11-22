@@ -44,3 +44,8 @@ Next: frontend refactor (dead list-view code in library.js, shared helpers), mig
 ## 03:00 — frontend clean-up
 - Removed the dead list view from library.js (table everywhere), unused thumbHtml imports; score editor moved to views/scoreeditor.js; score.js 441 → 306 lines.
 - Tests: flows 160/160, realedit 10/10.
+
+## 03:15 — AI tagging (UI side)
+- web/js/views/autotag.js: aiCall (sync or job), Auto-tag review dialog. Wired: selection bar "Auto-tag", item ⋯ "Auto-tag…", Generate tags → POST /api/ai/collections, new sheets / chord charts / finished jobs → quiet auto-tag → "Tags found — Review".
+- Server side being built by an agent (mlx-lm, model in ~/ai/models).
+- Background loop re-running Meowsic-1 import every 20 min until the Photos originals are down (still 158 pages at 03:00).

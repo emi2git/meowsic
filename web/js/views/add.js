@@ -5,6 +5,7 @@ import { go } from '../app.js';
 import { CHORD_CHARTS, SEARCH_EXTRA, TUNES } from '../mock.js';
 import { parseChordPro, linesHtml, diagramsHtml } from '../chordchart.js';
 import { VERSIONS, VERSION_HELP } from '../musicxml.js';
+import { autoTag } from './autotag.js';
 import { keySelect } from './chordsview.js';
 import { sheetUrl } from '../sheet-art.js';
 
@@ -164,6 +165,7 @@ async function uploadSheets(main, groups) {
     } catch (e) { toast(`${g.title}: ${e.message}`); }
   }
   pending = null;
+  if (made.length) autoTag(made.map((x) => x.id), { quiet: true });
   if (made.length) store.logEvent('add-sheet', made.length > 1 ? `${made.length} sheets` : made[0].title, made.map((x) => `${x.title} (${x.pages} p)`).join(', '));
   toast(`Added ${made.length} sheet${made.length === 1 ? '' : 's'}${skipped.length ? ` · ${skipped.length} page${skipped.length > 1 ? 's' : ''} already in the library were skipped` : ''}`);
   go('#/library?kind=sheet');
@@ -256,6 +258,7 @@ async function preview(main, c) {
         url: chart.url || `https://${chart.source === 'hopamchuan' ? 'hopamchuan.com' : 'tabs.ultimate-guitar.com'}/mock/${encodeURIComponent(chart.title)}`, originAt: Date.now(), text: chart.text, transpose: chart.transpose });
       store.logEvent('add-chords', it.title, `${chart.source === 'hopamchuan' ? 'Hợp Âm Chuẩn' : 'Ultimate Guitar'} · key ${chart.key}`);
       toast(`Saved “${it.title}”`, { label: 'Open', run: () => go(`#/item/${it.id}`) });
+      setTimeout(() => autoTag([it.id], { quiet: true }), 1500);
     };
   };
   draw();

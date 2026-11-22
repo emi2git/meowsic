@@ -3,6 +3,7 @@ import { store } from '../store.js';
 import { $, esc, icon, iconOn, badge, ago, menu, KIND, CAT } from '../ui.js';
 import { go, addMenu } from '../app.js';
 import { itemMenu, editTags, binItems, keyShort } from './actions.js';
+import { autoTag } from './autotag.js';
 import { VERSIONS } from '../musicxml.js';
 
 const SORTS = {
@@ -126,6 +127,7 @@ export function libraryView(main, { q }) {
       <b class="sel-count">${n ? `${n} selected` : 'Select items'}</b>
       <span class="grow"></span>
       <button ${n ? '' : 'disabled'} id="sb-tag">Edit tags</button>
+      ${store.mode === 'server' ? `<button ${n ? '' : 'disabled'} id="sb-auto">Auto-tag</button>` : ''}
       <button ${n ? '' : 'disabled'} id="sb-print">Print</button>
       <button ${n ? '' : 'disabled'} class="danger-text" id="sb-bin">Move to Trash</button>
       <button class="icon-btn" id="sb-done">Cancel</button>`;
@@ -133,6 +135,7 @@ export function libraryView(main, { q }) {
     box.indeterminate = n > 0 && !all;
     box.onchange = () => { if (all) state.sel.clear(); else list.forEach((x) => state.sel.add(x.id)); draw(); };
     $('#sb-tag', band).onclick = () => editTags(ids);
+    $('#sb-auto', band)?.addEventListener('click', () => autoTag(ids));
     $('#sb-print', band).onclick = () => go(`#/print?items=${ids.join(',')}`);
     $('#sb-bin', band).onclick = () => { binItems(ids); state.sel.clear(); state.select = false; draw(); };
     $('#sb-done', band).onclick = () => { state.select = false; state.sel.clear(); draw(); };
