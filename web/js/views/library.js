@@ -14,7 +14,7 @@ const SORTS = {
 };
 // table columns (Mac / iPad); clicking a heading sorts, clicking it again reverses
 const COLS = [['title', 'Title'], ['artist', 'Artist'], ['kind', 'Type'], [null, 'Tags'], [null, 'Key / Pages'], ['added', 'Added']];
-const wide = () => matchMedia('(min-width: 761px)').matches;
+const wide = () => true; // the table everywhere; narrow screens drop the less important columns (CSS)
 const PAGE = 60;
 const state = { q: '', sort: 'added', dir: 1, select: false, sel: new Set(), shown: PAGE, anchor: null };
 try { state.sort = localStorage.getItem('meowsic-sort') || 'added'; } catch {}
@@ -39,7 +39,7 @@ export function libraryView(main, { q }) {
       ${tags.length > 1 ? `<button class="link clear-tags" id="lib-tags-clear">Clear all</button>` : ''}
       ${tags.length ? `<a class="icon-btn btn" href="#/print?tags=${encodeURIComponent(tags.join(','))}">Print all</a>` : ''}
       
-      <button class="chip-btn phone-only" id="lib-sort" aria-haspopup="menu">Sort: ${SORTS[state.sort][0]} ▾</button>
+      <button class="chip-btn" id="lib-sort" hidden aria-haspopup="menu">Sort: ${SORTS[state.sort][0]} ▾</button>
     
       <label class="search">${icon('search')}<input type="search" id="lib-q" placeholder="Search titles, artists, tags" value="${esc(state.q)}" aria-label="Search"></label>
       <button class="icon-btn tag-btn ${tags.length ? 'on' : ''}" id="lib-tag" title="Filter by tag" aria-label="Filter by tag">${iconOn('tag')}</button>
