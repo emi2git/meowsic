@@ -56,7 +56,7 @@ export function renderSide() {
       ${['sheet', 'chords', 'score'].map((k) => `<a class="nav sub${on(kind === k)}" href="#/library?kind=${k}">${icon(KIND[k].icon)}<span>${KIND[k].plural}</span><i>${n(k)}</i></a>`).join('')}
       <a class="nav${on(v === 'tags')}" href="#/tags">${icon('tag')}<span>Tags</span></a>
       <a class="nav${on(v === 'stats')}" href="#/stats">${icon('stats')}<span>Stats</span></a>
-      <h3>System</h3>
+      <h3>Utilities</h3>
       <a class="nav${on(v === 'activity')}" href="#/activity"><span>Logs</span>${store.jobs().some((j) => j.status === 'running') ? '<i class="live">•</i>' : ''}</a>
       <a class="nav${on(v === 'bin')}" href="#/bin">${icon('bin')}<span>Trash</span><i>${store.items({ deleted: true }).length || ''}</i></a>
       <a class="nav${on(v === 'settings')}" href="#/settings">${icon('settings')}<span>Settings</span></a>
@@ -71,7 +71,7 @@ export function renderSide() {
     tab('#/tags', 'tag', 'Tags', v === 'tags') +
     `<button id="tab-add" class="tab-add" aria-label="Add music">Add</button>` +
     tab('#/stats', 'stats', 'Stats', v === 'stats') +
-    `<button id="tab-more" class="${['bin', 'settings', 'print', 'activity', 'developer'].includes(v) ? 'on' : ''}">${icon('more')}<span>System</span></button>`;
+    `<button id="tab-more" class="${['bin', 'settings', 'print', 'activity', 'developer'].includes(v) ? 'on' : ''}">${icon('more')}<span>Utilities</span></button>`;
   $('#tab-add').onclick = (e) => addMenu(e.currentTarget);
   $('#tab-more').onclick = (e) => menu(e.currentTarget, [
     { label: 'Logs', icon: 'wave', run: () => go('#/activity') },
