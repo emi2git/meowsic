@@ -357,7 +357,6 @@ function scoreEditor(view, it, host, btn) {
         <button class="icon-btn" data-a="undo" ${undo.length ? '' : 'disabled'} title="Undo (⌘Z)" aria-label="Undo">${iconOn('undo')}</button>
         <button class="icon-btn eb-done" data-a="done" title="Done" aria-label="Done">${iconOn('check')}</button>
       </div>`;
-    if (beats !== lastBeats[bi] && lastBeats[bi] !== undefined && beats !== meter) toast(`Bar ${bi + 1} is now ${meterOf(beats).join('/')} so the notes fit`);
     lastBeats[bi] = beats;
     view.pickNote(bi, ni);
   };
