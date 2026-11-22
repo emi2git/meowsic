@@ -83,7 +83,7 @@ CREATE INDEX IF NOT EXISTS play_item ON play_session(item_id, opened_at);
 
 CREATE TABLE IF NOT EXISTS job (              -- transcriptions, "make another version", AI tag suggestions
   id          TEXT PRIMARY KEY,
-  kind        TEXT NOT NULL CHECK (kind IN ('transcribe','version','tags')),
+  kind        TEXT NOT NULL CHECK (kind IN ('transcribe','version','tags','omr')),
   title       TEXT NOT NULL,
   source      TEXT NOT NULL DEFAULT '',
   outputs     TEXT NOT NULL,                  -- JSON array of versions

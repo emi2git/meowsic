@@ -284,6 +284,8 @@ function pasteChart() {
 
 // ================= score =================
 export const GEN_STAGES = ['Read the score', 'Arrange', 'Write the score', 'Draw the pages'];
+export const OMR_STAGES = ['Read the notes', 'Read chord names and words', 'Check every bar', 'Write the score'];
+export const stagesOf = (j) => (j.kind === 'omr' ? OMR_STAGES : j.gen ? GEN_STAGES : STAGES);
 export const STAGES = ['Download audio', 'Separate voice and instruments', 'Find the notes', 'Read the lyrics', 'Find key, beat and chords', 'Write the score', 'Draw the pages'];
 
 export function addScoreView(main) {
@@ -340,8 +342,9 @@ function jobsList(host) {
       <section class="job ${j.status}">
         <div class="job-head"><div><b>${esc(j.title)}</b><small>${esc(j.source)} · ${esc(j.output)}</small></div>
           ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : j.status === 'done' ? `${(j.items || (j.result || []).map((id) => ({ id, version: store.get(id)?.version }))).map((x) => `<a class="btn primary" href="#/item/${x.id}">Open ${VERSIONS[x.version] || 'score'}</a>`).join('')}<button data-dismiss="${j.id}">Dismiss</button>` : `<button data-dismiss="${j.id}">Dismiss</button>`}</div>
-        <ol class="stages">${(j.gen ? GEN_STAGES : STAGES).map((s, i) => `<li class="${i < j.stage || j.status === 'done' ? 'done' : i === j.stage && j.status === 'running' ? 'now' : ''}"><span>${s}</span>${i === j.stage && j.status === 'running' ? `<progress max="1" value="${j.progress}"></progress>` : ''}</li>`).join('')}</ol>
-        <small class="muted">${j.status === 'running' ? `Started ${ago(j.startedAt)}` : j.status === 'done' ? `Finished ${ago(j.doneAt)}` : 'Cancelled'}</small>
+        <ol class="stages">${stagesOf(j).map((s, i) => `<li class="${i < j.stage || j.status === 'done' ? 'done' : i === j.stage && j.status === 'running' ? 'now' : ''}"><span>${s}</span>${i === j.stage && j.status === 'running' ? `<progress max="1" value="${j.progress}"></progress>` : ''}</li>`).join('')}</ol>
+        ${j.kind === 'omr' && j.status !== 'running' && j.log?.length ? `<p class="small">${esc(j.log.at(-1).msg)}</p>` : ''}
+        <small class="muted">${j.status === 'running' ? `Started ${ago(j.startedAt)}` : j.status === 'done' ? `Finished ${ago(j.doneAt)}` : j.status === 'failed' ? `Failed — ${esc(j.log?.at(-1)?.msg || '')}` : 'Cancelled'}</small>
       </section>`).join('');
   };
   host.onclick = (e) => {
@@ -370,13 +373,13 @@ export function tickJobs() {
       let { stage, progress } = j;
       progress += 0.12 + Math.random() * 0.1;
       if (progress >= 1) { stage++; progress = 0; }
-      if (stage >= (j.gen ? GEN_STAGES : STAGES).length) {
+      if (stage >= stagesOf(j).length) {
         const tune = j.tune || tunes[Math.floor(Math.random() * tunes.length)];
         const made = (j.outputs || ['original']).map((version) => store.add({ kind: 'score', title: j.title, artist: j.artist || '', tags: [VERSIONS[version], ...(j.tags || [])], tune, version,
           source: j.source, key: j.key || 'C major', bpm: TUNES[tune].bpm, transpose: 0 }));
         store.updateJob(j.id, { status: 'done', stage, progress: 1, doneAt: Date.now(), items: made.map((x) => ({ id: x.id, version: x.version })), msg: `Done — added ${made.map((x) => VERSIONS[x.version]).join(', ')}` }, { quiet: false });
         toast(made.length > 1 ? `${made.length} new versions of ${j.title} are ready` : `${VERSIONS[made[0].version]} of ${j.title} is ready`, { label: 'Open', run: () => go(`#/item/${made[0].id}`) });
-      } else store.updateJob(j.id, stage !== j.stage ? { stage, progress, msg: `${(j.gen ? GEN_STAGES : STAGES)[j.stage]} — done` } : { stage, progress });
+      } else store.updateJob(j.id, stage !== j.stage ? { stage, progress, msg: `${stagesOf(j)[j.stage]} — done` } : { stage, progress });
     }
   }, 700);
 }

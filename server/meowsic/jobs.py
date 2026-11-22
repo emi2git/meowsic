@@ -139,8 +139,8 @@ def start_job(app, kind, title, source, outputs, params, jid=None, runner=None, 
 def create_job(request: Request, body: dict = Body(...)):
     """{kind: transcribe|version, title, source, outputs: [...], url?, fromItemId?, artist?, tags?} -> queued, then runs on a thread."""
     kind = body.get('kind') or ('version' if body.get('gen') else 'transcribe')
-    if kind not in ('transcribe', 'version') or not body.get('title'):
-        raise HTTPException(400, 'kind (transcribe|version) and title are required')
+    if kind not in ('transcribe', 'version', 'omr') or not body.get('title'):
+        raise HTTPException(400, 'kind (transcribe|version|omr) and title are required')
     return start_job(request.app, kind, body['title'], body.get('source', ''), body.get('outputs', []),
                      {k: body[k] for k in PARAMS if body.get(k) not in (None, '')})
 

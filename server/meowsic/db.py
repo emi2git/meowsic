@@ -62,7 +62,7 @@ def init_db(cfg: Config):
         c.execute("ALTER TABLE job ADD COLUMN params TEXT NOT NULL DEFAULT '{}'")
     c.executescript(SCHEMA.read_text())
     job_sql = (c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='job'").fetchone() or [''])[0]
-    if "'tags'" not in job_sql:  # job kind 'tags' (AI suggestions) added later: rebuild the table with the new CHECK, rows kept
+    if "'omr'" not in job_sql:  # job kinds 'tags' (AI suggestions) and 'omr' (photo → score) added later: rebuild the table with the new CHECK, rows kept
         create = re.search(r'CREATE TABLE IF NOT EXISTS job \(.*?\n\);', SCHEMA.read_text(), re.S).group(0)
         cols = ','.join(r[1] for r in c.execute('PRAGMA table_info(job)'))
         c.executescript(f'BEGIN; ALTER TABLE job RENAME TO job_old; {create} INSERT INTO job({cols}) SELECT {cols} FROM job_old; DROP TABLE job_old; COMMIT;')

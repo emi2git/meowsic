@@ -50,6 +50,11 @@
 - [x] Crop area always a rectangle (4 corners)
 - [x] Incomplete songs (dots say more pages) flagged in the song status
 - [x] Delete song (to Trash) and Split song from Clean up
+### Beta: photo → score (asked 05:00)
+- [x] Best offline OMR: compare Audiveris and deep-learning OMR (homr, oemer) on clear library sheets
+- [x] Pipeline + bar fixing (every bar = time signature)
+- [x] Claude validates each result against the photo bar by bar, fixes differences
+- [x] Sheet ⋯ "Make a score (beta)" → job → new score entry linked to the sheet
 ### Waiting on the user
 - [ ] Trust Meowsic-CA.crt on the Mac; install it on iPad + iPhone
 

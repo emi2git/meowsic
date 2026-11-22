@@ -1,0 +1,34 @@
+// photo → score (beta) through the UI, against the temp server :5190 (sheet "Kiss The Girl p2")
+import puppeteer from 'puppeteer-core';
+const BASE = 'http://localhost:5190/';
+const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });
+const page = await b.newPage(); await page.setViewport({ width: 1440, height: 900 });
+const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let pass = 0, fail = 0; const check = (n, c, x = '') => { c ? pass++ : fail++; console.log(c ? '  ok  ' : '  FAIL', n, c ? '' : x); };
+const api = (p) => fetch(BASE + 'api' + p).then((r) => r.json());
+const sh = (await api('/items')).find((x) => x.title === 'Kiss The Girl p2' && x.kind === 'sheet');
+const before = (await api('/items?kind=score')).length;
+await page.goto(`${BASE}#/item/${sh.id}`, { waitUntil: 'networkidle0' }); await sleep(800);
+await page.screenshot({ path: 'omr-sheet.png' }); console.log('   sheet page:', (await page.$eval('#main', (e) => e.textContent.replace(/\s+/g, ' ').slice(0, 120))));
+await page.click('#it-more'); await sleep(200);
+const items = await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
+check('sheet ⋯ has Make a score (beta)', items.some((t) => /Make a score/.test(t)), items.join('|'));
+await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => /Make a score/.test(x.textContent)).click()); await sleep(300);
+await page.click('.modal [data-ok]'); await sleep(1000);
+let job;
+for (let i = 0; i < 180; i++) { await sleep(2000); job = (await api('/jobs')).find((j) => j.kind === 'omr' && j.title === 'Kiss The Girl p2'); if (job && ['done', 'failed'].includes(job.status)) break; }
+check('job finishes', job?.status === 'done', JSON.stringify(job?.log?.slice(-3)));
+console.log('   ', job?.log?.at(-1)?.msg);
+const scores = await api('/items?kind=score');
+check('a new score entry', scores.length === before + 1);
+const sc = scores.find((x) => x.id === job?.result?.[0]);
+check('tagged From a sheet', sc?.tags.includes('From a sheet'), sc?.tags);
+const xml = await fetch(`${BASE}api/items/${sc.id}/musicxml`).then((r) => r.text());
+check('chord names in the score', (xml.match(/<harmony/g) || []).length >= 10, (xml.match(/<harmony/g) || []).length);
+check('words in the score', (xml.match(/<lyric/g) || []).length >= 80, (xml.match(/<lyric/g) || []).length);
+await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' }); await page.reload({ waitUntil: 'networkidle0' }); await sleep(4000);
+check('score shows in the app', (await page.$$('#osmd svg')).length > 0);
+await page.screenshot({ path: 'omr-score.png' });
+console.log(`\n${pass} passed, ${fail} failed`); console.log(errs.length ? 'errors:\n' + errs.join('\n') : 'no page errors');
+await b.close();

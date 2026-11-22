@@ -42,7 +42,7 @@ def pdf_on() -> bool:
 
 
 def dispatch(ctx: JobContext):
-    (version_runner if ctx.job['kind'] == 'version' else transcribe_runner)(ctx)
+    {'version': version_runner, 'omr': omr_runner}.get(ctx.job['kind'], transcribe_runner)(ctx)
 
 
 # ---------- saving results as items ----------
@@ -142,6 +142,55 @@ def version_runner(ctx: JobContext):
                        key=src.get('key', ''), bpm=src.get('bpm'))
     if pdf_on(): ctx.update(msg=f'{GEN_STAGES[3]} — done')
     finish(ctx, ids, want)
+
+
+# ---------- photo → score (beta) ----------
+OMR_DIR = Path(__file__).resolve().parents[2] / 'omr'
+OMR_STAGES = ['Read the notes', 'Read chord names and words', 'Check every bar', 'Write the score']
+OMR_STEP = {'notes': 0, 'lyrics': 1, 'chords': 1, 'words': 1, 'check': 2, 'done': 3}
+
+
+def omr_runner(ctx: JobContext):
+    """Sheet pages → one score: junk trimmed off each page, then omr/omr.py (homr + Audiveris + Vision)."""
+    from . import trim
+    job, p = ctx.job, ctx.params
+    c = connect(ctx.cfg)
+    try: src = get_item(c, p.get('fromItemId', ''))
+    finally: c.close()
+    if not src or src['kind'] != 'sheet' or not src.get('pageFiles'): raise RuntimeError('That sheet has no pages')
+    py = OMR_DIR / '.venv' / 'bin' / 'python'
+    if not py.exists(): raise RuntimeError('Photo → score is not set up on this Mac (omr/.venv missing)')
+    d = folder_path(ctx.cfg, src['folder'])
+    work = ctx.work
+    pages = []
+    ctx.update(stage=0, progress=0, msg=f'{len(src["pageFiles"])} page(s)')
+    for k, f in enumerate(src['pageFiles'], 1):
+        dst = work / f'in{k}.png'
+        r = trim.analyze(d / f)
+        box = r['trim'] or {}
+        trim.crop(d / f, dst, box.get('top', 0), box.get('bottom', 1))
+        pages.append(str(dst))
+    out = work / 'out'
+    proc = subprocess.Popen([str(py), str(OMR_DIR / 'omr.py'), '--out', str(out), '--title', job['title'], *pages],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=str(OMR_DIR))
+    report, tail = None, []
+    for line in proc.stdout:
+        line = line.strip()
+        if ctx.cancelled(): proc.kill(); raise Cancelled()
+        try: ev = json.loads(line)
+        except ValueError: tail = (tail + [line])[-5:]; continue
+        st = OMR_STEP.get(ev.get('step'), 0)
+        ctx.update(stage=st, progress=ev.get('progress', 0), msg=ev.get('msg'))
+        if ev.get('step') == 'done': report = ev.get('report')
+    if proc.wait() != 0 or not (out / 'score.musicxml').is_file():
+        raise RuntimeError('Could not read the sheet: ' + (tail[-1] if tail else 'unknown error'))
+    checks = report.get('check', []) if report else []
+    ids = save_outputs(ctx, [('original', str(out / 'score.musicxml'), None, None, {})], title=job['title'],
+                       source=f'From the sheet “{src["title"]}” (photo → score, beta)', artist=src.get('artist', ''),
+                       tags=[*src.get('tags', []), 'From a sheet'])
+    where = ', '.join(f"p{x['page']} bar {x['bar']}" for x in checks[:12])
+    ctx.update(progress=1, status='done', result=ids,
+               msg=f"Done — {report.get('bars', '?')} bars" + (f'; please check {len(checks)}: {where}' if checks else '; no bars to check'))
 
 
 # ---------- transcription runner ----------

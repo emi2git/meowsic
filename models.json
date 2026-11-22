@@ -1,21 +1,28 @@
 {
-  "note": "AI models Meowsic uses. They live in ~/ai/models only (HF_HUB_CACHE=~/ai/models/huggingface) and are never committed.",
-  "models": [
-    {
-      "name": "mlx-community/Qwen2.5-7B-Instruct-4bit",
-      "revision": "c26a38f6a37d0a51b4e9a1eb3026530fa35d9fed",
-      "source": "https://huggingface.co/mlx-community/Qwen2.5-7B-Instruct-4bit",
-      "path": "~/ai/models/huggingface/models--mlx-community--Qwen2.5-7B-Instruct-4bit",
-      "size": "4.3 GB (4.0 GiB)",
-      "runtime": "mlx-lm (server/.venv)",
-      "purpose": "Offline tag suggestions: /api/ai/autotag (tags from the user's list) and /api/ai/collections (groups by movie/musical, singer, composer, language, occasion)",
-      "download": "cd server && .venv/bin/python -m meowsic.ai download"
-    },
-    {
-      "name": "mlx-community/Qwen2.5-3B-Instruct-4bit",
-      "source": "https://huggingface.co/mlx-community/Qwen2.5-3B-Instruct-4bit",
-      "size": "about 1.7 GB",
-      "purpose": "Fallback for the same endpoints, used only when the 7B model is not in ~/ai/models (not downloaded now)"
-    }
-  ]
+ "note": "AI models Meowsic uses. They live in ~/ai/models only (HF_HUB_CACHE=~/ai/models/huggingface) and are never committed.",
+ "models": [
+  {
+   "name": "mlx-community/Qwen2.5-7B-Instruct-4bit",
+   "revision": "c26a38f6a37d0a51b4e9a1eb3026530fa35d9fed",
+   "source": "https://huggingface.co/mlx-community/Qwen2.5-7B-Instruct-4bit",
+   "path": "~/ai/models/huggingface/models--mlx-community--Qwen2.5-7B-Instruct-4bit",
+   "size": "4.3 GB (4.0 GiB)",
+   "runtime": "mlx-lm (server/.venv)",
+   "purpose": "Offline tag suggestions: /api/ai/autotag (tags from the user's list) and /api/ai/collections (groups by movie/musical, singer, composer, language, occasion)",
+   "download": "cd server && .venv/bin/python -m meowsic.ai download"
+  },
+  {
+   "name": "mlx-community/Qwen2.5-3B-Instruct-4bit",
+   "source": "https://huggingface.co/mlx-community/Qwen2.5-3B-Instruct-4bit",
+   "size": "about 1.7 GB",
+   "purpose": "Fallback for the same endpoints, used only when the 7B model is not in ~/ai/models (not downloaded now)"
+  },
+  {
+   "name": "homr segnet + transformer (ONNX)",
+   "source": "https://github.com/liebharc/homr/releases (onnx_checkpoints)",
+   "size": "123 MB",
+   "where": "~/ai/models/homr (symlinked into omr/.venv)",
+   "purpose": "photo → score: reading notes (beta)"
+  }
+ ]
 }

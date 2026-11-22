@@ -176,6 +176,7 @@ export function sheetExtraMenu(it, view) {
   return [
     { label: 'Split…', icon: 'split', run: () => splitAt(it, view.page) },
     { label: 'Join…', icon: 'merge', run: () => mergeInto(it) },
+    ...(store.mode === 'server' ? [{ label: 'Make a score (beta)…', icon: 'wave', run: () => makeScore(it) }] : []),
   ];
 }
 
@@ -219,4 +220,12 @@ function mergeInto(it) {
     s.close();
     toast(`Merged — now ${it.pages} pages`);
   };
+}
+
+// photo → score (beta): the Mac reads the notes, chord names and words; unsure bars are marked "check"
+async function makeScore(it) {
+  const ok = await confirmSheet({ title: `Make a score from “${it.title}”?`, body: `Beta. The Mac reads all ${it.pages} page${it.pages > 1 ? 's' : ''} (about 20 s a page). The new score is its own entry; bars it isn't sure about are marked “check” in red.`, ok: 'Make score' });
+  if (!ok) return;
+  store.addJob({ kind: 'omr', title: it.title, source: `From the sheet “${it.title}”`, output: 'Score (beta)', outputs: ['original'], fromItemId: it.id, artist: it.artist || '' });
+  toast('Reading the sheet…', { label: 'Progress', run: () => go('#/jobs') });
 }

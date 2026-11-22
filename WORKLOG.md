@@ -73,3 +73,9 @@ Next: frontend refactor (dead list-view code in library.js, shared helpers), mig
 - Fixed: Clean up keys kept working after leaving the page.
 - The AI agent wiped scratchpad/e2e; test scripts rebuilt from the session record and now live in tests/e2e (npm install there). flows 164/164, cleanup 37/37.
 - AI tagging server work committed (agent report: groups decent for works/composers, some wrong members; autotag over-tags; full grouping 22 min).
+
+## 06:30 — photo → score (beta)
+- omr/omr.py: homr (notes) + Audiveris (second opinion, fallback) + Apple Vision (chord names, words) → one MusicXML; unsure bars marked "⚠ check"; report.json. Models in ~/ai/models/homr.
+- Server job kind 'omr' (runners.omr_runner, schema CHECK + migration); sheet ⋯ "Make a score (beta)…"; job card shows "please check: p1 bar 15…".
+- Hand-checked 4 pages bar by bar (table in omr/README.md): lead sheets' notes 100%, chords 12/12 and 15/16, words complete; piano page 8/10 bars (× noteheads) with both wrong bars flagged.
+- tests/e2e/omr.mjs 7/7 (temp server), server tests 63.

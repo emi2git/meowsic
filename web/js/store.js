@@ -168,7 +168,7 @@ export const store = {
   addJob(job) {
     const j = { id: uid('job'), status: mode === 'mock' ? 'running' : 'queued', stage: 0, progress: 0, startedAt: Date.now(), log: [{ t: Date.now(), msg: 'Started' }], ...job };
     db.jobs.unshift(j);
-    if (mode !== 'mock') api('POST', '/jobs', { ...job, kind: job.gen ? 'version' : 'transcribe' }).then((s) => { if (s) { Object.assign(j, s); jobSubs.forEach((f) => f()); } });
+    if (mode !== 'mock') api('POST', '/jobs', { ...job, kind: job.kind || (job.gen ? 'version' : 'transcribe') }).then((s) => { if (s) { Object.assign(j, s); jobSubs.forEach((f) => f()); } });
     changed();
     return j;
   },
