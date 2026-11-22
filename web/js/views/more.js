@@ -2,62 +2,106 @@
 import { store } from '../store.js';
 import { $, esc, icon, badge, ago, mins, toast, confirmSheet, CAT } from '../ui.js';
 import { applyTheme } from '../app.js';
-import { thumbHtml } from './actions.js';
+import { thumbHtml, songIcon } from './actions.js';
 
 const DAY = 86400000, WEEK = 7 * DAY;
 
 // ================= stats =================
-export function statsView(main) {
-  const plays = store.plays();
-  const now = Date.now();
-  const last30 = plays.filter((p) => p.openedAt > now - 30 * DAY);
-  const total30 = last30.reduce((s, p) => s + p.closedAt - p.openedAt, 0);
-  const days = new Set(plays.map((p) => new Date(p.openedAt).toDateString()));
-  let streak = 0;
-  const has = (d) => days.has(new Date(now - d * DAY).toDateString());
-  for (let d = has(0) ? 0 : 1; has(d); d++) streak++;
-  const weeks = Array.from({ length: 10 }, (_, i) => {
-    const end = now - (9 - i) * WEEK, start = end - WEEK;
-    const m = plays.filter((p) => p.openedAt > start && p.openedAt <= end).reduce((s, p) => s + p.closedAt - p.openedAt, 0) / 60000;
-    return { label: new Date(start + DAY).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }), m: Math.round(m) };
-  });
-  const max = Math.max(30, ...weeks.map((w) => w.m));
-  const nice = Math.ceil(max / 60) * 60;
-  const per = new Map();
-  for (const p of plays) { const e = per.get(p.itemId) || { n: 0, t: 0, last: 0 }; e.n++; e.t += p.closedAt - p.openedAt; e.last = Math.max(e.last, p.openedAt); per.set(p.itemId, e); }
-  const ranked = [...per.entries()].map(([id, e]) => ({ it: store.get(id), ...e })).filter((x) => x.it && !x.it.deleted);
-  const most = [...ranked].sort((a, b) => b.t - a.t).slice(0, 8);
-  const recent = [...ranked].sort((a, b) => b.last - a.last).slice(0, 8);
-  const row = (x, right) => `<li class="row" onclick="location.hash='#/item/${x.it.id}'">${thumbHtml(x.it)}<div class="row-main"><div class="row-title">${esc(x.it.title)}</div><div class="row-sub">${badge(x.it.kind)}</div></div><div class="row-when">${right}</div></li>`;
+const PERIODS = { 30: 'Last 30 days', 91: 'Last 3 months', 182: 'Last 6 months', 365: 'Last year', 0: 'All time' };
+let period = 30;
+try { period = +(localStorage.getItem('meowsic-stats-period') ?? 30); } catch {}
 
-  main.innerHTML = `<header class="top"><h1>Stats</h1></header>
-    <div class="pad">
-      <div class="tiles">
-        <div class="tile"><small>Practice, last 30 days</small><b>${mins(total30)}</b></div>
-        <div class="tile"><small>Sessions, last 30 days</small><b>${last30.length}</b></div>
-        <div class="tile"><small>Pieces played, all time</small><b>${per.size}</b></div>
-        <div class="tile"><small>Day streak</small><b>${streak}</b></div>
-      </div>
-      <section class="card">
-        <h2>Practice minutes per week</h2>
-        <div class="chart-bars" role="img" aria-label="Practice minutes per week for the last 10 weeks">
-          <div class="axis">${[nice, nice / 2, 0].map((v) => `<span>${v}</span>`).join('')}</div>
-          <div class="bars">${weeks.map((w) => `<div class="bar-col" tabindex="0" data-tip="Week of ${w.label}: ${w.m} min"><div class="bar" style="height:${(w.m / nice) * 100}%"></div><span>${w.label}</span></div>`).join('')}</div>
-          <div class="tip" id="tip" hidden></div>
+export function statsView(main) {
+  const draw = () => {
+    const now = Date.now();
+    const all = store.plays();
+    const plays = period ? all.filter((p) => p.openedAt > now - period * DAY) : all;
+    const total = plays.reduce((s, p) => s + p.closedAt - p.openedAt, 0);
+    const days = new Set(all.map((p) => new Date(p.openedAt).toDateString()));
+    const has = (d) => days.has(new Date(now - d * DAY).toDateString());
+    let streak = 0;
+    for (let d = has(0) ? 0 : 1; has(d); d++) streak++;
+
+    // chart: days for 30 days, weeks up to 6 months, months beyond
+    const first = all.length ? Math.min(...all.map((p) => p.openedAt)) : now;
+    const span = period || Math.max(30, Math.ceil((now - first) / DAY));
+    const step = span <= 31 ? DAY : span <= 190 ? 7 * DAY : 30.44 * DAY;
+    const n = Math.ceil(span * DAY / step);
+    const buckets = Array.from({ length: n }, (_, i) => {
+      const end = now - (n - 1 - i) * step, start = end - step;
+      const m = plays.filter((p) => p.openedAt > start && p.openedAt <= end).reduce((s, p) => s + p.closedAt - p.openedAt, 0) / 60000;
+      const lab = new Date(start + step / 2).toLocaleDateString(undefined, step >= 30 * DAY ? { month: 'short' } : { day: 'numeric', month: 'short' });
+      return { label: lab, m: Math.round(m) };
+    });
+    const max = Math.max(10, ...buckets.map((w) => w.m));
+    const nice = Math.ceil(max / 30) * 30;
+    const every = Math.ceil(n / 10); // label at most ~10 bars
+    const per = new Map();
+    for (const p of plays) { const e = per.get(p.itemId) || { n: 0, t: 0, last: 0 }; e.n++; e.t += p.closedAt - p.openedAt; e.last = Math.max(e.last, p.openedAt); per.set(p.itemId, e); }
+    const ranked = [...per.entries()].map(([id, e]) => ({ it: store.get(id), ...e })).filter((x) => x.it && !x.it.deleted);
+    const most = [...ranked].sort((a, b) => b.t - a.t).slice(0, 8);
+    const recent = [...ranked].sort((a, b) => b.last - a.last).slice(0, 8);
+    const row = (x, right) => `<li class="row" onclick="location.hash='#/item/${x.it.id}'">${songIcon(x.it)}<div class="row-main"><div class="row-title">${esc(x.it.title)}</div><div class="row-sub">${badge(x.it.kind)}</div></div><div class="row-when">${right}</div></li>`;
+    const unit = step === DAY ? 'day' : step >= 30 * DAY ? 'month' : 'week';
+
+    main.innerHTML = `<header class="top"><h1>Stats</h1><span class="grow"></span>
+        <select id="st-period" aria-label="Period">${Object.entries(PERIODS).map(([k, l]) => `<option value="${k}" ${+k === period ? 'selected' : ''}>${l}</option>`).join('')}</select></header>
+      <div class="pad">
+        <div class="tiles">
+          <div class="tile"><small>Practice time</small><b>${mins(total)}</b></div>
+          <div class="tile"><small>Sessions</small><b>${plays.length}</b></div>
+          <div class="tile"><small>Pieces played</small><b>${per.size}</b></div>
+          <div class="tile"><small>Day streak</small><b>${streak}</b></div>
         </div>
-        <details class="table-view"><summary>Show as table</summary><table><tr><th>Week of</th><th>Minutes</th></tr>${weeks.map((w) => `<tr><td>${w.label}</td><td>${w.m}</td></tr>`).join('')}</table></details>
-      </section>
-      <div class="two-col">
-        <section class="card"><h2>Most practised</h2><ul class="rows compact">${most.map((x) => row(x, mins(x.t))).join('') || '<li class="muted">Nothing yet</li>'}</ul></section>
-        <section class="card"><h2>Recently played</h2><ul class="rows compact">${recent.map((x) => row(x, ago(x.last))).join('') || '<li class="muted">Nothing yet</li>'}</ul></section>
-      </div>
-      <p class="muted small">A session counts when a piece stays open for at least 10 seconds.</p>
-    </div>`;
-  const tip = $('#tip', main), bars = main.querySelector('.bars');
-  const show = (col) => { const r = col.getBoundingClientRect(), p = bars.getBoundingClientRect(); tip.hidden = false; tip.textContent = col.dataset.tip; tip.style.left = r.left - p.left + r.width / 2 + 'px'; };
-  bars.addEventListener('pointerover', (e) => { const c = e.target.closest('.bar-col'); if (c) show(c); });
-  bars.addEventListener('focusin', (e) => { const c = e.target.closest('.bar-col'); if (c) show(c); });
-  bars.addEventListener('pointerleave', () => (tip.hidden = true));
+        <section class="card fun"><h2>Fun facts</h2><ul>${funFacts(plays, ranked, total).map((f) => `<li>${f}</li>`).join('')}</ul></section>
+        <section class="card">
+          <h2>Practice minutes per ${unit}</h2>
+          <div class="chart-bars" role="img" aria-label="Practice minutes per ${unit}">
+            <div class="axis">${[nice, nice / 2, 0].map((v) => `<span>${v}</span>`).join('')}</div>
+            <div class="bars">${buckets.map((w, i) => `<div class="bar-col" tabindex="0" data-tip="${w.label}: ${w.m} min"><div class="bar" style="height:${(w.m / nice) * 100}%"></div>${i % every === 0 ? `<span>${w.label}</span>` : ''}</div>`).join('')}</div>
+            <div class="tip" id="tip" hidden></div>
+          </div>
+        </section>
+        <div class="two-col">
+          <section class="card"><h2>Most practised</h2><ul class="rows compact">${most.map((x) => row(x, mins(x.t))).join('') || '<li class="muted">Nothing yet</li>'}</ul></section>
+          <section class="card"><h2>Recently played</h2><ul class="rows compact">${recent.map((x) => row(x, ago(x.last))).join('') || '<li class="muted">Nothing yet</li>'}</ul></section>
+        </div>
+        <p class="muted small">A session counts when a piece stays open for at least 10 seconds.</p>
+      </div>`;
+    $('#st-period', main).onchange = (e) => { period = +e.target.value; try { localStorage.setItem('meowsic-stats-period', period); } catch {} draw(); };
+    const tip = $('#tip', main), bars = main.querySelector('.bars');
+    const show = (col) => { const r = col.getBoundingClientRect(), p = bars.getBoundingClientRect(); tip.hidden = false; tip.textContent = col.dataset.tip; tip.style.left = r.left - p.left + r.width / 2 + 'px'; };
+    bars.addEventListener('pointerover', (e) => { const c = e.target.closest('.bar-col'); if (c) show(c); });
+    bars.addEventListener('focusin', (e) => { const c = e.target.closest('.bar-col'); if (c) show(c); });
+    bars.addEventListener('pointerleave', () => (tip.hidden = true));
+  };
+  draw();
+}
+
+// a few light facts from the play history
+function funFacts(plays, ranked, total) {
+  if (!plays.length) return ['Play something and fun facts will show up here.'];
+  const f = [];
+  const DAYS = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
+  const byDay = Array(7).fill(0);
+  for (const p of plays) byDay[new Date(p.openedAt).getDay()] += p.closedAt - p.openedAt;
+  f.push(`You practise most on <b>${DAYS[byDay.indexOf(Math.max(...byDay))]}</b>.`);
+  const top = [...ranked].sort((a, b) => b.n - a.n)[0];
+  if (top) f.push(`<b>${esc(top.it.title)}</b> is your favourite — opened ${top.n} times.`);
+  const long = plays.reduce((m, p) => (p.closedAt - p.openedAt > m.closedAt - m.openedAt ? p : m));
+  const li = store.get(long.itemId);
+  if (li) f.push(`Longest session: <b>${mins(long.closedAt - long.openedAt)}</b> with ${esc(li.title)}.`);
+  const films = total / (120 * 60000);
+  if (films >= 1) f.push(`That's as long as watching <b>${Math.floor(films)}</b> full-length movie${Math.floor(films) > 1 ? 's' : ''}.`);
+  const late = plays.filter((p) => new Date(p.openedAt).getHours() >= 21).length;
+  if (late) f.push(`<b>${late}</b> session${late > 1 ? 's' : ''} started after 9 pm. Night owl!`);
+  const tagT = new Map();
+  for (const x of ranked) for (const t of x.it.tags) tagT.set(t, (tagT.get(t) || 0) + x.t);
+  const tt = [...tagT].sort((a, b) => b[1] - a[1])[0];
+  if (tt) f.push(`Your most played tag is <b>${esc(tt[0])}</b>.`);
+  const kinds = new Set(ranked.map((x) => x.it.kind));
+  if (kinds.size === 3) f.push('You played sheets, chord charts <i>and</i> scores — all three!');
+  return f.slice(0, 5);
 }
 
 // ================= settings =================
