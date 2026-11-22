@@ -1,5 +1,5 @@
 // Score viewer: OpenSheetMusicDisplay notation, piano playback with a moving bar,
-// versions, tempo, loop bars, metronome click, transpose, zoom, downloads.
+// versions, tempo, loop bars, transpose, zoom, downloads.
 import { store } from '../store.js';
 import { $, esc, icon, toast, menu } from '../ui.js';
 import { TUNES } from '../mock.js';
@@ -94,7 +94,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     was?.pause();
     player = new ScorePlayer({ notes: tuneNotes(tune, version), bpm: tune.bpm, beats: tune.beats, onTick: place,
       onEnd: () => root.dispatchEvent(new CustomEvent('ended', { bubbles: true })) });
-    if (was) { player.rate = was.rate; player.click = was.click; player.loop = was.loop; }
+    if (was) { player.rate = was.rate; player.loop = was.loop; }
     player.shift = it.transpose || 0;
   };
   makePlayer();
@@ -135,7 +135,6 @@ export function scoreToolbar(bar, it, view) {
     <label class="ctl">Tempo <select id="sc-rate">${[0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25].map((r) => `<option value="${r}" ${r === view.player.rate ? 'selected' : ''}>${Math.round(r * 100)}% · ${Math.round(t.bpm * r)}</option>`).join('')}</select></label>
     <button class="toggle ${view.player.loop ? 'on' : ''}" id="sc-loop">${icon('loop')}<span>Loop</span></button>
     <span class="loop-bars" id="sc-loopbars" ${view.player.loop ? '' : 'hidden'}>bars <input type="number" id="sc-la" min="1" max="${bars}" value="${view.player.loop ? view.player.loop[0] / t.beats + 1 : 1}"> to <input type="number" id="sc-lb" min="1" max="${bars}" value="${view.player.loop ? view.player.loop[1] / t.beats : Math.min(4, bars)}"></span>
-    <button class="toggle ${view.player.click ? 'on' : ''}" id="sc-click">${icon('metronome')}<span>Click</span></button>
     <div class="stepper" aria-label="Transpose"><button id="sc-tdown" aria-label="Transpose down">♭</button><span id="sc-tval">${it.transpose ? (it.transpose > 0 ? '+' : '') + it.transpose : '0'}</span><button id="sc-tup" aria-label="Transpose up">♯</button></div>
     <div class="stepper" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out">−</button><button id="sc-zin" aria-label="Zoom in">+</button></div>
     <button class="icon-btn" id="sc-dl" title="Download">${icon('download')}<span class="hide-s">Files</span></button>`;
@@ -167,7 +166,6 @@ export function scoreToolbar(bar, it, view) {
   };
   $('#sc-la', bar).onchange = setLoop;
   $('#sc-lb', bar).onchange = setLoop;
-  $('#sc-click', bar).onclick = (e) => { p().click = !p().click; e.currentTarget.classList.toggle('on', p().click); };
   const tr = async (d) => { const n = Math.max(-6, Math.min(6, (it.transpose || 0) + d)); await view.setTranspose(n); $('#sc-tval', bar).textContent = n ? (n > 0 ? '+' : '') + n : '0'; };
   $('#sc-tdown', bar).onclick = () => tr(-1);
   $('#sc-tup', bar).onclick = () => tr(1);

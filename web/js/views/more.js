@@ -1,8 +1,7 @@
-// Stats, practice tools (metronome, tuner, reference tones) and settings.
+// Stats and settings.
 import { store } from '../store.js';
 import { $, esc, icon, badge, ago, mins, toast, confirmSheet, CAT } from '../ui.js';
 import { applyTheme } from '../app.js';
-import { Metronome, Tuner, playTone } from '../audio.js';
 import { thumbHtml } from './actions.js';
 
 const DAY = 86400000, WEEK = 7 * DAY;
@@ -59,59 +58,6 @@ export function statsView(main) {
   bars.addEventListener('pointerover', (e) => { const c = e.target.closest('.bar-col'); if (c) show(c); });
   bars.addEventListener('focusin', (e) => { const c = e.target.closest('.bar-col'); if (c) show(c); });
   bars.addEventListener('pointerleave', () => (tip.hidden = true));
-}
-
-// ================= practice tools =================
-export function toolsView(main) {
-  main.innerHTML = `<header class="top"><h1>Metronome &amp; tuner</h1></header>
-    <div class="pad two-col">
-      <section class="card metro">
-        <h2>${icon('metronome')} Metronome</h2>
-        <div class="beats" id="mt-beats"></div>
-        <div class="bpm"><button class="round" id="mt-down" aria-label="Slower">−</button><div><b id="mt-bpm">90</b><small>beats per minute</small></div><button class="round" id="mt-up" aria-label="Faster">+</button></div>
-        <input type="range" id="mt-range" min="30" max="240" value="90" aria-label="Tempo">
-        <div class="row-ctl"><label class="ctl">Beats per bar <select id="mt-per">${[1, 2, 3, 4, 6].map((n) => `<option ${n === 4 ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-          <button id="mt-tap">Tap tempo</button></div>
-        <button class="primary big" id="mt-go">${icon('play')}Start</button>
-      </section>
-      <section class="card tuner">
-        <h2>${icon('mic')} Tuner</h2>
-        <div class="note-big" id="tn-note">–</div>
-        <div class="needle"><div class="scale"><span>−50</span><span>0</span><span>+50</span></div><div class="pin" id="tn-pin"></div></div>
-        <p class="muted center" id="tn-info">Play one note at a time.</p>
-        <button class="primary big" id="tn-go">${icon('mic')}Start listening</button>
-        <h3>Reference notes</h3>
-        <div class="ref"><span class="muted">Ukulele</span>${[['G', 67], ['C', 60], ['E', 64], ['A', 69]].map(([n, m]) => `<button data-m="${m}">${n}</button>`).join('')}</div>
-        <div class="ref"><span class="muted">Piano</span><button data-m="69">A 440</button><button data-m="60">Middle C</button></div>
-      </section>
-    </div>`;
-  const met = new Metronome((b) => { main.querySelectorAll('#mt-beats span').forEach((s, i) => s.classList.toggle('on', i === b)); });
-  const drawBeats = () => ($('#mt-beats', main).innerHTML = Array.from({ length: met.beats }, (_, i) => `<span class="${i === 0 ? 'first' : ''}"></span>`).join(''));
-  const setBpm = (v) => { met.bpm = Math.max(30, Math.min(240, Math.round(v))); $('#mt-bpm', main).textContent = met.bpm; $('#mt-range', main).value = met.bpm; };
-  drawBeats();
-  $('#mt-down', main).onclick = () => setBpm(met.bpm - 1);
-  $('#mt-up', main).onclick = () => setBpm(met.bpm + 1);
-  $('#mt-range', main).oninput = (e) => setBpm(+e.target.value);
-  $('#mt-per', main).onchange = (e) => { met.beats = +e.target.value; drawBeats(); };
-  let taps = [];
-  $('#mt-tap', main).onclick = () => { const t = performance.now(); taps = taps.filter((x) => t - x < 3000); taps.push(t); if (taps.length > 1) setBpm((60000 * (taps.length - 1)) / (t - taps[0])); };
-  $('#mt-go', main).onclick = (e) => { if (met.running) { met.stop(); e.currentTarget.innerHTML = `${icon('play')}Start`; } else { met.start(); e.currentTarget.innerHTML = `${icon('pause')}Stop`; } };
-
-  const tn = new Tuner((p) => {
-    if (!p) return;
-    $('#tn-note', main).innerHTML = `${p.name}<sub>${p.octave}</sub>`;
-    $('#tn-pin', main).style.left = `${50 + p.cents}%`;
-    $('#tn-pin', main).classList.toggle('good', Math.abs(p.cents) < 6);
-    $('#tn-info', main).textContent = `${p.f.toFixed(1)} Hz · ${p.cents > 0 ? '+' : ''}${p.cents} cents${Math.abs(p.cents) < 6 ? ' · in tune' : p.cents > 0 ? ' · a little sharp' : ' · a little flat'}`;
-  });
-  let listening = false;
-  $('#tn-go', main).onclick = async (e) => {
-    const b = e.currentTarget;
-    if (listening) { tn.stop(); listening = false; b.innerHTML = `${icon('mic')}Start listening`; return; }
-    try { await tn.start(); listening = true; b.innerHTML = `${icon('pause')}Stop`; } catch (err) { $('#tn-info', main).textContent = err.message.includes('secure') ? err.message : 'The microphone is not available: ' + err.message; }
-  };
-  main.querySelectorAll('.ref [data-m]').forEach((b) => (b.onclick = () => playTone(+b.dataset.m, 2)));
-  return () => { met.stop(); tn.stop(); };
 }
 
 // ================= settings =================

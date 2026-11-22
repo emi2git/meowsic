@@ -10,7 +10,6 @@
 - [x] Score viewer: versions, notation, piano playback, tempo, loop bars, transpose, zoom, downloads
 - [x] Performance mode: full screen, tap / pedal page turns, auto-scroll chords, screen stays awake
 - [x] Annotations: pen, highlighter, eraser, undo, per page
-- [x] Practice tools: metronome (tap tempo, accents), tuner (mic), reference tones
 - [x] Add sheets: pick photos / PDFs, review grouping, edit titles and tags
 - [x] Add chords: search English / Vietnamese, preview, save
 - [x] Add score: YouTube link or audio file, output + method, job progress

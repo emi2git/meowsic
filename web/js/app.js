@@ -7,7 +7,7 @@ import { performView } from './views/perform.js';
 import { addSheetsView, addChordsView, addScoreView, jobsView } from './views/add.js';
 import { tagsView, binView } from './views/organize.js';
 import { printView } from './views/print.js';
-import { statsView, toolsView, settingsView } from './views/more.js';
+import { statsView, settingsView } from './views/more.js';
 
 const main = $('#main');
 let cleanup = null;
@@ -23,7 +23,7 @@ const ROUTES = {
   library: libraryView, item: itemView, perform: performView,
   'add-sheets': addSheetsView, 'add-chords': addChordsView, 'add-score': addScoreView, jobs: jobsView,
   tags: tagsView, bin: binView,
-  print: printView, stats: statsView, tools: toolsView, settings: settingsView,
+  print: printView, stats: statsView, settings: settingsView,
 };
 
 function route() {
@@ -55,8 +55,6 @@ export function renderSide() {
       <a class="nav${on(kind === '')}" href="#/library">${icon('library')}<span>All music</span><i>${items.length}</i></a>
       ${['sheet', 'chords', 'score'].map((k) => `<a class="nav sub${on(kind === k)}" href="#/library?kind=${k}">${icon(KIND[k].icon)}<span>${KIND[k].plural}</span><i>${n(k)}</i></a>`).join('')}
       <a class="nav${on(v === 'tags')}" href="#/tags">${icon('tag')}<span>Tags</span></a>
-      <h3>Practice</h3>
-      <a class="nav${on(v === 'tools')}" href="#/tools">${icon('metronome')}<span>Metronome &amp; tuner</span></a>
       <a class="nav${on(v === 'stats')}" href="#/stats">${icon('stats')}<span>Stats</span></a>
       <h3>More</h3>
       <a class="nav${on(v === 'jobs')}" href="#/jobs">${icon('wave')}<span>Transcriptions</span>${running ? `<i class="live">${running}</i>` : ''}</a>
@@ -71,11 +69,10 @@ export function renderSide() {
     tab('#/library', 'library', 'Library', v === 'library' || v === 'item') +
     tab('#/tags', 'tag', 'Tags', v === 'tags') +
     `<button id="tab-add" class="tab-add" aria-label="Add music">${icon('plus')}</button>` +
-    tab('#/tools', 'metronome', 'Practice', v === 'tools') +
-    `<button id="tab-more" class="${['bin', 'settings', 'jobs', 'print', 'stats'].includes(v) ? 'on' : ''}">${icon('more')}<span>More</span></button>`;
+    tab('#/stats', 'stats', 'Stats', v === 'stats') +
+    `<button id="tab-more" class="${['bin', 'settings', 'jobs', 'print'].includes(v) ? 'on' : ''}">${icon('more')}<span>More</span></button>`;
   $('#tab-add').onclick = (e) => addMenu(e.currentTarget);
   $('#tab-more').onclick = (e) => menu(e.currentTarget, [
-    { label: 'Stats', icon: 'stats', run: () => go('#/stats') },
     { label: 'Transcriptions', icon: 'wave', run: () => go('#/jobs') },
     { label: 'Bin', icon: 'bin', run: () => go('#/bin') },
     { label: 'Settings', icon: 'settings', run: () => go('#/settings') },
