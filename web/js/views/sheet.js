@@ -105,8 +105,8 @@ export function startInk(view, host) {
 
 export function sheetExtraMenu(it, view) {
   return [
-    { label: 'Split into a new sheet from this page', icon: 'split', run: () => splitAt(it, view.page) },
-    { label: 'Merge with another sheet…', icon: 'merge', run: () => mergeInto(it) },
+    { label: 'Split here (later pages become a new sheet)…', icon: 'split', run: () => splitAt(it, view.page) },
+    { label: 'Join with another sheet…', icon: 'merge', run: () => mergeInto(it) },
   ];
 }
 

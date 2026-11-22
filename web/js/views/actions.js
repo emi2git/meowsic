@@ -56,15 +56,15 @@ export function binItems(ids) {
   toast(ids.length > 1 ? `${ids.length} items moved to the bin` : 'Moved to the bin', { label: 'Undo', run: () => store.restore(ids) });
 }
 
-export function itemMenu(anchor, id, extra = []) {
-  menu(anchor, [
-    { label: 'Open', icon: 'right', run: () => go(`#/item/${id}`) },
-    '-',
-    { label: 'Rename', icon: 'edit', run: () => rename(id) },
-    { label: 'Edit tags', icon: 'tag', run: () => editTags(id) },
-    { label: 'Print', icon: 'print', run: () => go(`#/print?item=${id}`) },
-    ...extra,
-    '-',
-    { label: 'Move to bin', icon: 'bin', danger: true, run: () => binItems(id) },
-  ]);
+// ⋯ menu. In the library: Open, edit, Print, bin. In a viewer, grouped as
+// Info · Rename / Edit tags · what this kind can do · Print / Export · Move to bin.
+export function itemMenu(anchor, id, { viewer = false, info, tools = [], exports = [] } = {}) {
+  const group = (...g) => g.filter((x) => x.length).flatMap((x, i) => (i ? ['-', ...x] : x));
+  menu(anchor, group(
+    viewer ? [{ label: 'Info', icon: 'info', run: info }] : [{ label: 'Open', icon: 'right', run: () => go(`#/item/${id}`) }],
+    [{ label: 'Rename…', icon: 'edit', run: () => rename(id) }, { label: 'Edit tags…', icon: 'tag', run: () => editTags(id) }],
+    tools,
+    [{ label: 'Print…', icon: 'print', run: () => go(`#/print?item=${id}`) }, ...exports],
+    [{ label: 'Move to bin', icon: 'bin', danger: true, run: () => binItems(id) }],
+  ));
 }

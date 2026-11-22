@@ -120,12 +120,14 @@ export function scoreBody(root, it, { perform = false } = {}) {
 }
 
 // Export entries for the item's More menu
+export function scoreTools(it) {
+  return [{ label: 'Make another version…', icon: 'plus', run: () => generateVersions(it) }];
+}
 export function scoreExportMenu(it, view) {
   return [
-    { label: 'Generate another version…', icon: 'plus', run: () => generateVersions(it) },
-    { label: 'Export MusicXML (for MuseScore)', icon: 'download', run: () => download(`${it.title} - ${VERSIONS[view.version]}.musicxml`, view.xml(), 'application/vnd.recordare.musicxml+xml') },
-    { label: 'Export MIDI', icon: 'download', run: () => toast('MIDI export comes with the Mac server (phase 2).') },
-    { label: 'Export PDF', icon: 'download', run: () => toast('PDF export comes with the Mac server (phase 2).') },
+    { label: 'Export as MusicXML', icon: 'download', run: () => download(`${it.title} - ${VERSIONS[view.version]}.musicxml`, view.xml(), 'application/vnd.recordare.musicxml+xml') },
+    { label: 'Export as MIDI', icon: 'download', run: () => toast('MIDI export comes with the Mac server (phase 2).') },
+    { label: 'Export as PDF', icon: 'download', run: () => toast('PDF export comes with the Mac server (phase 2).') },
   ];
 }
 
@@ -186,11 +188,12 @@ function download(name, text, type) {
 function generateVersions(it) {
   const have = new Set(store.items().filter((x) => x.kind === 'score' && x.title === it.title && x.tune === it.tune).map((x) => x.version));
   const pick = new Set();
-  const s = modal(`<h2>Generate from “${esc(it.title)}”</h2>
+  const s = modal(`<h2>Make another version of “${esc(it.title)}”</h2>
     <p class="muted">Pick one or more. Each becomes its own entry in the library.</p>
-    <div class="cards one-col" id="gv">${Object.keys(VERSIONS).map((v) => `<button type="button" class="card-opt" data-o="${v}" ${have.has(v) ? 'disabled' : ''}>
-      <b>${VERSIONS[v]}${have.has(v) ? ' <small class="muted">— already have it</small>' : ''}</b><small>${VERSION_HELP[v]}</small></button>`).join('')}</div>
-    <div class="modal-actions"><button data-close>Cancel</button><button class="primary" data-ok disabled>Generate</button></div>`, { wide: true });
+    <div class="cards one-col" id="gv">${Object.keys(VERSIONS).map((v) => `<button type="button" class="card-opt" data-o="${v}">
+      <b>${VERSIONS[v]}${have.has(v) ? ' <small class="have">· you have one</small>' : ''}</b><small>${VERSION_HELP[v]}</small></button>`).join('')}</div>
+    <p class="warn" id="gv-warn" hidden></p>
+    <div class="modal-actions"><button data-close>Cancel</button><button class="primary" data-ok disabled>Make</button></div>`, { wide: true });
   const ok = s.el.querySelector('[data-ok]');
   s.el.querySelector('#gv').onclick = (e) => {
     const b = e.target.closest('[data-o]');
@@ -199,13 +202,17 @@ function generateVersions(it) {
     pick.has(v) ? pick.delete(v) : pick.add(v);
     b.classList.toggle('on', pick.has(v));
     ok.disabled = !pick.size;
-    ok.textContent = pick.size > 1 ? `Generate ${pick.size}` : 'Generate';
+    ok.textContent = pick.size > 1 ? `Make ${pick.size}` : 'Make';
+    const dup = [...pick].filter((x) => have.has(x)).map((x) => VERSIONS[x]);
+    const w = s.el.querySelector('#gv-warn');
+    w.hidden = !dup.length;
+    w.textContent = dup.length ? `You already have ${dup.join(' and ')}. A new copy will be added next to it; the one you have, with your edits and annotations, stays as it is.` : '';
   };
   ok.onclick = () => {
     const outputs = [...pick];
     store.addJob({ gen: true, title: it.title, artist: it.artist, tags: it.tags.filter((t) => !Object.values(VERSIONS).includes(t)), tune: it.tune, key: it.key,
       source: `From the score “${it.title}”`, outputs, output: outputs.map((v) => VERSIONS[v]).join(' + ') });
     s.close();
-    toast(`Generating ${outputs.map((v) => VERSIONS[v]).join(', ')} — progress is in Add → Score`);
+    toast(`Making ${outputs.map((v) => VERSIONS[v]).join(', ')} — progress is in Add → Score`);
   };
 }

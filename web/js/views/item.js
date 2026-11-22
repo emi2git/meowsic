@@ -5,7 +5,7 @@ import { go } from '../app.js';
 import { itemMenu, editTags, rename, metaText } from './actions.js';
 import { sheetBody, sheetToolbar, sheetExtraMenu, startInk } from './sheet.js';
 import { chordsBody, chordsToolbar } from './chordsview.js';
-import { scoreBody, scoreToolbar, scoreExportMenu } from './score.js';
+import { scoreBody, scoreToolbar, scoreExportMenu, scoreTools } from './score.js';
 
 export function itemView(main, { parts }) {
   const it = store.get(parts[1]);
@@ -62,7 +62,7 @@ export function itemView(main, { parts }) {
     const plays = store.plays(it.id);
     const total = plays.reduce((s, p) => s + (p.closedAt - p.openedAt), 0);
     details.innerHTML = `
-      <div class="details-head"><h2>Details</h2><button class="icon-btn" id="dt-close" aria-label="Close details">Close</button></div>
+      <div class="details-head"><h2>Info</h2><button class="icon-btn" id="dt-close" aria-label="Close info">Close</button></div>
       <dl>
         <dt>Type</dt><dd>${badge(it.kind)} ${metaText(it)}</dd>
         ${it.kind === 'chords' ? `<dt>Source</dt><dd><a href="${esc(it.url)}" target="_blank" rel="noopener">${it.source === 'hopamchuan' ? 'Hợp Âm Chuẩn' : 'Ultimate Guitar'}</a></dd>` : ''}
@@ -76,11 +76,11 @@ export function itemView(main, { parts }) {
   };
   const toggleDetails = () => { details.hidden = !details.hidden; if (!details.hidden) drawDetails(); };
   $('#it-title', main).onclick = () => rename(it.id);
-  $('#it-more', main).onclick = (e) => itemMenu(e.currentTarget, it.id, [
-    { label: 'Details', icon: 'info', run: toggleDetails },
-    ...(it.kind === 'sheet' ? sheetExtraMenu(it, view) : []),
-    ...(it.kind === 'score' ? scoreExportMenu(it, view) : []),
-  ]);
+  $('#it-more', main).onclick = (e) => itemMenu(e.currentTarget, it.id, {
+    viewer: true, info: toggleDetails,
+    tools: it.kind === 'sheet' ? sheetExtraMenu(it, view) : it.kind === 'score' ? scoreTools(it) : [],
+    exports: it.kind === 'score' ? scoreExportMenu(it, view) : [],
+  });
 
   // full screen: hides the browser's tabs and address bar; press again or Esc to leave
   $('#it-full', main)?.addEventListener('click', () => {
