@@ -3,7 +3,7 @@
 import { buildMock } from './mock.js';
 import { parseChordPro } from './chordchart.js';
 
-const KEY = 'meowsic-mock-v5';
+const KEY = 'meowsic-mock-v6';
 let db;
 const subs = new Set();
 const jobSubs = new Set();
@@ -14,7 +14,7 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (raw) db = JSON.parse(raw);
   } catch {}
-  if (!db || db.version !== 5) db = buildMock();
+  if (!db || db.version !== 6) db = buildMock();
   hydrate();
 }
 function hydrate() {
@@ -53,10 +53,12 @@ export const store = {
     changed();
     return it;
   },
-  bin(ids) { for (const id of [].concat(ids)) { const it = this.get(id); if (it) Object.assign(it, { deleted: true, deletedAt: Date.now() }); } changed(); },
-  restore(ids) { for (const id of [].concat(ids)) { const it = this.get(id); if (it) it.deleted = false; } changed(); },
+  bin(ids) { const t = []; for (const id of [].concat(ids)) { const it = this.get(id); if (it) { Object.assign(it, { deleted: true, deletedAt: Date.now() }); t.push(it.title); } } this.logEvent('bin', t.length > 1 ? `${t.length} items` : t[0], t.join(', ')); changed(); },
+  restore(ids) { const t = []; for (const id of [].concat(ids)) { const it = this.get(id); if (it) { it.deleted = false; t.push(it.title); } } this.logEvent('restore', t.length > 1 ? `${t.length} items` : t[0], t.join(', ')); changed(); },
   purge(ids) {
     const s = new Set([].concat(ids));
+    const gone = db.items.filter((x) => s.has(x.id)).map((x) => x.title);
+    if (gone.length) this.logEvent('delete', gone.length > 1 ? `${gone.length} items` : gone[0], gone.join(', '));
     db.items = db.items.filter((x) => !s.has(x.id));
     changed();
   },
@@ -99,13 +101,17 @@ export const store = {
   setStrokes(id, page, strokes) { db.annotations[`${id}:${page}`] = strokes; save(); },
   hasStrokes(id) { return Object.keys(db.annotations).some((k) => k.startsWith(id + ':') && db.annotations[k].length); },
 
+  // activity: one entry per job or change, newest first. Jobs keep a log of lines.
+  activity() { return [...(db.activity || []), ...db.jobs.map((j) => ({ ...j, type: j.gen ? 'version' : 'transcribe', at: j.startedAt }))].sort((a, b) => b.at - a.at); },
+  logEvent(type, title, detail = '') { (db.activity ||= []).unshift({ id: uid('act'), type, title, detail, status: 'done', at: Date.now() }); db.activity.length > 500 && (db.activity.length = 500); save(); },
+
   // jobs (transcriptions)
   jobs() { return db.jobs; },
-  addJob(job) { const j = { id: uid('job'), status: 'running', stage: 0, progress: 0, startedAt: Date.now(), ...job }; db.jobs.unshift(j); changed(); return j; },
+  addJob(job) { const j = { id: uid('job'), status: 'running', stage: 0, progress: 0, startedAt: Date.now(), log: [{ t: Date.now(), msg: 'Started' }], ...job }; db.jobs.unshift(j); changed(); return j; },
   onJobs(fn) { jobSubs.add(fn); return () => jobSubs.delete(fn); },
   // progress ticks only wake the job screens; a finished job wakes everything
-  updateJob(id, patch, { quiet = true } = {}) { const j = db.jobs.find((x) => x.id === id); if (!j) return; Object.assign(j, patch); save(); jobSubs.forEach((f) => f()); if (!quiet) changed(); },
-  dismissJob(id) { db.jobs = db.jobs.filter((j) => j.id !== id); changed(); jobSubs.forEach((f) => f()); },
+  updateJob(id, patch, { quiet = true } = {}) { const j = db.jobs.find((x) => x.id === id); if (!j) return; if (patch.msg) { (j.log ||= []).push({ t: Date.now(), msg: patch.msg }); delete patch.msg; } Object.assign(j, patch); save(); jobSubs.forEach((f) => f()); if (!quiet) changed(); },
+  dismissJob(id) { const j = db.jobs.find((x) => x.id === id); if (j) j.dismissed = true; changed(); jobSubs.forEach((f) => f()); },
 
   // uploaded page images for this session
   sessionImage(key, url) { if (url) session.set(key, url); return session.get(key); },

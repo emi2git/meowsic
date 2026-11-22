@@ -81,16 +81,7 @@ export function settingsView(main) {
         <p class="muted small">The Mac also keeps a daily copy of the database (last 30 days).</p>
         <div class="row-ctl"><button id="st-export">${icon('download')}Export backup</button>
         <label class="btn">${icon('upload')}Import backup<input type="file" id="st-import" accept="application/json,.json" hidden></label></div></section>
-      <section class="card"><h2>${icon('restore')} Bring in the old apps</h2>
-        <ul class="plain">
-          <li>${icon('check')} Meowsic 1 (iPad): 485 sheets, 11 chord charts, 1 score, 31 tags <small class="muted">— phase 2</small></li>
-          <li>${icon('check')} Emi Songbook: 11 songs; its 3 collections become tags <small class="muted">— phase 2</small></li>
-          <li>${icon('check')} Emi Music Note: 4 transcriptions <small class="muted">— phase 2</small></li>
-        </ul></section>
-      <section class="card"><h2>${icon('info')} Mock data</h2>
-        <p class="muted small">This is the UI preview. Everything you change is kept in this browser only.</p>
-        <button class="danger-text" id="st-reset">Reset mock data</button></section>
-      <p class="center muted">Meowsic 2.0 · UI preview</p>
+<p class="center muted">Meowsic 2.0 · UI preview</p>
     </div>`;
   $('#st-theme', main).onclick = (e) => {
     const b = e.target.closest('[data-t]');
@@ -110,5 +101,22 @@ export function settingsView(main) {
     if (!f) return;
     try { store.importJson(await f.text()); toast('Backup imported'); } catch (err) { toast(err.message); }
   };
+}
+
+// ================= developer =================
+// Things for building and testing Meowsic, kept out of Settings.
+export function developerView(main) {
+  main.innerHTML = `<header class="top"><h1>Developer</h1></header>
+    <div class="pad narrow settings">
+      <section class="card"><h2>Bring in the old apps</h2>
+        <ul class="plain">
+          <li>Meowsic 1 (iPad): 485 sheets, 11 chord charts, 1 score, 31 tags <small class="muted">— phase 2</small></li>
+          <li>Emi Songbook: 11 songs; its 3 collections become tags <small class="muted">— phase 2</small></li>
+          <li>Emi Music Note: 4 transcriptions <small class="muted">— phase 2</small></li>
+        </ul></section>
+      <section class="card"><h2>Mock data</h2>
+        <p class="muted small">This is the UI preview. Everything you change is kept in this browser only.</p>
+        <button class="danger-text" id="st-reset">Reset mock data</button></section>
+    </div>`;
   $('#st-reset', main).onclick = async () => { if (await confirmSheet({ title: 'Reset the mock data?', body: 'Your test changes in this browser are thrown away.', ok: 'Reset', danger: true })) { store.reset(); toast('Mock data reset'); } };
 }

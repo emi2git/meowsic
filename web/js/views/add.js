@@ -135,6 +135,7 @@ function reviewSheets(main) {
       return it;
     });
     pending = null;
+    store.logEvent('add-sheet', made.length > 1 ? `${made.length} sheets` : made[0].title, made.map((x) => `${x.title} (${x.pages} p)`).join(', '));
     toast(`Added ${made.length} sheet${made.length > 1 ? 's' : ''}`);
     go('#/library?kind=sheet');
   };
@@ -206,6 +207,7 @@ function preview(main, c) {
     $('#pv-save', pane).onclick = () => {
       const it = store.add({ kind: 'chords', title: chart.title, artist: chart.artist, tags: chart.tags, source: chart.source, key: chart.key, capo: chart.capo || 0,
         url: `https://${chart.source === 'hopamchuan' ? 'hopamchuan.com' : 'tabs.ultimate-guitar.com'}/mock/${encodeURIComponent(chart.title)}`, text: chart.text, transpose: chart.transpose });
+      store.logEvent('add-chords', it.title, `${chart.source === 'hopamchuan' ? 'Hợp Âm Chuẩn' : 'Ultimate Guitar'} · key ${chart.key}`);
       toast(`Saved “${it.title}”`, { label: 'Open', run: () => go(`#/item/${it.id}`) });
     };
   };
@@ -224,6 +226,7 @@ function pasteChart() {
     const text = f.get('text');
     const first = text.match(/\[([A-G][#b]?m?)/);
     const it = store.add({ kind: 'chords', title: f.get('title'), artist: f.get('artist'), source: 'pasted', key: first ? first[1] : 'C', capo: 0, url: '', text, transpose: null });
+    store.logEvent('add-chords', it.title, 'Pasted by hand');
     s.close();
     go(`#/item/${it.id}`);
   };
@@ -278,9 +281,9 @@ export function addScoreView(main) {
 
 function jobsList(host) {
   const draw = () => {
-    const jobs = store.jobs();
+    const jobs = store.jobs().filter((j) => !j.dismissed);
     host.hidden = !jobs.length;
-    host.innerHTML = `<h2 class="sub-h">In progress and done</h2>` + jobs.map((j) => `
+    host.innerHTML = `<h2 class="sub-h">In progress and done <a class="link small" href="#/activity">All activity ›</a></h2>` + jobs.map((j) => `
       <section class="job ${j.status}">
         <div class="job-head"><div><b>${esc(j.title)}</b><small>${esc(j.source)} · ${esc(j.output)}</small></div>
           ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : j.status === 'done' ? `${(j.items || []).map((x) => `<a class="btn primary" href="#/item/${x.id}">Open ${VERSIONS[x.version]}</a>`).join('')}<button data-dismiss="${j.id}">Dismiss</button>` : `<button data-dismiss="${j.id}">Dismiss</button>`}</div>
@@ -290,7 +293,7 @@ function jobsList(host) {
   };
   host.onclick = (e) => {
     const c = e.target.closest('[data-cancel]'), d = e.target.closest('[data-dismiss]');
-    if (c) store.updateJob(c.dataset.cancel, { status: 'cancelled' }, { quiet: false });
+    if (c) store.updateJob(c.dataset.cancel, { status: 'cancelled', doneAt: Date.now(), msg: 'Cancelled' }, { quiet: false });
     if (d) store.dismissJob(d.dataset.dismiss);
   };
   draw();
@@ -314,9 +317,9 @@ export function tickJobs() {
         const tune = j.tune || tunes[Math.floor(Math.random() * tunes.length)];
         const made = (j.outputs || ['original']).map((version) => store.add({ kind: 'score', title: j.title, artist: j.artist || '', tags: [VERSIONS[version], ...(j.tags || [])], tune, version,
           source: j.source, key: j.key || 'C major', bpm: TUNES[tune].bpm, transpose: 0 }));
-        store.updateJob(j.id, { status: 'done', stage, progress: 1, doneAt: Date.now(), items: made.map((x) => ({ id: x.id, version: x.version })) }, { quiet: false });
+        store.updateJob(j.id, { status: 'done', stage, progress: 1, doneAt: Date.now(), items: made.map((x) => ({ id: x.id, version: x.version })), msg: `Done — added ${made.map((x) => VERSIONS[x.version]).join(', ')}` }, { quiet: false });
         toast(made.length > 1 ? `${made.length} new versions of ${j.title} are ready` : `${VERSIONS[made[0].version]} of ${j.title} is ready`, { label: 'Open', run: () => go(`#/item/${made[0].id}`) });
-      } else store.updateJob(j.id, { stage, progress });
+      } else store.updateJob(j.id, stage !== j.stage ? { stage, progress, msg: `${(j.gen ? GEN_STAGES : STAGES)[j.stage]} — done` } : { stage, progress });
     }
   }, 700);
 }

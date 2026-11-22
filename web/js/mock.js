@@ -282,8 +282,16 @@ export function buildMock() {
   tagAll('Musicals to learn', ['One Day More', 'Naughty', 'The Music of the Night', 'A Million Dreams']);
 
   const jobs = [
-    { id: 'job-1', title: 'One Day More (Les Misérables)', source: 'YouTube · youtu.be/one-day-more', outputs: ['vocal'], output: 'Piano + vocals', stage: 2, progress: 0.4, startedAt: NOW - 90000, status: 'running' },
+    { id: 'job-1', title: 'One Day More (Les Misérables)', source: 'YouTube · youtu.be/one-day-more', outputs: ['vocal'], output: 'Piano + vocals', stage: 2, progress: 0.4, startedAt: NOW - 90000, status: 'running', log: [{ t: NOW - 90000, msg: 'Started' }, { t: NOW - 60000, msg: 'Download audio — done' }, { t: NOW - 20000, msg: 'Separate voice and instruments — done' }] },
   ];
 
-  return { version: 5, items, tags: [...TAGS, 'Piano recital', 'Ukulele club', 'Musicals to learn', 'Original', 'Piano + vocals', 'Lead sheet'], plays, jobs, annotations: {} };
+  const H = 3600000;
+  const activity = [
+    { id: 'act-1', type: 'add-sheet', title: '3 sheets', detail: 'Memory (3 p), Clair de Lune (6 p), Moon River (2 p)', status: 'done', at: NOW - 30 * H },
+    { id: 'act-2', type: 'add-chords', title: 'Amazing Grace', detail: 'Ultimate Guitar · key G', status: 'done', at: NOW - 52 * H },
+    { id: 'act-3', type: 'transcribe', title: 'Memory (from Cats)', output: 'Original', source: 'YouTube · youtu.be/memory', status: 'failed', at: NOW - 75 * H,
+      log: [{ t: NOW - 75 * H, msg: 'Started' }, { t: NOW - 75 * H + 40000, msg: 'Download audio — done' }, { t: NOW - 75 * H + 95000, msg: 'Failed: the video is private' }] },
+    { id: 'act-4', type: 'bin', title: 'Minuet in G', detail: 'Minuet in G', status: 'done', at: NOW - 100 * H },
+  ];
+  return { version: 6, activity, items, tags: [...TAGS, 'Piano recital', 'Ukulele club', 'Musicals to learn', 'Original', 'Piano + vocals', 'Lead sheet'], plays, jobs, annotations: {} };
 }
