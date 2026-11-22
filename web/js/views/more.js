@@ -53,7 +53,7 @@ export function statsView(main) {
           <div class="tile"><small>Pieces played</small><b>${per.size}</b></div>
           <div class="tile"><small>Day streak</small><b>${streak}</b></div>
         </div>
-        <section class="card fun"><h2>Fun facts</h2><ul>${funFacts(plays, ranked, total).map((f) => `<li>${f}</li>`).join('')}</ul></section>
+        <section class="card fun"><h2>Fun facts <button class="link small" id="fun-more">More facts</button></h2><ul id="fun-list">${funFacts(plays, ranked, total).map((f) => `<li>${f}</li>`).join('')}</ul></section>
         <section class="card">
           <h2>Practice minutes per ${unit}</h2>
           <div class="chart-bars" role="img" aria-label="Practice minutes per ${unit}">
@@ -68,6 +68,7 @@ export function statsView(main) {
         </div>
         <p class="muted small">A session counts when a piece stays open for at least 10 seconds.</p>
       </div>`;
+    $('#fun-more', main).onclick = () => ($('#fun-list', main).innerHTML = funFacts(plays, ranked, total).map((f) => `<li>${f}</li>`).join(''));
     $('#st-period', main).onchange = (e) => { period = +e.target.value; try { localStorage.setItem('meowsic-stats-period', period); } catch {} draw(); };
     const tip = $('#tip', main), bars = main.querySelector('.bars');
     const show = (col) => { const r = col.getBoundingClientRect(), p = bars.getBoundingClientRect(); tip.hidden = false; tip.textContent = col.dataset.tip; tip.style.left = r.left - p.left + r.width / 2 + 'px'; };
@@ -78,30 +79,44 @@ export function statsView(main) {
   draw();
 }
 
-// a few light facts from the play history
+// A big pool of light facts; each visit shows a random handful (only facts that have data).
 function funFacts(plays, ranked, total) {
   if (!plays.length) return ['Play something and fun facts will show up here.'];
-  const f = [];
+  const items = store.items();
+  const dur = (p) => p.closedAt - p.openedAt;
   const DAYS = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
-  const byDay = Array(7).fill(0);
-  for (const p of plays) byDay[new Date(p.openedAt).getDay()] += p.closedAt - p.openedAt;
-  f.push(`You practise most on <b>${DAYS[byDay.indexOf(Math.max(...byDay))]}</b>.`);
-  const top = [...ranked].sort((a, b) => b.n - a.n)[0];
-  if (top) f.push(`<b>${esc(top.it.title)}</b> is your favourite — opened ${top.n} times.`);
-  const long = plays.reduce((m, p) => (p.closedAt - p.openedAt > m.closedAt - m.openedAt ? p : m));
-  const li = store.get(long.itemId);
-  if (li) f.push(`Longest session: <b>${mins(long.closedAt - long.openedAt)}</b> with ${esc(li.title)}.`);
-  const films = total / (120 * 60000);
-  if (films >= 1) f.push(`That's as long as watching <b>${Math.floor(films)}</b> full-length movie${Math.floor(films) > 1 ? 's' : ''}.`);
-  const late = plays.filter((p) => new Date(p.openedAt).getHours() >= 21).length;
-  if (late) f.push(`<b>${late}</b> session${late > 1 ? 's' : ''} started after 9 pm. Night owl!`);
-  const tagT = new Map();
-  for (const x of ranked) for (const t of x.it.tags) tagT.set(t, (tagT.get(t) || 0) + x.t);
-  const tt = [...tagT].sort((a, b) => b[1] - a[1])[0];
-  if (tt) f.push(`Your most played tag is <b>${esc(tt[0])}</b>.`);
-  const kinds = new Set(ranked.map((x) => x.it.kind));
-  if (kinds.size === 3) f.push('You played sheets, chord charts <i>and</i> scores — all three!');
-  return f.slice(0, 5);
+  const pool = [];
+  const add = (f) => { try { const v = f(); if (v) pool.push(v); } catch {} };
+
+  add(() => { const d = Array(7).fill(0); for (const p of plays) d[new Date(p.openedAt).getDay()] += dur(p); return `You practise most on <b>${DAYS[d.indexOf(Math.max(...d))]}</b>.`; });
+  add(() => { const t = [...ranked].sort((a, b) => b.n - a.n)[0]; return t && `<b>${esc(t.it.title)}</b> is your favourite — opened ${t.n} times.`; });
+  add(() => { const l = plays.reduce((m, p) => (dur(p) > dur(m) ? p : m)); const it = store.get(l.itemId); return it && `Longest session: <b>${mins(dur(l))}</b> with ${esc(it.title)}.`; });
+  add(() => { const n = Math.floor(total / (120 * 60000)); return n >= 1 && `That's as long as watching <b>${n}</b> full-length movie${n > 1 ? 's' : ''}.`; });
+  add(() => { const n = Math.floor(total / (3.5 * 3600000)); return n >= 1 && `In that time you could fly Hanoi → Singapore <b>${n}</b> time${n > 1 ? 's' : ''}.`; });
+  add(() => { const n = plays.filter((p) => new Date(p.openedAt).getHours() >= 21).length; return n && `<b>${n}</b> session${n > 1 ? 's' : ''} started after 9 pm. Night owl!`; });
+  add(() => { const n = plays.filter((p) => new Date(p.openedAt).getHours() < 8).length; return n && `<b>${n}</b> session${n > 1 ? 's' : ''} started before 8 am. Early bird!`; });
+  add(() => { const h = Array(24).fill(0); for (const p of plays) h[new Date(p.openedAt).getHours()]++; const b = h.indexOf(Math.max(...h)); return `Your favourite time to play is around <b>${b % 12 || 12} ${b < 12 ? 'am' : 'pm'}</b>.`; });
+  add(() => { const t = new Map(); for (const x of ranked) for (const g of x.it.tags) t.set(g, (t.get(g) || 0) + x.t); const top = [...t].sort((a, b) => b[1] - a[1])[0]; return top && `Your most played tag is <b>${esc(top[0])}</b>.`; });
+  add(() => new Set(ranked.map((x) => x.it.kind)).size === 3 && 'You played sheets, chord charts <i>and</i> scores — all three!');
+  add(() => `Average session: <b>${mins(total / plays.length)}</b>.`);
+  add(() => { const d = new Map(); for (const p of plays) { const k = new Date(p.openedAt).toDateString(); d.set(k, (d.get(k) || 0) + dur(p)); } const [k, v] = [...d].sort((a, b) => b[1] - a[1])[0]; return `Your biggest day: <b>${mins(v)}</b> on ${new Date(k).toLocaleDateString(undefined, { day: 'numeric', month: 'long' })}.`; });
+  add(() => { const we = plays.filter((p) => [0, 6].includes(new Date(p.openedAt).getDay())).reduce((s, p) => s + dur(p), 0); const pct = Math.round((we / total) * 100); return `<b>${pct}%</b> of your practice happens at the weekend.`; });
+  add(() => { const pages = items.filter((x) => x.kind === 'sheet').reduce((s, x) => s + x.pages, 0); return pages && `Your sheets add up to <b>${pages}</b> pages — a stack about ${(pages * 0.1 / 10).toFixed(1)} cm tall.`; });
+  add(() => { const s = items.filter((x) => x.kind === 'sheet').length; return s && `Playing every sheet once at 3 minutes each would take <b>${mins(s * 3 * 60000)}</b>.`; });
+  add(() => { const k = new Map(); for (const x of items.filter((i) => i.kind === 'chords')) k.set(x.key, (k.get(x.key) || 0) + 1); const top = [...k].sort((a, b) => b[1] - a[1])[0]; return top && `The most common key in your chord charts is <b>${esc(top[0])}</b>.`; });
+  add(() => { const l = [...items].sort((a, b) => b.title.length - a.title.length)[0]; return `Longest title in your library: <b>${esc(l.title)}</b>.`; });
+  add(() => { const played = new Set(store.plays().map((p) => p.itemId)); const n = items.filter((x) => !played.has(x.id)).length; return n && `<b>${n}</b> piece${n > 1 ? 's' : ''} in your library ${n > 1 ? 'have' : 'has'} never been opened. Something new to try!`; });
+  add(() => { const last = new Map(); for (const p of store.plays()) last.set(p.itemId, Math.max(last.get(p.itemId) || 0, p.openedAt)); const old = [...last].filter(([id]) => store.get(id) && !store.get(id).deleted).sort((a, b) => a[1] - b[1])[0]; return old && `You haven't played <b>${esc(store.get(old[0]).title)}</b> in ${Math.round((Date.now() - old[1]) / DAY)} days.`; });
+  add(() => { const a = new Map(); for (const x of ranked) if (x.it.artist && !/traditional/i.test(x.it.artist)) a.set(x.it.artist, (a.get(x.it.artist) || 0) + x.t); const top = [...a].sort((p, q) => q[1] - p[1])[0]; return top && `You play more <b>${esc(top[0])}</b> than anyone else.`; });
+  add(() => { const vi = items.filter((x) => x.tags.includes('Vietnamese')).length; return vi && `<b>${vi}</b> Vietnamese song${vi > 1 ? 's' : ''} in your library.`; });
+  add(() => { const o = [...items].sort((a, b) => a.createdAt - b.createdAt)[0]; return `The oldest piece in your library is <b>${esc(o.title)}</b>.`; });
+  add(() => { const n = Object.keys(store.db.printed || {}).length; return n && `You've printed <b>${n}</b> piece${n > 1 ? 's' : ''} so far.`; });
+  add(() => { const n = ranked.length; return `You played <b>${n}</b> different piece${n > 1 ? 's' : ''} in this period.`; });
+  add(() => { const c = plays.filter((p) => store.get(p.itemId)?.tags.includes('Christmas')).length; return c && `You opened Christmas music <b>${c}</b> time${c > 1 ? 's' : ''}. 🎄`; });
+  add(() => { const s = plays.reduce((m, p) => Math.min(m, dur(p)), Infinity); return `Shortest session: <b>${Math.max(1, Math.round(s / 60000))} min</b>. Quick warm-up?`; });
+
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  return pool.slice(0, 5);
 }
 
 // ================= settings =================

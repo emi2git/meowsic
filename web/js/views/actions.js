@@ -14,7 +14,7 @@ export function thumbHtml(it) {
 }
 
 export function metaText(it) {
-  if (it.kind === 'sheet') return `${it.pages} page${it.pages > 1 ? 's' : ''}${it.source === 'pdf' ? ' · PDF' : ''}`;
+  if (it.kind === 'sheet') return `${it.pages} page${it.pages > 1 ? 's' : ''}`; // file type lives under Info
   if (it.kind === 'chords') return `Key ${it.key}`; // the source site lives under Info, not in the list
   return it.key;
 }

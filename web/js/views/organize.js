@@ -6,7 +6,7 @@ import { thumbHtml, metaText, itemMenu } from './actions.js';
 
 // ================= tags =================
 export function tagsView(main) {
-  main.innerHTML = `<header class="top"><h1>Tags</h1><span class="grow"></span><button id="mt-open">Make tags…</button><button class="primary" id="tg-add">${icon('plus')}New tag</button></header>
+  main.innerHTML = `<header class="top"><h1>Tags</h1><span class="grow"></span><button id="mt-open">Generate tags…</button><button class="primary" id="tg-add">Create tag</button></header>
     <div class="pad"><div class="tag-grid" id="tg"></div></div>`;
   const draw = () => {
     const counts = store.tagCounts();
@@ -26,7 +26,7 @@ export function tagsView(main) {
     ]);
   };
   $('#mt-open', main).onclick = () => go('#/make-tags');
-  $('#tg-add', main).onclick = async () => { const n = await promptSheet({ title: 'New tag', placeholder: 'e.g. Recital' }); if (n) store.addTag(n); };
+  $('#tg-add', main).onclick = async () => { const n = await promptSheet({ title: 'Create tag', placeholder: 'e.g. Recital', ok: 'Create' }); if (n) store.addTag(n); };
   draw();
   return store.on(draw);
 }

@@ -60,7 +60,7 @@ function detect(opts, scope) {
 export function makeTagsView(main) {
   const opts = new Set(['work', 'composer', 'occasion']);
   let scope = 'all';
-  main.innerHTML = `<header class="top"><a class="icon-btn back" href="#/tags">‹ Back</a><h1>Make tags</h1></header>
+  main.innerHTML = `<header class="top"><a class="icon-btn back" href="#/tags">‹ Back</a><h1>Generate tags</h1></header>
     <form class="pad narrow form" id="mt">
       <fieldset><legend>Look for</legend><div class="cards one-col" id="mt-o">${OPTIONS.map(([k, l, d]) =>
         `<button type="button" class="card-opt ${opts.has(k) ? 'on' : ''}" data-k="${k}"><b>${l}</b><small>${d}</small></button>`).join('')}</div></fieldset>
@@ -72,7 +72,7 @@ export function makeTagsView(main) {
   $('#mt-s', main).onchange = (e) => (scope = e.target.value);
   $('#mt', main).onsubmit = (e) => {
     e.preventDefault();
-    main.innerHTML = `<header class="top"><h1>Finding tags…</h1></header><div class="pad narrow center"><p id="mt-msg">Reading song titles</p><progress id="mt-p" max="1" value="0"></progress></div>`;
+    main.innerHTML = `<header class="top"><h1>Generating tags…</h1></header><div class="pad narrow center"><p id="mt-msg">Reading song titles</p><progress id="mt-p" max="1" value="0"></progress></div>`;
     let p = 0;
     const t = setInterval(() => {
       p += 0.2;

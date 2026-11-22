@@ -11,9 +11,17 @@ const SORTS = {
   most: ['Most played', (a, b) => store.playCount(b.id) - store.playCount(a.id)],
   artist: ['Artist A–Z', (a, b) => (a.artist || '').localeCompare(b.artist || '') || a.title.localeCompare(b.title)],
   kind: ['Type', (a, b) => a.kind.localeCompare(b.kind) || a.title.localeCompare(b.title)],
+  tag: ['Tag', (a, b) => (mainTag(a) || '\uffff').localeCompare(mainTag(b) || '\uffff') || a.title.localeCompare(b.title)],
 };
 // table columns (Mac / iPad); clicking a heading sorts, clicking it again reverses
-const COLS = [['title', 'Title'], ['artist', 'Artist'], ['kind', 'Type'], [null, 'Tags'], [null, 'Key / Pages'], ['added', 'Added']];
+// [sort key, heading, class]. Type is left out when a type is already picked in the left bar.
+const COLS = [['title', 'Title', 'c-title'], ['artist', 'Artist', 'c-artist'], ['kind', 'Type', 'c-type'], ['tag', 'Tag', 'c-tag'], [null, 'Key / Pages', 'c-meta'], ['added', 'Added', 'c-when']];
+// The one tag worth showing in the list: the most specific one (a musical, a movie, a set like
+// "Piano recital"), not genre, language or version tags.
+const GENERIC = new Set(['Musical', 'Disney', 'Movie', 'Anime', 'Pop', 'Rock', 'Ballad', 'Jazz', 'Folk', 'Country', 'Classical', 'Christmas', 'Children',
+  'English', 'Vietnamese', 'Chinese', 'Russian', 'Korea', 'Japan', 'Singapore', 'Original', 'Piano + vocals', 'Lead sheet', 'Piano duet',
+  'Piano accompaniment', 'Piano easy', 'Piano pro', 'Printed', 'Never printed']);
+export const mainTag = (it) => it.tags.find((t) => !GENERIC.has(t)) || '';
 const wide = () => true; // the table everywhere; narrow screens drop the less important columns (CSS)
 const PAGE = 60;
 const state = { q: '', sort: 'added', dir: 1, select: false, sel: new Set(), shown: PAGE, anchor: null };
@@ -66,16 +74,16 @@ export function libraryView(main, { q }) {
       if (wide()) {
         // ▲ = A→Z / oldest first, ▼ = Z→A / newest first; Added starts newest first
         const arrow = (k) => (state.sort !== k ? '' : (k === 'added') === (state.dir > 0) ? ' ▼' : ' ▲');
-        rows.innerHTML = `<table class="lib-table ${selecting() ? 'selecting' : ''}"><thead><tr><th class="c-pick"></th>${COLS.map(([k, l]) =>
-          `<th>${k ? `<button class="th-sort ${state.sort === k ? 'on' : ''}" data-sort="${k}">${l}${arrow(k)}</button>` : l}</th>`).join('')}<th></th></tr></thead><tbody>${shownList.map((it) => `
+        const cols = COLS.filter(([k]) => !(kind && k === 'kind'));
+        const cell = {
+          'c-title': (it) => esc(it.title), 'c-artist': (it) => esc(it.artist || ''), 'c-type': (it) => badge(it.kind),
+          'c-tag': (it) => (mainTag(it) ? `<span class="tagchip">${esc(mainTag(it))}</span>` : ''), 'c-meta': (it) => metaText(it), 'c-when': (it) => ago(it.createdAt),
+        };
+        rows.innerHTML = `<table class="lib-table ${kind ? 'one-kind' : ''} ${selecting() ? 'selecting' : ''}"><thead><tr><th class="c-pick"></th>${cols.map(([k, l, c]) =>
+          `<th class="${c}">${k ? `<button class="th-sort ${state.sort === k ? 'on' : ''}" data-sort="${k}">${l}${arrow(k)}</button>` : l}</th>`).join('')}<th class="c-more"></th></tr></thead><tbody>${shownList.map((it) => `
           <tr class="row ${state.sel.has(it.id) ? 'sel' : ''}" data-id="${it.id}">
             <td class="c-pick"><label class="pick" title="Select (Shift-click for a range)"><input type="checkbox" ${state.sel.has(it.id) ? 'checked' : ''} aria-label="Select ${esc(it.title)}"></label></td>
-            <td class="c-title row-title">${esc(it.title)}</td>
-            <td class="c-artist">${esc(it.artist || '')}</td>
-            <td>${badge(it.kind)}</td>
-            <td class="c-tags">${it.tags.slice(0, 3).map((t) => `<span class="tagchip">${esc(t)}</span>`).join('')}${it.tags.length > 3 ? `<span class="tagchip more">+${it.tags.length - 3}</span>` : ''}</td>
-            <td class="c-meta">${metaText(it)}</td>
-            <td class="c-when">${ago(it.createdAt)}</td>
+            ${cols.map(([, , c]) => `<td class="${c}${c === 'c-title' ? ' row-title' : ''}">${cell[c](it)}</td>`).join('')}
             <td class="c-more"><button class="icon-btn row-more" aria-label="More for ${esc(it.title)}" title="More">${iconOn('more')}</button></td>
           </tr>`).join('')}</tbody></table><p class="count-row">${cnt} ${more}</p>`;
         $('#lib-more', main)?.addEventListener('click', () => { state.shown += PAGE; draw(); });

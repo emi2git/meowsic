@@ -502,7 +502,6 @@ legend { font-weight: 700; margin-bottom: 8px; }
 /* ---------- printing ---------- */
 @media print {
   @page { size: A4; margin: 0; }
-  :root[data-paper="Letter"] { --pw: 8.5in; --ph: 11in; }
   body { overflow: visible; background: #fff; }
   .app, .toast, .modal-wrap, .menu { display: none !important; }
   #print-root { display: block; }
@@ -626,7 +625,7 @@ html:-webkit-full-screen .side { display: none; }
 .lib-table tr.row:hover td { background: color-mix(in srgb, var(--acc) 4%, var(--card)); }
 .lib-table tr.row.sel td { background: var(--acc-soft); }
 .lib-table .c-pick { width: 34px; padding-right: 0; }
-.lib-table .c-title { font-weight: 650; font-size: 15px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-table td.c-title { font-weight: 650; font-size: 15px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lib-table .c-artist { color: var(--ink2); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lib-table .c-tags { max-width: 280px; white-space: nowrap; overflow: hidden; }
 .lib-table .c-tags .tagchip { margin-right: 4px; }
@@ -638,20 +637,11 @@ html:-webkit-full-screen .side { display: none; }
 .lib-table.selecting .row-more { visibility: hidden; }
 p.count-row { text-align: center; }
 
-.lib-table th:nth-child(1) { width: 34px; } .lib-table th:nth-child(2) { width: 27%; } .lib-table th:nth-child(3) { width: 17%; }
-.lib-table th:nth-child(4) { width: 90px; } .lib-table th:nth-child(5) { width: 26%; } .lib-table th:nth-child(6) { width: 15%; }
-.lib-table th:nth-child(7) { width: 104px; } .lib-table th:nth-child(8) { width: 44px; }
 .lib-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* columns by importance: Title > Type > Artist > Added > Tags > Key / Pages; hide from the end as space runs out */
-@media (max-width: 1100px) { .lib-table th:nth-child(6), .lib-table td:nth-child(6) { display: none; } .lib-table th:nth-child(5) { width: 30%; } }
-@media (max-width: 900px) { .lib-table th:nth-child(5), .lib-table td:nth-child(5) { display: none; } }
-@media (max-width: 640px) { .lib-table th:nth-child(7), .lib-table td:nth-child(7) { display: none; } .lib-table th:nth-child(3) { width: 34%; } .lib-table th:nth-child(2) { width: auto; } }
-@media (max-width: 480px) { .lib-table th:nth-child(3), .lib-table td:nth-child(3) { display: none; } }
 @media (max-width: 760px) {
   .lib-table { width: calc(100% - 20px); margin: 8px 10px; }
   .lib-table thead th { top: 0; }
   .lib-table td { height: 48px; }
-  .lib-table th:nth-child(4) { width: 90px; }
 }
 @media (pointer: coarse) { .lib-table:not(.selecting) .c-pick { display: none; } }
 
@@ -677,3 +667,27 @@ p.count-row { text-align: center; }
 @media (max-width: 760px) { .turn-strip { width: 28px; font-size: 22px; } }
 .sheet-frame .page { flex: none; max-width: none !important; }
 .sheet-frame .page-row { height: auto; }
+
+/* print cover page with song list */
+.spread .coverpage { font-size: 4px; color: #222; }
+.spread .coverpage .frame, #print-root .coverpage .frame { position: absolute; inset: 5%; padding: 8%; }
+.spread .coverpage h1 { font-size: 10px; margin-top: 30%; }
+.toc { list-style: none; padding: 0; margin: 6% 0 0; }
+.toc li { display: flex; gap: 4px; border-bottom: .3px dotted #999; padding: 1.5% 0; }
+.toc li span { flex: 1; } .toc li i { font-style: normal; }
+@media print {
+  #print-root .coverpage .frame { inset: 18mm; padding: 0; font-size: 13pt; }
+  #print-root .coverpage h1 { font-size: 28pt; margin: 40mm 0 4mm; }
+  #print-root .coverpage .meta { color: #555; }
+  #print-root .toc li { padding: 2.5mm 0; border-bottom: .6px dotted #888; }
+}
+.fun h2 { justify-content: space-between; }
+.fun h2 .link { font-size: 14px; }
+
+/* library columns: widths, and hide the less important ones as space runs out (Title > Type > Artist > Added > Tag > Key / Pages) */
+.lib-table .c-pick { width: 34px; } .lib-table .c-title { width: 30%; } .lib-table .c-artist { width: 20%; } .lib-table .c-type { width: 90px; }
+.lib-table .c-tag { width: 18%; } .lib-table .c-meta { width: 14%; } .lib-table .c-when { width: 104px; } .lib-table .c-more { width: 44px; }
+@media (max-width: 1100px) { .lib-table .c-meta { display: none; } }
+@media (max-width: 900px) { .lib-table .c-tag { display: none; } }
+@media (max-width: 640px) { .lib-table .c-when { display: none; } .lib-table .c-artist { width: 34%; } .lib-table .c-title { width: auto; } }
+@media (max-width: 480px) { .lib-table .c-artist { display: none; } }

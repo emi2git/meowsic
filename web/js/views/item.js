@@ -65,6 +65,7 @@ export function itemView(main, { parts }) {
       <div class="details-head"><h2>Info</h2><button class="icon-btn" id="dt-close" aria-label="Close info">Close</button></div>
       <dl>
         <dt>Type</dt><dd>${badge(it.kind)} ${metaText(it)}</dd>
+        ${it.kind === 'sheet' ? `<dt>File</dt><dd>${it.source === 'pdf' ? 'PDF' : 'Photos (images)'}</dd>` : ''}
         ${it.kind === 'chords' ? `<dt>Source</dt><dd><a href="${esc(it.url)}" target="_blank" rel="noopener">${it.source === 'hopamchuan' ? 'Hợp Âm Chuẩn' : 'Ultimate Guitar'}</a></dd>` : ''}
         ${it.kind === 'score' ? `<dt>Made from</dt><dd>${esc(it.source)}<br><small>${it.bpm} bpm</small></dd>` : ''}
         <dt>Tags</dt><dd><div class="row-tags">${it.tags.map((t) => `<a class="tagchip" href="#/library?tags=${encodeURIComponent(t)}">${esc(t)}</a>`).join('') || '<span class="muted">None</span>'}</div><button class="link" id="dt-tags">Edit tags</button></dd>

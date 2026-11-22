@@ -14,8 +14,8 @@ export function printedPages(it, paper = 'A4') {
   return Math.max(1, Math.ceil(n / LINES_PER_PAGE[paper]));
 }
 
-let opts = { paper: 'A4', facing: true };
-try { Object.assign(opts, JSON.parse(localStorage.getItem('meowsic-print') || '{}')); } catch {}
+let opts = { paper: 'A4', facing: true, cover: false }; // paper is always A4
+try { Object.assign(opts, JSON.parse(localStorage.getItem('meowsic-print') || '{}'), { paper: 'A4' }); } catch {}
 
 function sourceOf(q) {
   const tags = (q.get('tags') || q.get('tag') || '').split(',').filter(Boolean);
@@ -26,8 +26,9 @@ function sourceOf(q) {
 }
 
 // -> [{blank} | {it, page, of}]
-function layout(items) {
+function layout(items, name) {
   const out = [];
+  if (opts.cover) out.push({ cover: true, name, items });
   for (const it of items) {
     const n = printedPages(it, opts.paper);
     // A blank only saves a page turn when a piece has an even number of pages and would start on a
@@ -35,10 +36,15 @@ function layout(items) {
     if (opts.facing && n > 1 && n % 2 === 0 && out.length % 2 === 0) out.push({ blank: true, before: it.title });
     for (let p = 1; p <= n; p++) out.push({ it, page: p, of: n });
   }
+  // song list on the cover: where each piece starts
+  if (opts.cover) out[0].toc = items.map((it) => ({ title: it.title, artist: it.artist, page: out.findIndex((x) => x.it === it && x.page === 1) + 1 }));
   return out;
 }
 
 function pageHtml(pg, full) {
+  if (pg.cover) return `<div class="pp coverpage"><div class="frame"><h1>${esc(pg.name.replace(/^Tags?: /, ''))}</h1>
+    <p class="meta">${pg.items.length} piece${pg.items.length === 1 ? '' : 's'}</p>
+    <ol class="toc">${(pg.toc || []).map((t) => `<li><span>${esc(t.title)}${t.artist ? ` <small>· ${esc(t.artist)}</small>` : ''}</span><i>${t.page}</i></li>`).join('')}</ol></div></div>`;
   if (pg.blank) return `<div class="pp blank">${full ? '' : '<span>Blank</span>'}</div>`;
   const { it, page, of } = pg;
   if (it.kind === 'sheet') return `<div class="pp"><img src="${pageSrc(it, page)}" alt=""></div>`;
@@ -55,27 +61,27 @@ export function printView(main, { q }) {
   main.innerHTML = `<header class="top"><button class="icon-btn back" onclick="history.back()" aria-label="Back">‹ Back</button><h1>Print · ${esc(src.name)}</h1><span class="grow"></span>
       <button class="primary" id="pr-go">${icon('print')}Print</button></header>
     <div class="toolbar">
-      <label class="ctl">Paper <select id="pr-paper"><option ${opts.paper === 'A4' ? 'selected' : ''}>A4</option><option ${opts.paper === 'Letter' ? 'selected' : ''}>Letter</option></select></label>
       <label class="ctl check"><input type="checkbox" id="pr-facing" ${opts.facing ? 'checked' : ''}> Facing pages <small>(adds a blank only where it saves a page turn)</small></label>
+      <label class="ctl check"><input type="checkbox" id="pr-cover" ${opts.cover ? 'checked' : ''}> Cover page with song list</label>
       <span class="grow"></span><span class="muted" id="pr-sum"></span>
     </div>
     <div class="pad"><ul class="rows compact" id="pr-list"></ul><h3>Preview</h3><div class="spreads" id="pr-prev"></div></div>`;
   const draw = () => {
     const items = src.ids.map((id) => store.get(id)).filter((x) => x && !x.deleted);
-    const pages = layout(items);
+    const pages = layout(items, src.name);
     const blanks = pages.filter((p) => p.blank).length;
     $('#pr-sum', main).textContent = `${pages.length} pages · ${Math.ceil(pages.length / 2)} sheets of paper double-sided${blanks ? ` · ${blanks} blank${blanks > 1 ? 's' : ''}` : ''}`;
     $('#pr-list', main).innerHTML = items.map((it) => `<li class="row"><div class="row-main"><div class="row-title">${esc(it.title)}</div><div class="row-sub">${badge(it.kind)}<span>${printedPages(it, opts.paper)} page${printedPages(it, opts.paper) > 1 ? 's' : ''}</span></div></div></li>`).join('');
     // book spreads: page 1 is a right-hand page on its own
-    const spreads = [[null, pages[0]]];
+    const spreads = [[pages[0]]];
     for (let i = 1; i < pages.length; i += 2) spreads.push([pages[i], pages[i + 1] || null]);
-    $('#pr-prev', main).innerHTML = pages.length ? spreads.map((s, i) => `<div class="spread paper-${opts.paper}">${s.map((p, k) => p ? pageHtml(p) : '<div class="pp none"></div>').join('')}<small>${i === 0 ? 'Cover side' : `Pages ${i * 2}–${i * 2 + 1}`}</small></div>`).join('') : '<p class="muted">Nothing to print.</p>';
+    $('#pr-prev', main).innerHTML = pages.length ? spreads.map((s, i) => `<div class="spread paper-${opts.paper}">${s.map((p, k) => p ? pageHtml(p) : '<div class="pp none"></div>').join('')}<small>${i === 0 ? 'Page 1' : `Pages ${i * 2}–${Math.min(i * 2 + 1, pages.length)}`}</small></div>`).join('') : '<p class="muted">Nothing to print.</p>';
     $('#print-root').innerHTML = pages.map((p) => pageHtml(p, true)).join('');
     document.documentElement.dataset.paper = opts.paper;
   };
   const saveOpts = () => { try { localStorage.setItem('meowsic-print', JSON.stringify(opts)); } catch {} draw(); };
-  $('#pr-paper', main).onchange = (e) => { opts.paper = e.target.value; saveOpts(); };
   $('#pr-facing', main).onchange = (e) => { opts.facing = e.target.checked; saveOpts(); };
+  $('#pr-cover', main).onchange = (e) => { opts.cover = e.target.checked; saveOpts(); };
   $('#pr-go', main).onclick = () => {
     if (!src.ids.length) return toast('Nothing to print.');
     window.print();
