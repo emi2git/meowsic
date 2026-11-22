@@ -30,3 +30,9 @@ Plan (in order):
 - Read-only check on real data at Mac/iPad/iPhone sizes: all screens OK, no console errors (scratchpad/e2e/reallib.mjs, run with NODE_EXTRA_CA_CERTS=~/Documents/Meowsic/certs/meowsic-ca.pem).
 - UI preview tests now need `?preview=1` (samples only there). 160/160.
 Next: real-score note editing → print real scores → frontend refactor → migration re-run when Photos originals are down → reopen Photos Settings for the user.
+
+## 02:30 — note editing on real scores
+- New web/js/scoremodel.js: TuneModel (samples) and XmlModel (real MusicXML, upper staff, per-voice timing, divisions normalized to twelfths, per-bar time signatures). Editor uses one model; real edits PUT /api/items/{id}/musicxml (original kept), Reset → POST …/revert.
+- Typing a note on a rest turns it into that note.
+- Tests: scratchpad/e2e/realedit.mjs 10/10 (server :5190 temp data); flows.mjs 160/160 — preview server now on :5181 (`python3 serve.py 5181`), :5180 is the real HTTPS app.
+Next: print real scores, frontend refactor, migration re-run after Photos download, reopen Photos Settings.

@@ -5,6 +5,7 @@ import { $, esc, icon, iconOn, toast, menu, sheet as modal } from '../ui.js';
 import { TUNES } from '../mock.js';
 import { musicXml, tuneNotes, VERSIONS, VERSION_HELP, barBeats, midiOf, nameOf, isTriplet, twelfths, meterOf, xmlInfo } from '../musicxml.js';
 import { ScorePlayer } from '../audio.js';
+import { TuneModel, XmlModel } from '../scoremodel.js';
 import { InkLayer } from './annotate.js';
 
 let osmdReady;
@@ -167,7 +168,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
   return {
     ready,
     get tune() { return tune; },
-    barAt, showBar, pickNote, get editable() { return version !== 'accomp' && !real; },
+    barAt, showBar, pickNote, get editable() { return version !== 'accomp'; },
     // replace the bars (edit), save on the entry, redraw and replay from the new notes
     async setMeasures(ms, { save = true } = {}) {
       tune = { ...TUNES[it.tune], measures: ms };
@@ -175,7 +176,16 @@ export function scoreBody(root, it, { perform = false } = {}) {
       makePlayer();
       await render();
     },
-    async revert() { store.update(it.id, { measures: undefined }); delete it.measures; tune = TUNES[it.tune]; makePlayer(); await render(); },
+    async revert() {
+      if (real) { await fetch(`/api/items/${encodeURIComponent(it.id)}/musicxml/revert`, { method: 'POST' }); await loadReal(); makePlayer(); await render(); return; }
+      store.update(it.id, { measures: undefined }); delete it.measures; tune = TUNES[it.tune]; makePlayer(); await render();
+    },
+    // real scores: save edited MusicXML on the Mac (keeps the untouched original there), redraw, replay
+    async setXml(text) {
+      xmlText = text; info = xmlInfo(text); tune = { ...tune, bpm: info.bpm, beats: info.beats };
+      await fetch(`/api/items/${encodeURIComponent(it.id)}/musicxml`, { method: 'PUT', headers: { 'Content-Type': 'application/vnd.recordare.musicxml+xml' }, body: text });
+      makePlayer(); await render();
+    },
     get player() { return player; },
     get version() { return version; },
     async setTranspose(n) { store.update(it.id, { transpose: n }); player.shift = n; await render(); },
@@ -323,86 +333,72 @@ const LENGTHS = [[0.25, '16th note', '2'], [0.5, 'Eighth note', '3'], [0.75, 'Do
 const LETTER = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 function scoreEditor(view, it, host, btn) {
   if (host.querySelector('.editbar')) { host.querySelector('.editbar').dispatchEvent(new Event('close')); return; }
-  if (!view.editable) return toast(view.real ? 'Editing notes of transcribed scores comes next — viewing and playing work now.' : 'This version has no melody to edit.');
+  if (!view.editable) return toast('This version has no melody to edit.');
   btn.classList.add('on');
-  let ms = structuredClone(view.tune.measures);
+  // sample scores edit their bars; real scores edit their MusicXML (upper staff)
+  const model = view.real ? new XmlModel(view.xml()) : new TuneModel(view.tune);
+  window.__editModel = model; // for automated tests
   let bi = 0, ni = 0;
   const undo = [];
-  const lastBeats = {};
   const panel = document.createElement('div');
   panel.className = 'editbar';
   host.append(panel);
   const paper = host.querySelector('#paper');
   paper.classList.add('editing');
-  const meter = view.tune.beats;
-  const cur = () => ms[bi].mel[ni];
   const draw = () => {
-    ni = Math.max(0, Math.min(ni, ms[bi].mel.length - 1));
-    const m = ms[bi], n = cur();
-    const beats = Math.round(m.mel.reduce((s, [, d]) => s + d, 0) * 12) / 12;
+    ni = Math.max(0, Math.min(ni, model.count(bi) - 1));
+    const n = model.get(bi, ni);
     const trip = isTriplet(n[1]);
-    const dotted = [9, 18, 36].includes(twelfths(n[1]));
     const base = trip ? n[1] * 1.5 : n[1]; // length button to light up (a triplet lights its plain note)
     const rest = n[0] === 'r';
     const pics = rest ? REST_PICS : NOTE_PICS;
-    // one line: [note] · note/rest · octave · lengths · triplet · [Delete] · undo · done
+    // one line: [note] · note/rest · lengths · triplet · + · Delete · undo · reset · done
     panel.innerHTML = `
       <div class="eb-row one">
-        <input id="eb-pitch" class="eb-pitch" value="${rest ? '' : n[0]}" placeholder="${rest ? 'rest' : 'C4'}" ${rest ? 'disabled' : ''} aria-label="Note (e.g. C4, F#5, Bb)" title="Type a note: C, D#, Eb5… then Enter">
+        <input id="eb-pitch" class="eb-pitch" value="${rest ? '' : n[0]}" placeholder="${rest ? 'rest' : 'C4'}" aria-label="Note (e.g. C4, F#5, Bb)" title="Type a note: C, D#, Eb5… then Enter">
         <button class="eb-mode" data-a="rest" title="${rest ? 'Rest — click for note' : 'Note — click for rest'} (R)" aria-label="${rest ? 'Rest' : 'Note'}">${rest ? MODE_REST : MODE_NOTE}</button>
         <div class="stepper eb-len">${LENGTHS.map(([d, l, k]) => `<button data-len="${d}" class="${base === d ? 'on' : ''}" title="${rest ? l.replace('note', 'rest') : l}${k ? ` (${k})` : ''}" aria-label="${l}">${pics[d]}</button>`).join('')}<button data-a="trip" class="${trip ? 'on' : ''}" title="Triplet (T)" aria-label="Triplet">${TRIP_PIC}</button></div>
         <button class="icon-btn" data-a="add" title="Add a note after this one (N)" aria-label="Add note">${iconOn('plus')}</button>
-        <button class="danger-text" data-a="del" ${m.mel.length > 1 ? '' : 'disabled'} title="Delete note (⌫)">Delete</button>
+        <button class="danger-text" data-a="del" ${model.count(bi) > 1 ? '' : 'disabled'} title="Delete note (⌫)">Delete</button>
         <span class="grow"></span>
         <button class="icon-btn" data-a="undo" ${undo.length ? '' : 'disabled'} title="Undo (⌘Z)" aria-label="Undo">${iconOn('undo')}</button>
         <button class="icon-btn" data-a="reset" title="Reset to the original notes" aria-label="Reset">${iconOn('restore')}</button>
         <button class="icon-btn eb-done" data-a="done" title="Done" aria-label="Done">${iconOn('check')}</button>
       </div>`;
-    lastBeats[bi] = beats;
     view.pickNote(bi, ni);
   };
-  const commit = async () => { await view.setMeasures(structuredClone(ms)); draw(); };
-  const edit = async (fn) => { undo.push(structuredClone(ms)); fn(ms[bi]); await commit(); };
-  const shift = (p, k) => (p === 'r' ? p : nameOf(Math.max(36, Math.min(96, midiOf(p) + k))));
+  const save = async () => { if (view.real) await view.setXml(model.toString()); else await view.setMeasures(structuredClone(model.ms)); draw(); };
+  const edit = async (fn) => { undo.push(model.snapshot()); fn(); await save(); };
   const step = (d) => { // next / previous note across bars
     ni += d;
-    if (ni < 0 && bi > 0) { bi--; ni = ms[bi].mel.length - 1; }
-    else if (ni >= ms[bi].mel.length && bi < ms.length - 1) { bi++; ni = 0; }
+    if (ni < 0 && bi > 0) { bi--; ni = model.count(bi) - 1; }
+    else if (ni >= model.count(bi) && bi < model.bars() - 1) { bi++; ni = 0; }
     draw();
   };
+  const nearest = (pc, ref) => { let v = null; for (let o = 2; o <= 7; o++) { const c = 12 * (o + 1) + pc; if (v === null || Math.abs(c - ref) < Math.abs(v - ref)) v = c; } return v; };
+  const refOf = () => { const p = model.get(bi, ni)[0]; return p === 'r' ? 72 : midiOf(p); };
   const act = async (a, arg) => {
-    if (a === 'up' || a === 'down') await edit((m) => { m.mel[ni][0] = shift(m.mel[ni][0], a === 'up' ? 1 : -1); });
-    if (a === 'o+' || a === 'o-') await edit((m) => { m.mel[ni][0] = shift(m.mel[ni][0], a === 'o+' ? 12 : -12); });
-    if (a === 'len') await edit((m) => { m.mel[ni][1] = arg; });
+    if (a === 'up' || a === 'down') { const p = model.get(bi, ni)[0]; if (p !== 'r') await edit(() => model.setPitch(bi, ni, nameOf(Math.max(36, Math.min(96, midiOf(p) + (a === 'up' ? 1 : -1)))))); }
+    if (a === 'o+' || a === 'o-') { const p = model.get(bi, ni)[0]; if (p !== 'r') await edit(() => model.setPitch(bi, ni, nameOf(Math.max(36, Math.min(96, midiOf(p) + (a === 'o+' ? 12 : -12)))))); }
+    if (a === 'len') await edit(() => model.setLen(bi, ni, arg));
     if (a === 'dot') {
-      const d = cur()[1], t = twelfths(d);
+      const d = model.get(bi, ni)[1], t = twelfths(d);
       if (isTriplet(d) || t === 3) return toast('A triplet or 1/16 note can’t be dotted here.');
-      await edit((m) => { m.mel[ni][1] = [9, 18, 36].includes(t) ? d / 1.5 : d * 1.5; });
+      await edit(() => model.setLen(bi, ni, [9, 18, 36].includes(t) ? d / 1.5 : d * 1.5));
     }
     if (a === 'trip') {
-      const d = cur()[1];
-      if (!isTriplet(d)) { // one note → three triplet notes filling the same time
-        if (twelfths(d / 3) !== Math.round(d / 3 * 12 * 1e6) / 1e6 || !isTriplet(d / 3)) return toast('Pick a ⅛, ¼ or ½ note to make a triplet.');
-        await edit((m) => { const [p] = m.mel[ni]; m.mel.splice(ni, 1, [p, d / 3], [p, d / 3], [p, d / 3]); });
-      } else { // join the group of three back into one note
-        let start = ni;
-        while (start > 0 && isTriplet(ms[bi].mel[start - 1][1])) start--;
-        const g = start + Math.floor((ni - start) / 3) * 3;
-        await edit((m) => { const grp = m.mel.slice(g, g + 3); m.mel.splice(g, grp.length, [grp[0][0], Math.round(grp.reduce((s, [, x]) => s + x, 0) * 12) / 12]); });
-        ni = g; draw();
-      }
+      const d = model.get(bi, ni)[1];
+      if (!isTriplet(d) && !isTriplet(d / 3)) return toast('Pick a ⅛, ¼ or ½ note to make a triplet.');
+      let g = ni;
+      await edit(() => { g = model.triplet(bi, ni) ?? ni; });
+      ni = g; draw();
     }
-    if (a === 'rest') await edit((m) => { const p = m.mel[ni][0]; m.mel[ni][0] = p === 'r' ? 'C5' : 'r'; });
-    if (a === 'add') { await edit((m) => { const [p, d] = m.mel[ni]; m.mel.splice(ni + 1, 0, [p === 'r' ? 'C5' : p, d]); }); step(1); }
-    if (a === 'del') await edit((m) => { if (m.mel.length > 1) m.mel.splice(ni, 1); });
-    if (a === 'letter') await edit((m) => { // nearest octave to the current note
-      const p = m.mel[ni][0], ref = p === 'r' ? 72 : midiOf(p);
-      let best = null;
-      for (let o = 2; o <= 7; o++) { const v = 12 * (o + 1) + LETTER[arg]; if (!best || Math.abs(v - ref) < Math.abs(best - ref)) best = v; }
-      m.mel[ni][0] = nameOf(best);
-    });
-    if (a === 'undo' && undo.length) { ms = undo.pop(); await commit(); }
-    if (a === 'reset') { undo.push(structuredClone(ms)); await view.revert(); ms = structuredClone(view.tune.measures); draw(); } // undo brings the edits back
+    if (a === 'rest') await edit(() => model.toggleRest(bi, ni));
+    if (a === 'add') { await edit(() => model.add(bi, ni)); step(1); }
+    if (a === 'del') await edit(() => model.del(bi, ni));
+    if (a === 'letter') await edit(() => model.setPitch(bi, ni, nameOf(nearest(LETTER[arg], refOf()))));
+    if (a === 'undo' && undo.length) { model.restore(undo.pop()); await save(); }
+    if (a === 'reset') { undo.push(model.snapshot()); await view.revert(); model.restore(view.real ? view.xml() : view.tune.measures && new TuneModel(view.tune).snapshot()); draw(); } // undo brings the edits back
     if (a === 'done') close();
   };
   panel.onclick = (e) => {
@@ -416,13 +412,8 @@ function scoreEditor(view, it, host, btn) {
     const mm = String(txt).trim().match(/^([a-gA-G])([#b♯♭]?)(\d)?$/);
     if (!mm) { toast('Type a note like C4, F#5 or Bb'); draw(); return; }
     const pc = (LETTER[mm[1].toUpperCase()] + (/[#♯]/.test(mm[2]) ? 1 : /[b♭]/.test(mm[2]) ? -1 : 0) + 12) % 12;
-    edit((m) => {
-      const p = m.mel[ni][0], ref = p === 'r' ? 72 : midiOf(p);
-      let v;
-      if (mm[3]) v = 12 * (+mm[3] + 1) + pc;
-      else { v = null; for (let o = 2; o <= 7; o++) { const c = 12 * (o + 1) + pc; if (v === null || Math.abs(c - ref) < Math.abs(v - ref)) v = c; } }
-      m.mel[ni][0] = nameOf(Math.max(36, Math.min(96, v)));
-    });
+    const v = mm[3] ? 12 * (+mm[3] + 1) + pc : nearest(pc, refOf());
+    edit(() => model.setPitch(bi, ni, nameOf(Math.max(36, Math.min(96, v)))));
   };
   panel.addEventListener('keydown', (e) => { if (e.target.id === 'eb-pitch') { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); setPitch(e.target.value); } if (e.key === 'Escape') { e.target.blur(); draw(); } } });
   panel.onchange = (e) => { if (e.target.id === 'eb-pitch') setPitch(e.target.value); };
