@@ -2,7 +2,6 @@
 import { store } from '../store.js';
 import { $, esc, icon, badge, ago, mins, toast, confirmSheet, CAT } from '../ui.js';
 import { applyTheme } from '../app.js';
-import { thumbHtml } from './actions.js';
 
 const DAY = 86400000, WEEK = 7 * DAY;
 

@@ -2,7 +2,7 @@
 import { store } from '../store.js';
 import { $, esc, icon, iconOn, badge, ago, menu, toast, promptSheet, confirmSheet, CAT } from '../ui.js';
 import { go } from '../app.js';
-import { thumbHtml, metaText, itemMenu } from './actions.js';
+import { itemMenu } from './actions.js';
 
 // ================= tags =================
 export function tagsView(main) {

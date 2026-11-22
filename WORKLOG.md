@@ -40,3 +40,7 @@ Next: print real scores, frontend refactor, migration re-run after Photos downlo
 ## 02:45 — print real scores
 - print.js lays scores out with OSMD pageFormat A4_P (one SVG per page; real or sample). Test scratchpad/e2e/printscore.mjs: Memory = 6 A4 pages, PDF OK.
 Next: frontend refactor (dead list-view code in library.js, shared helpers), migration re-run when Photos originals are down, reopen Photos Settings.
+
+## 03:00 — frontend clean-up
+- Removed the dead list view from library.js (table everywhere), unused thumbHtml imports; score editor moved to views/scoreeditor.js; score.js 441 → 306 lines.
+- Tests: flows 160/160, realedit 10/10.

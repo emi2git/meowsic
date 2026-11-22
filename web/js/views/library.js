@@ -2,7 +2,7 @@
 import { store } from '../store.js';
 import { $, esc, icon, iconOn, badge, ago, menu, KIND, CAT } from '../ui.js';
 import { go, addMenu } from '../app.js';
-import { thumbHtml, metaText, itemMenu, editTags, binItems, keyShort } from './actions.js';
+import { itemMenu, editTags, binItems, keyShort } from './actions.js';
 import { VERSIONS } from '../musicxml.js';
 
 const SORTS = {
@@ -34,7 +34,6 @@ const GENERIC = new Set(['Musical', 'Disney', 'Movie', 'Anime', 'Pop', 'Rock', '
   'English', 'Vietnamese', 'Chinese', 'Russian', 'Korea', 'Japan', 'Singapore', 'Original', 'Piano + vocals', 'Lead sheet', 'Piano duet',
   'Piano accompaniment', 'Piano easy', 'Piano pro', 'Printed', 'Never printed']);
 export const mainTag = (it) => it.tags.find((t) => !GENERIC.has(t)) || '';
-const wide = () => true; // the table everywhere; narrow screens drop the less important columns (CSS)
 const PAGE = 50; // rows per page
 const state = { q: '', sort: 'added', dir: 1, select: false, sel: new Set(), page: 1, anchor: null };
 try { state.sort = localStorage.getItem('meowsic-sort') || 'added'; } catch {}
@@ -86,7 +85,7 @@ export function libraryView(main, { q }) {
       shownList = list.slice((state.page - 1) * PAGE, state.page * PAGE);
       const more = pager(state.page, pages);
       const cnt = `${list.length} item${list.length === 1 ? '' : 's'}`;
-      if (wide()) {
+      {
         // ▲ = A→Z / oldest first, ▼ = Z→A / newest first; Added starts newest first
         const arrow = (k) => (state.sort !== k ? '' : (k === 'added') === (state.dir > 0) ? ' ▼' : ' ▲');
         const cols = COLS_BY[kind] || COLS_BY[''];
@@ -109,23 +108,7 @@ export function libraryView(main, { q }) {
           try { localStorage.setItem('meowsic-sort', k); } catch {}
           draw();
         }));
-        drawSelbar(list);
-        return;
       }
-      rows.innerHTML = `<ul class="rows ${selecting() ? 'selecting' : ''}">` + shownList.map((it) => `
-        <li class="row ${state.sel.has(it.id) ? 'sel' : ''}" data-id="${it.id}">
-          <label class="pick" title="Select (Shift-click for a range)"><input type="checkbox" ${state.sel.has(it.id) ? 'checked' : ''} aria-label="Select ${esc(it.title)}"></label>
-          ${thumbHtml(it)}
-          <div class="row-main">
-            <div class="row-title">${esc(it.title)}</div>
-            <div class="row-sub">${badge(it.kind)}<span>${esc(it.artist || '')}</span><span class="dot">·</span><span>${metaText(it)}</span></div>
-            ${it.tags.length ? `<div class="row-tags">${it.tags.slice(0, 4).map((t) => `<span class="tagchip">${esc(t)}</span>`).join('')}${it.tags.length > 4 ? `<span class="tagchip more">+${it.tags.length - 4}</span>` : ''}</div>` : ''}
-          </div>
-          <div class="row-when hide-s">${state.sort === 'most' ? `${store.playCount(it.id)} plays` : state.sort === 'played' ? ago(store.lastPlayed(it.id)) : ago(it.createdAt)}</div>
-          <button class="icon-btn row-more" aria-label="More for ${esc(it.title)}" title="More">${iconOn('more')}</button>
-        </li>`).join('') +
-        `<li class="pager-row"><span class="muted">${cnt}</span>${more}</li></ul>`;
-      rows.querySelector('.pager')?.addEventListener('click', (e) => { const b = e.target.closest('[data-pg]'); if (b && !b.disabled) { state.page = +b.dataset.pg; draw(); main.scrollTo({ top: 0 }); } });
     }
     drawSelbar(list);
   };
