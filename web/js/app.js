@@ -56,7 +56,7 @@ export function renderSide() {
       <a class="nav${on(v === 'tags')}" href="#/tags">${icon('tag')}<span>Tags</span></a>
       <a class="nav${on(v === 'stats')}" href="#/stats">${icon('stats')}<span>Stats</span></a>
       <h3>More</h3>
-      <a class="nav${on(v === 'activity')}" href="#/activity"><span>Activity</span>${store.jobs().some((j) => j.status === 'running') ? '<i class="live">•</i>' : ''}</a>
+      <a class="nav${on(v === 'activity')}" href="#/activity"><span>Logs</span>${store.jobs().some((j) => j.status === 'running') ? '<i class="live">•</i>' : ''}</a>
       <a class="nav${on(v === 'bin')}" href="#/bin">${icon('bin')}<span>Bin</span><i>${store.items({ deleted: true }).length || ''}</i></a>
       <a class="nav${on(v === 'settings')}" href="#/settings">${icon('settings')}<span>Settings</span></a>
       <h3>Developer</h3>
@@ -74,7 +74,7 @@ export function renderSide() {
     `<button id="tab-more" class="${['bin', 'settings', 'print', 'activity', 'developer'].includes(v) ? 'on' : ''}">${icon('more')}<span>More</span></button>`;
   $('#tab-add').onclick = (e) => addMenu(e.currentTarget);
   $('#tab-more').onclick = (e) => menu(e.currentTarget, [
-    { label: 'Activity', icon: 'wave', run: () => go('#/activity') },
+    { label: 'Logs', icon: 'wave', run: () => go('#/activity') },
     { label: 'Bin', icon: 'bin', run: () => go('#/bin') },
     { label: 'Settings', icon: 'settings', run: () => go('#/settings') },
     { label: 'Developer', icon: 'tools', run: () => go('#/developer') },

@@ -1,4 +1,4 @@
-// Activity: every job and change, newest first. Plain list; tap a row for its log.
+// Logs: every job and change, newest first. Plain list; tap a row for its log.
 import { store } from '../store.js';
 import { $, esc, ago } from '../ui.js';
 
@@ -10,7 +10,7 @@ const STATUS = { running: 'Running', done: 'Done', cancelled: 'Cancelled', faile
 export function activityView(main) {
   let filter = 'all';
   const open = new Set();
-  main.innerHTML = `<header class="top"><h1>Activity</h1><span class="grow"></span>
+  main.innerHTML = `<header class="top"><h1>Logs</h1><span class="grow"></span>
       <select id="ac-f" aria-label="Show"><option value="all">Everything</option><option value="jobs">Jobs only</option><option value="running">Running</option><option value="failed">Failed or cancelled</option></select></header>
     <table class="activity"><thead><tr><th>When</th><th>What</th><th>Item</th><th>Status</th></tr></thead><tbody id="ac"></tbody></table>`;
   const draw = () => {
