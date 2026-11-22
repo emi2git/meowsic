@@ -4,7 +4,7 @@ import { $, esc, icon, CAT, KIND, menu } from './ui.js';
 import { libraryView } from './views/library.js';
 import { itemView } from './views/item.js';
 import { performView } from './views/perform.js';
-import { addSheetsView, addChordsView, addScoreView, jobsView } from './views/add.js';
+import { addSheetsView, addChordsView, addScoreView } from './views/add.js';
 import { tagsView, binView } from './views/organize.js';
 import { printView } from './views/print.js';
 import { statsView, settingsView } from './views/more.js';
@@ -21,7 +21,7 @@ export function parseHash() {
 
 const ROUTES = {
   library: libraryView, item: itemView, perform: performView,
-  'add-sheets': addSheetsView, 'add-chords': addChordsView, 'add-score': addScoreView, jobs: jobsView,
+  'add-sheets': addSheetsView, 'add-chords': addChordsView, 'add-score': addScoreView, jobs: addScoreView,
   tags: tagsView, bin: binView,
   print: printView, stats: statsView, settings: settingsView,
 };
@@ -47,7 +47,6 @@ export function renderSide() {
   const n = (k) => items.filter((x) => x.kind === k).length;
   const kind = v === 'library' ? q.get('kind') || '' : null;
   const on = (cond) => (cond ? ' on' : '');
-  const running = store.jobs().filter((j) => j.status === 'running').length;
   $('#side').innerHTML = `
     <a class="brand" href="#/library"><span><b>Meowsic</b><small>2.0</small></span></a>
     <button class="add-btn primary" id="side-add">${icon('plus')}Add music</button>
@@ -57,7 +56,6 @@ export function renderSide() {
       <a class="nav${on(v === 'tags')}" href="#/tags">${icon('tag')}<span>Tags</span></a>
       <a class="nav${on(v === 'stats')}" href="#/stats">${icon('stats')}<span>Stats</span></a>
       <h3>More</h3>
-      <a class="nav${on(v === 'jobs')}" href="#/jobs">${icon('wave')}<span>Transcriptions</span>${running ? `<i class="live">${running}</i>` : ''}</a>
       <a class="nav${on(v === 'bin')}" href="#/bin">${icon('bin')}<span>Bin</span><i>${store.items({ deleted: true }).length || ''}</i></a>
       <a class="nav${on(v === 'settings')}" href="#/settings">${icon('settings')}<span>Settings</span></a>
     </nav>
@@ -70,10 +68,9 @@ export function renderSide() {
     tab('#/tags', 'tag', 'Tags', v === 'tags') +
     `<button id="tab-add" class="tab-add" aria-label="Add music">Add</button>` +
     tab('#/stats', 'stats', 'Stats', v === 'stats') +
-    `<button id="tab-more" class="${['bin', 'settings', 'jobs', 'print'].includes(v) ? 'on' : ''}">${icon('more')}<span>More</span></button>`;
+    `<button id="tab-more" class="${['bin', 'settings', 'print'].includes(v) ? 'on' : ''}">${icon('more')}<span>More</span></button>`;
   $('#tab-add').onclick = (e) => addMenu(e.currentTarget);
   $('#tab-more').onclick = (e) => menu(e.currentTarget, [
-    { label: 'Transcriptions', icon: 'wave', run: () => go('#/jobs') },
     { label: 'Bin', icon: 'bin', run: () => go('#/bin') },
     { label: 'Settings', icon: 'settings', run: () => go('#/settings') },
   ]);
@@ -83,7 +80,7 @@ export function addMenu(anchor) {
   menu(anchor, [
     { label: 'Sheet music — photos or PDF', icon: 'photo', run: () => go('#/add-sheets') },
     { label: 'Chords — search the web', icon: 'chords', run: () => go('#/add-chords') },
-    { label: 'Score — from a song recording', icon: 'wave', run: () => go('#/add-score') },
+    { label: 'Score — from a recording', icon: 'wave', run: () => go('#/add-score') },
   ]);
 }
 

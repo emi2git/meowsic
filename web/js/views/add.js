@@ -234,8 +234,10 @@ export const STAGES = ['Download audio', 'Separate voice and instruments', 'Find
 export function addScoreView(main) {
   const f = { src: 'yt', output: 'Piano', method: 'Direct transcription' };
   main.innerHTML = `
-    <header class="top"><a class="icon-btn back" href="#/library" aria-label="Back">‹ Back</a><h1>Make a score from a recording</h1></header>
+    <header class="top"><a class="icon-btn back" href="#/library" aria-label="Back">‹ Back</a><h1>Add score</h1></header>
+    <div class="pad narrow" id="sf-jobs"></div>
     <form class="pad narrow form" id="sf">
+      <h2 class="sub-h">New score from a recording</h2>
       <div class="seg" id="sf-src"><button type="button" data-s="yt" class="on">${icon('link')}YouTube link</button><button type="button" data-s="file">${icon('upload')}Audio file</button></div>
       <div id="sf-yt"><input id="sf-url" type="url" placeholder="https://www.youtube.com/watch?v=…" aria-label="YouTube link"></div>
       <div id="sf-file" hidden><label class="drop small"><input type="file" id="sf-audio" accept="audio/*,video/*" hidden><span class="btn">${icon('upload')}Choose audio file</span><span class="muted" id="sf-fname">MP3, M4A, WAV or a video</span></label></div>
@@ -246,7 +248,7 @@ export function addScoreView(main) {
       <fieldset><legend>How?</legend><div class="cards" id="sf-method">
         ${[['Direct transcription', 'Write down what is played'], ['Arrangement', 'The whole song as a piano piece'], ['Piano accompaniment', 'Only the accompaniment, no melody']].map(([k, d], i) =>
           `<button type="button" class="card-opt ${i ? '' : 'on'}" data-v="${k}"><b>${k}</b><small>${d}</small></button>`).join('')}</div></fieldset>
-      <p class="muted">Runs on the Mac and takes about 3–6 minutes for a 4-minute song. You can keep using Meowsic meanwhile.</p>
+      <p class="muted">Runs on the Mac and takes about 3–6 minutes for a 4-minute song. Progress shows at the top of this page; you can keep using Meowsic meanwhile.</p>
       <button class="primary big" id="sf-go">${icon('wave')}Start</button>
     </form>`;
   const pick = (id, key) => { $(id, main).onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; f[key] = b.dataset.v; $(id, main).querySelectorAll('[data-v]').forEach((x) => x.classList.toggle('on', x === b)); }; };
@@ -260,23 +262,27 @@ export function addScoreView(main) {
     if (f.src === 'yt' && !/^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//.test(url)) return toast('Paste a YouTube link first.');
     if (f.src === 'file' && !f.file) return toast('Choose an audio file first.');
     store.addJob({ title: $('#sf-title', main).value.trim() || 'Untitled song', source: f.src === 'yt' ? 'YouTube · ' + url.replace(/^https?:\/\/(www\.)?/, '') : 'Audio file · ' + f.file, output: f.output, method: f.method });
-    go('#/jobs');
+    e.target.reset();
+    $('#sf-fname', main).textContent = 'MP3, M4A, WAV or a video';
+    f.file = null;
+    main.scrollTo({ top: 0, behavior: 'smooth' });
   };
+  return jobsList($('#sf-jobs', main));
 }
 
-export function jobsView(main) {
-  main.innerHTML = `<header class="top"><h1>Transcriptions</h1><span class="grow"></span><a class="btn primary" href="#/add-score">${icon('plus')}New</a></header><div class="pad" id="jobs"></div>`;
+function jobsList(host) {
   const draw = () => {
     const jobs = store.jobs();
-    $('#jobs', main).innerHTML = jobs.length ? jobs.map((j) => `
+    host.hidden = !jobs.length;
+    host.innerHTML = `<h2 class="sub-h">In progress and done</h2>` + jobs.map((j) => `
       <section class="job ${j.status}">
         <div class="job-head"><div><b>${esc(j.title)}</b><small>${esc(j.source)} · ${esc(j.output)} · ${esc(j.method)}</small></div>
-          ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : j.status === 'done' ? `<a class="btn primary" href="#/item/${j.itemId}">Open score</a><button data-dismiss="${j.id}" aria-label="Dismiss">Dismiss</button>` : `<button data-dismiss="${j.id}">Dismiss</button>`}</div>
-        <ol class="stages">${STAGES.map((s, i) => `<li class="${i < j.stage || j.status === 'done' ? 'done' : i === j.stage && j.status === 'running' ? 'now' : ''}">${i < j.stage || j.status === 'done' ? icon('check') : ''}<span>${s}</span>${i === j.stage && j.status === 'running' ? `<progress max="1" value="${j.progress}"></progress>` : ''}</li>`).join('')}</ol>
+          ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : j.status === 'done' ? `<a class="btn primary" href="#/item/${j.itemId}">Open score</a><button data-dismiss="${j.id}">Dismiss</button>` : `<button data-dismiss="${j.id}">Dismiss</button>`}</div>
+        <ol class="stages">${STAGES.map((s, i) => `<li class="${i < j.stage || j.status === 'done' ? 'done' : i === j.stage && j.status === 'running' ? 'now' : ''}"><span>${s}</span>${i === j.stage && j.status === 'running' ? `<progress max="1" value="${j.progress}"></progress>` : ''}</li>`).join('')}</ol>
         <small class="muted">${j.status === 'running' ? `Started ${ago(j.startedAt)}` : j.status === 'done' ? `Finished ${ago(j.doneAt)}` : 'Cancelled'}</small>
-      </section>`).join('') : `<div class="empty">${CAT}<p>No transcriptions yet.</p><a class="btn primary" href="#/add-score">Make a score from a recording</a></div>`;
+      </section>`).join('');
   };
-  $('#jobs', main).onclick = (e) => {
+  host.onclick = (e) => {
     const c = e.target.closest('[data-cancel]'), d = e.target.closest('[data-dismiss]');
     if (c) store.updateJob(c.dataset.cancel, { status: 'cancelled' }, { quiet: false });
     if (d) store.dismissJob(d.dataset.dismiss);
