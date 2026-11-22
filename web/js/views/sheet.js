@@ -38,11 +38,18 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
     const row = $('#page-row', root);
     const big = typeof zoom === 'number' && zoom > 1;
     pages.classList.toggle('zoomed', big);
-    row.style.height = big ? `${zoom * 100}%` : '';
+    // zoomed: the page keeps its shape and grows in both directions (height = zoom × screen height)
+    const fitH = pages.clientHeight - 16;
+    row.style.height = '';
+    row.dataset.h = big ? Math.round(fitH * zoom) : '';
     row.innerHTML = show.map((p) => `<div class="page" data-p="${p}"><img src="${pageSrc(it, p)}" alt="Page ${p} of ${esc(it.title)}" draggable="false"></div>`).join('');
     row.querySelectorAll('.page').forEach((w) => {
       const img = w.querySelector('img');
-      const mk = () => { const l = new InkLayer(w, it.id, +w.dataset.p); l.setTool(tool); layers.push(l); };
+      if (row.dataset.h) w.style.height = row.dataset.h + 'px';
+      const mk = () => {
+        if (img.naturalWidth) w.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`; // real photos keep their own shape
+        const l = new InkLayer(w, it.id, +w.dataset.p); l.setTool(tool); layers.push(l);
+      };
       img.complete ? mk() : img.addEventListener('load', mk, { once: true });
     });
     root.querySelector('.prev').disabled = page <= 1;
@@ -58,17 +65,29 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
   root.querySelector('.next').onclick = next;
   $('#strip', root)?.addEventListener('click', (e) => { const b = e.target.closest('[data-p]'); if (b) { page = +b.dataset.p; draw(); } });
 
-  // swipe, and in performance mode a tap on the left / right half turns the page
+  // click / tap to turn: see below; swipe works too
+  // (when zoomed in, dragging moves around the page instead of turning it)
   let sx = null, sy = 0;
-  pages.addEventListener('pointerdown', (e) => { if (tool || pages.classList.contains('zoomed')) { sx = null; return; } sx = e.clientX; sy = e.clientY; });
+  pages.addEventListener('pointerdown', (e) => { if (tool) { sx = null; return; } sx = e.clientX; sy = e.clientY; });
   pages.addEventListener('pointerup', (e) => {
     if (sx === null || tool) return;
     const dx = e.clientX - sx, dy = e.clientY - sy;
     sx = null;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) return dx < 0 ? next() : prev();
-    if (perform && Math.abs(dx) < 10 && !e.target.closest('button')) {
-      const r = pages.getBoundingClientRect();
-      e.clientX - r.left > r.width * 0.4 ? next() : prev();
+    if (e.target.closest('button')) return;
+    const zoomed = pages.classList.contains('zoomed');
+    if (!zoomed && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) return dx < 0 ? next() : prev();
+    if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
+      // one page: left half ← / right half →. Two pages: outer half of the left page ←, outer half of the right page →
+      const shown = [...pages.querySelectorAll('.page')];
+      const hit = e.target.closest('.page');
+      if (shown.length === 1 || !hit) {
+        const r = (hit || pages).getBoundingClientRect();
+        e.clientX - r.left < r.width / 2 ? prev() : next();
+        return;
+      }
+      const r = hit.getBoundingClientRect(), leftHalf = e.clientX - r.left < r.width / 2;
+      if (hit === shown[0] && leftHalf) prev();
+      if (hit === shown[shown.length - 1] && !leftHalf) next();
     }
   });
   // arrows, page keys and space — Bluetooth page-turn pedals send these

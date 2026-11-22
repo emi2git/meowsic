@@ -660,5 +660,6 @@ p.count-row { text-align: center; }
 
 /* sheet zoom: bigger than the screen scrolls in both directions */
 .pages.zoomed { overflow: auto; align-items: flex-start; justify-content: flex-start; padding: 8px; touch-action: pan-x pan-y pinch-zoom; }
-.pages.zoomed .page-row { margin: 0 auto; }
-.pages.zoomed .page { max-width: none; }
+.pages.zoomed .page-row { margin: 0 auto; height: auto; width: max-content; max-width: none; flex: none; }
+.pages.zoomed .page { max-width: none; flex: none; }
+.pages:not(.inking) .page { cursor: pointer; }
