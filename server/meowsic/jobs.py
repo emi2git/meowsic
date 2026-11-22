@@ -1,4 +1,4 @@
-"""Jobs (transcriptions, "make another version") with a pluggable runner.
+"""Jobs (transcriptions, "make another version", AI tag suggestions) with a pluggable runner.
 
 A runner is `fn(ctx: JobContext)`, run on its own thread (`app.state.job_runner`; the real ones are in
 runners.py, `stub_runner` just says the engine is not installed).
@@ -72,11 +72,11 @@ def stub_runner(ctx: JobContext):
     ctx.update(msg='Transcription engine is not installed yet', status='failed')
 
 
-def run_job(app, job_id):
+def run_job(app, job_id, runner=None):
     ctx = JobContext(app.state.cfg, job_id)
     try:
         ctx.update(status='running')
-        app.state.job_runner(ctx)
+        (runner or app.state.job_runner)(ctx)
         if ctx.job['status'] == 'running':
             ctx.update(progress=1, msg='Done', status='done')
     except Cancelled:
@@ -112,7 +112,15 @@ def get_job(job_id: str, c=Depends(conn)):
 PARAMS = ('url', 'fromItemId', 'artist', 'tags', 'key')  # body keys the runner reads later
 
 
-def start_job(app, kind, title, source, outputs, params, jid=None):
+def get_job_row(app, job_id) -> dict:
+    c = app.state.connect()
+    try: return job_json(c.execute('SELECT * FROM job WHERE id=?', (job_id,)).fetchone())
+    finally: c.close()
+
+
+def start_job(app, kind, title, source, outputs, params, jid=None, runner=None, thread=True):
+    """Queue a job and run it on a thread (`thread=False`: run it here and return when it ends).
+    `runner` overrides app.state.job_runner (the AI tag jobs bring their own)."""
     jid, t = jid or uid('job'), now_ms()
     c = app.state.connect()
     try:
@@ -122,7 +130,8 @@ def start_job(app, kind, title, source, outputs, params, jid=None):
         job = job_json(c.execute('SELECT * FROM job WHERE id=?', (jid,)).fetchone())
     finally:
         c.close()
-    threading.Thread(target=run_job, args=(app, jid), daemon=True).start()
+    if thread: threading.Thread(target=run_job, args=(app, jid, runner), daemon=True).start()
+    else: run_job(app, jid, runner)
     return job
 
 

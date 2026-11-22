@@ -21,3 +21,8 @@ __pycache__/
 server/.venv/
 .pytest_cache/
 migrate/.venv/
+
+# AI model files never go in git (they live in ~/ai/models; list in models.json)
+*.safetensors
+*.gguf
+models--*/

@@ -5,3 +5,5 @@ httpx>=0.27
 pytest>=8
 pillow>=10
 music21>=9.1
+mlx-lm>=0.32            # offline AI tag suggestions (Apple Silicon); model in ~/ai/models, see models.json
+pyobjc-framework-Vision>=10  # Apple Vision OCR of sheet page 1 (on-device)

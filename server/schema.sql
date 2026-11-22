@@ -81,9 +81,9 @@ CREATE TABLE IF NOT EXISTS play_session (
 );
 CREATE INDEX IF NOT EXISTS play_item ON play_session(item_id, opened_at);
 
-CREATE TABLE IF NOT EXISTS job (              -- transcriptions and "make another version"
+CREATE TABLE IF NOT EXISTS job (              -- transcriptions, "make another version", AI tag suggestions
   id          TEXT PRIMARY KEY,
-  kind        TEXT NOT NULL CHECK (kind IN ('transcribe','version')),
+  kind        TEXT NOT NULL CHECK (kind IN ('transcribe','version','tags')),
   title       TEXT NOT NULL,
   source      TEXT NOT NULL DEFAULT '',
   outputs     TEXT NOT NULL,                  -- JSON array of versions
@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS job (              -- transcriptions and "make anothe
   stage       INTEGER NOT NULL DEFAULT 0,
   progress    REAL NOT NULL DEFAULT 0,
   log         TEXT NOT NULL DEFAULT '[]',     -- JSON array of {t, msg}
-  result      TEXT,                           -- JSON array of created item ids
+  result      TEXT,                           -- JSON: created item ids; tags jobs: {suggestions} or {groups}
   started_at  INTEGER NOT NULL,
   done_at     INTEGER,
   dismissed   INTEGER NOT NULL DEFAULT 0,
