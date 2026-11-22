@@ -20,6 +20,7 @@ export function itemView(main, { parts }) {
         <a class="icon-btn back" href="${back}" aria-label="Back">‹ Back</a>
         <h1 class="item-title" id="it-title" title="${esc(it.title)}${it.artist ? ' — ' + esc(it.artist) : ''} (tap to rename)">${esc(it.title)}</h1>
         <div class="toolbar inline" id="it-bar"></div>
+        ${document.fullscreenEnabled || document.webkitFullscreenEnabled ? `<button class="icon-btn" id="it-full" aria-label="Full screen" title="Full screen">${iconOn('perform')}</button>` : ''}
         <button class="icon-btn" id="it-more" aria-label="More" title="More">${iconOn('more')}</button>
       </header>
       <div class="viewer-body">
@@ -81,11 +82,17 @@ export function itemView(main, { parts }) {
     ...(it.kind === 'score' ? scoreExportMenu(it, view) : []),
   ]);
 
+  // full screen: hides the browser's tabs and address bar; press again or Esc to leave
+  $('#it-full', main)?.addEventListener('click', () => {
+    const d = document, el = d.documentElement;
+    if (d.fullscreenElement || d.webkitFullscreenElement) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+    else (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
+  });
   const off = store.on(() => {
     if (!store.get(it.id) || it.deleted) return go('#/library');
     $('#it-title', main).textContent = it.title;
     if (!details.hidden) drawDetails();
   });
   const opened = Date.now();
-  return () => { off(); offBar?.(); view.destroy(); store.logPlay(it.id, opened, Date.now()); };
+  return () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); off(); offBar?.(); view.destroy(); store.logPlay(it.id, opened, Date.now()); };
 }

@@ -587,3 +587,15 @@ legend { font-weight: 700; margin-bottom: 8px; }
 .clear-tags { font-size: 14px; }
 
 .ink-toggle.on { background: var(--acc-soft); }
+
+/* more room for music: no left bar, slim header, little padding while a sheet / score / chart is open */
+body[data-view="item"] .app { grid-template-columns: 1fr; }
+body[data-view="item"] .side { display: none; }
+body[data-view="item"] .item-top { min-height: 46px; padding-top: calc(5px + env(safe-area-inset-top)); padding-bottom: 5px; padding-left: 16px; padding-right: 12px; }
+body[data-view="item"] .item-top button, body[data-view="item"] .item-top .btn, body[data-view="item"] .item-top select { min-height: 34px; }
+body[data-view="item"] .item-top .item-title { font-size: 17px; }
+body[data-view="item"] .pages { padding: 4px 48px; background: var(--bg2); }
+body[data-view="item"] .page-row { gap: 4px; }
+body[data-view="item"] .score-wrap { padding: 6px; }
+body[data-view="item"] .score-paper { max-width: none; }
+@media (max-width: 760px) { body[data-view="item"] .pages { padding: 2px; } }
