@@ -599,3 +599,6 @@ body[data-view="item"] .page-row { gap: 4px; }
 body[data-view="item"] .score-wrap { padding: 6px; }
 body[data-view="item"] .score-paper { max-width: none; }
 @media (max-width: 760px) { body[data-view="item"] .pages { padding: 2px; } }
+.tagpop-head b { white-space: nowrap; }
+.tagpop .tagpop-head button { width: auto; min-height: 0; margin-left: auto; padding: 0; justify-content: flex-end; background: none; font-weight: 600; color: var(--acc-text); }
+.tagpop .tagpop-head button:disabled { opacity: .4; }
