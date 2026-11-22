@@ -8,6 +8,7 @@ import { tagsView, binView } from './views/organize.js';
 import { printView } from './views/print.js';
 import { statsView, settingsView, developerView } from './views/more.js';
 import { activityView } from './views/activity.js';
+import { cleanupView } from './views/cleanup.js';
 import { makeTagsView } from './views/maketags.js';
 
 const main = $('#main');
@@ -24,7 +25,7 @@ const ROUTES = {
   library: libraryView, item: itemView,
   'add-sheets': addSheetsView, 'add-chords': addChordsView, 'add-score': addScoreView, jobs: addScoreView,
   tags: tagsView, bin: binView,
-  print: printView, stats: statsView, activity: activityView, 'make-tags': makeTagsView, developer: developerView, settings: settingsView,
+  print: printView, stats: statsView, activity: activityView, cleanup: cleanupView, 'make-tags': makeTagsView, developer: developerView, settings: settingsView,
 };
 
 function route() {
@@ -58,6 +59,7 @@ export function renderSide() {
       <a class="nav${on(v === 'stats')}" href="#/stats">${icon('stats')}<span>Stats</span></a>
       <h3>Utilities</h3>
       <a class="nav${on(v === 'activity')}" href="#/activity"><span>Logs</span>${store.jobs().some((j) => j.status === 'running') ? '<i class="live">•</i>' : ''}</a>
+      ${store.mode === 'server' ? `<a class="nav${on(v === 'cleanup')}" href="#/cleanup"><span>Clean up</span></a>` : ''}
       <a class="nav${on(v === 'bin')}" href="#/bin">${icon('bin')}<span>Trash</span><i>${store.items({ deleted: true }).length || ''}</i></a>
       <a class="nav${on(v === 'settings')}" href="#/settings">${icon('settings')}<span>Settings</span></a>
       <a class="nav${on(v === 'developer')}" href="#/developer"><span>Developer</span></a>
@@ -71,10 +73,11 @@ export function renderSide() {
     tab('#/tags', 'tag', 'Tags', v === 'tags') +
     `<button id="tab-add" class="tab-add" aria-label="Add music">Add</button>` +
     tab('#/stats', 'stats', 'Stats', v === 'stats') +
-    `<button id="tab-more" class="${['bin', 'settings', 'print', 'activity', 'developer'].includes(v) ? 'on' : ''}">${icon('more')}<span>Utilities</span></button>`;
+    `<button id="tab-more" class="${['bin', 'settings', 'print', 'activity', 'developer', 'cleanup'].includes(v) ? 'on' : ''}">${icon('more')}<span>Utilities</span></button>`;
   $('#tab-add').onclick = (e) => addMenu(e.currentTarget);
   $('#tab-more').onclick = (e) => menu(e.currentTarget, [
     { label: 'Logs', icon: 'wave', run: () => go('#/activity') },
+    ...(store.mode === 'server' ? [{ label: 'Clean up', icon: 'tools', run: () => go('#/cleanup') }] : []),
     { label: 'Trash', icon: 'bin', run: () => go('#/bin') },
     { label: 'Settings', icon: 'settings', run: () => go('#/settings') },
     { label: 'Developer', icon: 'tools', run: () => go('#/developer') },

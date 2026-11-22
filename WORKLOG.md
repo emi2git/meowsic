@@ -52,3 +52,10 @@ Next: frontend refactor (dead list-view code in library.js, shared helpers), mig
 
 ## — iCloud-only sheets done
 - Fetched only the 157 needed originals with osxphotos --download-missing --use-photokit (2 min), re-ran import: +55 sheets (+3 Trash), 3 refilled; 1 page gone from Photos. Verify passed.
+
+## 03:40 — Clean up (trim sheet photos, odd titles)
+- server/meowsic/trim.py: finds screen junk (✕ / status bar / coloured app bars on top; player bar, page dots, home bar at the bottom) by ink bands + staff lines; only flags pages with a real app sign. Real library: ~25% of 7,845 pages.
+- server/meowsic/cleanup.py: background scan cached in work/cleanup.json; POST /items/{id}/pages/{n}/trim (keeps the photo in items/<folder>/.history + crop params, shifts notes), /untrim (undo, {all} = original), /cleanup/ok (looks fine, undoable); odd titles by rules (64 found).
+- web/js/views/cleanup.js: Utilities → Clean up. Keys: Enter/T trim+next, F fine, →/J ←/K, ↑↓ top line, Shift↑↓ bottom line, R rename, Z/⌘Z undo, O original, 1/2 tabs, ? help. "Trim all…" with confirm.
+- Test scratchpad/e2e/cleanup.mjs 20/20 (:5190). Server tests 62 passed. Real server restarted (start.sh, log ~/Documents/Meowsic/work/server.log).
+- server/app.py registration is uncommitted together with the AI agent's ai.py work.
