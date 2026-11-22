@@ -1,5 +1,5 @@
-// Print: an item, a selection or a tag, as a book. A multi-page piece that would
-// start on a right-hand page gets a blank before it, so its pages face each other.
+// Print: an item, a selection or a tag, as a book. An even-length piece that would start on a
+// right-hand page gets a blank before it, so it needs the fewest page turns.
 import { store } from '../store.js';
 import { $, esc, icon, badge, CAT, toast } from '../ui.js';
 import { pageSrc } from './sheet.js';
@@ -30,7 +30,9 @@ function layout(items) {
   const out = [];
   for (const it of items) {
     const n = printedPages(it, opts.paper);
-    if (opts.facing && n > 1 && out.length % 2 === 0) out.push({ blank: true, before: it.title });
+    // A blank only saves a page turn when a piece has an even number of pages and would start on a
+    // right-hand page (page 1, 3, 5… of the book). Odd-length pieces need the same turns either way.
+    if (opts.facing && n > 1 && n % 2 === 0 && out.length % 2 === 0) out.push({ blank: true, before: it.title });
     for (let p = 1; p <= n; p++) out.push({ it, page: p, of: n });
   }
   return out;
@@ -54,7 +56,7 @@ export function printView(main, { q }) {
       <button class="primary" id="pr-go">${icon('print')}Print</button></header>
     <div class="toolbar">
       <label class="ctl">Paper <select id="pr-paper"><option ${opts.paper === 'A4' ? 'selected' : ''}>A4</option><option ${opts.paper === 'Letter' ? 'selected' : ''}>Letter</option></select></label>
-      <label class="ctl check"><input type="checkbox" id="pr-facing" ${opts.facing ? 'checked' : ''}> Facing pages <small>(blanks so multi-page pieces face each other)</small></label>
+      <label class="ctl check"><input type="checkbox" id="pr-facing" ${opts.facing ? 'checked' : ''}> Facing pages <small>(adds a blank only where it saves a page turn)</small></label>
       <span class="grow"></span><span class="muted" id="pr-sum"></span>
     </div>
     <div class="pad"><ul class="rows compact" id="pr-list"></ul><h3>Preview</h3><div class="spreads" id="pr-prev"></div></div>`;
