@@ -1,4 +1,4 @@
-// Print: an item, a selection, a collection or a tag, as a book. A multi-page piece that would
+// Print: an item, a selection or a tag, as a book. A multi-page piece that would
 // start on a right-hand page gets a blank before it, so its pages face each other.
 import { store } from '../store.js';
 import { $, esc, icon, badge, CAT, toast } from '../ui.js';
@@ -18,8 +18,7 @@ let opts = { paper: 'A4', facing: true };
 try { Object.assign(opts, JSON.parse(localStorage.getItem('meowsic-print') || '{}')); } catch {}
 
 function sourceOf(q) {
-  if (q.get('col')) { const c = store.collection(q.get('col')); return { name: c?.name || 'Collection', ids: c?.itemIds || [] }; }
-  if (q.get('tag')) { const t = q.get('tag'); return { name: `Tag: ${t}`, ids: store.items().filter((x) => x.tags.includes(t)).sort((a, b) => a.title.localeCompare(b.title)).map((x) => x.id) }; }
+  if (q.get('tag')) { const t = q.get('tag'); return { name: `Tag: ${t}`, ids: store.tagItems(t).map((x) => x.id) }; }
   if (q.get('items')) return { name: 'Selected music', ids: q.get('items').split(',') };
   const it = store.get(q.get('item'));
   return { name: it?.title || 'Print', ids: it ? [it.id] : [] };

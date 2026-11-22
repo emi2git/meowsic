@@ -3,7 +3,7 @@
 import { buildMock } from './mock.js';
 import { parseChordPro } from './chordchart.js';
 
-const KEY = 'meowsic-mock-v1';
+const KEY = 'meowsic-mock-v2';
 let db;
 const subs = new Set();
 const jobSubs = new Set();
@@ -14,7 +14,7 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (raw) db = JSON.parse(raw);
   } catch {}
-  if (!db || db.version !== 1) db = buildMock();
+  if (!db || db.version !== 2) db = buildMock();
   hydrate();
 }
 function hydrate() {
@@ -58,7 +58,6 @@ export const store = {
   purge(ids) {
     const s = new Set([].concat(ids));
     db.items = db.items.filter((x) => !s.has(x.id));
-    for (const c of db.collections) c.itemIds = c.itemIds.filter((i) => !s.has(i));
     changed();
   },
 
@@ -86,14 +85,8 @@ export const store = {
     changed();
   },
 
-  // collections
-  collection(id) { return db.collections.find((c) => c.id === id); },
-  addCollection(name) { const c = { id: uid('col'), name: name.trim(), itemIds: [] }; db.collections.push(c); changed(); return c; },
-  renameCollection(id, name) { const c = this.collection(id); if (c && name.trim()) { c.name = name.trim(); changed(); } },
-  deleteCollection(id) { db.collections = db.collections.filter((c) => c.id !== id); changed(); },
-  addToCollection(colId, ids) { const c = this.collection(colId); if (!c) return; for (const id of [].concat(ids)) if (!c.itemIds.includes(id)) c.itemIds.push(id); changed(); },
-  removeFromCollection(colId, id) { const c = this.collection(colId); if (c) { c.itemIds = c.itemIds.filter((x) => x !== id); changed(); } },
-  moveInCollection(colId, from, to) { const c = this.collection(colId); if (!c) return; const [x] = c.itemIds.splice(from, 1); c.itemIds.splice(to, 0, x); changed(); },
+  // everything with a tag, in the order print and set lists use (title A–Z)
+  tagItems(tag) { return this.items().filter((x) => x.tags.includes(tag)).sort((a, b) => a.title.localeCompare(b.title)); },
 
   // play history
   plays(id) { return id ? db.plays.filter((p) => p.itemId === id) : db.plays; },

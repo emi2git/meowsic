@@ -14,7 +14,7 @@
 - [x] Add sheets: pick photos / PDFs, review grouping, edit titles and tags
 - [x] Add chords: search English / Vietnamese, preview, save
 - [x] Add score: YouTube link or audio file, output + method, job progress
-- [x] Tags page, Collections (order, page counts, print, perform as set list), Bin
+- [x] Tags page (print all, play all as a set list), Bin — collections removed, tags cover them
 - [x] Print: collection or tag, A4 / Letter, facing pages with blanks, chord frame + cat
 - [x] Stats: practice time, most played, recently played
 - [x] Settings: Mac connection, offline, backup export / import, theme, reset mock data

@@ -64,7 +64,6 @@ export function itemView(main, { parts }) {
   const drawDetails = () => {
     const plays = store.plays(it.id);
     const total = plays.reduce((s, p) => s + (p.closedAt - p.openedAt), 0);
-    const cols = store.db.collections.filter((c) => c.itemIds.includes(it.id));
     details.innerHTML = `
       <div class="details-head"><h2>Details</h2><button class="icon-btn" id="dt-close" aria-label="Close details">${icon('close')}</button></div>
       <dl>
@@ -72,7 +71,6 @@ export function itemView(main, { parts }) {
         ${it.kind === 'chords' ? `<dt>Source</dt><dd><a href="${esc(it.url)}" target="_blank" rel="noopener">${it.source === 'hopamchuan' ? 'Hợp Âm Chuẩn' : 'Ultimate Guitar'}</a></dd>` : ''}
         ${it.kind === 'score' ? `<dt>Made from</dt><dd>${esc(it.source)}<br><small>${esc(it.method)} · ${it.bpm} bpm</small></dd>` : ''}
         <dt>Tags</dt><dd><div class="row-tags">${it.tags.map((t) => `<a class="tagchip" href="#/library?tag=${encodeURIComponent(t)}">${esc(t)}</a>`).join('') || '<span class="muted">None</span>'}</div><button class="link" id="dt-tags">Edit tags</button></dd>
-        <dt>Collections</dt><dd>${cols.map((c) => `<a href="#/collection/${c.id}">${esc(c.name)}</a>`).join('<br>') || '<span class="muted">None</span>'}</dd>
         <dt>Practice</dt><dd>${plays.length} session${plays.length === 1 ? '' : 's'} · ${mins(total)}<br><small>Last played ${ago(store.lastPlayed(it.id))}</small></dd>
         <dt>Added</dt><dd>${new Date(it.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}</dd>
       </dl>`;

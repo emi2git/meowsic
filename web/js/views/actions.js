@@ -1,4 +1,4 @@
-// Actions shared by the library, viewers and collections.
+// Actions shared by the library, viewers and tags.
 import { store } from '../store.js';
 import { esc, icon, sheet, toast, menu, promptSheet, tagPicker, KIND } from '../ui.js';
 import { go } from '../app.js';
@@ -36,31 +36,6 @@ export function editTags(ids) {
   };
 }
 
-export function addToCollection(ids) {
-  ids = [].concat(ids);
-  const cols = store.db.collections;
-  const s = sheet(`<h2>Add to collection</h2>
-    <div class="list-pick">${cols.map((c) => `<button data-c="${c.id}">${icon('collection')}<span>${esc(c.name)}</span><i>${c.itemIds.length}</i></button>`).join('')}</div>
-    <form class="row"><input placeholder="New collection name" aria-label="New collection name"><button class="primary">Create</button></form>
-    <div class="modal-actions"><button data-close>Close</button></div>`);
-  s.el.querySelector('.list-pick').onclick = (e) => {
-    const b = e.target.closest('[data-c]');
-    if (!b) return;
-    store.addToCollection(b.dataset.c, ids);
-    s.close();
-    toast(`Added to ${store.collection(b.dataset.c).name}`);
-  };
-  s.el.querySelector('form').onsubmit = (e) => {
-    e.preventDefault();
-    const name = e.target.querySelector('input').value.trim();
-    if (!name) return;
-    const c = store.addCollection(name);
-    store.addToCollection(c.id, ids);
-    s.close();
-    toast(`Added to ${name}`);
-  };
-}
-
 export async function rename(id) {
   const it = store.get(id);
   const t = await promptSheet({ title: 'Rename', value: it.title });
@@ -80,7 +55,6 @@ export function itemMenu(anchor, id, extra = []) {
     '-',
     { label: 'Rename', icon: 'edit', run: () => rename(id) },
     { label: 'Edit tags', icon: 'tag', run: () => editTags(id) },
-    { label: 'Add to collection', icon: 'collection', run: () => addToCollection(id) },
     { label: 'Print', icon: 'print', run: () => go(`#/print?item=${id}`) },
     ...extra,
     '-',

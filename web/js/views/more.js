@@ -138,7 +138,7 @@ export function settingsView(main) {
       <section class="card"><h2>${icon('restore')} Bring in the old apps</h2>
         <ul class="plain">
           <li>${icon('check')} Meowsic 1 (iPad): 485 sheets, 11 chord charts, 1 score, 31 tags <small class="muted">— phase 2</small></li>
-          <li>${icon('check')} Emi Songbook: 11 songs, 3 collections <small class="muted">— phase 2</small></li>
+          <li>${icon('check')} Emi Songbook: 11 songs; its 3 collections become tags <small class="muted">— phase 2</small></li>
           <li>${icon('check')} Emi Music Note: 4 transcriptions <small class="muted">— phase 2</small></li>
         </ul></section>
       <section class="card"><h2>${icon('info')} Mock data</h2>

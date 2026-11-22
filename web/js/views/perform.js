@@ -1,5 +1,5 @@
 // Performance mode: full screen, controls fade away, page turns by tap / swipe / pedal,
-// chord charts auto-scroll, screen kept awake. Opened from a collection it plays the set list.
+// chord charts auto-scroll, screen kept awake. Opened from a tag it plays everything with that tag as a set list.
 import { store } from '../store.js';
 import { $, esc, icon, toast } from '../ui.js';
 import { go } from '../app.js';
@@ -8,9 +8,9 @@ import { chordsBody } from './chordsview.js';
 import { scoreBody } from './score.js';
 
 export function performView(main, { parts, q }) {
-  const setId = q.get('set');
-  const set = setId ? store.collection(setId) : null;
-  const ids = set ? set.itemIds.filter((id) => store.get(id) && !store.get(id).deleted) : [parts[1]];
+  const tag = q.get('tag');
+  const set = tag ? { name: tag } : null;
+  const ids = tag ? store.tagItems(tag).map((x) => x.id) : [parts[1]];
   let idx = Math.max(0, ids.indexOf(parts[1]));
   const it = store.get(ids[idx]);
   if (!it) { go('#/library'); return; }
@@ -28,8 +28,8 @@ export function performView(main, { parts, q }) {
     </div>`;
 
   const body = $('#pf-body', main), ctl = $('#pf-ctl', main), bar = $('#pf-bar', main);
-  const nextItem = () => { if (set && idx < ids.length - 1) go(`#/perform/${ids[idx + 1]}?set=${setId}`); else if (set) toast('End of the set list'); };
-  const prevItem = () => { if (set && idx > 0) go(`#/perform/${ids[idx - 1]}?set=${setId}`); };
+  const nextItem = () => { if (set && idx < ids.length - 1) go(`#/perform/${ids[idx + 1]}?tag=${encodeURIComponent(tag)}`); else if (set) toast('End of the set list'); };
+  const prevItem = () => { if (set && idx > 0) go(`#/perform/${ids[idx - 1]}?tag=${encodeURIComponent(tag)}`); };
   let view;
   if (it.kind === 'sheet') {
     view = sheetBody(body, it, { perform: true, onEnd: nextItem });

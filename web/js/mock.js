@@ -271,17 +271,15 @@ export function buildMock() {
     }
   }
 
-  const byTitle = (t) => items.find((x) => x.title === t)?.id;
-  const collections = [
-    { id: 'col-1', name: 'Piano recital — December', itemIds: ['Clair de Lune', 'River Flows in You', 'Memory', 'Ode to Joy', 'Gymnopédie No. 1'].map(byTitle).filter(Boolean) },
-    { id: 'col-2', name: 'Ukulele club', itemIds: ['Amazing Grace', 'Oh! Susanna', 'Clementine', 'Home on the Range', 'Bắc Kim Thang'].map(byTitle).filter(Boolean) },
-    { id: 'col-3', name: 'Christmas 2026', itemIds: ['Silent Night', 'Jingle Bells', 'We Wish You a Merry Christmas', 'Last Christmas', 'Auld Lang Syne'].map(byTitle).filter(Boolean) },
-    { id: 'col-4', name: 'Musicals to learn', itemIds: ['One Day More', 'Naughty', 'The Music of the Night', 'A Million Dreams'].map(byTitle).filter(Boolean) },
-  ];
+  // what used to be collections (recital, club, set lists) are plain tags now
+  const tagAll = (tag, titles) => { for (const t of titles) items.find((x) => x.title === t)?.tags.push(tag); };
+  tagAll('Piano recital', ['Clair de Lune', 'River Flows in You', 'Memory', 'Ode to Joy', 'Gymnopédie No. 1']);
+  tagAll('Ukulele club', ['Amazing Grace', 'Oh! Susanna', 'Clementine', 'Home on the Range', 'Bắc Kim Thang']);
+  tagAll('Musicals to learn', ['One Day More', 'Naughty', 'The Music of the Night', 'A Million Dreams']);
 
   const jobs = [
     { id: 'job-1', title: 'One Day More (Les Misérables)', source: 'YouTube · youtu.be/one-day-more', output: 'Piano + vocals', method: 'Direct transcription', stage: 2, progress: 0.4, startedAt: NOW - 90000, status: 'running' },
   ];
 
-  return { version: 1, items, tags: [...TAGS], collections, plays, jobs, annotations: {} };
+  return { version: 2, items, tags: [...TAGS, 'Piano recital', 'Ukulele club', 'Musicals to learn'], plays, jobs, annotations: {} };
 }

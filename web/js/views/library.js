@@ -2,7 +2,7 @@
 import { store } from '../store.js';
 import { $, esc, icon, badge, ago, menu, KIND, CAT } from '../ui.js';
 import { go, addMenu } from '../app.js';
-import { thumbHtml, metaText, itemMenu, editTags, addToCollection, binItems } from './actions.js';
+import { thumbHtml, metaText, itemMenu, editTags, binItems } from './actions.js';
 
 const SORTS = {
   added: ['Recently added', (a, b) => b.createdAt - a.createdAt],
@@ -32,6 +32,7 @@ export function libraryView(main, { q }) {
       <div class="seg" role="tablist">${[['', 'All'], ['sheet', 'Sheets'], ['chords', 'Chords'], ['score', 'Scores']].map(([k, l]) =>
         `<button role="tab" class="${kind === k ? 'on' : ''}" data-kind="${k}">${k ? icon(KIND[k].icon) : ''}${l}</button>`).join('')}</div>
       <button class="chip-btn ${tag ? 'on' : ''}" id="lib-tag">${icon('tag')}${tag ? esc(tag) : 'Any tag'}${tag ? `<span class="x" id="lib-tag-x" aria-label="Clear tag">${icon('close')}</span>` : ''}</button>
+      ${tag ? `<button class="icon-btn" id="lib-perform">${icon('perform')}<span>Play all</span></button><a class="icon-btn btn" href="#/print?tag=${encodeURIComponent(tag)}">${icon('print')}<span>Print all</span></a>` : ''}
       <span class="grow"></span>
       <label class="sort">Sort <select id="lib-sort">${Object.entries(SORTS).map(([k, [l]]) => `<option value="${k}" ${state.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     </div>
@@ -74,13 +75,11 @@ export function libraryView(main, { q }) {
     const ids = [...state.sel];
     bar.innerHTML = `<button id="sb-all">${state.sel.size === list.length ? 'None' : 'All'}</button><b>${ids.length} selected</b><span class="grow"></span>
       <button ${ids.length ? '' : 'disabled'} id="sb-tag">${icon('tag')}<span class="hide-s">Tags</span></button>
-      <button ${ids.length ? '' : 'disabled'} id="sb-col">${icon('collection')}<span class="hide-s">Collection</span></button>
       <button ${ids.length ? '' : 'disabled'} id="sb-print">${icon('print')}<span class="hide-s">Print</span></button>
       <button ${ids.length ? '' : 'disabled'} class="danger-text" id="sb-bin">${icon('bin')}<span class="hide-s">Bin</span></button>
       <button class="primary" id="sb-done">Done</button>`;
     $('#sb-all', bar).onclick = () => { if (state.sel.size === list.length) state.sel.clear(); else list.forEach((x) => state.sel.add(x.id)); draw(); };
     $('#sb-tag', bar).onclick = () => editTags(ids);
-    $('#sb-col', bar).onclick = () => addToCollection(ids);
     $('#sb-print', bar).onclick = () => go(`#/print?items=${ids.join(',')}`);
     $('#sb-bin', bar).onclick = () => { binItems(ids); state.sel.clear(); };
     $('#sb-done', bar).onclick = () => { state.select = false; state.sel.clear(); draw(); };
@@ -97,6 +96,7 @@ export function libraryView(main, { q }) {
   $('#lib-q', main).oninput = (e) => { state.q = e.target.value; state.shown = PAGE; draw(); };
   $('#lib-select', main).onclick = () => { state.select = !state.select; state.sel.clear(); draw(); };
   $('#lib-add', main).onclick = (e) => addMenu(e.currentTarget);
+  $('#lib-perform', main)?.addEventListener('click', () => { const first = store.tagItems(tag)[0]; if (first) go(`#/perform/${first.id}?tag=${encodeURIComponent(tag)}`); });
   $('#lib-rows', main).onclick = (e) => {
     const row = e.target.closest('.row');
     if (!row) return;
