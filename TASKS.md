@@ -28,18 +28,19 @@
 - [x] Service worker (offline library)
 - [x] Edit score (sample scores): click a note, note box, note/rest, lengths with pictures (incl. dotted, 1/16), triplets, add, delete, undo, reset; bar time signature auto-changes
 - [x] Library: table with per-view columns, one main tag, numbered pages, sort by heading, multi-select, multi-tag filter
+- [x] Migration: 964 items (+4 Trash) from Meowsic 1, Emi Songbook, Emi Music Note, 2023 folder; verify OK
+- [x] Real transcription + "Make another version" (music21) on the server; wired to the UI (3 s version, 12 s for a 20 s clip)
+- [x] No sample data shown to the user; real connection status
+- [x] Note editing on real (transcribed) scores (MusicXML, keeps the original for Reset)
+- [x] Print real scores as A4 notation
+- [x] Frontend clean-up (old list view removed, editor module)
+- [x] HTTPS server on the real library (:5180), Meowsic launcher; old launchers moved to the Trash
+- [x] Read-only check of the real library at Mac / iPad / iPhone sizes
 ### In progress
-- [ ] Migration of Meowsic 1 + Emi Songbook + Emi Music Note + 2023 folder (agent running)
-- [ ] Real transcription + "Make another version" (music21) on the server (agent running)
-### Next
-- [ ] Remove sample data from what the user sees (samples only for automated tests); real connection status in the sidebar / Settings
-- [ ] Note editing on real (transcribed) scores — edit the MusicXML itself
-- [ ] Print real scores (from MusicXML), not drawn samples
-- [ ] Frontend clean-up / refactor (store split, dead code from the old list view, shared helpers)
-- [ ] Switch the server to HTTPS; Meowsic launcher in ~/Applications; certificate profile for iPad + iPhone
-- [ ] Test everything on the real library (Mac, iPad, iPhone sizes)
-- [ ] Retire Emi Songbook, Emi Music Note and old Meowsic.app launchers (after migration passes)
-- [ ] 58 iCloud-only sheets: re-run migration when Photos has downloaded originals (turned on 2026-11-23 01:35), then open Photos Settings so the user switches back to "Optimize Mac Storage"
+- [ ] Offline AI tagging: server side (agent, mlx-lm in ~/ai/models); UI done
+- [ ] 58 iCloud-only sheets: background re-run every 20 min until Photos has the originals; then open Photos Settings for the user ("Optimize Mac Storage")
+### Waiting on the user
+- [ ] Trust Meowsic-CA.crt on the Mac; install it on iPad + iPhone
 
 ## Requirements (agreed, not built yet)
 - ~~Icons per entry~~ — dropped by the user (2026-11-22): no song icons.
