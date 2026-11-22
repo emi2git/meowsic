@@ -18,3 +18,7 @@ Plan (in order):
 6. After migration: check data, HTTPS on (certs in ~/Documents/Meowsic/certs), Meowsic.app launcher via ~/git/scripts/make-app-launchers.sh, LaunchAgent? (no — launcher starts server), certificate profile for iPad/iPhone.
 7. Test on real library at Mac/iPad/iPhone sizes.
 8. Retire launchers: ~/Applications/Emi Songbook.app, Emi Music Note.app, old Meowsic.app (keep repos + data).
+
+## 01:35 — migration done, real runners verified
+- Migration: 964 items (+4 Trash) in ~/Documents/Meowsic, 3.8 GB; verify OK; re-runs idempotent. 58 Meowsic-1 sheets wait for Photos "Download Originals" (user turned it on ~01:35) → re-run `migrate/migrate.py` later.
+- Real jobs through the UI: version 3 s, 20 s transcription 12 s (scratchpad/e2e/jobs.mjs).
