@@ -743,3 +743,5 @@ p.count-row { text-align: center; }
 .pager button.on { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
 .pg-gap { color: var(--mute); padding: 0 2px; }
 .lib-table .c-ver { width: 150px; color: var(--ink2); }
+.side-foot.offline { color: var(--warn); }
+.side-foot.mock { color: var(--mute); }

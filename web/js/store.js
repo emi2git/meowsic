@@ -14,6 +14,7 @@ const jobSubs = new Set();
 const session = new Map(); // uploaded images (object URLs) live only for this session
 
 let mode = 'mock';
+let lastSync = 0;
 const CACHE = 'meowsic-cache-v1', OUTBOX = 'meowsic-outbox-v1';
 const ls = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 
@@ -48,10 +49,12 @@ async function boot() {
       await flushOutbox();
       db = await (await fetch('/api/backup')).json();
       ls.set(CACHE, db);
+      lastSync = Date.now(); ls.set('meowsic-last-sync', lastSync);
     }
   } catch {}
-  if (mode === 'mock' && ls.get(CACHE)) { db = ls.get(CACHE); mode = 'offline'; }
-  if (mode === 'mock') return load();
+  const preview = new URLSearchParams(location.search).has('preview'); // sample library, only for automated UI tests
+  if (mode === 'mock' && preview) return load();
+  if (mode === 'mock') { db = ls.get(CACHE) || { items: [], tags: [] }; mode = 'offline'; lastSync = ls.get('meowsic-last-sync') || 0; }
   db.items ||= []; db.tags ||= []; db.plays ||= []; db.jobs ||= []; db.activity ||= []; db.annotations ||= {}; db.printed ||= {};
   hydrate();
 }
@@ -199,6 +202,8 @@ export const store = {
 
   // where things come from
   get mode() { return mode; },
+  get lastSync() { return lastSync; },
+  get waiting() { return (ls.get(OUTBOX) || []).length; },
   fileUrl(id, file) { return `/api/items/${encodeURIComponent(id)}/file/${file.split('/').map(encodeURIComponent).join('/')}`; },
   api,
   // after an upload / server-side change: put the server's copy of an item into the library

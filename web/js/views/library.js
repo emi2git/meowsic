@@ -77,7 +77,8 @@ export function libraryView(main, { q }) {
     if (state.dir < 0) list.reverse();
     const rows = $('#lib-rows', main);
     if (!list.length) {
-      rows.innerHTML = `<ul class="rows"><li class="empty">${CAT}<p>${state.q || tags.length ? 'No music matches.' : 'Nothing here yet.'}</p>${state.q || tags.length ? '' : '<button class="primary" id="empty-add">Add music</button>'}</li></ul>`;
+      const away = store.mode === 'offline' && !store.items().length;
+      rows.innerHTML = `<ul class="rows"><li class="empty">${CAT}<p>${away ? 'Meowsic can’t reach the Mac. Check that the Mac is on and on the same Wi-Fi.' : state.q || tags.length ? 'No music matches.' : 'Nothing here yet.'}</p>${state.q || tags.length || away ? '' : '<button class="primary" id="empty-add">Add music</button>'}</li></ul>`;
       $('#empty-add', main)?.addEventListener('click', (e) => addMenu(e.currentTarget));
     } else {
       const pages = Math.max(1, Math.ceil(list.length / PAGE));

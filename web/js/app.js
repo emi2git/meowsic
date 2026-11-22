@@ -62,7 +62,7 @@ export function renderSide() {
       <a class="nav${on(v === 'settings')}" href="#/settings">${icon('settings')}<span>Settings</span></a>
       <a class="nav${on(v === 'developer')}" href="#/developer"><span>Developer</span></a>
     </nav>
-    <div class="side-foot">${icon('wifi')}<span>Connected to Mac <small>(mock)</small></span></div>`;
+    <div class="side-foot ${store.mode}">${icon('wifi')}<span>${store.mode === 'server' ? 'Connected to the Mac' : store.mode === 'offline' ? (store.items().length ? 'Offline — your last copy' : 'Can’t reach the Mac') : 'Preview'}</span></div>`;
   $('#side-add').onclick = (e) => addMenu(e.currentTarget);
 
   const tab = (href, ic, label, active) => `<a href="${href}" class="${active ? 'on' : ''}">${icon(ic)}<span>${label}</span></a>`;

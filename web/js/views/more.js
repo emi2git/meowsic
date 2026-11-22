@@ -127,13 +127,13 @@ export function settingsView(main) {
   main.innerHTML = `<header class="top"><h1>Settings</h1></header>
     <div class="pad narrow settings">
       <section class="card"><h2>${icon('wifi')} Mac connection</h2>
-        <dl class="kv"><dt>Server</dt><dd>https://meowsic.local:5180 <span class="pill ok">Connected (mock)</span></dd>
-        <dt>Last sync</dt><dd>${ago(Date.now() - 4 * 60000)}</dd>
-        <dt>Waiting to sync</dt><dd>0 changes</dd></dl>
+        <dl class="kv"><dt>Server</dt><dd>${esc(location.host)} <span class="pill ${store.mode === 'server' ? 'ok' : ''}">${store.mode === 'server' ? 'Connected' : 'Offline'}</span></dd>
+        <dt>Last sync</dt><dd>${store.lastSync ? ago(store.lastSync) : '—'}</dd>
+        <dt>Waiting to sync</dt><dd>${store.waiting} change${store.waiting === 1 ? '' : 's'}</dd></dl>
         <p class="muted small">Adding music, chord search and transcription need the Mac. Reading the library works offline.</p></section>
       <section class="card"><h2>${icon('download')} Offline on this device</h2>
-        <label class="ctl check"><input type="checkbox" checked> Keep the whole library readable offline</label>
-        <dl class="kv"><dt>Stored here</dt><dd>${items.length} items · about ${Math.round(items.filter((x) => x.kind === 'sheet').reduce((s, x) => s + x.pages, 0) * 0.45)} MB</dd></dl></section>
+        <label class="ctl check"><input type="checkbox" checked disabled> Keep the library readable offline</label>
+        <dl class="kv"><dt>Stored here</dt><dd id="st-stored">${items.length} items</dd></dl></section>
       <section class="card"><h2>${icon('moon')} Appearance</h2>
         <div class="seg" id="st-theme">${[['system', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([k, l]) => `<button data-t="${k}" class="${theme === k ? 'on' : ''}">${l}</button>`).join('')}</div></section>
       <section class="card"><h2>${icon('upload')} Backup</h2>
@@ -142,6 +142,7 @@ export function settingsView(main) {
         <label class="btn">${icon('upload')}Import backup<input type="file" id="st-import" accept="application/json,.json" hidden></label></div></section>
 <p class="center muted">Meowsic 2.0 · UI preview</p>
     </div>`;
+  navigator.storage?.estimate?.().then((e) => { const el = $('#st-stored', main); if (el && e.usage) el.textContent = `${store.items().length} items · ${Math.round(e.usage / 1e6)} MB on this device`; }).catch(() => {});
   $('#st-theme', main).onclick = (e) => {
     const b = e.target.closest('[data-t]');
     if (!b) return;
@@ -173,9 +174,5 @@ export function developerView(main) {
           <li>Emi Songbook: 11 songs; its 3 collections become tags <small class="muted">— phase 2</small></li>
           <li>Emi Music Note: 4 transcriptions <small class="muted">— phase 2</small></li>
         </ul></section>
-      <section class="card"><h2>Mock data</h2>
-        <p class="muted small">This is the UI preview. Everything you change is kept in this browser only.</p>
-        <button class="danger-text" id="st-reset">Reset mock data</button></section>
     </div>`;
-  $('#st-reset', main).onclick = async () => { if (await confirmSheet({ title: 'Reset the mock data?', body: 'Your test changes in this browser are thrown away.', ok: 'Reset', danger: true })) { store.reset(); toast('Mock data reset'); } };
 }
