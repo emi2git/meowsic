@@ -24,3 +24,8 @@ Old data is **read-only** for Meowsic 2.0: `~/Documents/Meowsic/Meowsic.store` (
 - Purchased content (scans, lyrics) never goes to GitHub or any server: `items/` and the db stay in `~/Documents/Meowsic`.
 - Each score version is its own item (tag = version name). No collections — tags do that job.
 - Kinds: sheet (photos / PDF pages), chords (ChordPro text), score (MusicXML + MIDI).
+
+## Decisions (2026-11-23)
+- Migrate Meowsic 1, Emi Songbook, Emi Music Note **and** `~/Library/Mobile Documents/com~apple~CloudDocs/Desktop/2023 Music sheet` (grouped by file name, duplicates skipped, reviewed).
+- HTTPS on the Mac with a local certificate; iPad / iPhone install the profile once (offline library + microphone).
+- Retire Emi Songbook, Emi Music Note and the old Meowsic.app launchers as soon as migration passes (repos and data kept).
