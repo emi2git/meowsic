@@ -162,7 +162,7 @@ function tagFilter(anchor, current, apply) {
   pop.className = 'menu tagpop';
   const counts = store.tagCounts();
   const draw = () => {
-    pop.innerHTML = `<div class="tagpop-head"><b>Filter by tags</b><button class="link" data-clear ${sel.size ? '' : 'disabled'}>Clear all</button></div>
+    pop.innerHTML = `<div class="tagpop-head"><button class="link" data-clear ${sel.size ? '' : 'disabled'}>Clear all</button></div>
       <input type="search" class="tagpop-q" placeholder="Find a tag" aria-label="Find a tag">
       <div class="tagpop-list">${store.db.tags.slice().sort((a, b) => a.localeCompare(b)).map((t) =>
         `<label class="tagpop-row"><input type="checkbox" value="${esc(t)}" ${sel.has(t) ? 'checked' : ''}><span>${esc(t)}</span><i>${counts.get(t) || 0}</i></label>`).join('')}</div>
