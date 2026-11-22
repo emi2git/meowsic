@@ -58,7 +58,7 @@ function melodyPart(tune, { harmony, lyrics }) {
   let li = 0;
   return tune.measures.map((m, i) => {
     let x = `<measure number="${i + 1}">` + (i === 0 ? attrs(tune, 1, [['G', 2]]) + `<direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${tune.bpm}</per-minute></metronome></direction-type><sound tempo="${tune.bpm}"/></direction>` : '');
-    if (harmony && m.chord) x += harmonyXml(m.chord);
+    if (harmony && m.chord && (i === 0 || tune.measures[i - 1].chord !== m.chord)) x += harmonyXml(m.chord); // chord name only where it changes
     for (const [p, q] of m.mel) x += noteXml(p, q, { lyric: lyrics && p !== 'r' ? tune.lyrics?.[li++] : null });
     return x + '</measure>';
   }).join('');
@@ -68,7 +68,7 @@ function pianoPart(tune, { melody, harmony, easy = false, octave = 0 }) {
   return tune.measures.map((m, i) => {
     const { bass, rh } = voicing(m.chord);
     let x = `<measure number="${i + 1}">` + (i === 0 ? attrs(tune, 2, [['G', 2], ['F', 4]]) : '');
-    if (harmony && m.chord) x += harmonyXml(m.chord);
+    if (harmony && m.chord && (i === 0 || tune.measures[i - 1].chord !== m.chord)) x += harmonyXml(m.chord); // chord name only where it changes
     if (melody) for (const [p, q] of m.mel) x += noteXml(p === 'r' || !octave ? p : nameOf(midiOf(p) + octave), q, { staff: 1 });
     else rh.forEach((p, k) => (x += noteXml(p, tune.beats, { staff: 1, chord: k > 0 })));
     x += backup(tune.beats);

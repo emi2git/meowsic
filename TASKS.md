@@ -20,6 +20,7 @@
 
 ## Phase 2: backend (after UI approval)
 - [ ] (see DESIGN.md once approved)
+- [ ] Compare model candidates in docs/model-candidates.md on our own recordings and sheets
 - [ ] AI models live in `~/ai/models`, never in git; `models.json` in the repo lists name, version, file, size, source URL, checksum
 - [ ] `setup` script downloads any missing model into `~/ai/models` and verifies checksums
 - [ ] Move transkun `2.0.pt` from Emi Music Note's .venv into `~/ai/models/transkun/`
