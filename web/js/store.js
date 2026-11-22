@@ -103,6 +103,7 @@ export const store = {
 
   // activity: one entry per job or change, newest first. Jobs keep a log of lines.
   activity() { return [...(db.activity || []), ...db.jobs.map((j) => ({ ...j, type: j.gen ? 'version' : 'transcribe', at: j.startedAt }))].sort((a, b) => b.at - a.at); },
+  markPrinted(ids) { db.printed ||= {}; for (const id of ids) db.printed[id] = Date.now(); save(); },
   logEvent(type, title, detail = '') { (db.activity ||= []).unshift({ id: uid('act'), type, title, detail, status: 'done', at: Date.now() }); db.activity.length > 500 && (db.activity.length = 500); save(); },
 
   // jobs (transcriptions)

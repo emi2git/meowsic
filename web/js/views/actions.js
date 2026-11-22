@@ -53,11 +53,11 @@ export async function rename(id) {
 export function binItems(ids) {
   ids = [].concat(ids);
   store.bin(ids);
-  toast(ids.length > 1 ? `${ids.length} items moved to the bin` : 'Moved to the bin', { label: 'Undo', run: () => store.restore(ids) });
+  toast(ids.length > 1 ? `${ids.length} items moved to Trash` : 'Moved to Trash', { label: 'Undo', run: () => store.restore(ids) });
 }
 
 // ⋯ menu. In the library: Open, edit, Print, bin. In a viewer, grouped as
-// Info · Rename / Edit tags · what this kind can do · Print / Export · Move to bin.
+// Info · Rename / Edit tags · what this kind can do · Print / Export · Move to Trash.
 export function itemMenu(anchor, id, { viewer = false, info, tools = [], exports = [] } = {}) {
   const group = (...g) => g.filter((x) => x.length).flatMap((x, i) => (i ? ['-', ...x] : x));
   menu(anchor, group(
@@ -65,6 +65,6 @@ export function itemMenu(anchor, id, { viewer = false, info, tools = [], exports
     [{ label: 'Rename…', icon: 'edit', run: () => rename(id) }, { label: 'Edit tags…', icon: 'tag', run: () => editTags(id) }],
     tools,
     [{ label: 'Print…', icon: 'print', run: () => go(`#/print?item=${id}`) }, ...exports],
-    [{ label: 'Move to bin', icon: 'bin', danger: true, run: () => binItems(id) }],
+    [{ label: 'Move to Trash', icon: 'bin', danger: true, run: () => binItems(id) }],
   ));
 }

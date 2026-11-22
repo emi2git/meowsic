@@ -8,6 +8,7 @@ import { tagsView, binView } from './views/organize.js';
 import { printView } from './views/print.js';
 import { statsView, settingsView, developerView } from './views/more.js';
 import { activityView } from './views/activity.js';
+import { makeTagsView } from './views/maketags.js';
 
 const main = $('#main');
 let cleanup = null;
@@ -23,7 +24,7 @@ const ROUTES = {
   library: libraryView, item: itemView,
   'add-sheets': addSheetsView, 'add-chords': addChordsView, 'add-score': addScoreView, jobs: addScoreView,
   tags: tagsView, bin: binView,
-  print: printView, stats: statsView, activity: activityView, developer: developerView, settings: settingsView,
+  print: printView, stats: statsView, activity: activityView, 'make-tags': makeTagsView, developer: developerView, settings: settingsView,
 };
 
 function route() {
@@ -55,11 +56,10 @@ export function renderSide() {
       ${['sheet', 'chords', 'score'].map((k) => `<a class="nav sub${on(kind === k)}" href="#/library?kind=${k}">${icon(KIND[k].icon)}<span>${KIND[k].plural}</span><i>${n(k)}</i></a>`).join('')}
       <a class="nav${on(v === 'tags')}" href="#/tags">${icon('tag')}<span>Tags</span></a>
       <a class="nav${on(v === 'stats')}" href="#/stats">${icon('stats')}<span>Stats</span></a>
-      <h3>More</h3>
+      <h3>System</h3>
       <a class="nav${on(v === 'activity')}" href="#/activity"><span>Logs</span>${store.jobs().some((j) => j.status === 'running') ? '<i class="live">•</i>' : ''}</a>
-      <a class="nav${on(v === 'bin')}" href="#/bin">${icon('bin')}<span>Bin</span><i>${store.items({ deleted: true }).length || ''}</i></a>
+      <a class="nav${on(v === 'bin')}" href="#/bin">${icon('bin')}<span>Trash</span><i>${store.items({ deleted: true }).length || ''}</i></a>
       <a class="nav${on(v === 'settings')}" href="#/settings">${icon('settings')}<span>Settings</span></a>
-      <h3>Developer</h3>
       <a class="nav${on(v === 'developer')}" href="#/developer"><span>Developer</span></a>
     </nav>
     <div class="side-foot">${icon('wifi')}<span>Connected to Mac <small>(mock)</small></span></div>`;
@@ -71,11 +71,11 @@ export function renderSide() {
     tab('#/tags', 'tag', 'Tags', v === 'tags') +
     `<button id="tab-add" class="tab-add" aria-label="Add music">Add</button>` +
     tab('#/stats', 'stats', 'Stats', v === 'stats') +
-    `<button id="tab-more" class="${['bin', 'settings', 'print', 'activity', 'developer'].includes(v) ? 'on' : ''}">${icon('more')}<span>More</span></button>`;
+    `<button id="tab-more" class="${['bin', 'settings', 'print', 'activity', 'developer'].includes(v) ? 'on' : ''}">${icon('more')}<span>System</span></button>`;
   $('#tab-add').onclick = (e) => addMenu(e.currentTarget);
   $('#tab-more').onclick = (e) => menu(e.currentTarget, [
     { label: 'Logs', icon: 'wave', run: () => go('#/activity') },
-    { label: 'Bin', icon: 'bin', run: () => go('#/bin') },
+    { label: 'Trash', icon: 'bin', run: () => go('#/bin') },
     { label: 'Settings', icon: 'settings', run: () => go('#/settings') },
     { label: 'Developer', icon: 'tools', run: () => go('#/developer') },
   ]);

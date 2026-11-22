@@ -6,7 +6,7 @@ import { thumbHtml, metaText, itemMenu } from './actions.js';
 
 // ================= tags =================
 export function tagsView(main) {
-  main.innerHTML = `<header class="top"><h1>Tags</h1><span class="grow"></span><button class="primary" id="tg-add">${icon('plus')}New tag</button></header>
+  main.innerHTML = `<header class="top"><h1>Tags</h1><span class="grow"></span><button id="mt-open">Make tags…</button><button class="primary" id="tg-add">${icon('plus')}New tag</button></header>
     <div class="pad"><p class="muted">Tap a tag to see its music. Use ⋯ to print everything with a tag (A–Z).</p><div class="tag-grid" id="tg"></div></div>`;
   const draw = () => {
     const counts = store.tagCounts();
@@ -25,6 +25,7 @@ export function tagsView(main) {
       { label: 'Delete tag', icon: 'bin', danger: true, run: async () => { if (await confirmSheet({ title: `Delete the tag “${t}”?`, body: 'The music keeps everything else; only this tag is removed.', ok: 'Delete', danger: true })) store.deleteTag(t); } },
     ]);
   };
+  $('#mt-open', main).onclick = () => go('#/make-tags');
   $('#tg-add', main).onclick = async () => { const n = await promptSheet({ title: 'New tag', placeholder: 'e.g. Recital' }); if (n) store.addTag(n); };
   draw();
   return store.on(draw);
@@ -32,7 +33,7 @@ export function tagsView(main) {
 
 // ================= bin =================
 export function binView(main) {
-  main.innerHTML = `<header class="top"><h1>Bin</h1><span class="grow"></span><button class="danger-text" id="bn-empty">${icon('bin')}Empty bin</button></header>
+  main.innerHTML = `<header class="top"><h1>Trash</h1><span class="grow"></span><button class="danger-text" id="bn-empty">${icon('bin')}Empty Trash</button></header>
     <p class="pad muted">Items stay here until you delete them for good. Deleting for good also removes their page images and files from the Mac.</p><ul class="rows" id="bn"></ul>`;
   const draw = () => {
     const items = store.items({ deleted: true }).sort((a, b) => b.deletedAt - a.deletedAt);
@@ -40,7 +41,7 @@ export function binView(main) {
     $('#bn', main).innerHTML = items.map((it) => `<li class="row" data-id="${it.id}">${thumbHtml(it)}
       <div class="row-main"><div class="row-title">${esc(it.title)}</div><div class="row-sub">${badge(it.kind)}<span>Deleted ${ago(it.deletedAt)}</span></div></div>
       <button data-act="restore">${icon('restore')}<span>Restore</span></button><button class="danger-text" data-act="purge">${icon('bin')}<span>Delete</span></button></li>`).join('') ||
-      `<li class="empty">${CAT}<p>The bin is empty.</p></li>`;
+      `<li class="empty">${CAT}<p>Trash is empty.</p></li>`;
   };
   $('#bn', main).onclick = async (e) => {
     const b = e.target.closest('[data-act]');
@@ -51,7 +52,7 @@ export function binView(main) {
   };
   $('#bn-empty', main).onclick = async () => {
     const ids = store.items({ deleted: true }).map((x) => x.id);
-    if (await confirmSheet({ title: `Delete ${ids.length} item${ids.length === 1 ? '' : 's'} for good?`, body: 'This cannot be undone.', ok: 'Empty bin', danger: true })) store.purge(ids);
+    if (await confirmSheet({ title: `Delete ${ids.length} item${ids.length === 1 ? '' : 's'} for good?`, body: 'This cannot be undone.', ok: 'Empty Trash', danger: true })) store.purge(ids);
   };
   draw();
   return store.on(draw);

@@ -3,7 +3,7 @@ import { store } from '../store.js';
 import { $, esc, ago } from '../ui.js';
 
 const WHAT = { transcribe: 'Score from recording', version: 'Make another version', 'add-sheet': 'Add sheets', 'add-chords': 'Add chords',
-  bin: 'Moved to bin', restore: 'Restored', delete: 'Deleted for good', import: 'Import' };
+  bin: 'Moved to Trash', print: 'Printed', 'make-tags': 'Make tags', restore: 'Restored', delete: 'Deleted for good', import: 'Import' };
 const fmt = (t) => new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const STATUS = { running: 'Running', done: 'Done', cancelled: 'Cancelled', failed: 'Failed' };
 

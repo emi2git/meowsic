@@ -89,7 +89,7 @@ export function libraryView(main, { q }) {
       <span class="grow"></span>
       <button ${n ? '' : 'disabled'} id="sb-tag">Edit tags</button>
       <button ${n ? '' : 'disabled'} id="sb-print">Print</button>
-      <button ${n ? '' : 'disabled'} class="danger-text" id="sb-bin">Move to bin</button>
+      <button ${n ? '' : 'disabled'} class="danger-text" id="sb-bin">Move to Trash</button>
       <button class="icon-btn" id="sb-done">Cancel</button>`;
     const box = $('#sb-all', band);
     box.indeterminate = n > 0 && !all;

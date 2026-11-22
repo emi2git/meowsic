@@ -76,7 +76,12 @@ export function printView(main, { q }) {
   const saveOpts = () => { try { localStorage.setItem('meowsic-print', JSON.stringify(opts)); } catch {} draw(); };
   $('#pr-paper', main).onchange = (e) => { opts.paper = e.target.value; saveOpts(); };
   $('#pr-facing', main).onchange = (e) => { opts.facing = e.target.checked; saveOpts(); };
-  $('#pr-go', main).onclick = () => { if (!src.ids.length) return toast('Nothing to print.'); window.print(); };
+  $('#pr-go', main).onclick = () => {
+    if (!src.ids.length) return toast('Nothing to print.');
+    window.print();
+    store.markPrinted(src.ids);
+    store.logEvent('print', src.name, `${src.ids.length} item${src.ids.length === 1 ? '' : 's'}`);
+  };
   draw();
   return () => { $('#print-root').innerHTML = ''; };
 }
