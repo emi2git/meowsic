@@ -684,8 +684,8 @@ p.count-row { text-align: center; }
 
 /* library columns: widths, and hide the less important ones as space runs out (Title > Type > Artist > Added > Tag > Key / Pages) */
 .lib-table .c-pick { width: 34px; } .lib-table .c-title { width: 30%; } .lib-table .c-artist { width: 20%; } .lib-table .c-type { width: 90px; }
-.lib-table .c-tag { width: 18%; } .lib-table .c-meta { width: 14%; } .lib-table .c-when { width: 104px; } .lib-table .c-more { width: 44px; }
-@media (max-width: 1100px) { .lib-table .c-meta { display: none; } }
+.lib-table .c-tag { width: 18%; } .lib-table .c-pages, .lib-table .c-key { width: 90px; color: var(--ink2); } .lib-table .c-when { width: 104px; } .lib-table .c-more { width: 44px; }
+@media (max-width: 1100px) { .lib-table .c-pages, .lib-table .c-key { display: none; } }
 @media (max-width: 900px) { .lib-table .c-tag { display: none; } }
 @media (max-width: 640px) { .lib-table .c-when { display: none; } .lib-table .c-artist { width: 34%; } .lib-table .c-title { width: auto; } }
 @media (max-width: 480px) { .lib-table .c-artist { display: none; } }
@@ -734,7 +734,9 @@ p.count-row { text-align: center; }
 .eb-done { color: var(--acc-text); }
 
 /* pagination */
-.pager-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 22px 30px; list-style: none; flex-wrap: wrap; }
+.pager-row { position: relative; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 10px 22px 30px; list-style: none; flex-wrap: wrap; min-height: 54px; }
+.pager-row > .muted { position: absolute; left: 22px; } /* item count stays left, page numbers centred */
+@media (max-width: 760px) { .pager-row > .muted { position: static; width: 100%; text-align: center; } }
 .rows .pager-row { padding: 12px 14px; }
 .pager { display: inline-flex; gap: 4px; align-items: center; }
 .pager button { min-height: 34px; min-width: 34px; padding: 0 8px; border-radius: 9px; }

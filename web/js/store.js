@@ -169,6 +169,21 @@ export const store = {
     changed();
     return j;
   },
+  // audio file + job in one request (the Mac starts transcribing when the upload is in)
+  async uploadJob(file, job) {
+    const j = { id: uid('job'), status: 'queued', stage: 0, progress: 0, startedAt: Date.now(), log: [{ t: Date.now(), msg: 'Uploading' }], ...job };
+    db.jobs.unshift(j); changed();
+    const fd = new FormData();
+    fd.append('file', file, file.name); fd.append('title', job.title); fd.append('outputs', JSON.stringify(job.outputs)); fd.append('source', job.source || '');
+    try {
+      const r = await fetch('/api/jobs/upload', { method: 'POST', body: fd });
+      const s = await r.json();
+      if (!r.ok) throw new Error(s.detail || 'Upload failed');
+      Object.assign(j, s);
+    } catch (e) { Object.assign(j, { status: 'failed', log: [...j.log, { t: Date.now(), msg: e.message }] }); }
+    jobSubs.forEach((f) => f());
+    return j;
+  },
   onJobs(fn) { jobSubs.add(fn); return () => jobSubs.delete(fn); },
   // progress ticks only wake the job screens; a finished job wakes everything
   updateJob(id, patch, { quiet = true } = {}) { const j = db.jobs.find((x) => x.id === id); if (!j) return; if (patch.msg) { (j.log ||= []).push({ t: Date.now(), msg: patch.msg }); delete patch.msg; } Object.assign(j, patch); save(); jobSubs.forEach((f) => f()); if (!quiet) changed(); },
@@ -188,7 +203,19 @@ export const store = {
   api,
   // after an upload / server-side change: put the server's copy of an item into the library
   putItem(it) { const i = db.items.findIndex((x) => x.id === it.id); if (it.kind === 'chords') it.lines = parseChordPro(it.text); if (i >= 0) db.items[i] = it; else db.items.unshift(it); for (const t of it.tags) if (!db.tags.includes(t)) db.tags.push(t); changed(); },
-  async refreshJobs() { if (mode !== 'server') return; const j = await api('GET', '/jobs', undefined, { queue: false }); if (j) { db.jobs = j; jobSubs.forEach((f) => f()); } },
+  async refreshJobs() {
+    if (mode !== 'server') return;
+    const j = await api('GET', '/jobs', undefined, { queue: false });
+    if (!j) return;
+    const wasRunning = new Set(db.jobs.filter((x) => x.status === 'running' || x.status === 'queued').map((x) => x.id));
+    db.jobs = j;
+    // a job just finished: its new scores are on the Mac — pull them into the library
+    if (j.some((x) => wasRunning.has(x.id) && x.status === 'done')) {
+      const items = await api('GET', '/items', undefined, { queue: false });
+      if (items) { for (const it of items) this.putItem(it); }
+    }
+    jobSubs.forEach((f) => f());
+  },
 };
 
 await boot();

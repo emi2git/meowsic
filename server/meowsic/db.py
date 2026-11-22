@@ -24,6 +24,8 @@ class Config:
     def items_dir(self): return self.data / 'items'
     @property
     def backups_dir(self): return self.data / 'backups'
+    @property
+    def work_dir(self): return self.data / 'work'  # transcription cache, one folder per job (rebuildable)
 
     @classmethod
     def from_env(cls, data=None):
@@ -54,6 +56,9 @@ def init_db(cfg: Config):
     for col, typ in (('folder', 'TEXT'), ('origin_at', 'INTEGER')):  # columns added after the first schema
         if cols and col not in cols:
             c.execute(f'ALTER TABLE item ADD COLUMN {col} {typ}')
+    jcols = [r[1] for r in c.execute('PRAGMA table_info(job)')]
+    if jcols and 'params' not in jcols:
+        c.execute("ALTER TABLE job ADD COLUMN params TEXT NOT NULL DEFAULT '{}'")
     c.executescript(SCHEMA.read_text())
     c.close()
 

@@ -1,12 +1,15 @@
 """Jobs (transcriptions, "make another version") with a pluggable runner.
 
-A runner is `fn(ctx: JobContext)`, run on its own thread. Real transcription plugs in later via
-`app.state.job_runner = fn`; the default stub just says the engine is not installed yet.
+A runner is `fn(ctx: JobContext)`, run on its own thread (`app.state.job_runner`; the real ones are in
+runners.py, `stub_runner` just says the engine is not installed).
 """
 import json
+import re
+import shutil
 import threading
+from pathlib import Path
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, UploadFile
 
 from .db import connect, job_json, now_ms, uid
 from .items import conn
@@ -33,6 +36,19 @@ class JobContext:
 
     def cancelled(self) -> bool:
         return self.job['status'] == 'cancelled'
+
+    @property
+    def params(self) -> dict:
+        c = connect(self.cfg)
+        try: return json.loads(c.execute('SELECT params FROM job WHERE id=?', (self.id,)).fetchone()[0] or '{}')
+        finally: c.close()
+
+    @property
+    def work(self) -> Path:
+        """<data>/work/<job id>/ (made on first use)."""
+        d = self.cfg.work_dir / self.id
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
     def update(self, stage=None, progress=None, msg=None, status=None, result=None):
         """Write progress; raises Cancelled when the user cancelled the job."""
@@ -93,22 +109,60 @@ def get_job(job_id: str, c=Depends(conn)):
     return job_json(r)
 
 
+PARAMS = ('url', 'fromItemId', 'artist', 'tags', 'key')  # body keys the runner reads later
+
+
+def start_job(app, kind, title, source, outputs, params, jid=None):
+    jid, t = jid or uid('job'), now_ms()
+    c = app.state.connect()
+    try:
+        c.execute("INSERT INTO job(id, kind, title, source, outputs, status, log, started_at, params) VALUES (?,?,?,?,?,'queued',?,?,?)",
+                  (jid, kind, title, source or '', json.dumps(outputs or []), json.dumps([{'t': t, 'msg': 'Started'}]), t, json.dumps(params)))
+        c.commit()
+        job = job_json(c.execute('SELECT * FROM job WHERE id=?', (jid,)).fetchone())
+    finally:
+        c.close()
+    threading.Thread(target=run_job, args=(app, jid), daemon=True).start()
+    return job
+
+
 @router.post('/jobs', status_code=201)
 def create_job(request: Request, body: dict = Body(...)):
-    """{kind: transcribe|version, title, source, outputs: [...]} -> queued, then runs on a thread."""
+    """{kind: transcribe|version, title, source, outputs: [...], url?, fromItemId?, artist?, tags?} -> queued, then runs on a thread."""
     kind = body.get('kind') or ('version' if body.get('gen') else 'transcribe')
     if kind not in ('transcribe', 'version') or not body.get('title'):
         raise HTTPException(400, 'kind (transcribe|version) and title are required')
-    jid, t = uid('job'), now_ms()
-    c = request.app.state.connect()
-    c.execute("INSERT INTO job(id, kind, title, source, outputs, status, log, started_at) VALUES (?,?,?,?,?,'queued',?,?)",
-              (jid, kind, body['title'], body.get('source', ''), json.dumps(body.get('outputs', [])),
-               json.dumps([{'t': t, 'msg': 'Started'}]), t))
-    c.commit()
-    job = job_json(c.execute('SELECT * FROM job WHERE id=?', (jid,)).fetchone())
-    c.close()
-    threading.Thread(target=run_job, args=(request.app, jid), daemon=True).start()
-    return job
+    return start_job(request.app, kind, body['title'], body.get('source', ''), body.get('outputs', []),
+                     {k: body[k] for k in PARAMS if body.get(k) not in (None, '')})
+
+
+def _outputs(v: str) -> list:
+    """'["original","easy"]' or 'original,easy'."""
+    v = (v or '').strip()
+    try: out = json.loads(v) if v.startswith('[') else [x.strip() for x in v.split(',') if x.strip()]
+    except ValueError: raise HTTPException(400, 'outputs must be a JSON list or comma-separated')
+    return [str(x) for x in out] or ['original']
+
+
+@router.post('/jobs/upload', status_code=201)
+def upload_job(request: Request, file: UploadFile = File(...), title: str = Form(''), outputs: str = Form(''),
+               artist: str = Form(''), tags: str = Form('[]'), source: str = Form('')):
+    """Multipart audio (or video) + title + outputs -> a transcribe job; the file goes into the job's work dir."""
+    name = re.sub(r'[/\\\x00-\x1f]', '-', Path(file.filename or 'audio').name).lstrip('.') or 'audio'
+    outs = _outputs(outputs)
+    try: tag_list = json.loads(tags or '[]')
+    except ValueError: raise HTTPException(400, 'tags must be a JSON list')
+    jid = uid('job')
+    d = request.app.state.cfg.work_dir / jid / 'upload'
+    d.mkdir(parents=True, exist_ok=True)
+    with open(d / name, 'wb') as f:
+        shutil.copyfileobj(file.file, f, 1 << 20)
+    if not (d / name).stat().st_size:
+        shutil.rmtree(d.parent, ignore_errors=True)
+        raise HTTPException(400, 'The file is empty')
+    params = {'upload': str(d / name), 'artist': artist, 'tags': tag_list}
+    return start_job(request.app, 'transcribe', title.strip() or Path(name).stem, source or f'Audio file · {name}', outs,
+                     {k: v for k, v in params.items() if v}, jid=jid)
 
 
 @router.patch('/jobs/{job_id}')

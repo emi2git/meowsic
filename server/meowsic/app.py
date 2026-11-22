@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import Body, Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from . import backup, chords, items, jobs
+from . import backup, chords, items, jobs, runners
 from .db import WEB_DIR, Config, connect, init_db, log_event
 from .items import conn
 
@@ -27,7 +27,7 @@ def create_app(data=None, background=True) -> FastAPI:
     app = FastAPI(title='Meowsic', lifespan=lifespan)
     app.state.cfg = cfg
     app.state.connect = lambda: connect(cfg)
-    app.state.job_runner = jobs.stub_runner
+    app.state.job_runner = runners.dispatch
 
     @app.middleware('http')
     async def no_store(request, call_next):

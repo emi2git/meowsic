@@ -2,7 +2,7 @@
 import { store } from '../store.js';
 import { $, esc, icon, iconOn, badge, ago, menu, KIND, CAT } from '../ui.js';
 import { go, addMenu } from '../app.js';
-import { thumbHtml, metaText, itemMenu, editTags, binItems } from './actions.js';
+import { thumbHtml, metaText, itemMenu, editTags, binItems, keyShort } from './actions.js';
 import { VERSIONS } from '../musicxml.js';
 
 const SORTS = {
@@ -12,12 +12,22 @@ const SORTS = {
   most: ['Most played', (a, b) => store.playCount(b.id) - store.playCount(a.id)],
   artist: ['Artist A–Z', (a, b) => (a.artist || '').localeCompare(b.artist || '') || a.title.localeCompare(b.title)],
   kind: ['Type', (a, b) => a.kind.localeCompare(b.kind) || a.title.localeCompare(b.title)],
+  pages: ['Pages', (a, b) => (a.pages || 0) - (b.pages || 0) || a.title.localeCompare(b.title)],
+  key: ['Key', (a, b) => (a.key || '').localeCompare(b.key || '') || a.title.localeCompare(b.title)],
   version: ['Version', (a, b) => (VERSIONS[a.version] || '').localeCompare(VERSIONS[b.version] || '') || a.title.localeCompare(b.title)],
   tag: ['Tag', (a, b) => (mainTag(a) || '\uffff').localeCompare(mainTag(b) || '\uffff') || a.title.localeCompare(b.title)],
 };
 // table columns (Mac / iPad); clicking a heading sorts, clicking it again reverses
 // [sort key, heading, class]. Type is left out when a type is already picked in the left bar.
-const COLS = [['title', 'Title', 'c-title'], ['artist', 'Artist', 'c-artist'], ['kind', 'Type', 'c-type'], ['version', 'Version', 'c-ver'], ['tag', 'Tag', 'c-tag'], [null, 'Key / Pages', 'c-meta'], ['added', 'Added', 'c-when']];
+// columns per view: [sort key, heading, class]
+const C = { title: ['title', 'Title', 'c-title'], artist: ['artist', 'Artist', 'c-artist'], type: ['kind', 'Type', 'c-type'], version: ['version', 'Version', 'c-ver'],
+  tag: ['tag', 'Tag', 'c-tag'], pages: ['pages', 'Pages', 'c-pages'], key: ['key', 'Key', 'c-key'], added: ['added', 'Added', 'c-when'] };
+const COLS_BY = {
+  '': [C.title, C.artist, C.type, C.tag, C.added],
+  sheet: [C.title, C.artist, C.tag, C.pages, C.added],
+  chords: [C.title, C.artist, C.tag, C.key, C.added],
+  score: [C.title, C.artist, C.version, C.tag, C.key, C.added],
+};
 // The one tag worth showing in the list: the most specific one (a musical, a movie, a set like
 // "Piano recital"), not genre, language or version tags.
 const GENERIC = new Set(['Musical', 'Disney', 'Movie', 'Anime', 'Pop', 'Rock', 'Ballad', 'Jazz', 'Folk', 'Country', 'Classical', 'Christmas', 'Children',
@@ -78,10 +88,10 @@ export function libraryView(main, { q }) {
       if (wide()) {
         // ▲ = A→Z / oldest first, ▼ = Z→A / newest first; Added starts newest first
         const arrow = (k) => (state.sort !== k ? '' : (k === 'added') === (state.dir > 0) ? ' ▼' : ' ▲');
-        const cols = COLS.filter(([k]) => !(kind && k === 'kind') && (k !== 'version' || kind === 'score'));
+        const cols = COLS_BY[kind] || COLS_BY[''];
         const cell = {
           'c-title': (it) => esc(it.title), 'c-artist': (it) => esc(it.artist || ''), 'c-type': (it) => badge(it.kind), 'c-ver': (it) => esc(VERSIONS[it.version] || ''),
-          'c-tag': (it) => (mainTag(it) ? `<span class="tagchip">${esc(mainTag(it))}</span>` : ''), 'c-meta': (it) => metaText(it), 'c-when': (it) => ago(it.createdAt),
+          'c-tag': (it) => (mainTag(it) ? `<span class="tagchip">${esc(mainTag(it))}</span>` : ''), 'c-pages': (it) => it.pages || '', 'c-key': (it) => esc(keyShort(it.key)), 'c-when': (it) => ago(it.createdAt),
         };
         rows.innerHTML = `<table class="lib-table ${kind ? 'one-kind' : ''} ${selecting() ? 'selecting' : ''}"><thead><tr><th class="c-pick"></th>${cols.map(([k, l, c]) =>
           `<th class="${c}">${k ? `<button class="th-sort ${state.sort === k ? 'on' : ''}" data-sort="${k}">${l}${arrow(k)}</button>` : l}</th>`).join('')}<th class="c-more"></th></tr></thead><tbody>${shownList.map((it) => `

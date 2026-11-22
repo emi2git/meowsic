@@ -94,7 +94,8 @@ CREATE TABLE IF NOT EXISTS job (              -- transcriptions and "make anothe
   result      TEXT,                           -- JSON array of created item ids
   started_at  INTEGER NOT NULL,
   done_at     INTEGER,
-  dismissed   INTEGER NOT NULL DEFAULT 0
+  dismissed   INTEGER NOT NULL DEFAULT 0,
+  params      TEXT NOT NULL DEFAULT '{}'      -- JSON: url, upload, fromItemId, artist, tags (what the runner needs)
 );
 
 CREATE TABLE IF NOT EXISTS activity (         -- the Logs page (jobs are listed from `job`)

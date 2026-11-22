@@ -13,10 +13,13 @@ export function thumbHtml(it) {
   return `<span class="thumb t-${it.kind}">${esc(String(it.key).split(' ')[0])}</span>`;
 }
 
+// "C major" → "C", "A minor" → "Am", "Key G" → "G"
+export const keyShort = (k) => String(k || '').replace(/^key\s*/i, '').replace(/\s*major$/i, '').replace(/\s*minor$/i, 'm').trim();
+
 export function metaText(it) {
   if (it.kind === 'sheet') return `${it.pages} page${it.pages > 1 ? 's' : ''}`; // file type lives under Info
-  if (it.kind === 'chords') return `Key ${it.key}`; // the source site lives under Info, not in the list
-  return it.key; // the version has its own column on the Scores view
+  if (it.kind === 'chords') return keyShort(it.key); // the source site lives under Info, not in the list
+  return keyShort(it.key); // the version has its own column on the Scores view
 }
 
 export function editTags(ids) {

@@ -15,7 +15,9 @@ def wait(client, jid, status, t=5):
     raise AssertionError(f'job never became {status}: {j}')
 
 
-def test_stub_runner_fails_cleanly(client):
+def test_stub_runner_fails_cleanly(client, app):
+    from meowsic.jobs import stub_runner
+    app.state.job_runner = stub_runner
     j = client.post('/api/jobs', json={'kind': 'transcribe', 'title': 'Memory', 'source': 'YouTube · x', 'outputs': ['original']})
     assert j.status_code == 201
     j = wait(client, j.json()['id'], 'failed')

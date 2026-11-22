@@ -311,13 +311,16 @@ export function addScoreView(main) {
   };
   $('#sf-src', main).onclick = (e) => { const b = e.target.closest('[data-s]'); if (!b) return; f.src = b.dataset.s; $('#sf-src', main).querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); $('#sf-yt', main).hidden = f.src !== 'yt'; $('#sf-file', main).hidden = f.src !== 'file'; };
   $('#sf-url', main).oninput = (e) => { if (/youtu/.test(e.target.value) && !$('#sf-title', main).value) $('#sf-title', main).value = 'Song from YouTube'; };
-  $('#sf-audio', main).onchange = (e) => { const file = e.target.files[0]; if (!file) return; f.file = file.name; $('#sf-fname', main).textContent = file.name; if (!$('#sf-title', main).value) $('#sf-title', main).value = titleCase(file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ')); };
+  $('#sf-audio', main).onchange = (e) => { const file = e.target.files[0]; if (!file) return; f.file = file.name; f.fileObj = file; $('#sf-fname', main).textContent = file.name; if (!$('#sf-title', main).value) $('#sf-title', main).value = titleCase(file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ')); };
   $('#sf', main).onsubmit = (e) => {
     e.preventDefault();
     const url = $('#sf-url', main).value.trim();
-    if (f.src === 'yt' && !/^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//.test(url)) return toast('Paste a YouTube link first.');
+    if (f.src === 'yt' && !/^https?:\/\/(www\.|m\.)?(youtube\.com|youtu\.be|facebook\.com|fb\.watch)\//.test(url)) return toast('Paste a YouTube or Facebook link first.');
     if (f.src === 'file' && !f.file) return toast('Choose an audio file first.');
-    store.addJob({ title: $('#sf-title', main).value.trim() || 'Untitled song', source: f.src === 'yt' ? 'YouTube · ' + url.replace(/^https?:\/\/(www\.)?/, '') : 'Audio file · ' + f.file, outputs: [...f.outputs], output: [...f.outputs].map((v) => VERSIONS[v]).join(' + ') });
+    const title = $('#sf-title', main).value.trim() || 'Untitled song';
+    if (store.mode === 'server' && f.src === 'file') { // the audio file goes to the Mac with the job
+      store.uploadJob(f.fileObj, { title, outputs: [...f.outputs], source: 'Audio file · ' + f.file });
+    } else store.addJob({ url: f.src === 'yt' ? url : undefined, title, source: f.src === 'yt' ? 'YouTube · ' + url.replace(/^https?:\/\/(www\.)?/, '') : 'Audio file · ' + f.file, outputs: [...f.outputs], output: [...f.outputs].map((v) => VERSIONS[v]).join(' + ') });
     e.target.reset();
     $('#sf-fname', main).textContent = 'MP3, M4A, WAV or a video';
     f.file = null;
@@ -333,7 +336,7 @@ function jobsList(host) {
     host.innerHTML = `<h2 class="sub-h">In progress and done <a class="link small" href="#/activity">All logs ›</a></h2>` + jobs.map((j) => `
       <section class="job ${j.status}">
         <div class="job-head"><div><b>${esc(j.title)}</b><small>${esc(j.source)} · ${esc(j.output)}</small></div>
-          ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : j.status === 'done' ? `${(j.items || []).map((x) => `<a class="btn primary" href="#/item/${x.id}">Open ${VERSIONS[x.version]}</a>`).join('')}<button data-dismiss="${j.id}">Dismiss</button>` : `<button data-dismiss="${j.id}">Dismiss</button>`}</div>
+          ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : j.status === 'done' ? `${(j.items || (j.result || []).map((id) => ({ id, version: store.get(id)?.version }))).map((x) => `<a class="btn primary" href="#/item/${x.id}">Open ${VERSIONS[x.version] || 'score'}</a>`).join('')}<button data-dismiss="${j.id}">Dismiss</button>` : `<button data-dismiss="${j.id}">Dismiss</button>`}</div>
         <ol class="stages">${(j.gen ? GEN_STAGES : STAGES).map((s, i) => `<li class="${i < j.stage || j.status === 'done' ? 'done' : i === j.stage && j.status === 'running' ? 'now' : ''}"><span>${s}</span>${i === j.stage && j.status === 'running' ? `<progress max="1" value="${j.progress}"></progress>` : ''}</li>`).join('')}</ol>
         <small class="muted">${j.status === 'running' ? `Started ${ago(j.startedAt)}` : j.status === 'done' ? `Finished ${ago(j.doneAt)}` : 'Cancelled'}</small>
       </section>`).join('');
