@@ -14,9 +14,7 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
 
   root.innerHTML = `
     <div class="pages ${perform ? 'perform' : ''}" id="pages" tabindex="-1">
-      <button class="turn prev" aria-label="Previous page">‹</button>
       <div class="page-row" id="page-row"></div>
-      <button class="turn next" aria-label="Next page">›</button>
     </div>
 `;
 
@@ -52,8 +50,6 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
       };
       img.complete ? mk() : img.addEventListener('load', mk, { once: true });
     });
-    root.querySelector('.prev').disabled = page <= 1;
-    root.querySelector('.next').disabled = page + (twoUp() ? 2 : 1) > it.pages;
     root.querySelectorAll('#strip button').forEach((b) => b.classList.toggle('on', show.includes(+b.dataset.p)));
     root.dispatchEvent(new CustomEvent('pagechange', { detail: { page, show, pages: it.pages }, bubbles: true }));
   };
@@ -61,8 +57,6 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
   const next = () => { if (page + step() <= it.pages) { page += step(); draw(); } else onEnd?.(); };
   const prev = () => { if (page > 1) { page = Math.max(1, page - step()); draw(); } };
 
-  root.querySelector('.prev').onclick = prev;
-  root.querySelector('.next').onclick = next;
   $('#strip', root)?.addEventListener('click', (e) => { const b = e.target.closest('[data-p]'); if (b) { page = +b.dataset.p; draw(); } });
 
   // click / tap to turn: see below; swipe works too
