@@ -1,7 +1,19 @@
 import Foundation
 import SwiftData
 
-enum SongKind: String, Hashable, Codable { case sheet, chord }
+enum SongKind: String, Hashable, Codable {
+    case sheet, chord, score
+
+    /// The system tag every song of this kind carries.
+    var tagName: String {
+        switch self {
+        case .sheet: return "Sheet"
+        case .chord: return "Chord"
+        case .score: return "Score"
+        }
+    }
+    static let tagNames = Set([SongKind.sheet, .chord, .score].map(\.tagName))
+}
 
 /// Persisted song row — the single source of truth the UI reads via @Query.
 /// Materialized by `AnalysisCoordinator.rebuildSongs()` from the underlying
@@ -10,7 +22,7 @@ enum SongKind: String, Hashable, Codable { case sheet, chord }
 /// incremental upsert here so per-row SwiftUI observation works.
 @Model
 final class Song {
-    @Attribute(.unique) var id: String     // sheet: first-page asset id. chord: ChordSong.id (UUID).
+    @Attribute(.unique) var id: String     // sheet: first-page asset id. chord/score: ChordSong.id / ScoreSong.id (UUID).
     var kindRaw: String                    // SongKind.rawValue ("sheet" | "chord")
     var title: String
     /// True iff `title` is a user rename (replaces the SongRename table).

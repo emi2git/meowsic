@@ -232,11 +232,13 @@ struct SettingsView: View {
             do {
                 switch action {
                 case .backup:
-                    try await sync.upload(coordinator.exportData())
+                    let version = try await sync.upload(coordinator.exportData())
+                    if !version.isEmpty { SyncStore.lastVersion = version }
                     backupMessage = "Backed up to cloud ✓"
                 case .restore:
-                    let data = try await sync.download()
-                    if let s = await coordinator.importData(data) {
+                    let remote = try await sync.fetchRemote()
+                    SyncStore.lastVersion = remote.version
+                    if let s = await coordinator.importData(remote.payload) {
                         var msg = "Restored \(s.songs) song\(s.songs == 1 ? "" : "s") from cloud. "
                             + "Photos relinked: \(s.relinked)/\(s.photos)."
                         if s.fallback > 0 { msg += " \(s.fallback) not found in this iCloud library." }

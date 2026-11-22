@@ -31,6 +31,13 @@ struct BackupData: Codable {
         var sourceURL: String?
         var createdAt: Date
     }
+    struct ScoreSongDTO: Codable {
+        var id: String
+        var title: String
+        var xml: Data        // zlib-compressed MusicXML, as stored
+        var midi: Data?
+        var createdAt: Date
+    }
     /// local asset id ↔ stable iCloud cloud-identifier (cloud nil if not in iCloud).
     struct AssetRef: Codable { var local: String; var cloud: String? }
 
@@ -44,4 +51,5 @@ struct BackupData: Codable {
     var assetMap: [AssetRef]?
     var chordSongs: [ChordSongDTO]?
     var metas: [MetaDTO]?
+    var scoreSongs: [ScoreSongDTO]?
 }

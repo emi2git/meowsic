@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import Photos
+import UniformTypeIdentifiers
 
 struct SongListView: View {
     @Environment(AnalysisCoordinator.self) private var coordinator
@@ -23,8 +24,11 @@ struct SongListView: View {
     @State private var showPrint = false
     @State private var showTags = false
     @State private var showAddChord = false
+    @State private var showScoreImporter = false
+    @State private var scoreImportMessage: String?
 
     @State private var searchText = ""
+    @FocusState private var searchFocused: Bool
     @State private var sortKey: SortKey = SortKey(column: .date, ascending: false)
     @State private var filterTags: Set<String> = []
     @State private var currentPage = 0
@@ -112,6 +116,8 @@ struct SongListView: View {
             .navigationBarTitleDisplayMode(.inline)
             .scrollDismissesKeyboard(.immediately)
             .onChange(of: searchText) { currentPage = 0 }
+            // Opening a song from a search must not leave the keyboard over the reader.
+            .onChange(of: openSong?.id) { if openSong != nil { searchFocused = false } }
             .onChange(of: filterTags) { currentPage = 0 }
             .onChange(of: sortKey) { currentPage = 0 }
             .toolbar { toolbarContent }
@@ -133,6 +139,20 @@ struct SongListView: View {
                     }
                 })
                 .environment(coordinator)
+            }
+            .onOpenURL { importScores([$0]) }
+            .fileImporter(isPresented: $showScoreImporter,
+                          allowedContentTypes: Self.scoreFileTypes,
+                          allowsMultipleSelection: true) { result in
+                if case .success(let urls) = result { importScores(urls) }
+            }
+            .alert("Import score", isPresented: Binding(
+                get: { scoreImportMessage != nil },
+                set: { if !$0 { scoreImportMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { scoreImportMessage = nil }
+            } message: {
+                Text(scoreImportMessage ?? "")
             }
             .modifier(SelectionActionsModifier(
                 count: selectedSongIDs.count,
@@ -187,6 +207,10 @@ struct SongListView: View {
                 if openSong.kind == .chord {
                     ChordReaderView(song: openSong) { self.openSong = nil }
                         .ignoresSafeArea()
+                } else if openSong.kind == .score {
+                    ScoreReaderView(song: openSong) { self.openSong = nil }
+                        .id(openSong.id)
+                        .ignoresSafeArea()
                 } else {
                     SongPagerView(
                         song: openSong,
@@ -220,11 +244,13 @@ struct SongListView: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
                 .frame(minWidth: 180, idealWidth: 280, maxWidth: 360)
+                .focused($searchFocused)
             if !searchText.isEmpty {
                 Button { searchText = "" } label: {
                     Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
@@ -254,6 +280,7 @@ struct SongListView: View {
                     .disabled(selectedSongIDs.isEmpty)
 
                     Button { showPrint = true } label: { Image(systemName: "printer") }
+                        .accessibilityLabel("Print")
                         .disabled(selectedSongIDs.isEmpty)
 
                     Menu {
@@ -279,13 +306,16 @@ struct SongListView: View {
             ToolbarItem(placement: .topBarLeading) {
                 HStack(spacing: 14) {
                     Button { startSelection() } label: { Image(systemName: "checkmark.circle") }
+                        .accessibilityLabel("Select songs")
                     Button {
                         var t = Transaction(); t.disablesAnimations = true
                         withTransaction(t) { showTags = true }
                     } label: {
                         Image(systemName: filterTags.isEmpty ? "tag" : "tag.fill")
                     }
+                    .accessibilityLabel("Filter by tag")
                     Button { resetView() } label: { Image(systemName: "arrow.counterclockwise") }
+                        .accessibilityLabel("Reset view")
                         .disabled(!viewModified)
                 }
             }
@@ -303,6 +333,10 @@ struct SongListView: View {
                     Menu {
                         Button { startAddSongs() } label: { Label("Pick photos…", systemImage: "photo.on.rectangle") }
                         Button { startAutoScan() } label: { Label("Auto Scan", systemImage: "sparkles") }
+                        Divider()
+                        Button { showScoreImporter = true } label: {
+                            Label("Import score (MusicXML, MIDI)…", systemImage: "music.quarternote.3")
+                        }
                     } label: {
                         // Explicit HStack — `Label(...).labelStyle(.titleAndIcon)`
                         // collapses to icon-only inside a toolbar Menu on iPad.
@@ -325,8 +359,29 @@ struct SongListView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showSettings = true } label: { Image(systemName: "gearshape") }
+                    .accessibilityLabel("Settings")
             }
         }
+    }
+
+    /// What the score importer accepts: Emi Music Note's `.musicxml` and `.mid` output.
+    private static let scoreFileTypes: [UTType] =
+        [UTType(filenameExtension: "musicxml"), UTType.xml, UTType.midi].compactMap { $0 }
+
+    private func importScores(_ urls: [URL]) {
+        let result = coordinator.importScoreFiles(urls)
+        var notes: [String] = []
+        if result.songIDs.isEmpty { notes.append("No score was added.") }
+        if result.midiOnly > 0 {
+            notes.append("A MIDI file needs its MusicXML to show notes — pick both files together.")
+        }
+        if result.unreadable > 0 {
+            notes.append("\(result.unreadable) file\(result.unreadable == 1 ? " isn't" : "s aren't") readable MusicXML or MIDI.")
+        }
+        if result.songIDs.count > 1 { notes.insert("Added \(result.songIDs.count) scores.", at: 0) }
+        if !notes.isEmpty { scoreImportMessage = notes.joined(separator: " ") }
+        // One score → open it straight away.
+        if result.songIDs.count == 1, notes.isEmpty { loadAndOpenSong(byID: result.songIDs[0]) }
     }
 
     /// Tags offered when adding: the whole vocabulary except special tags.
@@ -485,8 +540,8 @@ struct SongListView: View {
             rowContent(song, selecting: true)
                 .contentShape(Rectangle())
                 .onTapGesture { toggleSelect(song) }
-        } else if song.kind == .chord {
-            // Chord songs are single-page text — no drag-to-merge.
+        } else if song.kind != .sheet {
+            // Chord and score songs aren't photo pages — no drag-to-merge.
             rowContent(song, selecting: false)
         } else {
             rowContent(song, selecting: false)
@@ -516,7 +571,7 @@ struct SongListView: View {
             Text(song.firstPageDate.formatted(date: .abbreviated, time: .omitted))
                 .font(.caption).foregroundStyle(.secondary)
                 .frame(width: dateWidth, alignment: .leading)
-            Text(song.kind == .chord ? "—" : "\(song.pageAssetIDs.count)")
+            Text(song.kind == .sheet ? "\(song.pageAssetIDs.count)" : "—")
                 .foregroundStyle(.secondary)
                 .frame(width: pagesWidth, alignment: .trailing)
         }
@@ -526,7 +581,7 @@ struct SongListView: View {
 
     /// Type column — plain text label, same styling as other column body text.
     private func typeCell(_ song: Song) -> some View {
-        Text(song.kind == .chord ? "Chord" : "Sheet")
+        Text(song.kind.tagName)
             .foregroundStyle(.secondary)
     }
 
@@ -558,8 +613,8 @@ struct SongListView: View {
         return HStack(spacing: 6) {
             Text(song.firstPageDate.formatted(date: .abbreviated, time: .omitted))
             Text("·")
-            if song.kind == .chord {
-                Text("Chord")
+            if song.kind != .sheet {
+                Text(song.kind.tagName)
             } else {
                 Text("\(song.pageAssetIDs.count) pg")
             }
@@ -630,6 +685,7 @@ struct SongListView: View {
     private func pager(total: Int, current: Int) -> some View {
         HStack(spacing: 10) {
             Button { currentPage = max(0, current - 1) } label: { Image(systemName: "chevron.left") }
+                .accessibilityLabel("Previous page")
                 .disabled(current <= 0)
             ForEach(Array(pageItems(current: current, total: total).enumerated()), id: \.offset) { _, item in
                 if let p = item {
@@ -643,6 +699,7 @@ struct SongListView: View {
                 }
             }
             Button { currentPage = min(total - 1, current + 1) } label: { Image(systemName: "chevron.right") }
+                .accessibilityLabel("Next page")
                 .disabled(current >= total - 1)
         }
         .frame(maxWidth: .infinity)

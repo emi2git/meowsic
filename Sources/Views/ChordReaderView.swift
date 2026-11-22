@@ -161,6 +161,7 @@ struct ChordReaderView: View {
     @ToolbarContentBuilder private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             Button { close() } label: { Image(systemName: "chevron.down") }
+                .accessibilityLabel("Close")
         }
         // Top-right cluster, declared right-to-left so it reads left→right:
         // transpose group · A-/A+ · star · overflow menu.
@@ -180,16 +181,19 @@ struct ChordReaderView: View {
                 }
                 Button(role: .destructive) { showDelete = true } label: { Label("Delete", systemImage: "trash") }
             } label: { Image(systemName: "ellipsis.circle") }
+                .accessibilityLabel("More")
         }
         ToolbarItem(placement: .topBarTrailing) {
             HStack(spacing: 6) {
                 Button { fontSize = max(11, fontSize - 1) } label: {
                     Image(systemName: "textformat.size.smaller")
                 }
+                .accessibilityLabel("Smaller text")
                 .disabled(fontSize <= 11)
                 Button { fontSize = min(28, fontSize + 1) } label: {
                     Image(systemName: "textformat.size.larger")
                 }
+                .accessibilityLabel("Larger text")
                 .disabled(fontSize >= 28)
             }
         }
@@ -220,6 +224,7 @@ struct ChordReaderView: View {
                 Button { adjustTranspose(-1) } label: {
                     Image(systemName: "minus.circle.fill").font(.title2)
                 }
+                .accessibilityLabel("Transpose down")
                 .disabled(transposeOffset <= ChordTransposer.minOffset)
                 Text(transposeLabel)
                     .font(.title3.bold())
@@ -228,6 +233,7 @@ struct ChordReaderView: View {
                 Button { adjustTranspose(+1) } label: {
                     Image(systemName: "plus.circle.fill").font(.title2)
                 }
+                .accessibilityLabel("Transpose up")
                 .disabled(transposeOffset >= ChordTransposer.maxOffset)
             }
             Button {

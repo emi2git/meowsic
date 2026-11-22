@@ -7,7 +7,7 @@ struct ContentView: View {
     @Environment(PhotoLibraryService.self) private var library
     @Environment(\.scenePhase) private var scenePhase
     @State private var coordinator: AnalysisCoordinator?
-    @State private var pushing = false
+    @State private var autoSync: AutoSync?
 
     var body: some View {
         Group {
@@ -30,26 +30,31 @@ struct ContentView: View {
         .overlay { cloudSyncOverlay }
         .task {
             if coordinator == nil {
-                coordinator = AnalysisCoordinator(context: modelContext, library: library)
+                let c = AnalysisCoordinator(context: modelContext, library: library)
+                let sync = AutoSync(coordinator: c)
+                c.onMutate = { [weak sync] in sync?.pushSoon() }
+                #if DEBUG
+                if UITestSupport.isActive {
+                    await library.requestAccess()
+                    UITestSupport.seed(coordinator: c, context: modelContext)
+                }
+                #endif
+                coordinator = c
+                autoSync = sync
+                // Pull the newest snapshot before enabling pushes, then keep in
+                // step automatically (write → debounced push, foreground → pull,
+                // background → flush).
+                await sync.start()
             }
             await library.requestAccess()
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { Task { await pushToCloud() } }
+            switch phase {
+            case .active: Task { await autoSync?.pullIfNeeded() }
+            case .background: Task { await autoSync?.flush() }
+            default: break
+            }
         }
-    }
-
-    /// Auto-push the current database to the cloud when the app leaves the
-    /// foreground. Holds a background-task assertion so the upload can finish
-    /// after backgrounding. No-op if cloud sync isn't configured.
-    private func pushToCloud() async {
-        guard SyncStore.isConfigured, !pushing, let coordinator else { return }
-        pushing = true
-        defer { pushing = false }
-        let app = UIApplication.shared
-        var bg = app.beginBackgroundTask(withName: "MeowsicSyncUpload")
-        defer { if bg != .invalid { app.endBackgroundTask(bg); bg = .invalid } }
-        try? await CloudSync().upload(coordinator.exportData())
     }
 
     /// "Loading from cloud" overlay shown while a restore import is in progress.

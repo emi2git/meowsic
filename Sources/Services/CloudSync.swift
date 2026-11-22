@@ -4,12 +4,24 @@ import Foundation
 /// the sync service. The sync code is the secret that links two devices.
 enum SyncStore {
     private static let d = UserDefaults.standard
-    enum Key { static let url = "meowsic.sync.url", anonKey = "meowsic.sync.key", code = "meowsic.sync.code" }
+    enum Key {
+        static let url = "meowsic.sync.url", anonKey = "meowsic.sync.key", code = "meowsic.sync.code"
+        static let version = "meowsic.sync.version"
+    }
 
     static var url: String { d.string(forKey: Key.url) ?? "" }
     static var anonKey: String { d.string(forKey: Key.anonKey) ?? "" }
     static var code: String { d.string(forKey: Key.code) ?? "" }
     static var isConfigured: Bool { !url.isEmpty && !anonKey.isEmpty && !code.isEmpty }
+
+    /// The `updated_at` of the cloud row as of our last successful push or pull.
+    /// Auto-sync uses it as a whole-blob version token: pull only imports when the
+    /// remote row is newer than this, so we never re-import our own upload or
+    /// overwrite newer local state with a stale snapshot.
+    static var lastVersion: String {
+        get { d.string(forKey: Key.version) ?? "" }
+        set { d.set(newValue, forKey: Key.version) }
+    }
 }
 
 /// One-tap cloud sync via Supabase's REST API (PostGREST). No SDK, no iCloud
@@ -42,33 +54,46 @@ struct CloudSync {
     /// Namespacing keeps meowsic's row distinct from meowzi's in a shared table.
     private var rowCode: String { "meowsic:" + SyncStore.code }
 
+    /// A cloud row plus its server-assigned version token (`updated_at`).
+    struct Remote { let payload: Data; let version: String }
+
     // MARK: Push
 
-    func upload(_ payload: Data) async throws {
+    /// Upsert the payload and return the row's new `updated_at` version token so
+    /// callers (auto-sync) can record it and avoid re-importing their own upload.
+    @discardableResult
+    func upload(_ payload: Data) async throws -> String {
         guard SyncStore.isConfigured else { throw SyncError.notConfigured }
         var request = try makeRequest(query: "on_conflict=code")
         request.httpMethod = "POST"
-        request.setValue("resolution=merge-duplicates,return=minimal", forHTTPHeaderField: "Prefer")
+        // return=representation so the response carries the upserted row (with its
+        // freshly-bumped updated_at).
+        request.setValue("resolution=merge-duplicates,return=representation", forHTTPHeaderField: "Prefer")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "code": rowCode,
             "payload": String(decoding: payload, as: UTF8.self),
         ])
-        try await send(request)
+        let data = try await send(request)
+        let rows = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]]
+        return (rows?.first?["updated_at"] as? String) ?? ""
     }
 
     // MARK: Pull
 
-    func download() async throws -> Data {
+    /// Fetch the cloud row's payload and version token in one round trip.
+    func fetchRemote() async throws -> Remote {
         guard SyncStore.isConfigured else { throw SyncError.notConfigured }
         let escaped = rowCode.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? rowCode
-        let request = try makeRequest(query: "code=eq.\(escaped)&select=payload")
+        let request = try makeRequest(query: "code=eq.\(escaped)&select=payload,updated_at")
         let data = try await send(request)
         guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]],
               let payload = (rows.first?["payload"] as? String)?.data(using: .utf8) else {
             throw SyncError.empty
         }
-        return payload
+        return Remote(payload: payload, version: (rows.first?["updated_at"] as? String) ?? "")
     }
+
+    func download() async throws -> Data { try await fetchRemote().payload }
 
     // MARK: Plumbing
 

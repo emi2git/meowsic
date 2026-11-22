@@ -76,6 +76,8 @@ enum PrintPlanner {
                 i = end
             }
             return Item(pages: entries)
+        case .score:
+            return nil   // notation is drawn live by the score reader; nothing to lay out here
         }
     }
 }

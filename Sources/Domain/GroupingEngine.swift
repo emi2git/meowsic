@@ -13,13 +13,12 @@ enum GroupingEngine {
 
     static func group(analyses: [PhotoAnalysis],
                       chordSongs: [ChordSong] = [],
+                      scoreSongs: [ScoreSong] = [],
                       renames: [String: String],
                       tagOverrides: [String: [String]],
                       pageGroups: [String: String],
                       boundaries: [String: Bool],
                       deletedKeys: Set<String> = [],
-                      sheetTag: String = "Sheet",
-                      chordTag: String = "Chord",
                       deletedTag: String = "Deleted") -> [SongDerivation] {
         let dateByID = Dictionary(analyses.map { ($0.assetLocalIdentifier, $0.creationDate) },
                                   uniquingKeysWith: { a, _ in a })
@@ -76,7 +75,6 @@ enum GroupingEngine {
             let baseTags = tagOverrides[root] ?? (byID[root]?.tags ?? [])
             let isDel = deletedKeys.contains(root)
             let tags = decoratedTags(baseTags, kind: .sheet,
-                                     sheetTag: sheetTag, chordTag: chordTag,
                                      deleted: isDel, deletedTag: deletedTag)
             let firstDate = dateByID[ordered.first ?? root] ?? .distantPast
             songs.append(SongDerivation(id: root, title: title, titleIsCustom: renamed != nil,
@@ -92,7 +90,6 @@ enum GroupingEngine {
             let baseTags = tagOverrides[chord.id] ?? []
             let isDel = deletedKeys.contains(chord.id)
             let tags = decoratedTags(baseTags, kind: .chord,
-                                     sheetTag: sheetTag, chordTag: chordTag,
                                      deleted: isDel, deletedTag: deletedTag)
             songs.append(SongDerivation(id: chord.id, title: title, titleIsCustom: renamed != nil,
                                         pageAssetIDs: [],
@@ -101,20 +98,28 @@ enum GroupingEngine {
                                         isHidden: isDel))
         }
 
+        // 5. Append imported scores (MusicXML notation, drawn by the score reader).
+        for score in scoreSongs {
+            let renamed = renames[score.id]
+            let isDel = deletedKeys.contains(score.id)
+            let tags = decoratedTags(tagOverrides[score.id] ?? [], kind: .score,
+                                     deleted: isDel, deletedTag: deletedTag)
+            songs.append(SongDerivation(id: score.id, title: (renamed ?? score.title).titleCased,
+                                        titleIsCustom: renamed != nil, pageAssetIDs: [],
+                                        firstPageDate: score.createdAt, tags: tags, kind: .score,
+                                        chordText: nil, artist: nil, isHidden: isDel))
+        }
+
         return songs.sorted { $0.firstPageDate > $1.firstPageDate }
     }
 
     /// Builds the display tag list: drops stale Deleted/wrong-kind strings from
-    /// `base`, then prepends synthesized markers (Deleted from SongMeta; Sheet/Chord
+    /// `base`, then prepends synthesized markers (Deleted from SongMeta; Sheet/Chord/Score
     /// from kind). Order: Deleted first, then the kind tag.
     private static func decoratedTags(_ base: [String], kind: SongKind,
-                                      sheetTag: String, chordTag: String,
                                       deleted: Bool, deletedTag: String) -> [String] {
-        let kindKeep = kind == .sheet ? sheetTag : chordTag
-        let kindDrop = kind == .sheet ? chordTag : sheetTag
-        let strip: Set<String> = [kindKeep, kindDrop, deletedTag]
-        var out = base.filter { !strip.contains($0) }
-        out.insert(kindKeep, at: 0)
+        var out = base.filter { !SongKind.tagNames.contains($0) && $0 != deletedTag }
+        out.insert(kind.tagName, at: 0)
         if deleted { out.insert(deletedTag, at: 0) }
         return out
     }

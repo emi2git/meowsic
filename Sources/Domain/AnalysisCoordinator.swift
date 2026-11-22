@@ -33,9 +33,10 @@ final class AnalysisCoordinator {
     static let deletedTag = "Deleted"
     static let sheetTag = "Sheet"
     static let chordTag = "Chord"
+    static let scoreTag = "Score"
     /// Tags that the user can't add/remove or delete from vocabulary. Sheet/Chord
     /// are derived from `Song.kind`; Deleted is toggled by softDelete/restore.
-    static let specialTags: Set<String> = [deletedTag, sheetTag, chordTag]
+    static let specialTags: Set<String> = [deletedTag, sheetTag, chordTag, scoreTag]
     private static let maxConcurrent = 8
 
     /// Initial vocabulary on first launch — fully editable in-app afterwards.
@@ -81,7 +82,8 @@ final class AnalysisCoordinator {
         let chordCount = (try? context.fetchCount(FetchDescriptor<ChordSong>())) ?? 0
         // First launch with @Model Song, or some other reason the cache is
         // out of sync with source rows → populate it.
-        if songCount == 0 && (analysisCount > 0 || chordCount > 0) {
+        let scoreCount = (try? context.fetchCount(FetchDescriptor<ScoreSong>())) ?? 0
+        if songCount == 0 && (analysisCount > 0 || chordCount > 0 || scoreCount > 0) {
             rebuildSongs()
         }
         migrateSongTagSetToTagLinksIfNeeded()
@@ -255,10 +257,10 @@ final class AnalysisCoordinator {
         let analyses = all(PhotoAnalysis.self)
         let chordSongs = all(ChordSong.self)
         let derived = GroupingEngine.group(analyses: analyses, chordSongs: chordSongs,
+                                           scoreSongs: all(ScoreSong.self),
                                            renames: renameMap, tagOverrides: tagMap,
                                            pageGroups: groupMap, boundaries: boundaryMap,
                                            deletedKeys: deletedKeys,
-                                           sheetTag: Self.sheetTag, chordTag: Self.chordTag,
                                            deletedTag: Self.deletedTag)
         upsertSongs(from: derived)
         songs = all(Song.self).sorted { $0.firstPageDate > $1.firstPageDate }
@@ -470,6 +472,93 @@ final class AnalysisCoordinator {
         onMutate?()
     }
 
+    // MARK: - Score songs (MusicXML + MIDI from Emi Music Note)
+
+    struct ScoreImportResult { var songIDs: [String] = []; var unreadable = 0; var midiOnly = 0 }
+
+    /// Import picked `.musicxml` / `.mid` files. Each MusicXML becomes one score
+    /// song; a MIDI is attached to the score sharing its name (Emi Music Note
+    /// writes `<song>.musicxml`, `<song>-score.mid`, `<song>-piano.mid` — the
+    /// `-score` one matches the notation, so it wins). Re-importing a title
+    /// that already exists replaces its notation instead of adding a twin.
+    func importScoreFiles(_ urls: [URL]) -> ScoreImportResult {
+        func base(_ url: URL) -> String {
+            var name = url.deletingPathExtension().lastPathComponent
+            for suffix in ["-score", "-piano"] where name.hasSuffix(suffix) { name.removeLast(suffix.count) }
+            return name.lowercased()
+        }
+        func read(_ url: URL) -> Data? {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            return try? Data(contentsOf: url)
+        }
+        var result = ScoreImportResult()
+        let midiURLs = urls.filter { ["mid", "midi"].contains($0.pathExtension.lowercased()) }
+        let xmlURLs = urls.filter { ["musicxml", "xml"].contains($0.pathExtension.lowercased()) }
+        result.unreadable = urls.count - midiURLs.count - xmlURLs.count
+        var usedMIDI = Set<URL>()
+        let existing = all(ScoreSong.self)
+
+        for url in xmlURLs {
+            guard let data = read(url), let text = String(data: data, encoding: .utf8),
+                  text.contains("<score-partwise") || text.contains("<score-timewise") else {
+                result.unreadable += 1
+                continue
+            }
+            // Picked MIDI with the same name, else (on the Mac) the one sitting next to the file.
+            let sameName = midiURLs.filter { base($0) == base(url) }
+            let isScoreMIDI: (URL) -> Bool = { $0.deletingPathExtension().lastPathComponent.hasSuffix("-score") }
+            let picked = sameName.filter(isScoreMIDI) + sameName.filter { !isScoreMIDI($0) }
+            picked.forEach { usedMIDI.insert($0) }
+            let stem = url.deletingPathExtension().lastPathComponent
+            let beside = ["\(stem)-score.mid", "\(stem).mid"].map { url.deletingLastPathComponent().appendingPathComponent($0) }
+            let midi = (picked + beside).lazy.compactMap(read).first { $0.starts(with: Data("MThd".utf8)) }
+
+            let title = Self.musicXMLTitle(text) ?? stem.replacingOccurrences(of: "-", with: " ")
+            let same = existing.first { $0.title.caseInsensitiveCompare(title) == .orderedSame }
+            if let same {
+                same.xml = ScoreSong.pack(text)
+                if let midi { same.midi = midi }
+                result.songIDs.append(same.id)
+            } else {
+                let score = ScoreSong(title: title, xml: ScoreSong.pack(text), midi: midi)
+                context.insert(score)
+                result.songIDs.append(score.id)
+            }
+        }
+        result.midiOnly = midiURLs.filter { !usedMIDI.contains($0) }.count
+        if !result.songIDs.isEmpty {
+            try? context.save()
+            rebuildSongs()
+            onMutate?()
+        }
+        return result
+    }
+
+    /// `<work-title>` or `<movement-title>` of a MusicXML document.
+    private static func musicXMLTitle(_ xml: String) -> String? {
+        for tag in ["work-title", "movement-title"] {
+            guard let open = xml.range(of: "<\(tag)>"),
+                  let close = xml.range(of: "</\(tag)>", range: open.upperBound..<xml.endIndex) else { continue }
+            var title = String(xml[open.upperBound..<close.lowerBound])
+            for (entity, char) in [("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&apos;", "'"), ("&amp;", "&")] {
+                title = title.replacingOccurrences(of: entity, with: char)
+            }
+            title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !title.isEmpty { return title }
+        }
+        return nil
+    }
+
+    /// Notation and playback data for a score song.
+    func scoreContent(id: String) -> (musicXML: String, midi: Data?)? {
+        scoreSong(id: id).map { ($0.musicXML, $0.midi) }
+    }
+
+    private func scoreSong(id: String) -> ScoreSong? {
+        (try? context.fetch(FetchDescriptor<ScoreSong>(predicate: #Predicate { $0.id == id })))?.first
+    }
+
     private func chordSong(id: String) -> ChordSong? {
         (try? context.fetch(FetchDescriptor<ChordSong>(predicate: #Predicate { $0.id == id })))?.first
     }
@@ -608,6 +697,7 @@ final class AnalysisCoordinator {
         for analysis in all(PhotoAnalysis.self) where ids.contains(analysis.assetLocalIdentifier) { context.delete(analysis) }
         for group in all(PageGroup.self) where ids.contains(group.assetID) { context.delete(group) }
         for boundary in all(PageBoundary.self) where ids.contains(boundary.assetID) { context.delete(boundary) }
+        if let score = scoreSong(id: song.id) { context.delete(score) }
         if let rename = songTagRename(song.id) { context.delete(rename) }
         if let tagSet = songTagSet(song.id) { context.delete(tagSet) }
         if let m = songMeta(song.id) { context.delete(m) }
@@ -622,7 +712,7 @@ final class AnalysisCoordinator {
     func deleteSongs(_ targets: [Song], deletePhotos: Bool) async -> Bool {
         guard !targets.isEmpty else { return true }
         let sheetTargets = targets.filter { $0.kind == .sheet }
-        let chordTargets = targets.filter { $0.kind == .chord }
+        let chordTargets = targets.filter { $0.kind != .sheet }
 
         if deletePhotos && !sheetTargets.isEmpty {
             let allIDs = sheetTargets.flatMap { $0.pageAssetIDs }
@@ -646,6 +736,7 @@ final class AnalysisCoordinator {
         }
         for song in chordTargets {
             if let chord = chordSong(id: song.id) { context.delete(chord) }
+            if let score = scoreSong(id: song.id) { context.delete(score) }
             if let rename = songTagRename(song.id) { context.delete(rename) }
             if let tagSet = songTagSet(song.id) { context.delete(tagSet) }
             if let m = songMeta(song.id) { context.delete(m) }
@@ -848,7 +939,7 @@ final class AnalysisCoordinator {
     /// surface soft-deleted songs (which match by Song.isHidden == true, not by
     /// the relationship). Idempotent — runs every launch.
     private func ensureSystemTagsExist() {
-        for name in [Self.sheetTag, Self.chordTag, Self.deletedTag] {
+        for name in [Self.sheetTag, Self.chordTag, Self.scoreTag, Self.deletedTag] {
             if let t = tag(named: name) {
                 if !t.isSystem { t.isSystem = true }
             } else {
@@ -873,7 +964,7 @@ final class AnalysisCoordinator {
             guard let song = songByID[set.songKey] else { continue }
             let names = orderedUniqueNames(set.tags.filter { !Self.specialTags.contains($0) })
             var resolved: [Tag] = names.compactMap { tag(named: $0) ?? insertTag($0) }
-            let kindName = song.kind == .sheet ? Self.sheetTag : Self.chordTag
+            let kindName = song.kind.tagName
             if let kindTag = tag(named: kindName) ?? Optional(insertTag(kindName, isSystem: true)) {
                 if !resolved.contains(where: { $0.name == kindName }) {
                     resolved.insert(kindTag, at: 0)
@@ -977,7 +1068,10 @@ final class AnalysisCoordinator {
         let backup = BackupData(
             analyses: analyses, renames: renames, tagSets: tagSets, groups: groups,
             boundaries: boundaries, tags: tagNames, tagCategories: tagCategories,
-            assetMap: assetMap, chordSongs: chords, metas: metas
+            assetMap: assetMap, chordSongs: chords, metas: metas,
+            scoreSongs: all(ScoreSong.self).map {
+                BackupData.ScoreSongDTO(id: $0.id, title: $0.title, xml: $0.xml, midi: $0.midi, createdAt: $0.createdAt)
+            }
         )
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -1090,6 +1184,19 @@ final class AnalysisCoordinator {
                                          createdAt: chord.createdAt))
             }
         }
+        // Scores merge the same way as chords: the snapshot updates or adds, never removes.
+        let existingScores = Dictionary(all(ScoreSong.self).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        for score in backup.scoreSongs ?? [] {
+            if let existing = existingScores[score.id] {
+                existing.title = score.title
+                existing.xml = score.xml
+                existing.midi = score.midi
+                existing.createdAt = score.createdAt
+            } else {
+                context.insert(ScoreSong(id: score.id, title: score.title, xml: score.xml,
+                                         midi: score.midi, createdAt: score.createdAt))
+            }
+        }
         ensureSystemTagsExist()
         refreshTagNames()
         importStatus = "Rebuilding song list…"
@@ -1116,10 +1223,10 @@ final class AnalysisCoordinator {
         let analyses = all(PhotoAnalysis.self)
         let chordSongs = all(ChordSong.self)
         let derived = GroupingEngine.group(analyses: analyses, chordSongs: chordSongs,
+                                           scoreSongs: all(ScoreSong.self),
                                            renames: renameMap, tagOverrides: tagMap,
                                            pageGroups: groupMap, boundaries: boundaryMap,
                                            deletedKeys: deletedKeys,
-                                           sheetTag: Self.sheetTag, chordTag: Self.chordTag,
                                            deletedTag: Self.deletedTag)
         await upsertSongsAsync(from: derived, progressOffset: progressOffset, progressRange: progressRange)
         songs = all(Song.self).sorted { $0.firstPageDate > $1.firstPageDate }
@@ -1180,7 +1287,10 @@ final class AnalysisCoordinator {
         try? context.delete(model: SongMeta.self)
         try? context.delete(model: PageGroup.self)
         try? context.delete(model: PageBoundary.self)
-        if includingChords { try? context.delete(model: ChordSong.self) }
+        if includingChords {
+            try? context.delete(model: ChordSong.self)
+            try? context.delete(model: ScoreSong.self)
+        }
         if includingTags { try? context.delete(model: Tag.self) }
     }
 

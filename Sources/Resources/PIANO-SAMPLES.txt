@@ -1,0 +1,4 @@
+piano-NNN.mp3 (NNN = MIDI note number) are from the Salamander Grand Piano V3
+by Alexander Holm, licensed CC BY 3.0, as packaged for Tone.js
+(https://tonejs.github.io/audio/salamander/). One sample every three semitones;
+the score reader pitch-shifts the nearest one.
