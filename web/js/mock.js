@@ -254,7 +254,9 @@ export function buildMock() {
   SCORES.forEach((s, i) => {
     const created = NOW - Math.floor((i * 9 + 1) * DAY);
     const t = TUNES[s.tune];
-    items.push({ id: id('m'), kind: 'score', title: s.title, artist: s.artist, tags: s.tags, createdAt: created, updatedAt: created,
+    // the version (Piano / Piano + vocals / Lead sheet) is also a tag
+    const vTag = { original: 'Piano', vocal: 'Piano + vocals', lead: 'Lead sheet' }[s.version];
+    items.push({ id: id('m'), kind: 'score', title: s.title, artist: s.artist, tags: [vTag, ...s.tags], createdAt: created, updatedAt: created,
       tune: s.tune, version: s.version, source: s.source, method: s.method,
       key: ['C', 'G', 'D', 'A', 'E', 'B', 'F#'][t.fifths] + ' major', bpm: t.bpm, transpose: 0, deleted: false });
   });
@@ -283,5 +285,5 @@ export function buildMock() {
     { id: 'job-1', title: 'One Day More (Les Misérables)', source: 'YouTube · youtu.be/one-day-more', outputs: ['vocal'], output: 'Piano + vocals', method: 'Direct transcription', stage: 2, progress: 0.4, startedAt: NOW - 90000, status: 'running' },
   ];
 
-  return { version: 3, items, tags: [...TAGS, 'Piano recital', 'Ukulele club', 'Musicals to learn'], plays, jobs, annotations: {} };
+  return { version: 4, items, tags: [...TAGS, 'Piano recital', 'Ukulele club', 'Musicals to learn', 'Piano', 'Piano + vocals', 'Lead sheet'], plays, jobs, annotations: {} };
 }

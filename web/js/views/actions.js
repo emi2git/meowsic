@@ -16,7 +16,7 @@ export function thumbHtml(it) {
 export function metaText(it) {
   if (it.kind === 'sheet') return `${it.pages} page${it.pages > 1 ? 's' : ''}${it.source === 'pdf' ? ' · PDF' : ''}`;
   if (it.kind === 'chords') return `Key ${it.key}${it.source === 'hopamchuan' ? ' · Hợp Âm Chuẩn' : ' · Ultimate Guitar'}`;
-  return `${VERSIONS[it.version] || 'Piano'} · ${it.key}`;
+  return it.key;
 }
 
 export function editTags(ids) {

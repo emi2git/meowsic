@@ -316,7 +316,7 @@ export function tickJobs() {
       if (progress >= 1) { stage++; progress = 0; }
       if (stage >= STAGES.length) {
         const tune = tunes[Math.floor(Math.random() * tunes.length)];
-        const made = (j.outputs || ['original']).map((version) => store.add({ kind: 'score', title: j.title, artist: '', tags: [], tune, version,
+        const made = (j.outputs || ['original']).map((version) => store.add({ kind: 'score', title: j.title, artist: '', tags: [VERSIONS[version]], tune, version,
           source: j.source, method: j.method, key: 'C major', bpm: TUNES[tune].bpm, transpose: 0 }));
         store.updateJob(j.id, { status: 'done', stage, progress: 1, doneAt: Date.now(), items: made.map((x) => ({ id: x.id, version: x.version })) }, { quiet: false });
         toast(`Score ready: ${j.title}`, { label: 'Open', run: () => go(`#/item/${made[0].id}`) });
