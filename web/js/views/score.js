@@ -23,7 +23,8 @@ const fmt = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).pad
 export function scoreBody(root, it, { perform = false } = {}) {
   const tune = TUNES[it.tune];
   const version = it.version || 'original';
-  let zoom = (perform ? 1.25 : 1) * (innerWidth < 760 ? 0.62 : 1);
+  // each score reopens the way you left it: key (transpose), tempo and zoom are saved on the entry
+  let zoom = it.zoom || (perform ? 1.25 : 1) * (innerWidth < 760 ? 0.62 : 1);
   let osmd, player, stops = [], bar, ink = null;
 
   root.innerHTML = `<div class="score-wrap ${perform ? 'perform' : ''}"><div class="score-paper" id="paper"><div id="osmd"></div></div></div>`;
@@ -96,6 +97,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
       onEnd: () => root.dispatchEvent(new CustomEvent('ended', { bubbles: true })) });
     if (was) { player.rate = was.rate; player.loop = was.loop; }
     player.shift = it.transpose || 0;
+    if (!was && it.rate) player.rate = it.rate;
   };
   makePlayer();
   const ready = render().catch((e) => { $('#osmd', root).innerHTML = `<p class="err">${esc(e.message)}</p>`; });
@@ -110,7 +112,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get player() { return player; },
     get version() { return version; },
     async setTranspose(n) { store.update(it.id, { transpose: n }); player.shift = n; await render(); },
-    setZoom(z) { zoom = Math.max(0.6, Math.min(2, z)); osmd.zoom = zoom; osmd.render(); measureStops(); place(player.now()); ink?.fit(); },
+    setZoom(z) { zoom = Math.max(0.6, Math.min(2, z)); store.update(it.id, { zoom }); osmd.zoom = zoom; osmd.render(); measureStops(); place(player.now()); ink?.fit(); },
     get zoom() { return zoom; },
     setTool(t) { ink?.setTool(t); },
     undo() { ink?.undo(); }, clear() { ink?.clear(); },
@@ -161,6 +163,7 @@ export function scoreToolbar(bar, it, view) {
   const rate = (d) => {
     const bpm = Math.max(30, Math.min(220, Math.round(t.bpm * p().rate / 5) * 5 + d * 5));
     p().setRate(bpm / t.bpm);
+    store.update(it.id, { rate: bpm / t.bpm });
     $('#sc-rate', bar).textContent = `${bpm} bpm`;
     time.textContent = `${fmt(secs(+pos.value))} / ${fmt(secs(total))}`;
   };
