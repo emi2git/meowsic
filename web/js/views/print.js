@@ -18,7 +18,8 @@ let opts = { paper: 'A4', facing: true };
 try { Object.assign(opts, JSON.parse(localStorage.getItem('meowsic-print') || '{}')); } catch {}
 
 function sourceOf(q) {
-  if (q.get('tag')) { const t = q.get('tag'); return { name: `Tag: ${t}`, ids: store.tagItems(t).map((x) => x.id) }; }
+  const tags = (q.get('tags') || q.get('tag') || '').split(',').filter(Boolean);
+  if (tags.length) return { name: `Tag${tags.length > 1 ? 's' : ''}: ${tags.join(' + ')}`, ids: store.tagItems(tags).map((x) => x.id) };
   if (q.get('items')) return { name: 'Selected music', ids: q.get('items').split(',') };
   const it = store.get(q.get('item'));
   return { name: it?.title || 'Print', ids: it ? [it.id] : [] };

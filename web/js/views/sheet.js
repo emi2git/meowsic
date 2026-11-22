@@ -18,8 +18,7 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
       <div class="page-row" id="page-row"></div>
       <button class="turn next" aria-label="Next page">›</button>
     </div>
-    ${perform || it.pages < 2 ? '' : `<div class="dots" id="strip">${Array.from({ length: it.pages }, (_, i) =>
-      `<button data-p="${i + 1}" aria-label="Page ${i + 1}"></button>`).join('')}</div>`}`;
+`;
 
   // two pages side by side only in a Mac browser (mouse / trackpad and a wide window); iPad and iPhone show one
   const twoUp = () => it.pages > 1 && matchMedia('(pointer: fine)').matches && root.clientWidth > 900;
@@ -86,17 +85,20 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
 export function sheetToolbar(bar, it, view) {
   bar.innerHTML = `
     <span class="pageno" id="pageno"></span>
-    <button class="icon-btn" id="sv-ink" title="Annotate" aria-label="Annotate">${iconOn('write')}</button>`;
+    <button class="icon-btn ink-toggle" id="sv-ink" title="Annotate" aria-label="Annotate">${iconOn('write')}</button>`;
   $('#sv-ink', bar).onclick = () => startInk(view, document.querySelector('.viewer'));
 }
 
+// the Annotate button toggles: first click opens the pen bar, second click closes it
 export function startInk(view, host) {
-  if (host.querySelector('.inkbar')) return;
+  const open = host.querySelector('.inkbar');
+  if (open) { view.setTool(null); open.remove(); document.querySelectorAll('.ink-toggle').forEach((b) => b.classList.remove('on')); return; }
+  document.querySelectorAll('.ink-toggle').forEach((b) => b.classList.add('on'));
   view.setTool('red');
   const tb = inkToolbar((t) => view.setTool(t), (a) => {
     if (a === 'undo') view.undo();
     if (a === 'clear') view.clear();
-    if (a === 'done') { view.setTool(null); tb.remove(); toast('Annotations saved'); }
+    if (a === 'done') { view.setTool(null); tb.remove(); document.querySelectorAll('.ink-toggle').forEach((b) => b.classList.remove('on')); toast('Annotations saved'); }
   });
   host.append(tb);
 }

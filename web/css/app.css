@@ -554,3 +554,36 @@ legend { font-weight: 700; margin-bottom: 8px; }
 .phone-only { display: none !important; }
 @media (max-width: 760px) { .phone-only { display: inline-flex !important; } }
 .lib-top .search { margin-left: auto; }
+
+/* multi-select */
+.rows .pick { width: 28px; height: 28px; margin: 0 -4px 0 -6px; display: inline-flex; align-items: center; justify-content: center; flex: none; cursor: pointer; opacity: 0; transition: opacity .12s; }
+.rows .pick input { width: 20px; height: 20px; cursor: pointer; }
+.rows .row:hover .pick, .rows .row.sel .pick, .rows.selecting .pick { opacity: 1; }
+@media (pointer: coarse) { .rows:not(.selecting) .pick { display: none; } }
+.rows.selecting .row-more { visibility: hidden; }
+.rows .row.sel { background: var(--acc-soft); }
+.selband { background: var(--acc-soft); gap: 10px; }
+.selband .pick { display: inline-flex; align-items: center; }
+.selband .pick input { width: 20px; height: 20px; }
+.selband .sel-count { font-size: 17px; }
+.touch-only { display: none !important; }
+@media (pointer: coarse) { .touch-only { display: inline-flex !important; } }
+@media (max-width: 760px) { .selband button:not(#sb-done) { padding: 0 10px; font-size: 14px; } .selband .sel-count { font-size: 15px; } }
+
+.tag-on { display: inline-flex; align-items: center; gap: 2px; background: var(--acc-soft); color: var(--ink); border-radius: 99px; padding: 0 4px 0 12px; height: 34px; font-weight: 600; font-size: 14px; }
+.tag-on .x { min-height: 0; height: 28px; width: 28px; padding: 0; border: 0; background: none; border-radius: 50%; font-size: 18px; color: var(--ink2); }
+.tag-btn.on { background: var(--acc-soft); }
+.tag-btn .ic { width: 22px; height: 22px; }
+
+.tagpop { width: 280px; padding: 10px; }
+.tagpop-head { display: flex; justify-content: space-between; align-items: center; padding: 2px 4px 8px; }
+.tagpop-q { min-height: 36px; margin-bottom: 6px; }
+.tagpop-list { max-height: 50dvh; overflow-y: auto; }
+.tagpop-row { display: flex; align-items: center; gap: 10px; padding: 7px 6px; border-radius: 8px; cursor: pointer; }
+.tagpop-row:hover { background: var(--bg2); }
+.tagpop-row span { flex: 1; }
+.tagpop-row i { font-style: normal; color: var(--mute); font-size: 13px; }
+.tagpop-foot { margin: 8px 4px 0; }
+.clear-tags { font-size: 14px; }
+
+.ink-toggle.on { background: var(--acc-soft); }

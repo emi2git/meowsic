@@ -86,7 +86,7 @@ export const store = {
   },
 
   // everything with a tag, in the order print and set lists use (title A–Z)
-  tagItems(tag) { return this.items().filter((x) => x.tags.includes(tag)).sort((a, b) => a.title.localeCompare(b.title)); },
+  tagItems(tags) { tags = [].concat(tags); return this.items().filter((x) => tags.every((t) => x.tags.includes(t))).sort((a, b) => a.title.localeCompare(b.title)); },
 
   // play history
   plays(id) { return id ? db.plays.filter((p) => p.itemId === id) : db.plays; },

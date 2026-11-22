@@ -21,7 +21,7 @@ const P = {
   play: '<path d="M7 4l13 8-13 8z" fill="currentColor"/>',
   pause: '<path d="M7 4h4v16H7zM14 4h4v16h-4z" fill="currentColor"/>',
   pen: '<path d="M4 20l1-5L16 4l4 4L9 19z"/><path d="M14 6l4 4"/>',
-  write: '<path d="M20.5 3.5l-9 9-2.5.5.5-2.5 9-9a1.4 1.4 0 012 2z"/><path d="M15 6l2 2"/><path d="M2.5 20.5c1.5-2.5 3-3 4-1s2.2 2.4 3.6.2 2.6-2.4 3.8-.4 2.5 1.6 4-.3" stroke-width="2"/>',
+  write: '<path d="M3 17c3-8 5-10 6-8s-3 9-1 9 3-6 5-6-1 5 1 5 2-2 3-2"/><path d="M3 21h18"/>',
   zoomin: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8M10.5 7.5v6M7.5 10.5h6"/>',
   zoomout: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8M7.5 10.5h6"/>',
   perform: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',

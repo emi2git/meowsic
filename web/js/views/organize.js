@@ -11,7 +11,7 @@ export function tagsView(main) {
   const draw = () => {
     const counts = store.tagCounts();
     const tags = [...store.db.tags].sort((a, b) => (counts.get(b) || 0) - (counts.get(a) || 0) || a.localeCompare(b));
-    $('#tg', main).innerHTML = tags.map((t) => `<div class="tag-card"><a href="#/library?tag=${encodeURIComponent(t)}"><b>${esc(t)}</b><span>${counts.get(t) || 0}</span></a>
+    $('#tg', main).innerHTML = tags.map((t) => `<div class="tag-card"><a href="#/library?tags=${encodeURIComponent(t)}"><b>${esc(t)}</b><span>${counts.get(t) || 0}</span></a>
       <button class="icon-btn" data-t="${esc(t)}" aria-label="More for ${esc(t)}" title="More">${iconOn('more')}</button></div>`).join('');
   };
   $('#tg', main).onclick = (e) => {
@@ -20,7 +20,7 @@ export function tagsView(main) {
     const t = b.dataset.t;
     menu(b, [
       { label: 'Rename', icon: 'edit', run: async () => { const n = await promptSheet({ title: 'Rename tag', value: t }); if (n) store.renameTag(t, n); } },
-      { label: 'Print all', icon: 'print', run: () => go(`#/print?tag=${encodeURIComponent(t)}`) },
+      { label: 'Print all', icon: 'print', run: () => go(`#/print?tags=${encodeURIComponent(t)}`) },
       '-',
       { label: 'Delete tag', icon: 'bin', danger: true, run: async () => { if (await confirmSheet({ title: `Delete the tag “${t}”?`, body: 'The music keeps everything else; only this tag is removed.', ok: 'Delete', danger: true })) store.deleteTag(t); } },
     ]);

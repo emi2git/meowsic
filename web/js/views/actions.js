@@ -27,8 +27,15 @@ export function editTags(ids) {
   const s = sheet(`<h2>${ids.length > 1 ? `Tags for ${ids.length} items` : `Tags — ${esc(items[0].title)}`}</h2>
     ${ids.length > 1 ? '<p class="muted">Tags you turn on are added to every selected item; tags you turn off are removed.</p>' : ''}
     <div class="pick"></div>
-    <div class="modal-actions"><button data-close>Cancel</button><button class="primary" data-ok>Save</button></div>`, { wide: true });
-  s.el.querySelector('.pick').append(tagPicker([...store.db.tags], common, (v) => (chosen = v)));
+    <div class="modal-actions"><button class="danger-text" data-none style="margin-right:auto">Remove all tags</button><button data-close>Cancel</button><button class="primary" data-ok>Save</button></div>`, { wide: true });
+  const fill = (on) => { const box = s.el.querySelector('.pick'); box.innerHTML = ''; box.append(tagPicker([...store.db.tags], on, (v) => (chosen = v))); };
+  fill(common);
+  s.el.querySelector('[data-none]').onclick = () => {
+    chosen = [];
+    fill([]);
+    // with several items selected, also strip tags they don't share
+    if (ids.length > 1) s.el.querySelector('[data-ok]').onclick = () => { store.setTags(ids, [], [...new Set(items.flatMap((it) => it.tags))]); s.close(); toast('All tags removed'); };
+  };
   s.el.querySelector('[data-ok]').onclick = () => {
     const remove = common.filter((t) => !chosen.includes(t));
     store.setTags(ids, chosen, remove);
