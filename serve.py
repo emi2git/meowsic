@@ -2,6 +2,12 @@
 import http.server, functools, os, sys
 
 class NoCache(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.startswith('/api/health'):  # UI preview: tell the app there is no real server
+            self.send_response(200); self.send_header('Content-Type', 'application/json'); self.end_headers()
+            self.wfile.write(b'{"ok": false, "mock": true}'); return
+        super().do_GET()
+
     def end_headers(self):
         self.send_header('Cache-Control', 'no-store')
         super().end_headers()

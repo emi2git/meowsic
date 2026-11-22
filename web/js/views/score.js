@@ -355,6 +355,7 @@ function scoreEditor(view, it, host, btn) {
         <button class="danger-text" data-a="del" ${m.mel.length > 1 ? '' : 'disabled'} title="Delete note (⌫)">Delete</button>
         <span class="grow"></span>
         <button class="icon-btn" data-a="undo" ${undo.length ? '' : 'disabled'} title="Undo (⌘Z)" aria-label="Undo">${iconOn('undo')}</button>
+        <button class="icon-btn" data-a="reset" title="Reset to the original notes" aria-label="Reset">${iconOn('restore')}</button>
         <button class="icon-btn eb-done" data-a="done" title="Done" aria-label="Done">${iconOn('check')}</button>
       </div>`;
     lastBeats[bi] = beats;
@@ -401,6 +402,7 @@ function scoreEditor(view, it, host, btn) {
       m.mel[ni][0] = nameOf(best);
     });
     if (a === 'undo' && undo.length) { ms = undo.pop(); await commit(); }
+    if (a === 'reset') { undo.push(structuredClone(ms)); await view.revert(); ms = structuredClone(view.tune.measures); draw(); } // undo brings the edits back
     if (a === 'done') close();
   };
   panel.onclick = (e) => {

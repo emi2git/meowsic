@@ -3,6 +3,7 @@ import { store } from '../store.js';
 import { $, esc, icon, iconOn, badge, ago, menu, KIND, CAT } from '../ui.js';
 import { go, addMenu } from '../app.js';
 import { thumbHtml, metaText, itemMenu, editTags, binItems } from './actions.js';
+import { VERSIONS } from '../musicxml.js';
 
 const SORTS = {
   added: ['Recently added', (a, b) => b.createdAt - a.createdAt],
@@ -11,11 +12,12 @@ const SORTS = {
   most: ['Most played', (a, b) => store.playCount(b.id) - store.playCount(a.id)],
   artist: ['Artist A–Z', (a, b) => (a.artist || '').localeCompare(b.artist || '') || a.title.localeCompare(b.title)],
   kind: ['Type', (a, b) => a.kind.localeCompare(b.kind) || a.title.localeCompare(b.title)],
+  version: ['Version', (a, b) => (VERSIONS[a.version] || '').localeCompare(VERSIONS[b.version] || '') || a.title.localeCompare(b.title)],
   tag: ['Tag', (a, b) => (mainTag(a) || '\uffff').localeCompare(mainTag(b) || '\uffff') || a.title.localeCompare(b.title)],
 };
 // table columns (Mac / iPad); clicking a heading sorts, clicking it again reverses
 // [sort key, heading, class]. Type is left out when a type is already picked in the left bar.
-const COLS = [['title', 'Title', 'c-title'], ['artist', 'Artist', 'c-artist'], ['kind', 'Type', 'c-type'], ['tag', 'Tag', 'c-tag'], [null, 'Key / Pages', 'c-meta'], ['added', 'Added', 'c-when']];
+const COLS = [['title', 'Title', 'c-title'], ['artist', 'Artist', 'c-artist'], ['kind', 'Type', 'c-type'], ['version', 'Version', 'c-ver'], ['tag', 'Tag', 'c-tag'], [null, 'Key / Pages', 'c-meta'], ['added', 'Added', 'c-when']];
 // The one tag worth showing in the list: the most specific one (a musical, a movie, a set like
 // "Piano recital"), not genre, language or version tags.
 const GENERIC = new Set(['Musical', 'Disney', 'Movie', 'Anime', 'Pop', 'Rock', 'Ballad', 'Jazz', 'Folk', 'Country', 'Classical', 'Christmas', 'Children',
@@ -23,8 +25,8 @@ const GENERIC = new Set(['Musical', 'Disney', 'Movie', 'Anime', 'Pop', 'Rock', '
   'Piano accompaniment', 'Piano easy', 'Piano pro', 'Printed', 'Never printed']);
 export const mainTag = (it) => it.tags.find((t) => !GENERIC.has(t)) || '';
 const wide = () => true; // the table everywhere; narrow screens drop the less important columns (CSS)
-const PAGE = 60;
-const state = { q: '', sort: 'added', dir: 1, select: false, sel: new Set(), shown: PAGE, anchor: null };
+const PAGE = 50; // rows per page
+const state = { q: '', sort: 'added', dir: 1, select: false, sel: new Set(), page: 1, anchor: null };
 try { state.sort = localStorage.getItem('meowsic-sort') || 'added'; } catch {}
 
 const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase();
@@ -68,15 +70,17 @@ export function libraryView(main, { q }) {
       rows.innerHTML = `<ul class="rows"><li class="empty">${CAT}<p>${state.q || tags.length ? 'No music matches.' : 'Nothing here yet.'}</p>${state.q || tags.length ? '' : '<button class="primary" id="empty-add">Add music</button>'}</li></ul>`;
       $('#empty-add', main)?.addEventListener('click', (e) => addMenu(e.currentTarget));
     } else {
-      shownList = list.slice(0, state.shown);
-      const more = list.length > state.shown ? `<button id="lib-more">Show ${Math.min(PAGE, list.length - state.shown)} more of ${list.length - state.shown}</button>` : '';
+      const pages = Math.max(1, Math.ceil(list.length / PAGE));
+      state.page = Math.min(Math.max(1, state.page), pages);
+      shownList = list.slice((state.page - 1) * PAGE, state.page * PAGE);
+      const more = pager(state.page, pages);
       const cnt = `${list.length} item${list.length === 1 ? '' : 's'}`;
       if (wide()) {
         // ▲ = A→Z / oldest first, ▼ = Z→A / newest first; Added starts newest first
         const arrow = (k) => (state.sort !== k ? '' : (k === 'added') === (state.dir > 0) ? ' ▼' : ' ▲');
-        const cols = COLS.filter(([k]) => !(kind && k === 'kind'));
+        const cols = COLS.filter(([k]) => !(kind && k === 'kind') && (k !== 'version' || kind === 'score'));
         const cell = {
-          'c-title': (it) => esc(it.title), 'c-artist': (it) => esc(it.artist || ''), 'c-type': (it) => badge(it.kind),
+          'c-title': (it) => esc(it.title), 'c-artist': (it) => esc(it.artist || ''), 'c-type': (it) => badge(it.kind), 'c-ver': (it) => esc(VERSIONS[it.version] || ''),
           'c-tag': (it) => (mainTag(it) ? `<span class="tagchip">${esc(mainTag(it))}</span>` : ''), 'c-meta': (it) => metaText(it), 'c-when': (it) => ago(it.createdAt),
         };
         rows.innerHTML = `<table class="lib-table ${kind ? 'one-kind' : ''} ${selecting() ? 'selecting' : ''}"><thead><tr><th class="c-pick"></th>${cols.map(([k, l, c]) =>
@@ -85,8 +89,8 @@ export function libraryView(main, { q }) {
             <td class="c-pick"><label class="pick" title="Select (Shift-click for a range)"><input type="checkbox" ${state.sel.has(it.id) ? 'checked' : ''} aria-label="Select ${esc(it.title)}"></label></td>
             ${cols.map(([, , c]) => `<td class="${c}${c === 'c-title' ? ' row-title' : ''}">${cell[c](it)}</td>`).join('')}
             <td class="c-more"><button class="icon-btn row-more" aria-label="More for ${esc(it.title)}" title="More">${iconOn('more')}</button></td>
-          </tr>`).join('')}</tbody></table><p class="count-row">${cnt} ${more}</p>`;
-        $('#lib-more', main)?.addEventListener('click', () => { state.shown += PAGE; draw(); });
+          </tr>`).join('')}</tbody></table><div class="pager-row"><span class="muted">${cnt}</span>${more}</div>`;
+        rows.querySelector('.pager')?.addEventListener('click', (e) => { const b = e.target.closest('[data-pg]'); if (b && !b.disabled) { state.page = +b.dataset.pg; draw(); main.scrollTo({ top: 0 }); } });
         rows.querySelectorAll('[data-sort]').forEach((b) => (b.onclick = () => {
           const k = b.dataset.sort;
           state.dir = state.sort === k ? -state.dir : 1;
@@ -97,7 +101,7 @@ export function libraryView(main, { q }) {
         drawSelbar(list);
         return;
       }
-      rows.innerHTML = `<ul class="rows ${selecting() ? 'selecting' : ''}">` + list.slice(0, state.shown).map((it) => `
+      rows.innerHTML = `<ul class="rows ${selecting() ? 'selecting' : ''}">` + shownList.map((it) => `
         <li class="row ${state.sel.has(it.id) ? 'sel' : ''}" data-id="${it.id}">
           <label class="pick" title="Select (Shift-click for a range)"><input type="checkbox" ${state.sel.has(it.id) ? 'checked' : ''} aria-label="Select ${esc(it.title)}"></label>
           ${thumbHtml(it)}
@@ -109,9 +113,8 @@ export function libraryView(main, { q }) {
           <div class="row-when hide-s">${state.sort === 'most' ? `${store.playCount(it.id)} plays` : state.sort === 'played' ? ago(store.lastPlayed(it.id)) : ago(it.createdAt)}</div>
           <button class="icon-btn row-more" aria-label="More for ${esc(it.title)}" title="More">${iconOn('more')}</button>
         </li>`).join('') +
-        (more ? `<li class="more-row">${more}</li>` : '') +
-        `<li class="count-row">${cnt}</li></ul>`;
-      $('#lib-more', main)?.addEventListener('click', () => { state.shown += PAGE; draw(); });
+        `<li class="pager-row"><span class="muted">${cnt}</span>${more}</li></ul>`;
+      rows.querySelector('.pager')?.addEventListener('click', (e) => { const b = e.target.closest('[data-pg]'); if (b && !b.disabled) { state.page = +b.dataset.pg; draw(); main.scrollTo({ top: 0 }); } });
     }
     drawSelbar(list);
   };
@@ -153,7 +156,7 @@ export function libraryView(main, { q }) {
     draw();
   };
 
-  main.querySelector('.seg').onclick = (e) => { const b = e.target.closest('[data-kind]'); if (b) { state.shown = PAGE; setQ('kind', b.dataset.kind); } };
+  main.querySelector('.seg').onclick = (e) => { const b = e.target.closest('[data-kind]'); if (b) { state.page = 1; setQ('kind', b.dataset.kind); } };
   $('#lib-tag', main).onclick = (e) => tagFilter(e.currentTarget, tags, setTags);
   main.querySelectorAll('[data-untag]').forEach((b) => (b.onclick = () => setTags(tags.filter((t) => t !== b.dataset.untag))));
   $('#lib-tags-clear', main)?.addEventListener('click', () => setTags([]));
@@ -161,7 +164,7 @@ export function libraryView(main, { q }) {
     label: (state.sort === k ? '✓ ' : '   ') + l,
     run: () => { state.sort = k; state.dir = 1; try { localStorage.setItem('meowsic-sort', k); } catch {} $('#lib-sort', main).textContent = `Sort: ${l} ▾`; draw(); },
   })));
-  $('#lib-q', main).oninput = (e) => { state.q = e.target.value; state.shown = PAGE; draw(); };
+  $('#lib-q', main).oninput = (e) => { state.q = e.target.value; state.page = 1; draw(); };
   $('#lib-select', main).onclick = () => { state.select = true; draw(); };
   const rowsEl = $('#lib-rows', main);
   let pressed = false;
@@ -224,4 +227,20 @@ function tagFilter(anchor, current, apply) {
   const close = () => { pop.remove(); document.removeEventListener('pointerdown', off, true); document.removeEventListener('keydown', key); };
   setTimeout(() => { document.addEventListener('pointerdown', off, true); document.addEventListener('keydown', key); });
   pop.querySelector('.tagpop-q').focus();
+}
+
+// « ‹ 1 … 4 [5] 6 … 12 › »  — First, previous, a window of page numbers, next, Last
+function pager(page, pages) {
+  if (pages <= 1) return '';
+  const nums = new Set([1, pages, page - 1, page, page + 1].filter((n) => n >= 1 && n <= pages));
+  if (page <= 3) [2, 3, 4].forEach((n) => n <= pages && nums.add(n));
+  if (page >= pages - 2) [pages - 3, pages - 2, pages - 1].forEach((n) => n >= 1 && nums.add(n));
+  const sorted = [...nums].sort((a, b) => a - b);
+  let html = '', prev = 0;
+  for (const n of sorted) {
+    if (n - prev > 1) html += '<span class="pg-gap">…</span>';
+    html += `<button data-pg="${n}" class="${n === page ? 'on' : ''}" ${n === page ? 'aria-current="page"' : ''}>${n}</button>`;
+    prev = n;
+  }
+  return `<nav class="pager" aria-label="Pages"><button data-pg="1" ${page === 1 ? 'disabled' : ''} title="First page">«</button><button data-pg="${page - 1}" ${page === 1 ? 'disabled' : ''} title="Previous page">‹</button>${html}<button data-pg="${page + 1}" ${page === pages ? 'disabled' : ''} title="Next page">›</button><button data-pg="${pages}" ${page === pages ? 'disabled' : ''} title="Last page">»</button></nav>`;
 }

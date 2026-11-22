@@ -43,7 +43,7 @@ const send = (method, path, body) => { api(method, path, body); };
 async function boot() {
   try {
     const h = await fetch('/api/health', { signal: AbortSignal.timeout(3000) });
-    if (h.ok) {
+    if (h.ok && (await h.json()).ok) {
       mode = 'server';
       await flushOutbox();
       db = await (await fetch('/api/backup')).json();
