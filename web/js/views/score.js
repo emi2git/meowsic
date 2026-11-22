@@ -1,5 +1,5 @@
 // Score viewer: OpenSheetMusicDisplay notation, piano playback with a moving bar,
-// versions, tempo, transpose, zoom; export lives in the More menu.
+// tempo, transpose, zoom; export lives in the More menu. Each version is its own entry.
 import { store } from '../store.js';
 import { $, esc, icon, iconOn, toast, menu } from '../ui.js';
 import { TUNES } from '../mock.js';
@@ -22,7 +22,7 @@ const fmt = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).pad
 
 export function scoreBody(root, it, { perform = false } = {}) {
   const tune = TUNES[it.tune];
-  let version = it.version || 'original';
+  const version = it.version || 'original';
   let zoom = (perform ? 1.25 : 1) * (innerWidth < 760 ? 0.62 : 1);
   let osmd, player, stops = [], bar, ink = null;
 
@@ -109,7 +109,6 @@ export function scoreBody(root, it, { perform = false } = {}) {
     tune,
     get player() { return player; },
     get version() { return version; },
-    async setVersion(v) { version = v; makePlayer(); await render(); },
     async setTranspose(n) { store.update(it.id, { transpose: n }); player.shift = n; await render(); },
     setZoom(z) { zoom = Math.max(0.6, Math.min(2, z)); osmd.zoom = zoom; osmd.render(); measureStops(); place(player.now()); ink?.fit(); },
     get zoom() { return zoom; },
@@ -135,7 +134,6 @@ export function scoreToolbar(bar, it, view) {
   const secs = (q) => (q / (t.bpm * view.player.rate)) * 60;
   const total = bars * t.beats;
   bar.innerHTML = `
-    <label class="ctl" title="Version"><span class="lbl">Version</span> <select id="sc-ver">${it.versions.map((v) => `<option value="${v}" ${v === view.version ? 'selected' : ''}>${VERSIONS[v]}</option>`).join('')}</select></label>
     <div class="transport">
       <button class="play" id="sc-play" aria-label="Play">Play</button>
       <input type="range" id="sc-pos" min="0" max="${total}" step="0.25" value="0" aria-label="Position">
@@ -156,7 +154,6 @@ export function scoreToolbar(bar, it, view) {
   host.addEventListener('tick', onTick);
   host.addEventListener('ended', onEnd);
   pos.oninput = () => p().seek(+pos.value);
-  $('#sc-ver', bar).onchange = async (e) => { await view.setVersion(e.target.value); setPlay(); };
   // tempo in beats per minute, 5 at a time; the score's own tempo is the starting point
   const rate = (d) => {
     const bpm = Math.max(30, Math.min(220, Math.round(t.bpm * p().rate / 5) * 5 + d * 5));

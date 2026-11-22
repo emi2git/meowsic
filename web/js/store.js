@@ -3,7 +3,7 @@
 import { buildMock } from './mock.js';
 import { parseChordPro } from './chordchart.js';
 
-const KEY = 'meowsic-mock-v2';
+const KEY = 'meowsic-mock-v3';
 let db;
 const subs = new Set();
 const jobSubs = new Set();
@@ -14,7 +14,7 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (raw) db = JSON.parse(raw);
   } catch {}
-  if (!db || db.version !== 2) db = buildMock();
+  if (!db || db.version !== 3) db = buildMock();
   hydrate();
 }
 function hydrate() {

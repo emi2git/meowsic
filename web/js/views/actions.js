@@ -3,6 +3,7 @@ import { store } from '../store.js';
 import { esc, icon, sheet, toast, menu, promptSheet, tagPicker, KIND } from '../ui.js';
 import { go } from '../app.js';
 import { sheetUrl } from '../sheet-art.js';
+import { VERSIONS } from '../musicxml.js';
 
 export function thumbHtml(it) {
   if (it.kind === 'sheet') {
@@ -15,7 +16,7 @@ export function thumbHtml(it) {
 export function metaText(it) {
   if (it.kind === 'sheet') return `${it.pages} page${it.pages > 1 ? 's' : ''}${it.source === 'pdf' ? ' · PDF' : ''}`;
   if (it.kind === 'chords') return `Key ${it.key}${it.source === 'hopamchuan' ? ' · Hợp Âm Chuẩn' : ' · Ultimate Guitar'}`;
-  return `${it.versions.length} versions · ${it.key}`;
+  return `${VERSIONS[it.version] || 'Piano'} · ${it.key}`;
 }
 
 export function editTags(ids) {

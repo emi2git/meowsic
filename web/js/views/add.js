@@ -4,6 +4,7 @@ import { $, esc, icon, toast, tagPicker, sheet as modal, CAT, ago } from '../ui.
 import { go } from '../app.js';
 import { CHORD_CHARTS, SEARCH_EXTRA, TUNES } from '../mock.js';
 import { parseChordPro, linesHtml, diagramsHtml } from '../chordchart.js';
+import { VERSIONS } from '../musicxml.js';
 import { keySelect } from './chordsview.js';
 import { sheetUrl } from '../sheet-art.js';
 
@@ -232,7 +233,7 @@ function pasteChart() {
 export const STAGES = ['Download audio', 'Separate voice and instruments', 'Find the notes', 'Read the lyrics', 'Find key, beat and chords', 'Write the score', 'Draw the pages'];
 
 export function addScoreView(main) {
-  const f = { src: 'yt', output: 'Piano', method: 'Direct transcription' };
+  const f = { src: 'yt', outputs: new Set(['original']), method: 'Direct transcription' };
   main.innerHTML = `
     <header class="top"><a class="icon-btn back" href="#/library" aria-label="Back">‹ Back</a><h1>Add score</h1></header>
     <div class="pad narrow" id="sf-jobs"></div>
@@ -242,9 +243,9 @@ export function addScoreView(main) {
       <div id="sf-yt"><input id="sf-url" type="url" placeholder="https://www.youtube.com/watch?v=…" aria-label="YouTube link"></div>
       <div id="sf-file" hidden><label class="drop small"><input type="file" id="sf-audio" accept="audio/*,video/*" hidden><span class="btn">${icon('upload')}Choose audio file</span><span class="muted" id="sf-fname">MP3, M4A, WAV or a video</span></label></div>
       <label class="field">Title <input id="sf-title" placeholder="Filled in from the link or file"></label>
-      <fieldset><legend>What do you want?</legend><div class="cards" id="sf-out">
-        ${[['Piano', 'Two staves, both hands'], ['Piano + vocals', 'Melody with lyrics above the piano'], ['Lead sheet', 'Melody, lyrics and chord names']].map(([k, d], i) =>
-          `<button type="button" class="card-opt ${i ? '' : 'on'}" data-v="${k}"><b>${k}</b><small>${d}</small></button>`).join('')}</div></fieldset>
+      <fieldset><legend>What do you want? <small class="muted">Pick one or more — each becomes its own entry.</small></legend><div class="cards" id="sf-out">
+        ${[['original', 'Piano', 'Two staves, both hands'], ['vocal', 'Piano + vocals', 'Melody with lyrics above the piano'], ['lead', 'Lead sheet', 'Melody, lyrics and chord names']].map(([v, k, d], i) =>
+          `<button type="button" class="card-opt ${i ? '' : 'on'}" data-o="${v}" aria-pressed="${!i}"><b>${k}</b><small>${d}</small></button>`).join('')}</div></fieldset>
       <fieldset><legend>How?</legend><div class="cards" id="sf-method">
         ${[['Direct transcription', 'Write down what is played'], ['Arrangement', 'The whole song as a piano piece'], ['Piano accompaniment', 'Only the accompaniment, no melody']].map(([k, d], i) =>
           `<button type="button" class="card-opt ${i ? '' : 'on'}" data-v="${k}"><b>${k}</b><small>${d}</small></button>`).join('')}</div></fieldset>
@@ -252,7 +253,16 @@ export function addScoreView(main) {
       <button class="primary big" id="sf-go">${icon('wave')}Start</button>
     </form>`;
   const pick = (id, key) => { $(id, main).onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; f[key] = b.dataset.v; $(id, main).querySelectorAll('[data-v]').forEach((x) => x.classList.toggle('on', x === b)); }; };
-  pick('#sf-out', 'output'); pick('#sf-method', 'method');
+  pick('#sf-method', 'method');
+  $('#sf-out', main).onclick = (e) => {
+    const b = e.target.closest('[data-o]');
+    if (!b) return;
+    const v = b.dataset.o;
+    if (f.outputs.has(v) && f.outputs.size === 1) return toast('Pick at least one.');
+    f.outputs.has(v) ? f.outputs.delete(v) : f.outputs.add(v);
+    b.classList.toggle('on', f.outputs.has(v));
+    b.setAttribute('aria-pressed', f.outputs.has(v));
+  };
   $('#sf-src', main).onclick = (e) => { const b = e.target.closest('[data-s]'); if (!b) return; f.src = b.dataset.s; $('#sf-src', main).querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); $('#sf-yt', main).hidden = f.src !== 'yt'; $('#sf-file', main).hidden = f.src !== 'file'; };
   $('#sf-url', main).oninput = (e) => { if (/youtu/.test(e.target.value) && !$('#sf-title', main).value) $('#sf-title', main).value = 'Song from YouTube'; };
   $('#sf-audio', main).onchange = (e) => { const file = e.target.files[0]; if (!file) return; f.file = file.name; $('#sf-fname', main).textContent = file.name; if (!$('#sf-title', main).value) $('#sf-title', main).value = titleCase(file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ')); };
@@ -261,7 +271,7 @@ export function addScoreView(main) {
     const url = $('#sf-url', main).value.trim();
     if (f.src === 'yt' && !/^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//.test(url)) return toast('Paste a YouTube link first.');
     if (f.src === 'file' && !f.file) return toast('Choose an audio file first.');
-    store.addJob({ title: $('#sf-title', main).value.trim() || 'Untitled song', source: f.src === 'yt' ? 'YouTube · ' + url.replace(/^https?:\/\/(www\.)?/, '') : 'Audio file · ' + f.file, output: f.output, method: f.method });
+    store.addJob({ title: $('#sf-title', main).value.trim() || 'Untitled song', source: f.src === 'yt' ? 'YouTube · ' + url.replace(/^https?:\/\/(www\.)?/, '') : 'Audio file · ' + f.file, outputs: [...f.outputs], output: [...f.outputs].map((v) => VERSIONS[v]).join(' + '), method: f.method });
     e.target.reset();
     $('#sf-fname', main).textContent = 'MP3, M4A, WAV or a video';
     f.file = null;
@@ -277,7 +287,7 @@ function jobsList(host) {
     host.innerHTML = `<h2 class="sub-h">In progress and done</h2>` + jobs.map((j) => `
       <section class="job ${j.status}">
         <div class="job-head"><div><b>${esc(j.title)}</b><small>${esc(j.source)} · ${esc(j.output)} · ${esc(j.method)}</small></div>
-          ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : j.status === 'done' ? `<a class="btn primary" href="#/item/${j.itemId}">Open score</a><button data-dismiss="${j.id}">Dismiss</button>` : `<button data-dismiss="${j.id}">Dismiss</button>`}</div>
+          ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : j.status === 'done' ? `${(j.items || []).map((x) => `<a class="btn primary" href="#/item/${x.id}">Open ${VERSIONS[x.version]}</a>`).join('')}<button data-dismiss="${j.id}">Dismiss</button>` : `<button data-dismiss="${j.id}">Dismiss</button>`}</div>
         <ol class="stages">${STAGES.map((s, i) => `<li class="${i < j.stage || j.status === 'done' ? 'done' : i === j.stage && j.status === 'running' ? 'now' : ''}"><span>${s}</span>${i === j.stage && j.status === 'running' ? `<progress max="1" value="${j.progress}"></progress>` : ''}</li>`).join('')}</ol>
         <small class="muted">${j.status === 'running' ? `Started ${ago(j.startedAt)}` : j.status === 'done' ? `Finished ${ago(j.doneAt)}` : 'Cancelled'}</small>
       </section>`).join('');
@@ -306,11 +316,10 @@ export function tickJobs() {
       if (progress >= 1) { stage++; progress = 0; }
       if (stage >= STAGES.length) {
         const tune = tunes[Math.floor(Math.random() * tunes.length)];
-        const it = store.add({ kind: 'score', title: j.title, artist: '', tags: [], tune, versions: ['original', 'lead', 'vocal'],
-          version: j.output === 'Lead sheet' ? 'lead' : j.output === 'Piano + vocals' ? 'vocal' : 'original',
-          source: j.source, method: j.method, key: 'C major', bpm: TUNES[tune].bpm, transpose: 0 });
-        store.updateJob(j.id, { status: 'done', stage, progress: 1, doneAt: Date.now(), itemId: it.id }, { quiet: false });
-        toast(`Score ready: ${j.title}`, { label: 'Open', run: () => go(`#/item/${it.id}`) });
+        const made = (j.outputs || ['original']).map((version) => store.add({ kind: 'score', title: j.title, artist: '', tags: [], tune, version,
+          source: j.source, method: j.method, key: 'C major', bpm: TUNES[tune].bpm, transpose: 0 }));
+        store.updateJob(j.id, { status: 'done', stage, progress: 1, doneAt: Date.now(), items: made.map((x) => ({ id: x.id, version: x.version })) }, { quiet: false });
+        toast(`Score ready: ${j.title}`, { label: 'Open', run: () => go(`#/item/${made[0].id}`) });
       } else store.updateJob(j.id, { stage, progress });
     }
   }, 700);

@@ -82,7 +82,7 @@ const head = (title, parts) => `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
 <score-partwise version="3.1"><work><work-title>${title}</work-title></work><part-list>${parts.map((p, i) => `<score-part id="P${i + 1}"><part-name>${p}</part-name></score-part>`).join('')}</part-list>`;
 
-export const VERSIONS = { original: 'Original (piano)', lead: 'Lead sheet', vocal: 'Piano + vocals' };
+export const VERSIONS = { original: 'Piano', lead: 'Lead sheet', vocal: 'Piano + vocals' };
 
 export function musicXml(tune, version) {
   if (version === 'lead') return head(tune.title, ['Melody']) + `<part id="P1">${melodyPart(tune, { harmony: true, lyrics: true })}</part></score-partwise>`;
