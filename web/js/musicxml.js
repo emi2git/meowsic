@@ -2,8 +2,12 @@
 // description, in the three versions Emi Music Note produces.
 import { chordTones, splitChord, notePc } from './chords.js';
 
-const DIV = 2; // divisions per quarter
-const TYPES = { 4: ['whole', 0], 3: ['half', 1], 2: ['half', 0], 1.5: ['quarter', 1], 1: ['quarter', 0], 0.5: ['eighth', 0] };
+const DIV = 12; // divisions per quarter: room for 16ths (3) and triplets (4 = triplet eighth)
+// length in twelfths of a beat → [type, dotted, triplet]
+const TYPES = { 48: ['whole', 0], 36: ['half', 1], 24: ['half', 0], 18: ['quarter', 1], 12: ['quarter', 0], 9: ['eighth', 1], 6: ['eighth', 0], 3: ['16th', 0],
+  16: ['half', 0, 1], 8: ['quarter', 0, 1], 4: ['eighth', 0, 1], 2: ['16th', 0, 1] };
+export const twelfths = (q) => Math.round(q * 12);
+export const isTriplet = (q) => !!TYPES[twelfths(q)]?.[2];
 
 function pitch(p) {
   const m = p.match(/^([A-G])([#b]?)(\d)$/);
@@ -14,16 +18,18 @@ export const midiOf = (p) => { const q = pitch(p); return 12 * (q.octave + 1) + 
 const STEP_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 export const nameOf = (midi) => STEP_NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
 
-function noteXml(p, q, { staff, voice = 1, chord = false, lyric = null } = {}) {
-  const [type, dot] = TYPES[q] || ['quarter', 0];
+function noteXml(p, q, { staff, voice = 1, chord = false, lyric = null, tup = null } = {}) {
+  const [type, dot, trip] = TYPES[twelfths(q)] || ['quarter', 0];
   let x = '<note>' + (chord ? '<chord/>' : '');
   if (p === 'r') x += '<rest/>';
   else {
     const t = pitch(p);
     x += `<pitch><step>${t.step}</step>${t.alter ? `<alter>${t.alter}</alter>` : ''}<octave>${t.octave}</octave></pitch>`;
   }
-  x += `<duration>${q * DIV}</duration><voice>${voice}</voice><type>${type}</type>${dot ? '<dot/>' : ''}`;
+  x += `<duration>${twelfths(q)}</duration><voice>${voice}</voice><type>${type}</type>${dot ? '<dot/>' : ''}`;
+  if (trip) x += '<time-modification><actual-notes>3</actual-notes><normal-notes>2</normal-notes></time-modification>';
   if (staff) x += `<staff>${staff}</staff>`;
+  if (tup) x += `<notations><tuplet type="${tup}" bracket="yes"/></notations>`;
   if (lyric) x += `<lyric><syllabic>single</syllabic><text>${lyric}</text></lyric>`;
   return x + '</note>';
 }
@@ -46,14 +52,15 @@ function voicing(ch) {
   return { bass, rh };
 }
 
-const backup = (q) => `<backup><duration>${q * DIV}</duration></backup>`;
+const backup = (q) => `<backup><duration>${twelfths(q)}</duration></backup>`;
 
 // beats in bar i: its notes decide (a bar edited to 5 beats becomes 5/4); empty bars use the song's meter
-export const barBeats = (tune, m) => { const sum = m.mel.reduce((s, [, d]) => s + d, 0); return sum > 0 ? sum : tune.beats; };
-const timeXml = (b) => (Number.isInteger(b) ? `<time><beats>${b}</beats><beat-type>4</beat-type></time>` : `<time><beats>${b * 2}</beats><beat-type>8</beat-type></time>`);
+export const barBeats = (tune, m) => { const sum = Math.round(m.mel.reduce((s, [, d]) => s + d, 0) * 12) / 12; return sum > 0 ? sum : tune.beats; };
+export const meterOf = (b) => { for (const t of [4, 8, 16]) { const n = b * (t / 4); if (Math.abs(n - Math.round(n)) < 1e-6) return [Math.round(n), t]; } return [Math.round(b * 4), 16]; };
+const timeXml = (b) => { const [n, t] = meterOf(b); return `<time><beats>${n}</beats><beat-type>${t}</beat-type></time>`; };
 const meterChange = (tune, i) => { const b = barBeats(tune, tune.measures[i]); return i > 0 && b !== barBeats(tune, tune.measures[i - 1]) ? `<attributes>${timeXml(b)}</attributes>` : ''; };
 // split a length into note values that can be written (4, 3, 2, 1.5, 1, 0.5)
-const pieces = (q) => { const out = []; for (const v of [4, 3, 2, 1.5, 1, 0.5]) while (q >= v - 1e-9) { out.push(v); q -= v; } return out; };
+const pieces = (q) => { const out = []; for (const v of [4, 3, 2, 1.5, 1, 0.5, 0.25]) while (q >= v - 1e-6) { out.push(v); q -= v; } return out; };
 
 function attrs(tune, staves, clefs) {
   return `<attributes><divisions>${DIV}</divisions><key><fifths>${tune.fifths || 0}</fifths></key>` +
@@ -66,7 +73,8 @@ function melodyPart(tune, { harmony, lyrics }) {
   return tune.measures.map((m, i) => {
     let x = `<measure number="${i + 1}">` + meterChange(tune, i) + (i === 0 ? attrs(tune, 1, [['G', 2]]) + `<direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${tune.bpm}</per-minute></metronome></direction-type><sound tempo="${tune.bpm}"/></direction>` : '');
     if (harmony && m.chord && (i === 0 || tune.measures[i - 1].chord !== m.chord)) x += harmonyXml(m.chord); // chord name only where it changes
-    for (const [p, q] of m.mel) x += noteXml(p, q, { lyric: lyrics && p !== 'r' ? tune.lyrics?.[li++] : null });
+    let tc = 0;
+    for (const [p, q] of m.mel) { const tup = isTriplet(q) ? ['start', null, 'stop'][tc++ % 3] : ((tc = 0), null); x += noteXml(p, q, { lyric: lyrics && p !== 'r' ? tune.lyrics?.[li++] : null, tup }); }
     return x + '</measure>';
   }).join('');
 }
@@ -77,7 +85,8 @@ function pianoPart(tune, { melody, harmony, easy = false, octave = 0 }) {
     const mb = barBeats(tune, m);
     let x = `<measure number="${i + 1}">` + meterChange(tune, i) + (i === 0 ? attrs(tune, 2, [['G', 2], ['F', 4]]) : '');
     if (harmony && m.chord && (i === 0 || tune.measures[i - 1].chord !== m.chord)) x += harmonyXml(m.chord); // chord name only where it changes
-    if (melody) for (const [p, q] of m.mel) x += noteXml(p === 'r' || !octave ? p : nameOf(midiOf(p) + octave), q, { staff: 1 });
+    let tc = 0;
+    if (melody) for (const [p, q] of m.mel) { const tup = isTriplet(q) ? ['start', null, 'stop'][tc++ % 3] : ((tc = 0), null); x += noteXml(p === 'r' || !octave ? p : nameOf(midiOf(p) + octave), q, { staff: 1, tup }); }
     else for (const d of pieces(mb)) rh.forEach((p, k) => (x += noteXml(p, d, { staff: 1, chord: k > 0 })));
     x += backup(mb);
     if (easy || mb !== 4) for (const d of pieces(mb)) x += noteXml(bass, d, { staff: 2, voice: 2 });

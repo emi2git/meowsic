@@ -237,14 +237,14 @@ body[data-view="item"] #main, body[data-view="perform"] #main { overflow: hidden
 .dots button.on::before { background: var(--acc); width: 11px; height: 11px; }
 .ink { position: absolute; inset: 0; pointer-events: none; touch-action: none; }
 .ink.active { pointer-events: auto; cursor: crosshair; }
-.inkbar { position: absolute; left: 50%; bottom: 108px; transform: translateX(-50%); z-index: 40; display: flex; gap: 4px; align-items: center; background: var(--card); border: 1px solid var(--line2); padding: 6px; border-radius: 18px; box-shadow: 0 10px 34px rgba(0, 0, 0, .25); max-width: calc(100% - 24px); overflow-x: auto; }
+.ink.t-pen.c-blue { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><path d='M3 21l1.5-5L16 4.5l3.5 3.5L8 19.5z' fill='%231c7ed6' stroke='white' stroke-width='1.2' stroke-linejoin='round'/><path d='M3 21l1.5-5 3.5 3.5z' fill='black'/></svg>") 2 22, crosshair; }
+.ink.t-pen.c-red { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><path d='M3 21l1.5-5L16 4.5l3.5 3.5L8 19.5z' fill='%23d6336c' stroke='white' stroke-width='1.2' stroke-linejoin='round'/><path d='M3 21l1.5-5 3.5 3.5z' fill='black'/></svg>") 2 22, crosshair; }
+.ink.t-eraser { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><path d='M8 20l-5-5L14 4l7 7-9 9zM17 20H8' fill='white' stroke='black' stroke-width='1.6' stroke-linejoin='round'/></svg>") 4 18, auto; }
+.ink.t-text { cursor: text; }
+.ink.t-move { cursor: default; }
+.ink.t-move.over { cursor: move; }
+.ink.t-move.dragging { cursor: grabbing; }
 .viewer { position: relative; }
-.inkbar button { min-height: 40px; padding: 0 10px; border-color: transparent; background: none; }
-.inkbar button.on { background: var(--bg2); border-color: var(--line2); }
-.inkbar button.primary { background: var(--acc); color: var(--acc-ink); }
-.inkbar .swatch { width: 22px; height: 22px; border-radius: 50%; display: block; border: 2px solid var(--card); box-shadow: 0 0 0 1px var(--line2); }
-.inkbar .swatch.hl { border-radius: 4px; width: 14px; height: 24px; }
-.inkbar .sep { width: 1px; height: 26px; background: var(--line2); margin: 0 4px; }
 
 /* chord chart */
 .chart { --chart-size: 18px; max-width: 900px; margin: 0 auto; padding: 0 24px 80px; font-size: var(--chart-size); }
@@ -299,7 +299,6 @@ body[data-view="item"] #main, body[data-view="perform"] #main { overflow: hidden
 .pf-handle { position: absolute; top: calc(6px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 45; min-height: 28px; height: 28px; padding: 0 14px; border-radius: 99px; background: rgba(0, 0, 0, .3); border: 0; color: #fff; opacity: .5; }
 .perform-wrap .chart { padding-top: 60px; }
 .perform-wrap .chart .diagrams { top: 0; }
-.perform-wrap .inkbar { bottom: 24px; }
 
 /* ---------- add ---------- */
 .drop { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; border: 2.5px dashed var(--line2); border-radius: 22px; padding: 40px 24px; background: var(--card); cursor: pointer; }
@@ -493,7 +492,6 @@ legend { font-weight: 700; margin-bottom: 8px; }
   .review { padding: 8px 10px 40px; }
   .pane-l .rows { margin: 0 10px; }
   .details { width: 100%; }
-  .inkbar { bottom: 92px; }
   .kv { grid-template-columns: 110px 1fr; }
   .spreads { grid-template-columns: 1fr 1fr; gap: 10px; }
   .transport { order: -1; flex-basis: 100%; }
@@ -713,3 +711,24 @@ p.count-row { text-align: center; }
 .eb-sel b { font-size: 17px; }
 .eb-keys { margin-left: auto; }
 .editing + .editbar, .score-wrap:has(.editing) { padding-bottom: 150px; }
+
+/* annotation bar: compact icons inside the top band */
+.inkbar { display: inline-flex; gap: 2px; align-items: center; background: var(--bg2); border: 1px solid var(--line2); border-radius: 12px; padding: 2px; }
+.inkbar button { min-height: 32px; height: 32px; width: 34px; padding: 0; border: 0; background: none; border-radius: 9px; color: var(--ink2); }
+.inkbar button.on { background: var(--card); box-shadow: var(--shadow); color: var(--acc-text); }
+.inkbar button .ic { width: 19px; height: 19px; }
+.inkbar .swatch { width: 18px; height: 18px; border-radius: 50%; display: block; margin: auto; }
+.inkbar button.on .swatch { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px currentColor; }
+.inkbar button.done { color: var(--acc-text); }
+.inkbar .sep { width: 1px; height: 20px; background: var(--line2); margin: 0 3px; }
+.ink-text { position: absolute; z-index: 6; min-width: 120px; background: rgba(255,255,255,.92); border: 1px dashed currentColor; border-radius: 4px; padding: 0 4px; min-height: 0; font-weight: 600; font-family: -apple-system, Helvetica, sans-serif; line-height: 1.25; resize: none; width: auto; }
+
+/* note-length pictures in the score editor */
+.notepic { width: 18px; height: 22px; display: block; margin: auto; fill: currentColor; stroke: currentColor; }
+.eb-len button { width: 38px; padding: 0; }
+
+.eb-row.one { flex-wrap: nowrap; overflow-x: auto; }
+.eb-pitch { width: 64px; min-height: 36px; text-align: center; font-weight: 700; font-size: 16px; padding: 0 6px; flex: none; }
+.eb-mode { width: 40px; padding: 0; min-height: 36px; }
+.eb-oct button { width: 38px; padding: 0; }
+.eb-done { color: var(--acc-text); }

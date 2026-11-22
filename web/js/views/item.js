@@ -79,7 +79,7 @@ export function itemView(main, { parts }) {
   $('#it-title', main).onclick = () => rename(it.id);
   $('#it-more', main).onclick = (e) => itemMenu(e.currentTarget, it.id, {
     viewer: true, info: toggleDetails,
-    tools: it.kind === 'sheet' ? sheetExtraMenu(it, view) : it.kind === 'score' ? scoreTools(it) : [],
+    tools: it.kind === 'sheet' ? sheetExtraMenu(it, view) : it.kind === 'score' ? scoreTools(it, view) : [],
     exports: it.kind === 'score' ? scoreExportMenu(it, view) : [],
   });
 

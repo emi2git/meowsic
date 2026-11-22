@@ -3,7 +3,7 @@
 import { store } from '../store.js';
 import { $, esc, icon, iconOn, toast, menu, sheet as modal } from '../ui.js';
 import { TUNES } from '../mock.js';
-import { musicXml, tuneNotes, VERSIONS, VERSION_HELP, barBeats, midiOf, nameOf } from '../musicxml.js';
+import { musicXml, tuneNotes, VERSIONS, VERSION_HELP, barBeats, midiOf, nameOf, isTriplet, twelfths, meterOf } from '../musicxml.js';
 import { ScorePlayer } from '../audio.js';
 import { InkLayer } from './annotate.js';
 
@@ -181,8 +181,9 @@ export function scoreBody(root, it, { perform = false } = {}) {
 }
 
 // Export entries for the item's More menu
-export function scoreTools(it) {
-  return [{ label: 'Make another version…', icon: 'plus', run: () => generateVersions(it) }];
+export function scoreTools(it, view) {
+  return [{ label: 'Make another version…', icon: 'plus', run: () => generateVersions(it) },
+    ...(it.measures ? [{ label: 'Revert note edits', icon: 'restore', run: async () => { await view.revert(); document.querySelector('.editbar')?.dispatchEvent(new Event('close')); toast('Back to the original notes'); } }] : [])];
 }
 export function scoreExportMenu(it, view) {
   return [
@@ -285,10 +286,29 @@ function generateVersions(it) {
 
 // ================= score editor =================
 // Like MuseScore / Flat: click a note on the staff to select it, then change it with the palette or keys:
-// ↑/↓ semitone · ⌘↑/⌘↓ octave · ←/→ previous/next note · A–G set the note · 3 4 5 6 = ⅛ ¼ ½ whole ·
-// . dot · R rest · N add a note after · Delete remove · ⌘Z undo. A bar whose notes no longer fit the
+// ↑/↓ semitone · ⌘↑/⌘↓ octave · ←/→ previous/next note · A–G set the note · 2 3 4 5 6 = 1/16 ⅛ ¼ ½ whole ·
+// . dot · T triplet · R rest · N add a note after · Delete remove · ⌘Z undo. A bar whose notes no longer fit the
 // song's meter gets its own time signature (5 beats in a 4/4 song → that bar becomes 5/4).
-const LENGTHS = [[0.5, '⅛', '3'], [1, '¼', '4'], [2, '½', '5'], [4, '1', '6']];
+// small pictures of each note (head, stem, flags), drawn as SVG
+const head = (filled) => `<ellipse cx="8" cy="18" rx="4.6" ry="3.4" transform="rotate(-22 8 18)" ${filled ? '' : 'fill="none" stroke-width="1.6"'}/>`;
+const stem = '<path d="M12.2 17V3" stroke-width="1.5" fill="none"/>';
+const flag = (y) => `<path d="M12.2 ${y}c2.5 2 5 3.5 4 8" stroke-width="1.6" fill="none"/>`;
+const pic = (inner) => `<svg class="notepic" viewBox="0 0 20 24" aria-hidden="true">${inner}</svg>`;
+const dot = '<circle cx="17" cy="19" r="1.7"/>';
+const NOTE_PICS = { 0.25: pic(head(1) + stem + flag(3) + flag(7)), 0.5: pic(head(1) + stem + flag(3)), 0.75: pic(head(1) + stem + flag(3) + dot),
+  1: pic(head(1) + stem), 1.5: pic(head(1) + stem + dot), 2: pic(head(0) + stem), 3: pic(head(0) + stem + dot), 4: pic(head(0)) };
+const DOT_PIC = pic('<circle cx="10" cy="17" r="2.6"/>');
+const rdot = '<circle cx="16" cy="13" r="1.6"/>';
+const r8 = '<circle cx="8" cy="8" r="2.2"/><path d="M8 9.5c2 1 4 .5 5.5-1.5L9 21" stroke-width="1.6" fill="none"/>';
+const REST_PICS = { 0.25: pic(r8 + '<circle cx="6.5" cy="13" r="2.2"/><path d="M6.5 14.5c2 1 4 .5 5.5-1.5" stroke-width="1.6" fill="none"/>'), 0.5: pic(r8), 0.75: pic(r8 + rdot),
+  1: pic('<path d="M8 3l4.5 5-3.5 4 4.5 5c-3-1.5-5 0-3 3.5-4-2.5-3-6 0-5L6 9z"/>'), 1.5: pic('<path d="M7 3l4.5 5-3.5 4 4.5 5c-3-1.5-5 0-3 3.5-4-2.5-3-6 0-5L5 9z"/>' + rdot),
+  2: pic('<path d="M3 13h14" stroke-width="1.4"/><rect x="6" y="9.5" width="8" height="3.5"/>'), 3: pic('<path d="M2 13h13" stroke-width="1.4"/><rect x="4.5" y="9.5" width="8" height="3.5"/>' + rdot),
+  4: pic('<path d="M3 9h14" stroke-width="1.4"/><rect x="6" y="9" width="8" height="3.5"/>') };
+const MODE_NOTE = pic(head(1) + stem), MODE_REST = REST_PICS[1];
+const OCT_UP = `<svg class="notepic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11l5-5 5 5M12 6v13" fill="none" stroke-width="1.8"/><text x="19" y="22" font-size="9" font-weight="700" stroke="none">8</text></svg>`;
+const OCT_DOWN = `<svg class="notepic" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 13l5 5 5-5M12 18V5" fill="none" stroke-width="1.8"/><text x="19" y="9" font-size="9" font-weight="700" stroke="none">8</text></svg>`;
+const TRIP_PIC = `<svg class="notepic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9V5h18v4" fill="none" stroke-width="1.4"/><text x="12" y="20" text-anchor="middle" font-size="12" font-weight="700" stroke="none">3</text></svg>`;
+const LENGTHS = [[0.25, '16th note', '2'], [0.5, 'Eighth note', '3'], [0.75, 'Dotted eighth', ''], [1, 'Quarter note', '4'], [1.5, 'Dotted quarter (¼ + ⅛)', ''], [2, 'Half note', '5'], [3, 'Dotted half', ''], [4, 'Whole note', '6']];
 const LETTER = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 function scoreEditor(view, it, host, btn) {
   if (host.querySelector('.editbar')) { host.querySelector('.editbar').dispatchEvent(new Event('close')); return; }
@@ -297,6 +317,7 @@ function scoreEditor(view, it, host, btn) {
   let ms = structuredClone(view.tune.measures);
   let bi = 0, ni = 0;
   const undo = [];
+  const lastBeats = {};
   const panel = document.createElement('div');
   panel.className = 'editbar';
   host.append(panel);
@@ -307,28 +328,26 @@ function scoreEditor(view, it, host, btn) {
   const draw = () => {
     ni = Math.max(0, Math.min(ni, ms[bi].mel.length - 1));
     const m = ms[bi], n = cur();
-    const beats = m.mel.reduce((s, [, d]) => s + d, 0);
-    const base = n[1] === 1.5 || n[1] === 3 || n[1] === 0.75 ? n[1] / 1.5 : n[1];
-    const dotted = base !== n[1];
+    const beats = Math.round(m.mel.reduce((s, [, d]) => s + d, 0) * 12) / 12;
+    const trip = isTriplet(n[1]);
+    const dotted = [9, 18, 36].includes(twelfths(n[1]));
+    const base = trip ? n[1] * 1.5 : n[1]; // length button to light up (a triplet lights its plain note)
+    const rest = n[0] === 'r';
+    const pics = rest ? REST_PICS : NOTE_PICS;
+    // one line: [note] · note/rest · octave · lengths · triplet · [Delete] · undo · done
     panel.innerHTML = `
-      <div class="eb-row">
-        <span class="eb-sel"><b>${n[0] === 'r' ? 'Rest' : n[0]}</b> · bar ${bi + 1}, note ${ni + 1}</span>
-        <span class="eb-meter ${beats !== meter ? 'changed' : ''}">${Number.isInteger(beats) ? `${beats}/4` : `${beats * 2}/8`}${beats !== meter ? ' <small>time signature changed to fit</small>' : ''}</span>
+      <div class="eb-row one">
+        <input id="eb-pitch" class="eb-pitch" value="${rest ? '' : n[0]}" placeholder="${rest ? 'rest' : 'C4'}" ${rest ? 'disabled' : ''} aria-label="Note (e.g. C4, F#5, Bb)" title="Type a note: C, D#, Eb5… then Enter">
+        <button class="eb-mode" data-a="rest" title="${rest ? 'Rest — click for note' : 'Note — click for rest'} (R)" aria-label="${rest ? 'Rest' : 'Note'}">${rest ? MODE_REST : MODE_NOTE}</button>
+        <div class="stepper eb-oct"><button data-a="o-" title="Octave down (⌘↓)" aria-label="Octave down" ${rest ? 'disabled' : ''}>${OCT_DOWN}</button><button data-a="o+" title="Octave up (⌘↑)" aria-label="Octave up" ${rest ? 'disabled' : ''}>${OCT_UP}</button></div>
+        <div class="stepper eb-len">${LENGTHS.map(([d, l, k]) => `<button data-len="${d}" class="${base === d ? 'on' : ''}" title="${rest ? l.replace('note', 'rest') : l}${k ? ` (${k})` : ''}" aria-label="${l}">${pics[d]}</button>`).join('')}<button data-a="trip" class="${trip ? 'on' : ''}" title="Triplet (T)" aria-label="Triplet">${TRIP_PIC}</button></div>
+        <button class="danger-text" data-a="del" ${m.mel.length > 1 ? '' : 'disabled'} title="Delete note (⌫)">Delete</button>
         <span class="grow"></span>
-        <button data-a="undo" ${undo.length ? '' : 'disabled'} title="Undo (⌘Z)">Undo</button>
-        <button data-a="revert" title="Back to the original score">Revert</button>
-        <button class="primary" data-a="done">Done</button>
-      </div>
-      <div class="eb-row">
-        <div class="stepper eb-len">${LENGTHS.map(([d, l, k]) => `<button data-len="${d}" class="${base === d ? 'on' : ''}" title="${l} (${k})">${l}</button>`).join('')}<button data-a="dot" class="${dotted ? 'on' : ''}" title="Dot (.)">·</button></div>
-        <div class="stepper"><button data-a="down" title="Lower (↓)">▼</button><button data-a="up" title="Higher (↑)">▲</button></div>
-        <div class="stepper"><button data-a="o-" title="Octave lower (⌘↓)">8va−</button><button data-a="o+" title="Octave higher (⌘↑)">8va+</button></div>
-        <button data-a="rest" title="Rest (R)">${n[0] === 'r' ? 'Note' : 'Rest'}</button>
-        <button data-a="add" title="Add a note after (N)">+ Note</button>
-        <button class="danger-text" data-a="del" ${m.mel.length > 1 ? '' : 'disabled'} title="Delete (⌫)">Delete</button>
-        <label class="ctl">Chord <input id="eb-chord" value="${m.chord || ''}" size="5"></label>
-        <span class="muted small eb-keys">Click a note · ↑↓ ←→ · A–G · 3 4 5 6 · .</span>
+        <button class="icon-btn" data-a="undo" ${undo.length ? '' : 'disabled'} title="Undo (⌘Z)" aria-label="Undo">${iconOn('undo')}</button>
+        <button class="icon-btn eb-done" data-a="done" title="Done" aria-label="Done">${iconOn('check')}</button>
       </div>`;
+    if (beats !== lastBeats[bi] && lastBeats[bi] !== undefined && beats !== meter) toast(`Bar ${bi + 1} is now ${meterOf(beats).join('/')} so the notes fit`);
+    lastBeats[bi] = beats;
     view.pickNote(bi, ni);
   };
   const commit = async () => { await view.setMeasures(structuredClone(ms)); draw(); };
@@ -344,7 +363,24 @@ function scoreEditor(view, it, host, btn) {
     if (a === 'up' || a === 'down') await edit((m) => { m.mel[ni][0] = shift(m.mel[ni][0], a === 'up' ? 1 : -1); });
     if (a === 'o+' || a === 'o-') await edit((m) => { m.mel[ni][0] = shift(m.mel[ni][0], a === 'o+' ? 12 : -12); });
     if (a === 'len') await edit((m) => { m.mel[ni][1] = arg; });
-    if (a === 'dot') await edit((m) => { const d = m.mel[ni][1]; m.mel[ni][1] = [1.5, 3, 0.75].includes(d) ? d / 1.5 : d * 1.5; });
+    if (a === 'dot') {
+      const d = cur()[1], t = twelfths(d);
+      if (isTriplet(d) || t === 3) return toast('A triplet or 1/16 note can’t be dotted here.');
+      await edit((m) => { m.mel[ni][1] = [9, 18, 36].includes(t) ? d / 1.5 : d * 1.5; });
+    }
+    if (a === 'trip') {
+      const d = cur()[1];
+      if (!isTriplet(d)) { // one note → three triplet notes filling the same time
+        if (twelfths(d / 3) !== Math.round(d / 3 * 12 * 1e6) / 1e6 || !isTriplet(d / 3)) return toast('Pick a ⅛, ¼ or ½ note to make a triplet.');
+        await edit((m) => { const [p] = m.mel[ni]; m.mel.splice(ni, 1, [p, d / 3], [p, d / 3], [p, d / 3]); });
+      } else { // join the group of three back into one note
+        let start = ni;
+        while (start > 0 && isTriplet(ms[bi].mel[start - 1][1])) start--;
+        const g = start + Math.floor((ni - start) / 3) * 3;
+        await edit((m) => { const grp = m.mel.slice(g, g + 3); m.mel.splice(g, grp.length, [grp[0][0], Math.round(grp.reduce((s, [, x]) => s + x, 0) * 12) / 12]); });
+        ni = g; draw();
+      }
+    }
     if (a === 'rest') await edit((m) => { const p = m.mel[ni][0]; m.mel[ni][0] = p === 'r' ? 'C5' : 'r'; });
     if (a === 'add') { await edit((m) => { const [p, d] = m.mel[ni]; m.mel.splice(ni + 1, 0, [p === 'r' ? 'C5' : p, d]); }); step(1); }
     if (a === 'del') await edit((m) => { if (m.mel.length > 1) m.mel.splice(ni, 1); });
@@ -355,7 +391,6 @@ function scoreEditor(view, it, host, btn) {
       m.mel[ni][0] = nameOf(best);
     });
     if (a === 'undo' && undo.length) { ms = undo.pop(); await commit(); }
-    if (a === 'revert') { undo.push(structuredClone(ms)); await view.revert(); ms = structuredClone(view.tune.measures); draw(); }
     if (a === 'done') close();
   };
   panel.onclick = (e) => {
@@ -364,17 +399,31 @@ function scoreEditor(view, it, host, btn) {
     const a = e.target.closest('[data-a]')?.dataset.a;
     if (a) act(a);
   };
-  panel.onchange = (e) => { if (e.target.id === 'eb-chord') edit((m) => { m.chord = e.target.value.trim() || m.chord; }); };
+  // type a note: "C", "c#", "Eb5" … a letter without octave goes to the nearest one
+  const setPitch = (txt) => {
+    const mm = String(txt).trim().match(/^([a-gA-G])([#b♯♭]?)(\d)?$/);
+    if (!mm) { toast('Type a note like C4, F#5 or Bb'); draw(); return; }
+    const pc = (LETTER[mm[1].toUpperCase()] + (/[#♯]/.test(mm[2]) ? 1 : /[b♭]/.test(mm[2]) ? -1 : 0) + 12) % 12;
+    edit((m) => {
+      const p = m.mel[ni][0], ref = p === 'r' ? 72 : midiOf(p);
+      let v;
+      if (mm[3]) v = 12 * (+mm[3] + 1) + pc;
+      else { v = null; for (let o = 2; o <= 7; o++) { const c = 12 * (o + 1) + pc; if (v === null || Math.abs(c - ref) < Math.abs(v - ref)) v = c; } }
+      m.mel[ni][0] = nameOf(Math.max(36, Math.min(96, v)));
+    });
+  };
+  panel.addEventListener('keydown', (e) => { if (e.target.id === 'eb-pitch') { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); setPitch(e.target.value); } if (e.key === 'Escape') { e.target.blur(); draw(); } } });
+  panel.onchange = (e) => { if (e.target.id === 'eb-pitch') setPitch(e.target.value); };
   const pick = (e) => { const g = e.target.closest('g[data-note]'); if (g) { bi = +g.dataset.bar; ni = +g.dataset.note; draw(); } };
   paper.addEventListener('click', pick);
   const keys = (e) => {
     if (e.target.closest('input,textarea,select')) return;
     const k = e.key, cmd = e.metaKey || e.ctrlKey;
-    const map = { ArrowUp: cmd ? 'o+' : 'up', ArrowDown: cmd ? 'o-' : 'down', '.': 'dot', r: 'rest', R: 'rest', n: 'add', N: 'add', Backspace: 'del', Delete: 'del' };
+    const map = { ArrowUp: cmd ? 'o+' : 'up', ArrowDown: cmd ? 'o-' : 'down', '.': 'dot', t: 'trip', T: 'trip', r: 'rest', R: 'rest', n: 'add', N: 'add', Backspace: 'del', Delete: 'del' };
     if (cmd && (k === 'z' || k === 'Z')) { e.preventDefault(); return act('undo'); }
     if (k === 'ArrowLeft' || k === 'ArrowRight') { e.preventDefault(); return step(k === 'ArrowRight' ? 1 : -1); }
     if (map[k]) { e.preventDefault(); e.stopImmediatePropagation(); return act(map[k]); }
-    const len = LENGTHS.find((l) => l[2] === k);
+    const len = k.length === 1 && LENGTHS.find((l) => l[2] === k);
     if (len && !cmd) { e.preventDefault(); e.stopImmediatePropagation(); return act('len', len[0]); }
     if (/^[a-gA-G]$/.test(k) && !cmd) { e.preventDefault(); return act('letter', k.toUpperCase()); }
     if (k === 'Escape') close();

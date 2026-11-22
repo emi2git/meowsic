@@ -157,16 +157,18 @@ export function sheetToolbar(bar, it, view) {
 
 // the Annotate button toggles: first click opens the pen bar, second click closes it
 export function startInk(view, host) {
-  const open = host.querySelector('.inkbar');
+  const open = host.querySelector('.inkbar') || host.closest('.viewer')?.querySelector('.inkbar');
   if (open) { view.setTool(null); open.remove(); document.querySelectorAll('.ink-toggle').forEach((b) => b.classList.remove('on')); return; }
   document.querySelectorAll('.ink-toggle').forEach((b) => b.classList.add('on'));
-  view.setTool('red');
+  view.setTool('blue');
   const tb = inkToolbar((t) => view.setTool(t), (a) => {
     if (a === 'undo') view.undo();
     if (a === 'clear') view.clear();
     if (a === 'done') { view.setTool(null); tb.remove(); document.querySelectorAll('.ink-toggle').forEach((b) => b.classList.remove('on')); toast('Annotations saved'); }
   });
-  host.append(tb);
+  // sits in the top band, next to the Annotate button
+  const top = host.querySelector('.item-top');
+  if (top) top.querySelector('#it-more').before(tb); else host.append(tb);
 }
 
 export function sheetExtraMenu(it, view) {
