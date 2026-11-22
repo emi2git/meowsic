@@ -747,3 +747,6 @@ p.count-row { text-align: center; }
 .side-foot.mock { color: var(--mute); }
 .lib-table td.c-more { overflow: visible; text-overflow: clip; }
 .lib-table .c-more { width: 52px; }
+.pp.scorepage svg { width: 100%; height: 100%; display: block; }
+.pp.scorepage.loading { display: flex; align-items: center; justify-content: center; color: #999; font-size: 12px; }
+#print-root .pp.scorepage svg { width: 100%; height: 100%; }

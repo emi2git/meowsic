@@ -36,3 +36,7 @@ Next: real-score note editing → print real scores → frontend refactor → mi
 - Typing a note on a rest turns it into that note.
 - Tests: scratchpad/e2e/realedit.mjs 10/10 (server :5190 temp data); flows.mjs 160/160 — preview server now on :5181 (`python3 serve.py 5181`), :5180 is the real HTTPS app.
 Next: print real scores, frontend refactor, migration re-run after Photos download, reopen Photos Settings.
+
+## 02:45 — print real scores
+- print.js lays scores out with OSMD pageFormat A4_P (one SVG per page; real or sample). Test scratchpad/e2e/printscore.mjs: Memory = 6 A4 pages, PDF OK.
+Next: frontend refactor (dead list-view code in library.js, shared helpers), migration re-run when Photos originals are down, reopen Photos Settings.

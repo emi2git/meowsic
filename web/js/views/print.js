@@ -5,11 +5,36 @@ import { $, esc, icon, badge, CAT, toast } from '../ui.js';
 import { pageSrc } from './sheet.js';
 import { sheetUrl } from '../sheet-art.js';
 import { linesHtml, diagramsHtml } from '../chordchart.js';
+import { loadOsmd } from './score.js';
+import { TUNES } from '../mock.js';
+import { musicXml } from '../musicxml.js';
+
+// scores print as real notation: OSMD lays the MusicXML out on A4 pages; each page is an SVG
+const scorePagesCache = new Map(); // item id → [svg markup per page]
+async function scorePages(it) {
+  if (scorePagesCache.has(it.id)) return scorePagesCache.get(it.id);
+  let xml;
+  if (it.tune && TUNES[it.tune]) xml = musicXml({ ...TUNES[it.tune], ...(it.measures ? { measures: it.measures } : {}), title: it.title }, it.version || 'original');
+  else { const r = await fetch(`/api/items/${encodeURIComponent(it.id)}/musicxml`); if (!r.ok) return null; xml = await r.text(); }
+  await loadOsmd();
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px';
+  document.body.append(box);
+  try {
+    const osmd = new window.opensheetmusicdisplay.OpenSheetMusicDisplay(box, { backend: 'svg', autoResize: false, drawTitle: true, pageFormat: 'A4_P', pageBackgroundColor: '#FFFFFF' });
+    await osmd.load(xml);
+    if (it.transpose) { osmd.TransposeCalculator = new window.opensheetmusicdisplay.TransposeCalculator(); osmd.Sheet.Transpose = it.transpose; osmd.updateGraphic(); }
+    osmd.render();
+    const pages = [...box.querySelectorAll('svg')].map((svg) => { svg.setAttribute('preserveAspectRatio', 'xMidYMin meet'); svg.removeAttribute('height'); svg.setAttribute('width', '100%'); return svg.outerHTML; });
+    scorePagesCache.set(it.id, pages);
+    return pages;
+  } catch { return null; } finally { box.remove(); }
+}
 
 const LINES_PER_PAGE = { A4: 34, Letter: 32 };
 export function printedPages(it, paper = 'A4') {
   if (it.kind === 'sheet') return it.pages;
-  if (it.kind === 'score') return Math.max(1, Math.ceil((it.tune === 'grace' ? 9 : 12) / 10));
+  if (it.kind === 'score') return scorePagesCache.get(it.id)?.length || 1;
   const n = (it.lines || []).filter((l) => l.t !== 'blank').length + (it.lines || []).filter((l) => l.t === 'line' && l.parts.some((p) => p.chord)).length * 0.6;
   return Math.max(1, Math.ceil(n / LINES_PER_PAGE[paper]));
 }
@@ -48,7 +73,7 @@ function pageHtml(pg, full) {
   if (pg.blank) return `<div class="pp blank">${full ? '' : '<span>Blank</span>'}</div>`;
   const { it, page, of } = pg;
   if (it.kind === 'sheet') return `<div class="pp"><img src="${pageSrc(it, page)}" alt=""></div>`;
-  if (it.kind === 'score') return `<div class="pp"><img src="${sheetUrl(it.title + ' score', page, of, { artist: it.artist })}" alt=""></div>`;
+  if (it.kind === 'score') { const svg = scorePagesCache.get(it.id)?.[page - 1]; return svg ? `<div class="pp scorepage">${svg}</div>` : `<div class="pp scorepage loading"><span>Laying out…</span></div>`; }
   // chord chart: frame, chords at the top of every page, one small cat bottom-right
   return `<div class="pp chordpage"><div class="frame">
       ${page === 1 ? `<h1>${esc(it.title)}</h1><p class="meta">${esc(it.artist || '')}</p>` : `<p class="meta">${esc(it.title)} (${page}/${of})</p>`}
@@ -89,5 +114,7 @@ export function printView(main, { q }) {
     store.logEvent('print', src.name, `${src.ids.length} item${src.ids.length === 1 ? '' : 's'}`);
   };
   draw();
+  // lay out the scores, then redraw with their real page counts
+  Promise.all(src.ids.map((id) => store.get(id)).filter((x) => x && x.kind === 'score' && !scorePagesCache.has(x.id)).map(scorePages)).then((r) => { if (r.length && main.isConnected) draw(); });
   return () => { $('#print-root').innerHTML = ''; };
 }
