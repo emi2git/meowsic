@@ -7,6 +7,17 @@ import { sheetBody, sheetToolbar, sheetExtraMenu, startInk } from './sheet.js';
 import { chordsBody, chordsToolbar } from './chordsview.js';
 import { scoreBody, scoreToolbar, scoreExportMenu, scoreTools } from './score.js';
 
+const fmtDate = (t) => (t ? new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
+// the item's original date: when the photo was taken / the file was made / the score transcribed / the chords fetched
+function originRow(it) {
+  const label = it.kind === 'sheet' ? (it.source === 'pdf' || !it.pageDates?.some(Boolean) && it.fileDate ? 'File date' : 'Photo taken')
+    : it.kind === 'score' ? (it.source?.startsWith('From the score') ? 'Made' : 'Transcribed') : it.source === 'pasted' ? 'Pasted' : 'Fetched from the web';
+  const t = it.originAt || (it.kind === 'sheet' ? it.pageDates?.find(Boolean) : null) || it.createdAt;
+  const pages = it.kind === 'sheet' && it.pageDates?.length > 1 && new Set(it.pageDates.filter(Boolean).map((d) => new Date(d).toDateString())).size > 1
+    ? `<br><small>Pages taken ${it.pageDates.map((d, i) => `${i + 1}: ${d ? new Date(d).toLocaleDateString() : '—'}`).join(' · ')}</small>` : '';
+  return `<dt>${label}</dt><dd>${fmtDate(t)}${pages}</dd>`;
+}
+
 export function itemView(main, { parts }) {
   const it = store.get(parts[1]);
   if (!it) {
@@ -70,7 +81,8 @@ export function itemView(main, { parts }) {
         ${it.kind === 'score' ? `<dt>Made from</dt><dd>${esc(it.source)}<br><small>${it.bpm} bpm</small></dd>` : ''}
         <dt>Tags</dt><dd><div class="row-tags">${it.tags.map((t) => `<a class="tagchip" href="#/library?tags=${encodeURIComponent(t)}">${esc(t)}</a>`).join('') || '<span class="muted">None</span>'}</div><button class="link" id="dt-tags">Edit tags</button></dd>
         <dt>Practice</dt><dd>${plays.length} session${plays.length === 1 ? '' : 's'} · ${mins(total)}<br><small>Last played ${ago(store.lastPlayed(it.id))}</small></dd>
-        <dt>Added</dt><dd>${new Date(it.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}</dd>
+        ${originRow(it)}
+        <dt>Added</dt><dd>${fmtDate(it.createdAt)}</dd>
       </dl>`;
     $('#dt-close', details).onclick = () => (details.hidden = true);
     $('#dt-tags', details).onclick = () => editTags(it.id);

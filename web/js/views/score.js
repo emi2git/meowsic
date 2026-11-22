@@ -3,7 +3,7 @@
 import { store } from '../store.js';
 import { $, esc, icon, iconOn, toast, menu, sheet as modal } from '../ui.js';
 import { TUNES } from '../mock.js';
-import { musicXml, tuneNotes, VERSIONS, VERSION_HELP, barBeats, midiOf, nameOf, isTriplet, twelfths, meterOf } from '../musicxml.js';
+import { musicXml, tuneNotes, VERSIONS, VERSION_HELP, barBeats, midiOf, nameOf, isTriplet, twelfths, meterOf, xmlInfo } from '../musicxml.js';
 import { ScorePlayer } from '../audio.js';
 import { InkLayer } from './annotate.js';
 
@@ -23,6 +23,16 @@ const fmt = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).pad
 export function scoreBody(root, it, { perform = false } = {}) {
   // an edited score keeps its own bars on the entry (it.measures); otherwise the original tune
   let tune = it.measures ? { ...TUNES[it.tune], measures: structuredClone(it.measures) } : TUNES[it.tune];
+  // a real score (from the Mac): its own MusicXML; notes for playback are read out of it
+  const real = !tune;
+  let xmlText = '', info = null;
+  const loadReal = async () => {
+    const r = await fetch(`/api/items/${encodeURIComponent(it.id)}/musicxml`);
+    if (!r.ok) throw new Error('Could not load this score from the Mac.');
+    xmlText = await r.text();
+    info = xmlInfo(xmlText);
+    tune = { title: it.title, bpm: info.bpm, beats: info.beats, measures: [], real: true };
+  };
   const version = it.version || 'original';
   // each score reopens the way you left it: key (transpose), tempo and zoom are saved on the entry
   let zoom = it.zoom || (perform ? 1.25 : 1) * (innerWidth < 760 ? 0.62 : 1);
@@ -95,7 +105,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     });
     const r = osmd.EngravingRules;
     r.MinNoteDistance = 2.0; r.ChordSymbolXSpacing = 1.5; r.LyricsHeight = 1.8;
-    await osmd.load(musicXml({ ...tune, title: it.title }, version));
+    await osmd.load(real ? xmlText : musicXml({ ...tune, title: it.title }, version));
     osmd.zoom = zoom;
     if (it.transpose) {
       osmd.TransposeCalculator = new O.TransposeCalculator();
@@ -114,14 +124,13 @@ export function scoreBody(root, it, { perform = false } = {}) {
   const makePlayer = () => {
     const was = player;
     was?.pause();
-    player = new ScorePlayer({ notes: tuneNotes(tune, version), bpm: tune.bpm, beats: tune.beats, onTick: place,
+    player = new ScorePlayer({ notes: real ? info.notes : tuneNotes(tune, version), bpm: tune.bpm, beats: tune.beats, onTick: place,
       onEnd: () => root.dispatchEvent(new CustomEvent('ended', { bubbles: true })) });
     if (was) { player.rate = was.rate; player.loop = was.loop; }
     player.shift = it.transpose || 0;
     if (!was && it.rate) player.rate = it.rate;
   };
-  makePlayer();
-  const ready = render().catch((e) => { $('#osmd', root).innerHTML = `<p class="err">${esc(e.message)}</p>`; });
+  const ready = (real ? loadReal() : Promise.resolve()).then(() => { makePlayer(); return render(); }).catch((e) => { $('#osmd', root).innerHTML = `<p class="err">${esc(e.message)}</p>`; });
 
   let rt;
   const ro = new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => osmd && (osmd.render(), tagNotes(), measureStops(), place(player.now()), ink?.fit()), 250); });
@@ -158,7 +167,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
   return {
     ready,
     get tune() { return tune; },
-    barAt, showBar, pickNote, get editable() { return version !== 'accomp'; },
+    barAt, showBar, pickNote, get editable() { return version !== 'accomp' && !real; },
     // replace the bars (edit), save on the entry, redraw and replay from the new notes
     async setMeasures(ms, { save = true } = {}) {
       tune = { ...TUNES[it.tune], measures: ms };
@@ -175,7 +184,9 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get zoom() { return zoom; },
     setTool(t) { ink?.setTool(t); },
     undo() { ink?.undo(); }, clear() { ink?.clear(); },
-    xml() { return musicXml({ ...tune, title: it.title }, version); },
+    xml() { return real ? xmlText : musicXml({ ...tune, title: it.title }, version); },
+    get real() { return real; },
+    get totalQ() { return real ? Math.ceil(info.totalQ) : tune.measures.reduce((s, m) => s + barBeats(tune, m), 0); },
     destroy() { player.pause(); ro.disconnect(); ink?.destroy(); },
   };
 }
@@ -196,7 +207,7 @@ export function scoreExportMenu(it, view) {
 export function scoreToolbar(bar, it, view) {
   const t = view.tune;
   const secs = (q) => (q / (t.bpm * view.player.rate)) * 60;
-  const total = t.measures.reduce((s, m) => s + barBeats(t, m), 0);
+  const total = view.totalQ;
   bar.innerHTML = `
     <div class="transport">
       <button class="play" id="sc-play" aria-label="Play">Play</button>
@@ -312,7 +323,7 @@ const LENGTHS = [[0.25, '16th note', '2'], [0.5, 'Eighth note', '3'], [0.75, 'Do
 const LETTER = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 function scoreEditor(view, it, host, btn) {
   if (host.querySelector('.editbar')) { host.querySelector('.editbar').dispatchEvent(new Event('close')); return; }
-  if (!view.editable) return toast('This version has no melody to edit.');
+  if (!view.editable) return toast(view.real ? 'Editing notes of transcribed scores comes next — viewing and playing work now.' : 'This version has no melody to edit.');
   btn.classList.add('on');
   let ms = structuredClone(view.tune.measures);
   let bi = 0, ni = 0;
@@ -339,8 +350,8 @@ function scoreEditor(view, it, host, btn) {
       <div class="eb-row one">
         <input id="eb-pitch" class="eb-pitch" value="${rest ? '' : n[0]}" placeholder="${rest ? 'rest' : 'C4'}" ${rest ? 'disabled' : ''} aria-label="Note (e.g. C4, F#5, Bb)" title="Type a note: C, D#, Eb5… then Enter">
         <button class="eb-mode" data-a="rest" title="${rest ? 'Rest — click for note' : 'Note — click for rest'} (R)" aria-label="${rest ? 'Rest' : 'Note'}">${rest ? MODE_REST : MODE_NOTE}</button>
-        <div class="stepper eb-oct"><button data-a="o-" title="Octave down (⌘↓)" aria-label="Octave down" ${rest ? 'disabled' : ''}>${OCT_DOWN}</button><button data-a="o+" title="Octave up (⌘↑)" aria-label="Octave up" ${rest ? 'disabled' : ''}>${OCT_UP}</button></div>
         <div class="stepper eb-len">${LENGTHS.map(([d, l, k]) => `<button data-len="${d}" class="${base === d ? 'on' : ''}" title="${rest ? l.replace('note', 'rest') : l}${k ? ` (${k})` : ''}" aria-label="${l}">${pics[d]}</button>`).join('')}<button data-a="trip" class="${trip ? 'on' : ''}" title="Triplet (T)" aria-label="Triplet">${TRIP_PIC}</button></div>
+        <button class="icon-btn" data-a="add" title="Add a note after this one (N)" aria-label="Add note">${iconOn('plus')}</button>
         <button class="danger-text" data-a="del" ${m.mel.length > 1 ? '' : 'disabled'} title="Delete note (⌫)">Delete</button>
         <span class="grow"></span>
         <button class="icon-btn" data-a="undo" ${undo.length ? '' : 'disabled'} title="Undo (⌘Z)" aria-label="Undo">${iconOn('undo')}</button>

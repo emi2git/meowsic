@@ -16,3 +16,8 @@ Meowsic.xcodeproj/
 # Python tools env and downloaded models stay out of git (models live in ~/ai/models)
 tools/.venv/
 __pycache__/
+
+# Meowsic server venv
+server/.venv/
+.pytest_cache/
+migrate/.venv/

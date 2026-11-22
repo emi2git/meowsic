@@ -130,3 +130,41 @@ export function tuneNotes(tune, version) {
   });
   return out.sort((a, b) => a.q - b.q);
 }
+
+// ---- real scores: read notes, tempo and meter out of any MusicXML (for playback) ----
+const STEP_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+export function xmlInfo(text) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  const notes = [];
+  let bpm = 0, beats = 4, end = 0;
+  for (const part of doc.querySelectorAll('part')) {
+    let div = 1, t = 0; // t in divisions
+    for (const m of part.querySelectorAll(':scope > measure')) {
+      let last = t;
+      for (const el of m.children) {
+        if (el.tagName === 'attributes') {
+          div = +(el.querySelector('divisions')?.textContent || div);
+          const b = el.querySelector('time > beats');
+          if (b && !notes.length) beats = +b.textContent || beats;
+        } else if (el.tagName === 'sound' || el.tagName === 'direction') {
+          const s = el.tagName === 'sound' ? el : el.querySelector('sound');
+          if (s?.getAttribute('tempo') && !bpm) bpm = +s.getAttribute('tempo');
+        } else if (el.tagName === 'backup') t -= +el.querySelector('duration').textContent;
+        else if (el.tagName === 'forward') t += +el.querySelector('duration').textContent;
+        else if (el.tagName === 'note') {
+          const d = +(el.querySelector('duration')?.textContent || 0);
+          const chord = !!el.querySelector('chord');
+          const start = chord ? last : t;
+          const p = el.querySelector('pitch');
+          if (p && !el.querySelector('rest') && !el.querySelector('tie[type="stop"]')) {
+            const midi = 12 * (+p.querySelector('octave').textContent + 1) + STEP_PC[p.querySelector('step').textContent] + +(p.querySelector('alter')?.textContent || 0);
+            notes.push({ q: start / div, d: d / div, n: midi, v: 90 });
+          }
+          if (!chord) { last = t; t += d; }
+          end = Math.max(end, t / div);
+        }
+      }
+    }
+  }
+  return { notes: notes.sort((a, b) => a.q - b.q), bpm: bpm || 100, beats, totalQ: end };
+}

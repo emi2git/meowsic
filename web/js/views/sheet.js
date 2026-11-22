@@ -5,7 +5,8 @@ import { sheetUrl } from '../sheet-art.js';
 import { InkLayer, inkToolbar } from './annotate.js';
 import { go } from '../app.js';
 
-export const pageSrc = (it, p) => (it.upload && store.sessionImage(`${it.id}:${p}`)) || sheetUrl(it.title, p, it.pages, { artist: it.artist });
+// real sheets: the page files on the Mac; the UI preview draws mock pages
+export const pageSrc = (it, p) => (it.pageFiles?.[p - 1] && store.fileUrl(it.id, it.pageFiles[p - 1])) || (it.upload && store.sessionImage(`${it.id}:${p}`)) || sheetUrl(it.title, p, it.pages, { artist: it.artist });
 
 export function sheetBody(root, it, { perform = false, onEnd } = {}) {
   let page = 1;

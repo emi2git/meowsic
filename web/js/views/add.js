@@ -26,7 +26,7 @@ export function addSheetsView(main) {
         <input type="file" id="files" accept="image/*,application/pdf" multiple hidden>
         <span class="btn primary">${icon('photo')}Choose…</span>
       </label>
-      <p class="center"><button class="link" id="sample">No photos handy? Try with 7 sample pages</button></p>
+      ${store.mode === 'mock' ? '<p class="center"><button class="link" id="sample">No photos handy? Try with 7 sample pages</button></p>' : ''}
       <div class="how">
         <h3>What happens next</h3>
         <ol>
@@ -42,10 +42,10 @@ export function addSheetsView(main) {
   drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
   drop.ondragleave = () => drop.classList.remove('over');
   drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove('over'); analyse(main, [...e.dataTransfer.files].filter((f) => /^image\/|pdf$/.test(f.type))); };
-  $('#sample', main).onclick = () => {
+  $('#sample', main)?.addEventListener('click', () => {
     const names = ['Edelweiss 1', 'Moon River 1', 'Moon River 2', 'Castle on a Cloud 1', 'Castle on a Cloud 2', 'Castle on a Cloud 3', 'Arirang 1'];
     analyse(main, names.map((n, i) => ({ name: n + '.jpg', type: 'image/jpeg', lastModified: Date.now() - (names.length - i) * 30000, sample: true })));
-  };
+  });
 }
 
 function analyse(main, files) {
@@ -72,7 +72,7 @@ function group(files) {
     const pdf = /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name);
     const stem = titleCase(f.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').replace(/\s*(p(age)?\s*)?\d+$/i, '')) || 'Untitled';
     const url = f.sample ? sheetUrl(stem, 1 + groups.filter((g) => g.title === stem).reduce((n, g) => n + g.pages.length, 0)) : pdf ? null : URL.createObjectURL(f);
-    const page = { name: f.name, url, pdf };
+    const page = { name: f.name, url, pdf, file: f.sample ? null : f };
     const last = groups.at(-1);
     if (!pdf && last && !last.pdf && last.stem === stem) last.pages.push(page);
     else groups.push({ stem, title: stem, tags: [], pages: [page], pdf, dup: existing.has(fold(stem)), skip: false });
@@ -128,7 +128,8 @@ function reviewSheets(main) {
     draw();
   });
   $('#rv-cancel', main).onclick = () => { pending = null; go('#/library'); };
-  $('#rv-add', main).onclick = () => {
+  $('#rv-add', main).onclick = async () => {
+    if (store.mode !== 'mock') return uploadSheets(main, live());
     const made = live().map((g) => {
       const it = store.add({ kind: 'sheet', title: g.title.trim() || 'Untitled', artist: '', tags: g.tags, pages: g.pdf ? g.pdfPages : g.pages.length, source: g.pdf ? 'pdf' : 'photos', upload: !g.pdf });
       g.pages.forEach((p, i) => p.url && store.sessionImage(`${it.id}:${i + 1}`, p.url));
@@ -140,6 +141,36 @@ function reviewSheets(main) {
     go('#/library?kind=sheet');
   };
 }
+
+// send each sheet's files to the Mac (one request per sheet); the server names the folder and files
+async function uploadSheets(main, groups) {
+  const btn = $('#rv-add', main);
+  btn.disabled = true;
+  const made = [], skipped = [];
+  for (const [i, g] of groups.entries()) {
+    btn.textContent = `Adding ${i + 1} of ${groups.length}…`;
+    const fd = new FormData();
+    for (const p of g.pages) if (p.file) fd.append('files', p.file, p.name);
+    fd.append('title', g.title.trim() || 'Untitled');
+    fd.append('tags', JSON.stringify(g.tags));
+    fd.append('last_modified', JSON.stringify(g.pages.filter((p) => p.file).map((p) => p.file.lastModified)));
+    try {
+      const r = await fetch('/api/sheets', { method: 'POST', body: fd });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.detail || 'Upload failed');
+      store.putItem(body.item);
+      made.push(body.item);
+      skipped.push(...(body.skipped || []));
+    } catch (e) { toast(`${g.title}: ${e.message}`); }
+  }
+  pending = null;
+  if (made.length) store.logEvent('add-sheet', made.length > 1 ? `${made.length} sheets` : made[0].title, made.map((x) => `${x.title} (${x.pages} p)`).join(', '));
+  toast(`Added ${made.length} sheet${made.length === 1 ? '' : 's'}${skipped.length ? ` · ${skipped.length} page${skipped.length > 1 ? 's' : ''} already in the library were skipped` : ''}`);
+  go('#/library?kind=sheet');
+}
+
+// songbook-style lines (from the server's chord fetch) → ChordPro text
+const toChordPro = (lines) => lines.map((l) => (l.t === 'blank' ? '' : l.t === 'section' ? `{c: ${l.text}}` : (l.parts || []).map((p) => (p.chord ? `[${p.chord}]` : '') + (p.text || '')).join(''))).join('\n');
 
 // ================= chords =================
 const chordState = { q: '', src: 'auto', picked: null };
@@ -159,7 +190,7 @@ export function addChordsView(main) {
       </div>
       <div class="pane-r" id="cs-preview"><div class="empty">${CAT}<p>Search for a song, then pick a result to preview it.</p></div></div>
     </div>`;
-  const all = [...CHORD_CHARTS, ...SEARCH_EXTRA];
+  let all = store.mode === 'mock' ? [...CHORD_CHARTS, ...SEARCH_EXTRA] : [];
   const inLib = new Set(store.items().filter((x) => x.kind === 'chords').map((x) => fold(x.title)));
   const results = () => {
     const words = fold(chordState.q).split(/\s+/).filter(Boolean);
@@ -172,8 +203,18 @@ export function addChordsView(main) {
       return words.every((w) => hay.includes(w));
     }).sort((a, b) => (vi ? (b.source === 'hopamchuan') - (a.source === 'hopamchuan') : 0));
   };
-  const drawResults = () => {
-    const r = results();
+  let searching = 0;
+  const drawResults = async () => {
+    if (store.mode !== 'mock' && chordState.q.trim()) { // search the web through the Mac
+      const n = ++searching;
+      $('#cs-results', main).innerHTML = '<li class="muted pad">Searching…</li>';
+      const lang = chordState.src === 'auto' ? 'auto' : chordState.src;
+      const res = await store.api('GET', `/chords/search?q=${encodeURIComponent(chordState.q)}&lang=${lang}`, undefined, { queue: false });
+      if (n !== searching) return;
+      all = (res?.results || []).map((c) => ({ ...c, key: c.key || '' }));
+      if (!res) { $('#cs-results', main).innerHTML = '<li class="muted pad">Chord search needs the Mac.</li>'; return; }
+    }
+    const r = store.mode === 'mock' ? results() : all;
     const ul = $('#cs-results', main);
     if (!chordState.q.trim()) { ul.innerHTML = `<li class="muted pad">Try “grace”, “danny”, “cò lả” or “clementine”.</li>`; return; }
     ul.innerHTML = r.length ? r.map((c, i) => `<li class="row" data-i="${all.indexOf(c)}">
@@ -181,10 +222,10 @@ export function addChordsView(main) {
         <div class="row-main"><div class="row-title">${esc(c.title)}</div>
         <div class="row-sub"><span>${esc(c.artist)}</span><span class="dot">·</span><span>${c.source === 'hopamchuan' ? 'Hợp Âm Chuẩn' : 'Ultimate Guitar'}</span><span class="dot">·</span><span>Key ${c.key}</span></div></div>
         ${inLib.has(fold(c.title)) ? '<span class="pill">In library</span>' : ''}</li>`).join('')
-      : `<li class="muted pad">No results for “${esc(chordState.q)}”. (Mock search knows ${all.length} songs.)</li>`;
+      : `<li class="muted pad">No results for “${esc(chordState.q)}”.</li>`;
   };
   let t;
-  $('#cs-q', main).oninput = (e) => { chordState.q = e.target.value; clearTimeout(t); t = setTimeout(drawResults, 200); };
+  $('#cs-q', main).oninput = (e) => { chordState.q = e.target.value; clearTimeout(t); t = setTimeout(drawResults, store.mode === 'mock' ? 200 : 450); };
   $('#cs-form', main).onsubmit = (e) => { e.preventDefault(); drawResults(); };
   $('#cs-src', main).onclick = (e) => { const b = e.target.closest('[data-s]'); if (!b) return; chordState.src = b.dataset.s; main.querySelectorAll('#cs-src button').forEach((x) => x.classList.toggle('on', x === b)); drawResults(); };
   $('#cs-results', main).onclick = (e) => { const li = e.target.closest('[data-i]'); if (!li) return; main.querySelectorAll('#cs-results .row').forEach((x) => x.classList.toggle('sel', x === li)); preview(main, all[+li.dataset.i]); };
@@ -192,7 +233,13 @@ export function addChordsView(main) {
   drawResults();
 }
 
-function preview(main, c) {
+async function preview(main, c) {
+  if (!c.text && store.mode !== 'mock') { // fetch the chords for this result
+    $('#cs-preview', main).innerHTML = '<p class="pad muted">Fetching chords…</p>';
+    const song = await store.api('GET', `/chords/fetch?url=${encodeURIComponent(c.url)}`, undefined, { queue: false });
+    if (!song) { $('#cs-preview', main).innerHTML = '<p class="pad muted">Couldn’t fetch this song.</p>'; return; }
+    c = { ...c, ...song, text: toChordPro(song.lines || []), key: song.key || c.key || '', capo: +song.capo || 0 };
+  }
   const chart = { ...c, lines: parseChordPro(c.text), transpose: null, tags: c.tags ? [...c.tags] : [] };
   const pane = $('#cs-preview', main);
   const draw = () => {
@@ -206,7 +253,7 @@ function preview(main, c) {
     $('#cv-key', pane).onchange = (e) => { chart.transpose = +e.target.value; draw(); };
     $('#pv-save', pane).onclick = () => {
       const it = store.add({ kind: 'chords', title: chart.title, artist: chart.artist, tags: chart.tags, source: chart.source, key: chart.key, capo: chart.capo || 0,
-        url: `https://${chart.source === 'hopamchuan' ? 'hopamchuan.com' : 'tabs.ultimate-guitar.com'}/mock/${encodeURIComponent(chart.title)}`, text: chart.text, transpose: chart.transpose });
+        url: chart.url || `https://${chart.source === 'hopamchuan' ? 'hopamchuan.com' : 'tabs.ultimate-guitar.com'}/mock/${encodeURIComponent(chart.title)}`, originAt: Date.now(), text: chart.text, transpose: chart.transpose });
       store.logEvent('add-chords', it.title, `${chart.source === 'hopamchuan' ? 'Hợp Âm Chuẩn' : 'Ultimate Guitar'} · key ${chart.key}`);
       toast(`Saved “${it.title}”`, { label: 'Open', run: () => go(`#/item/${it.id}`) });
     };
@@ -306,6 +353,10 @@ let ticking = false;
 export function tickJobs() {
   if (ticking) return;
   ticking = true;
+  if (store.mode !== 'mock') { // real jobs run on the Mac; just watch them
+    setInterval(() => { if (store.jobs().some((j) => j.status === 'running' || j.status === 'queued')) store.refreshJobs(); }, 2000);
+    return;
+  }
   const tunes = Object.keys(TUNES);
   setInterval(() => {
     for (const j of store.jobs()) {

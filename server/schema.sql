@@ -16,7 +16,9 @@ CREATE TABLE IF NOT EXISTS item (
   rate        REAL,                           -- score playback tempo factor
   transpose   INTEGER,                        -- chords / score
   printed_at  INTEGER,                        -- last time it was printed (Printed / Never printed)
-  legacy_ref  TEXT                            -- where it came from in an old app (for migration re-runs)
+  legacy_ref  TEXT,                           -- where it came from in an old app (for migration re-runs)
+  folder      TEXT,                           -- files live in items/<folder>/ (named after the title); NULL for chord charts
+  origin_at   INTEGER                         -- original date: photo capture / file date / transcription / chord fetch (ms)
 );
 
 CREATE TABLE IF NOT EXISTS sheet (            -- kind = 'sheet'
