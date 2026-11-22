@@ -805,3 +805,12 @@ p.count-row { text-align: center; }
 .cu-trow small { flex: 1; }
 .cu-keys td { padding: 4px 10px 4px 0; } .cu-keys kbd { font: 12px ui-monospace, monospace; background: var(--bg2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
 @media (max-width: 900px) { .cu { grid-template-columns: 1fr; } .cu-list { display: none; } }
+.cu-list li.bad::before { background: var(--danger); }
+.cu-issue.mixed, .cu-issue.empty, .cu-issue.incomplete, .cu-issue.extra, .cu-issue.twice, .cu-issue.order { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
+.cu-pick { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; max-height: 50dvh; overflow-y: auto; }
+.cu-pick button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px; border: 3px solid transparent; border-radius: 8px; background: none; color: var(--ink2); font-size: 12px; opacity: .55; }
+.cu-pick button.on { border-color: var(--acc); opacity: 1; }
+.cu-pick img { height: 140px; width: auto; }
+button.danger { color: var(--danger); }
+#toast, .toast { pointer-events: none; }
+.toast button, .toast a { pointer-events: auto; }

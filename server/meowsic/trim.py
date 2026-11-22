@@ -107,6 +107,20 @@ def crop(src, dst, top: float, bottom: float, left: float = 0, right: float = 1)
     out.save(dst, fmt, **({'quality': 92} if fmt == 'JPEG' else {}))
 
 
+def _box(a):
+    """A preset crop for any page: the music with the same white space above and below it."""
+    h, w, _ = a.shape
+    gray = a.mean(axis=2)
+    ink = gray < np.median(gray) - 60
+    rows = np.flatnonzero(ink.sum(axis=1) > max(2, w * 0.004))
+    if not len(rows): return None
+    c_top, c_bot = rows[0], rows[-1] + 1
+    m = min(c_top, h - c_bot, int(h * 0.035))
+    t, b = max(0, c_top - m), min(h, c_bot + m)
+    if t < h * 0.004 and b > h * 0.996: return None
+    return {'top': round(t / h, 4), 'bottom': round(b / h, 4)}
+
+
 def _dots(path):
     """The page dots of a reader app under the page: how many, and which one is lit (1-based)."""
     im = ImageOps.exif_transpose(Image.open(path)).convert('L')
@@ -144,8 +158,11 @@ def _dots(path):
 def analyze(path, original=None) -> dict:
     """{'trim': {top, bottom, reasons} | None, 'dots': {count, lit} | None}. Dots come from the
     original photo when the page was trimmed already (the dots are cut off then)."""
-    t = _trim(_load(path))
+    a = _load(path)
+    t = _trim(a)
     try: d = _dots(original or path)
     except Exception: d = None
     if t: t = {'top': float(t['top']), 'bottom': float(t['bottom']), 'reasons': t['reasons']}
-    return {'trim': t, 'dots': d}
+    box = {'top': t['top'], 'bottom': t['bottom']} if t else _box(a)
+    if box: box = {'top': float(box['top']), 'bottom': float(box['bottom'])}
+    return {'trim': t, 'dots': d, 'box': box}

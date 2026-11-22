@@ -37,13 +37,19 @@
 - [x] HTTPS server on the real library (:5180), Meowsic launcher; old launchers moved to the Trash
 - [x] Read-only check of the real library at Mac / iPad / iPhone sizes
 ### In progress
-- [ ] Offline AI tagging: server side (agent, mlx-lm in ~/ai/models); UI done
+- [x] Offline AI tagging: server + UI (quality mixed: review every suggestion; full grouping ~22 min)
 - [ ] 58 iCloud-only sheets: background re-run every 20 min until Photos has the originals; then open Photos Settings for the user ("Optimize Mac Storage")
 ### Clean up round 2 (asked 03:50)
 - [x] Page dots: count the dots under each photo (= pages the song had in the app) + which dot is lit; flag songs whose dots disagree with their page count / order / each other (wrongly grouped)
 - [x] Clean up shows ALL songs with a status per song; filter Needs a look / Good / All; open and review any song
 - [x] Free crop: all four edges + draw a new box; default = header/footer cut, left/right unchanged
 - [x] Default trim: keep top and bottom white space about the same (trim bottom more, top less)
+### Clean up round 3 (asked 04:25)
+- [x] Preset a rectangle crop box on every page (not only junk pages); Enter = trim + next
+- [x] U = undo the last trim and put that crop box back to adjust
+- [x] Crop area always a rectangle (4 corners)
+- [x] Incomplete songs (dots say more pages) flagged in the song status
+- [x] Delete song (to Trash) and Split song from Clean up
 ### Waiting on the user
 - [ ] Trust Meowsic-CA.crt on the Mac; install it on iPad + iPhone
 

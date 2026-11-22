@@ -1,0 +1,6 @@
+{
+  "name": "meowsic-e2e",
+  "private": true,
+  "type": "module",
+  "dependencies": { "puppeteer-core": "*" }
+}

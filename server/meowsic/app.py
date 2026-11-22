@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import Body, Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from . import backup, chords, items, jobs, runners
+from . import ai, backup, chords, cleanup, items, jobs, pages, runners
 from .db import WEB_DIR, Config, connect, init_db, log_event
 from .items import conn
 
@@ -35,7 +35,7 @@ def create_app(data=None, background=True) -> FastAPI:
         resp.headers['Cache-Control'] = 'no-store'
         return resp
 
-    for r in (items.router, jobs.router, backup.router, chords.router):
+    for r in (items.router, jobs.router, backup.router, chords.router, ai.router, cleanup.router, pages.router):
         app.include_router(r)
 
     @app.get('/api/health')

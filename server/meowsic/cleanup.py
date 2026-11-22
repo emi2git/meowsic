@@ -44,7 +44,7 @@ def _pages(c):
                      'WHERE i.deleted_at IS NULL AND i.folder IS NOT NULL ORDER BY i.created_at DESC, p.page').fetchall()
 
 
-CACHE_V = 2
+CACHE_V = 3
 
 
 def _snaps(d: Path, page) -> list[Path]:
@@ -124,18 +124,19 @@ def dot_issues(pages) -> list[str]:
     counts = sorted({x['count'] for x in seen})
     out = []
     if len(counts) > 1:
-        out.append(f"page dots disagree ({' / '.join(map(str, counts))} pages) — photos of different songs mixed?")
-    elif counts[0] != n and len(seen) == n:
-        out.append(f"page dots say {counts[0]} page{'s' if counts[0] > 1 else ''}, the song has {n}" + (' — pages missing?' if counts[0] > n else ' — extra pages?'))
+        out.append(('mixed', f"page dots disagree ({' / '.join(map(str, counts))} pages) — photos of different songs mixed?"))
+    elif counts[0] > n:
+        missing = sorted(set(range(1, counts[0] + 1)) - {x['lit'] for x in seen if x.get('lit')})
+        out.append(('incomplete', f"incomplete: {n} of {counts[0]} pages" + (f" (missing page {', '.join(map(str, missing))})" if missing and len(missing) <= 6 else '')))
     elif counts[0] < n:
-        out.append(f"page dots say {counts[0]} page{'s' if counts[0] > 1 else ''}, the song has {n} — extra pages?")
+        out.append(('extra', f"page dots say {counts[0]} page{'s' if counts[0] > 1 else ''}, the song has {n} — extra pages?"))
     lits = [p['dots']['lit'] if p.get('dots') else None for p in pages]
     known = [l for l in lits if l]
     if len(known) != len(set(known)):
         dup = sorted({l for l in known if known.count(l) > 1})
-        out.append(f"the same page twice (dot {', '.join(map(str, dup))})")
+        out.append(('twice', f"the same page twice (dot {', '.join(map(str, dup))})"))
     elif known != sorted(known):
-        out.append('pages out of order (dots ' + ' '.join(str(l or '?') for l in lits) + ')')
+        out.append(('order', 'pages out of order (dots ' + ' '.join(str(l or '?') for l in lits) + ')'))
     return out
 
 
@@ -156,16 +157,17 @@ def cleanup_state(request: Request, id: str | None = None, c=Depends(conn), cf=D
         res = (ent or [0, None])[1] or {}
         n = len(_snaps(folder_path(cf, folder), page))
         items[iid]['pages'].append({'page': page, 'file': file, 'trim': None if key in ok else res.get('trim'),
-                                    'dots': res.get('dots'), 'trims': n, 'scanned': bool(ent)})
+                                    'dots': res.get('dots'), 'box': None if key in ok else res.get('box'), 'trims': n, 'scanned': bool(ent)})
     songs, odd = [], []
     for it in items.values():
         why = odd_title(it['title'], it['kind'])
         if why and f'title:{it["id"]}' not in ok: odd.append({'id': it['id'], 'title': it['title'], 'kind': it['kind'], 'why': why})
         if it['kind'] != 'sheet': continue
         issues = []
+        if not it['pages']: issues.append({'kind': 'empty', 'text': 'no pages'})
         nt = sum(1 for p in it['pages'] if p['trim'])
         if nt: issues.append({'kind': 'trim', 'text': f"{nt} page{'s' if nt > 1 else ''} to trim"})
-        issues += [{'kind': 'dots', 'text': t} for t in dot_issues(it['pages'])]
+        issues += [{'kind': k, 'text': t} for k, t in dot_issues(it['pages'])]
         if why and f'title:{it["id"]}' not in ok: issues.append({'kind': 'title', 'text': f'title: {why}'})
         songs.append({'id': it['id'], 'title': it['title'], 'pages': it['pages'], 'issues': issues,
                       'reviewed': f'song:{it["id"]}' in ok, 'trimmed': sum(p['trims'] > 0 for p in it['pages'])})

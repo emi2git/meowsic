@@ -183,6 +183,13 @@ async function splitAt(it, page) {
   if (page <= 1) return toast('Go to the page where the new sheet should start.');
   const ok = await confirmSheet({ title: `Split “${it.title}” at page ${page}?`, body: `Pages ${page}–${it.pages} become a new sheet.`, ok: 'Split' });
   if (!ok) return;
+  if (store.mode === 'server') { // move the real page photos
+    const res = await fetch(`/api/items/${it.id}/split`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pages: Array.from({ length: it.pages - page + 1 }, (_, k) => page + k) }) });
+    const d = await res.json();
+    if (!res.ok) return toast(d.detail || 'Could not split');
+    store.putItem(d.item); store.putItem(d.new);
+    return toast('Split into two sheets', { label: 'Open new', run: () => go(`#/item/${d.new.id}`) });
+  }
   const n = store.add({ kind: 'sheet', title: it.title + ' (part 2)', artist: it.artist, tags: [...it.tags], pages: it.pages - page + 1, source: it.source });
   store.update(it.id, { pages: page - 1 });
   toast('Split into two sheets', { label: 'Open new', run: () => go(`#/item/${n.id}`) });
@@ -202,6 +209,11 @@ function mergeInto(it) {
     const b = e.target.closest('[data-id]');
     if (!b) return;
     const o = store.get(b.dataset.id);
+    if (store.mode === 'server') {
+      fetch(`/api/items/${it.id}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ other: o.id }) })
+        .then(async (res) => { const d = await res.json(); if (!res.ok) return toast(d.detail || 'Could not join'); store.putItem(d.item); o.deleted = true; store.putItem({ ...o, deleted: true, pages: 0 }); s.close(); toast(`Joined — now ${d.item.pages} pages`); });
+      return;
+    }
     store.update(it.id, { pages: it.pages + o.pages, tags: [...new Set([...it.tags, ...o.tags])] });
     store.purge(o.id);
     s.close();

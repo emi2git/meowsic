@@ -65,3 +65,11 @@ Next: frontend refactor (dead list-view code in library.js, shared helpers), mig
 - cleanup.py: every sheet song with issues (trim / dots: mixed songs, missing or extra pages, same page twice, out of order / odd title), "song is good" (G), ?id= for one song; cache v2.
 - cleanup.js rebuilt: songs list with status + filters (Needs a look / Good / All), page strip with dot numbers, free crop box (edges, corners, draw your own), keys ] [ for songs, ⌥←→ left/right edges, X suggested box, C whole page.
 - Test e2e/cleanup.mjs 27/27; server tests 62 passed. Real server restarted, rescan running.
+
+## 04:50 — Clean up round 3 + recovery
+- Every page gets a preset crop box (junk cut, or even white space above/below); Enter = trim + next page → next song; U/Z undo puts the trim box back; incomplete songs flagged ("incomplete: 3 of 4 pages (missing page 3)"); songs with no pages flagged; Delete (Trash, undoable) and Split… (tick pages → new song) in Clean up.
+- server/meowsic/pages.py: real split / join (files, trim history, notes move and renumber); the song ⋯ Split/Join now use it. tests/test_pages.py.
+- Toasts no longer block clicks (only their button is clickable).
+- Fixed: Clean up keys kept working after leaving the page.
+- The AI agent wiped scratchpad/e2e; test scripts rebuilt from the session record and now live in tests/e2e (npm install there). flows 164/164, cleanup 37/37.
+- AI tagging server work committed (agent report: groups decent for works/composers, some wrong members; autotag over-tags; full grouping 22 min).
