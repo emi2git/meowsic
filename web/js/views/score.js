@@ -31,6 +31,25 @@ export function scoreBody(root, it, { perform = false } = {}) {
   root.innerHTML = `<div class="score-wrap ${perform ? 'perform' : ''}"><div class="score-paper" id="paper"><div id="osmd"></div></div></div>`;
   const paper = $('#paper', root);
 
+  // melody notes (first staff) get data-bar / data-note so a click can select them
+  let picked = null;
+  const tagNotes = () => {
+    if (version === 'accomp') return;
+    osmd.GraphicSheet.MeasureList.forEach((staves, bi) => {
+      (staves[0]?.staffEntries || []).forEach((se, ni) => {
+        const g = se.graphicalVoiceEntries[0]?.notes[0]?.getSVGGElement?.();
+        if (!g) return;
+        g.dataset.bar = bi; g.dataset.note = ni;
+        g.classList.add('note-hit');
+        if (picked && picked[0] === bi && picked[1] === ni) g.classList.add('note-on');
+      });
+    });
+  };
+  const pickNote = (bi, ni) => {
+    picked = bi < 0 ? null : [bi, ni];
+    root.querySelectorAll('.note-on').forEach((g) => g.classList.remove('note-on'));
+    if (picked) root.querySelector(`g[data-bar="${bi}"][data-note="${ni}"]`)?.classList.add('note-on');
+  };
   const measureStops = () => {
     stops = [];
     const c = osmd.cursor;
@@ -84,6 +103,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
       osmd.updateGraphic();
     }
     osmd.render();
+    tagNotes();
     measureStops();
     ink?.destroy();
     ink = new InkLayer(paper, it.id, `score-${version}`);
@@ -104,7 +124,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
   const ready = render().catch((e) => { $('#osmd', root).innerHTML = `<p class="err">${esc(e.message)}</p>`; });
 
   let rt;
-  const ro = new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => osmd && (osmd.render(), measureStops(), place(player.now()), ink?.fit()), 250); });
+  const ro = new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => osmd && (osmd.render(), tagNotes(), measureStops(), place(player.now()), ink?.fit()), 250); });
   ro.observe(root);
 
   // bar under a click: find the drawn stop nearest the click on that line, then which bar its beat falls in
@@ -138,7 +158,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
   return {
     ready,
     get tune() { return tune; },
-    barAt, showBar,
+    barAt, showBar, pickNote, get editable() { return version !== 'accomp'; },
     // replace the bars (edit), save on the entry, redraw and replay from the new notes
     async setMeasures(ms, { save = true } = {}) {
       tune = { ...TUNES[it.tune], measures: ms };
@@ -151,7 +171,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get version() { return version; },
     async setTranspose(n) { store.update(it.id, { transpose: n }); player.shift = n; await render(); },
     zoomReset() { this.setZoom(innerWidth < 760 ? 0.62 : 1); },
-    setZoom(z) { zoom = Math.max(0.6, Math.min(2, Math.round(z * 100) / 100)); store.update(it.id, { zoom }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zoom; osmd.render(); measureStops(); place(player.now()); ink?.fit(); },
+    setZoom(z) { zoom = Math.max(0.6, Math.min(2, Math.round(z * 100) / 100)); store.update(it.id, { zoom }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zoom; osmd.render(); tagNotes(); measureStops(); place(player.now()); ink?.fit(); },
     get zoom() { return zoom; },
     setTool(t) { ink?.setTool(t); },
     undo() { ink?.undo(); }, clear() { ink?.clear(); },
@@ -184,8 +204,8 @@ export function scoreToolbar(bar, it, view) {
     </div>
     <div class="stepper" aria-label="Tempo" title="Tempo"><button id="sc-slow" aria-label="Slower">−</button><span id="sc-rate">${Math.round(t.bpm * view.player.rate)} bpm</span><button id="sc-fast" aria-label="Faster">+</button></div>
     <div class="stepper" aria-label="Transpose"><button id="sc-tdown" aria-label="Transpose down">♭</button><span id="sc-tval">${it.transpose ? (it.transpose > 0 ? '+' : '') + it.transpose : '0'}</span><button id="sc-tup" aria-label="Transpose up">♯</button></div>
-    <button class="icon-btn" id="sc-edit" title="Edit notes" aria-label="Edit notes">${iconOn('edit')}</button>
-    <div class="stepper zoom" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out" title="Zoom out (−)">${iconOn('zoomout')}</button><button id="sc-zreset" class="zreset" title="Reset zoom (0)">${Math.round(view.zoom * 100)}%</button><button id="sc-zin" aria-label="Zoom in" title="Zoom in (+)">${iconOn('zoomin')}</button></div>`;
+    <div class="stepper zoom" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out" title="Zoom out (−)">${iconOn('zoomout')}</button><button id="sc-zreset" class="zreset" title="Reset zoom (0)">${Math.round(view.zoom * 100)}%</button><button id="sc-zin" aria-label="Zoom in" title="Zoom in (+)">${iconOn('zoomin')}</button></div>
+    <button class="icon-btn" id="sc-edit" title="Edit notes" aria-label="Edit notes">${iconOn('edit')}</button>`;
 
   const p = () => view.player;
   const playBtn = $('#sc-play', bar);
@@ -264,11 +284,15 @@ function generateVersions(it) {
 }
 
 // ================= score editor =================
-// Click a bar, pick a note, change it. A bar whose notes no longer add up to the song's meter gets
-// its own time signature automatically (5 beats in a 4/4 song → that bar becomes 5/4).
-const LENGTHS = [[0.5, '⅛'], [1, '¼'], [1.5, '¼·'], [2, '½'], [3, '½·'], [4, '1']];
+// Like MuseScore / Flat: click a note on the staff to select it, then change it with the palette or keys:
+// ↑/↓ semitone · ⌘↑/⌘↓ octave · ←/→ previous/next note · A–G set the note · 3 4 5 6 = ⅛ ¼ ½ whole ·
+// . dot · R rest · N add a note after · Delete remove · ⌘Z undo. A bar whose notes no longer fit the
+// song's meter gets its own time signature (5 beats in a 4/4 song → that bar becomes 5/4).
+const LENGTHS = [[0.5, '⅛', '3'], [1, '¼', '4'], [2, '½', '5'], [4, '1', '6']];
+const LETTER = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 function scoreEditor(view, it, host, btn) {
-  if (host.querySelector('.editbar')) { host.querySelector('.editbar').remove(); view.showBar(-1); btn.classList.remove('on'); return; }
+  if (host.querySelector('.editbar')) { host.querySelector('.editbar').dispatchEvent(new Event('close')); return; }
+  if (!view.editable) return toast('This version has no melody to edit.');
   btn.classList.add('on');
   let ms = structuredClone(view.tune.measures);
   let bi = 0, ni = 0;
@@ -277,64 +301,89 @@ function scoreEditor(view, it, host, btn) {
   panel.className = 'editbar';
   host.append(panel);
   const paper = host.querySelector('#paper');
+  paper.classList.add('editing');
   const meter = view.tune.beats;
+  const cur = () => ms[bi].mel[ni];
   const draw = () => {
-    const m = ms[bi];
-    ni = Math.max(0, Math.min(ni, m.mel.length - 1));
+    ni = Math.max(0, Math.min(ni, ms[bi].mel.length - 1));
+    const m = ms[bi], n = cur();
     const beats = m.mel.reduce((s, [, d]) => s + d, 0);
-    const n = m.mel[ni];
+    const base = n[1] === 1.5 || n[1] === 3 || n[1] === 0.75 ? n[1] / 1.5 : n[1];
+    const dotted = base !== n[1];
     panel.innerHTML = `
       <div class="eb-row">
-        <b>Bar ${bi + 1}</b><button class="icon-btn" data-a="pbar" ${bi ? '' : 'disabled'} title="Previous bar">‹</button><button class="icon-btn" data-a="nbar" ${bi < ms.length - 1 ? '' : 'disabled'} title="Next bar">›</button>
-        <span class="eb-meter ${beats !== meter ? 'changed' : ''}">${beats} beat${beats === 1 ? '' : 's'} · ${Number.isInteger(beats) ? `${beats}/4` : `${beats * 2}/8`}${beats !== meter ? ` <small>(song is ${meter}/4 — this bar's time signature was changed to fit)</small>` : ''}</span>
+        <span class="eb-sel"><b>${n[0] === 'r' ? 'Rest' : n[0]}</b> · bar ${bi + 1}, note ${ni + 1}</span>
+        <span class="eb-meter ${beats !== meter ? 'changed' : ''}">${Number.isInteger(beats) ? `${beats}/4` : `${beats * 2}/8`}${beats !== meter ? ' <small>time signature changed to fit</small>' : ''}</span>
         <span class="grow"></span>
-        <button data-a="undo" ${undo.length ? '' : 'disabled'}>Undo</button>
-        <button data-a="revert">Revert to original</button>
+        <button data-a="undo" ${undo.length ? '' : 'disabled'} title="Undo (⌘Z)">Undo</button>
+        <button data-a="revert" title="Back to the original score">Revert</button>
         <button class="primary" data-a="done">Done</button>
       </div>
-      <div class="eb-notes">${m.mel.map(([p, d], i) => `<button class="eb-note ${i === ni ? 'on' : ''}" data-n="${i}">${p === 'r' ? 'rest' : p}<small>${LENGTHS.find((l) => l[0] === d)?.[1] || d}</small></button>`).join('')}
-        <button class="eb-add" data-a="add" title="Add a note after the selected one">+ note</button></div>
       <div class="eb-row">
-        <span class="muted">Note</span>
+        <div class="stepper eb-len">${LENGTHS.map(([d, l, k]) => `<button data-len="${d}" class="${base === d ? 'on' : ''}" title="${l} (${k})">${l}</button>`).join('')}<button data-a="dot" class="${dotted ? 'on' : ''}" title="Dot (.)">·</button></div>
         <div class="stepper"><button data-a="down" title="Lower (↓)">▼</button><button data-a="up" title="Higher (↑)">▲</button></div>
-        <div class="stepper"><button data-a="o-" title="Octave lower">8va−</button><button data-a="o+" title="Octave higher">8va+</button></div>
-        <div class="stepper eb-len">${LENGTHS.map(([d, l]) => `<button data-len="${d}" class="${n && n[1] === d ? 'on' : ''}" title="${d} beat${d === 1 ? '' : 's'}">${l}</button>`).join('')}</div>
-        <button data-a="rest">${n && n[0] === 'r' ? 'Make note' : 'Make rest'}</button>
-        <button class="danger-text" data-a="del" ${m.mel.length > 1 ? '' : 'disabled'}>Delete note</button>
+        <div class="stepper"><button data-a="o-" title="Octave lower (⌘↓)">8va−</button><button data-a="o+" title="Octave higher (⌘↑)">8va+</button></div>
+        <button data-a="rest" title="Rest (R)">${n[0] === 'r' ? 'Note' : 'Rest'}</button>
+        <button data-a="add" title="Add a note after (N)">+ Note</button>
+        <button class="danger-text" data-a="del" ${m.mel.length > 1 ? '' : 'disabled'} title="Delete (⌫)">Delete</button>
         <label class="ctl">Chord <input id="eb-chord" value="${m.chord || ''}" size="5"></label>
+        <span class="muted small eb-keys">Click a note · ↑↓ ←→ · A–G · 3 4 5 6 · .</span>
       </div>`;
-    view.showBar(bi);
+    view.pickNote(bi, ni);
   };
-  const commit = async () => { await view.setMeasures(structuredClone(ms)); view.showBar(bi); draw(); };
+  const commit = async () => { await view.setMeasures(structuredClone(ms)); draw(); };
   const edit = async (fn) => { undo.push(structuredClone(ms)); fn(ms[bi]); await commit(); };
   const shift = (p, k) => (p === 'r' ? p : nameOf(Math.max(36, Math.min(96, midiOf(p) + k))));
-  panel.onclick = async (e) => {
-    const nb = e.target.closest('[data-n]');
-    if (nb) { ni = +nb.dataset.n; draw(); return; }
-    const lb = e.target.closest('[data-len]');
-    if (lb) return edit((m) => { m.mel[ni][1] = +lb.dataset.len; });
-    const a = e.target.closest('[data-a]')?.dataset.a;
-    if (!a) return;
-    if (a === 'pbar') { bi--; ni = 0; draw(); }
-    if (a === 'nbar') { bi++; ni = 0; draw(); }
+  const step = (d) => { // next / previous note across bars
+    ni += d;
+    if (ni < 0 && bi > 0) { bi--; ni = ms[bi].mel.length - 1; }
+    else if (ni >= ms[bi].mel.length && bi < ms.length - 1) { bi++; ni = 0; }
+    draw();
+  };
+  const act = async (a, arg) => {
     if (a === 'up' || a === 'down') await edit((m) => { m.mel[ni][0] = shift(m.mel[ni][0], a === 'up' ? 1 : -1); });
     if (a === 'o+' || a === 'o-') await edit((m) => { m.mel[ni][0] = shift(m.mel[ni][0], a === 'o+' ? 12 : -12); });
-    if (a === 'rest') await edit((m) => { const p = m.mel[ni][0]; m.mel[ni][0] = p === 'r' ? (m.mel[ni - 1]?.[0] !== 'r' && m.mel[ni - 1]?.[0]) || 'C5' : 'r'; });
-    if (a === 'add') { await edit((m) => { const [p, d] = m.mel[ni] || ['C5', 1]; m.mel.splice(ni + 1, 0, [p === 'r' ? 'C5' : p, d]); }); ni++; draw(); }
-    if (a === 'del') await edit((m) => { m.mel.splice(ni, 1); });
+    if (a === 'len') await edit((m) => { m.mel[ni][1] = arg; });
+    if (a === 'dot') await edit((m) => { const d = m.mel[ni][1]; m.mel[ni][1] = [1.5, 3, 0.75].includes(d) ? d / 1.5 : d * 1.5; });
+    if (a === 'rest') await edit((m) => { const p = m.mel[ni][0]; m.mel[ni][0] = p === 'r' ? 'C5' : 'r'; });
+    if (a === 'add') { await edit((m) => { const [p, d] = m.mel[ni]; m.mel.splice(ni + 1, 0, [p === 'r' ? 'C5' : p, d]); }); step(1); }
+    if (a === 'del') await edit((m) => { if (m.mel.length > 1) m.mel.splice(ni, 1); });
+    if (a === 'letter') await edit((m) => { // nearest octave to the current note
+      const p = m.mel[ni][0], ref = p === 'r' ? 72 : midiOf(p);
+      let best = null;
+      for (let o = 2; o <= 7; o++) { const v = 12 * (o + 1) + LETTER[arg]; if (!best || Math.abs(v - ref) < Math.abs(best - ref)) best = v; }
+      m.mel[ni][0] = nameOf(best);
+    });
     if (a === 'undo' && undo.length) { ms = undo.pop(); await commit(); }
-    if (a === 'revert') { undo.push(structuredClone(ms)); await view.revert(); ms = structuredClone(view.tune.measures); view.showBar(bi); draw(); }
-    if (a === 'done') { panel.remove(); view.showBar(-1); btn.classList.remove('on'); paper.removeEventListener('click', pick); document.removeEventListener('keydown', keys); }
+    if (a === 'revert') { undo.push(structuredClone(ms)); await view.revert(); ms = structuredClone(view.tune.measures); draw(); }
+    if (a === 'done') close();
+  };
+  panel.onclick = (e) => {
+    const lb = e.target.closest('[data-len]');
+    if (lb) return act('len', +lb.dataset.len);
+    const a = e.target.closest('[data-a]')?.dataset.a;
+    if (a) act(a);
   };
   panel.onchange = (e) => { if (e.target.id === 'eb-chord') edit((m) => { m.chord = e.target.value.trim() || m.chord; }); };
-  const pick = (e) => { const i = view.barAt(e.clientX, e.clientY); if (i >= 0) { bi = i; ni = 0; draw(); } };
+  const pick = (e) => { const g = e.target.closest('g[data-note]'); if (g) { bi = +g.dataset.bar; ni = +g.dataset.note; draw(); } };
   paper.addEventListener('click', pick);
   const keys = (e) => {
-    if (!host.contains(panel) || e.target.closest('input')) return;
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); panel.querySelector(`[data-a="${e.key === 'ArrowUp' ? 'up' : 'down'}"]`).click(); }
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); ni = Math.max(0, Math.min(ms[bi].mel.length - 1, ni + (e.key === 'ArrowRight' ? 1 : -1))); draw(); }
-    if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); panel.querySelector('[data-a="del"]').click(); }
+    if (e.target.closest('input,textarea,select')) return;
+    const k = e.key, cmd = e.metaKey || e.ctrlKey;
+    const map = { ArrowUp: cmd ? 'o+' : 'up', ArrowDown: cmd ? 'o-' : 'down', '.': 'dot', r: 'rest', R: 'rest', n: 'add', N: 'add', Backspace: 'del', Delete: 'del' };
+    if (cmd && (k === 'z' || k === 'Z')) { e.preventDefault(); return act('undo'); }
+    if (k === 'ArrowLeft' || k === 'ArrowRight') { e.preventDefault(); return step(k === 'ArrowRight' ? 1 : -1); }
+    if (map[k]) { e.preventDefault(); e.stopImmediatePropagation(); return act(map[k]); }
+    const len = LENGTHS.find((l) => l[2] === k);
+    if (len && !cmd) { e.preventDefault(); e.stopImmediatePropagation(); return act('len', len[0]); }
+    if (/^[a-gA-G]$/.test(k) && !cmd) { e.preventDefault(); return act('letter', k.toUpperCase()); }
+    if (k === 'Escape') close();
   };
-  document.addEventListener('keydown', keys);
+  document.addEventListener('keydown', keys, true);
+  function close() {
+    panel.remove(); view.pickNote(-1); btn.classList.remove('on'); paper.classList.remove('editing');
+    paper.removeEventListener('click', pick); document.removeEventListener('keydown', keys, true);
+  }
+  panel.addEventListener('close', close);
   draw();
 }

@@ -706,3 +706,10 @@ p.count-row { text-align: center; }
 .eb-add { border-style: dashed; color: var(--ink2); }
 .eb-len button.on { background: var(--acc-soft); }
 #sc-edit.on { background: var(--acc-soft); }
+
+.editing .note-hit { cursor: pointer; }
+.editing .note-hit:hover path, .editing .note-hit:hover ellipse { fill: var(--acc-text); stroke: var(--acc-text); }
+.note-on path, .note-on ellipse, .note-on rect { fill: var(--acc) !important; stroke: var(--acc) !important; }
+.eb-sel b { font-size: 17px; }
+.eb-keys { margin-left: auto; }
+.editing + .editbar, .score-wrap:has(.editing) { padding-bottom: 150px; }
