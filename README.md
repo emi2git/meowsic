@@ -8,7 +8,7 @@ browser only (Settings → Reset mock data). The old iPad app is kept as git tag
 
 ## Run the UI preview
 
-    cd web && python3 -m http.server 5180 --bind 0.0.0.0
+    python3 serve.py        (port 5180, caching off)
 
 Open http://localhost:5180 on the Mac, or http://<mac-name>.local:5180 on an iPad / iPhone on
 the same Wi-Fi. The microphone (tuner) needs https, which arrives with the server in phase 2.
