@@ -24,16 +24,15 @@ export function libraryView(main, { q }) {
   main.innerHTML = `
     <header class="top lib-top">
       <h1>${kind ? KIND[kind].plural : 'All music'}</h1>
-      <div class="seg" role="tablist">${[['', 'All'], ['sheet', 'Sheets'], ['chords', 'Chords'], ['score', 'Scores']].map(([k, l]) =>
+      <div class="seg phone-only" role="tablist">${[['', 'All'], ['sheet', 'Sheets'], ['chords', 'Chords'], ['score', 'Scores']].map(([k, l]) =>
         `<button role="tab" class="${kind === k ? 'on' : ''}" data-kind="${k}">${k ? icon(KIND[k].icon) : ''}${l}</button>`).join('')}</div>
       <button class="chip-btn ${tag ? 'on' : ''}" id="lib-tag">${icon('tag')}${tag ? esc(tag) : 'Any tag'}${tag ? `<span class="x" id="lib-tag-x" aria-label="Clear tag">×</span>` : ''}</button>
       ${tag ? `<a class="icon-btn btn" href="#/print?tag=${encodeURIComponent(tag)}">${icon('print')}<span>Print all</span></a>` : ''}
       
-      <label class="sort">Sort <select id="lib-sort">${Object.entries(SORTS).map(([k, [l]]) => `<option value="${k}" ${state.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <button class="chip-btn" id="lib-sort" aria-haspopup="menu">Sort: ${SORTS[state.sort][0]} ▾</button>
     
       <label class="search">${icon('search')}<input type="search" id="lib-q" placeholder="Search titles, artists, tags" value="${esc(state.q)}" aria-label="Search"></label>
       <button class="icon-btn" id="lib-select" title="Select">${icon('select')}<span>Select</span></button>
-      <button class="primary hide-phone" id="lib-add">${icon('plus')}Add</button>
     </header>
 
     <ul class="rows" id="lib-rows"></ul>
@@ -92,10 +91,12 @@ export function libraryView(main, { q }) {
     menu(e.currentTarget, [{ label: 'Any tag', run: () => setQ('tag', '') }, '-',
       ...store.db.tags.slice().sort().map((t) => ({ label: `${t}  (${counts.get(t) || 0})`, run: () => setQ('tag', t) }))]);
   };
-  $('#lib-sort', main).onchange = (e) => { state.sort = e.target.value; try { localStorage.setItem('meowsic-sort', state.sort); } catch {} draw(); };
+  $('#lib-sort', main).onclick = (e) => menu(e.currentTarget, Object.entries(SORTS).map(([k, [l]]) => ({
+    label: (state.sort === k ? '✓ ' : '   ') + l,
+    run: () => { state.sort = k; try { localStorage.setItem('meowsic-sort', k); } catch {} $('#lib-sort', main).textContent = `Sort: ${l} ▾`; draw(); },
+  })));
   $('#lib-q', main).oninput = (e) => { state.q = e.target.value; state.shown = PAGE; draw(); };
   $('#lib-select', main).onclick = () => { state.select = !state.select; state.sel.clear(); draw(); };
-  $('#lib-add', main).onclick = (e) => addMenu(e.currentTarget);
   $('#lib-rows', main).onclick = (e) => {
     const row = e.target.closest('.row');
     if (!row) return;

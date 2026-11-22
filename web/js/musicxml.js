@@ -64,15 +64,15 @@ function melodyPart(tune, { harmony, lyrics }) {
   }).join('');
 }
 
-function pianoPart(tune, { melody, harmony }) {
+function pianoPart(tune, { melody, harmony, easy = false, octave = 0 }) {
   return tune.measures.map((m, i) => {
     const { bass, rh } = voicing(m.chord);
     let x = `<measure number="${i + 1}">` + (i === 0 ? attrs(tune, 2, [['G', 2], ['F', 4]]) : '');
     if (harmony && m.chord) x += harmonyXml(m.chord);
-    if (melody) for (const [p, q] of m.mel) x += noteXml(p, q, { staff: 1 });
+    if (melody) for (const [p, q] of m.mel) x += noteXml(p === 'r' || !octave ? p : nameOf(midiOf(p) + octave), q, { staff: 1 });
     else rh.forEach((p, k) => (x += noteXml(p, tune.beats, { staff: 1, chord: k > 0 })));
     x += backup(tune.beats);
-    if (tune.beats === 3) x += noteXml(bass, 3, { staff: 2, voice: 2 });
+    if (easy || tune.beats === 3) x += noteXml(bass, tune.beats, { staff: 2, voice: 2 });
     else x += noteXml(bass, 2, { staff: 2, voice: 2 }) + noteXml(nameOf(midiOf(bass) + 7), 2, { staff: 2, voice: 2 });
     return x + '</measure>';
   }).join('');
@@ -82,12 +82,18 @@ const head = (title, parts) => `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
 <score-partwise version="3.1"><work><work-title>${title}</work-title></work><part-list>${parts.map((p, i) => `<score-part id="P${i + 1}"><part-name>${p}</part-name></score-part>`).join('')}</part-list>`;
 
-export const VERSIONS = { original: 'Piano', lead: 'Lead sheet', vocal: 'Piano + vocals' };
+export const VERSIONS = { original: 'Original', vocal: 'Piano + vocals', lead: 'Lead sheet', duet: 'Piano duet', accomp: 'Piano accompaniment', easy: 'Piano easy', pro: 'Piano pro' };
+export const VERSION_HELP = { original: 'What is played in the recording, both hands', vocal: 'Melody with lyrics above the piano', lead: 'Melody, lyrics and chord names',
+  duet: 'Two players: melody up high, accompaniment below', accomp: 'Only the accompaniment, no melody', easy: 'Simpler left hand, fewer notes', pro: 'Fuller chords for advanced players' };
 
 export function musicXml(tune, version) {
   if (version === 'lead') return head(tune.title, ['Melody']) + `<part id="P1">${melodyPart(tune, { harmony: true, lyrics: true })}</part></score-partwise>`;
   if (version === 'vocal') return head(tune.title, ['Voice', 'Piano']) +
     `<part id="P1">${melodyPart(tune, { harmony: true, lyrics: true })}</part><part id="P2">${pianoPart(tune, { melody: false })}</part></score-partwise>`;
+  if (version === 'duet') return head(tune.title, ['Primo', 'Secondo']) +
+    `<part id="P1">${pianoPart(tune, { melody: true, octave: 12 })}</part><part id="P2">${pianoPart(tune, { melody: false, harmony: true })}</part></score-partwise>`;
+  if (version === 'accomp') return head(tune.title, ['Piano']) + `<part id="P1">${pianoPart(tune, { melody: false, harmony: true })}</part></score-partwise>`;
+  if (version === 'easy') return head(tune.title, ['Piano']) + `<part id="P1">${pianoPart(tune, { melody: true, harmony: true, easy: true })}</part></score-partwise>`;
   return head(tune.title, ['Piano']) + `<part id="P1">${pianoPart(tune, { melody: true, harmony: true })}</part></score-partwise>`;
 }
 
@@ -97,11 +103,11 @@ export function tuneNotes(tune, version) {
   tune.measures.forEach((m, i) => {
     const q0 = i * tune.beats;
     let q = q0;
-    for (const [p, d] of m.mel) { if (p !== 'r') out.push({ q, d, n: midiOf(p), v: 96 }); q += d; }
+    if (version !== 'accomp') for (const [p, d] of m.mel) { if (p !== 'r') out.push({ q, d, n: midiOf(p) + (version === 'duet' ? 12 : 0), v: 96 }); q += d; }
     const { bass, rh } = voicing(m.chord);
-    if (tune.beats === 3) out.push({ q: q0, d: 3, n: midiOf(bass), v: 70 });
+    if (version === 'easy' || tune.beats === 3) out.push({ q: q0, d: tune.beats, n: midiOf(bass), v: 70 });
     else { out.push({ q: q0, d: 2, n: midiOf(bass), v: 70 }); out.push({ q: q0 + 2, d: 2, n: midiOf(bass) + 7, v: 62 }); }
-    if (version === 'vocal') rh.forEach((p) => out.push({ q: q0, d: tune.beats, n: midiOf(p), v: 52 }));
+    if (['vocal', 'duet', 'accomp', 'pro'].includes(version)) rh.forEach((p) => out.push({ q: q0, d: tune.beats, n: midiOf(p), v: 52 }));
   });
   return out.sort((a, b) => a.q - b.q);
 }

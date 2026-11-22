@@ -221,11 +221,11 @@ for (const t of Object.values(TUNES))
 
 // each version of a transcription is its own library entry
 const SCORES = [
-  { tune: 'twinkle', version: 'original', title: 'Twinkle, Twinkle, Little Star', artist: 'Traditional', source: 'Audio file · twinkle.m4a', method: 'Direct transcription', tags: ['Children'] },
-  { tune: 'twinkle', version: 'lead', title: 'Twinkle, Twinkle, Little Star', artist: 'Traditional', source: 'Audio file · twinkle.m4a', method: 'Direct transcription', tags: ['Children'] },
-  { tune: 'ode', version: 'original', title: 'Ode to Joy', artist: 'Ludwig van Beethoven', source: 'YouTube · youtu.be/ode-to-joy', method: 'Arrangement', tags: ['Classical'] },
-  { tune: 'grace', version: 'vocal', title: 'Amazing Grace', artist: 'John Newton', source: 'YouTube · youtu.be/amazing-grace', method: 'Direct transcription', tags: ['Folk'] },
-  { tune: 'jacques', version: 'original', title: 'Frère Jacques', artist: 'Traditional', source: 'Audio file · frere-jacques.mp3', method: 'Piano accompaniment', tags: ['Children', 'Folk'] },
+  { tune: 'twinkle', version: 'original', title: 'Twinkle, Twinkle, Little Star', artist: 'Traditional', source: 'Audio file · twinkle.m4a', tags: ['Children'] },
+  { tune: 'twinkle', version: 'lead', title: 'Twinkle, Twinkle, Little Star', artist: 'Traditional', source: 'Audio file · twinkle.m4a', tags: ['Children'] },
+  { tune: 'ode', version: 'original', title: 'Ode to Joy', artist: 'Ludwig van Beethoven', source: 'YouTube · youtu.be/ode-to-joy', tags: ['Classical'] },
+  { tune: 'grace', version: 'vocal', title: 'Amazing Grace', artist: 'John Newton', source: 'YouTube · youtu.be/amazing-grace', tags: ['Folk'] },
+  { tune: 'jacques', version: 'original', title: 'Frère Jacques', artist: 'Traditional', source: 'Audio file · frere-jacques.mp3', tags: ['Children', 'Folk'] },
 ];
 
 // deterministic pseudo-random so the mock looks the same on every device
@@ -255,9 +255,9 @@ export function buildMock() {
     const created = NOW - Math.floor((i * 9 + 1) * DAY);
     const t = TUNES[s.tune];
     // the version (Piano / Piano + vocals / Lead sheet) is also a tag
-    const vTag = { original: 'Piano', vocal: 'Piano + vocals', lead: 'Lead sheet' }[s.version];
+    const vTag = { original: 'Original', vocal: 'Piano + vocals', lead: 'Lead sheet' }[s.version];
     items.push({ id: id('m'), kind: 'score', title: s.title, artist: s.artist, tags: [vTag, ...s.tags], createdAt: created, updatedAt: created,
-      tune: s.tune, version: s.version, source: s.source, method: s.method,
+      tune: s.tune, version: s.version, source: s.source,
       key: ['C', 'G', 'D', 'A', 'E', 'B', 'F#'][t.fifths] + ' major', bpm: t.bpm, transpose: 0, deleted: false });
   });
   // a few in the bin
@@ -282,8 +282,8 @@ export function buildMock() {
   tagAll('Musicals to learn', ['One Day More', 'Naughty', 'The Music of the Night', 'A Million Dreams']);
 
   const jobs = [
-    { id: 'job-1', title: 'One Day More (Les Misérables)', source: 'YouTube · youtu.be/one-day-more', outputs: ['vocal'], output: 'Piano + vocals', method: 'Direct transcription', stage: 2, progress: 0.4, startedAt: NOW - 90000, status: 'running' },
+    { id: 'job-1', title: 'One Day More (Les Misérables)', source: 'YouTube · youtu.be/one-day-more', outputs: ['vocal'], output: 'Piano + vocals', stage: 2, progress: 0.4, startedAt: NOW - 90000, status: 'running' },
   ];
 
-  return { version: 4, items, tags: [...TAGS, 'Piano recital', 'Ukulele club', 'Musicals to learn', 'Piano', 'Piano + vocals', 'Lead sheet'], plays, jobs, annotations: {} };
+  return { version: 5, items, tags: [...TAGS, 'Piano recital', 'Ukulele club', 'Musicals to learn', 'Original', 'Piano + vocals', 'Lead sheet'], plays, jobs, annotations: {} };
 }

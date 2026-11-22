@@ -65,7 +65,7 @@ export function itemView(main, { parts }) {
       <dl>
         <dt>Type</dt><dd>${badge(it.kind)} ${metaText(it)}</dd>
         ${it.kind === 'chords' ? `<dt>Source</dt><dd><a href="${esc(it.url)}" target="_blank" rel="noopener">${it.source === 'hopamchuan' ? 'Hợp Âm Chuẩn' : 'Ultimate Guitar'}</a></dd>` : ''}
-        ${it.kind === 'score' ? `<dt>Made from</dt><dd>${esc(it.source)}<br><small>${esc(it.method)} · ${it.bpm} bpm</small></dd>` : ''}
+        ${it.kind === 'score' ? `<dt>Made from</dt><dd>${esc(it.source)}<br><small>${it.bpm} bpm</small></dd>` : ''}
         <dt>Tags</dt><dd><div class="row-tags">${it.tags.map((t) => `<a class="tagchip" href="#/library?tag=${encodeURIComponent(t)}">${esc(t)}</a>`).join('') || '<span class="muted">None</span>'}</div><button class="link" id="dt-tags">Edit tags</button></dd>
         <dt>Practice</dt><dd>${plays.length} session${plays.length === 1 ? '' : 's'} · ${mins(total)}<br><small>Last played ${ago(store.lastPlayed(it.id))}</small></dd>
         <dt>Added</dt><dd>${new Date(it.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}</dd>

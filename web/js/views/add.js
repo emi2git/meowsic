@@ -4,7 +4,7 @@ import { $, esc, icon, toast, tagPicker, sheet as modal, CAT, ago } from '../ui.
 import { go } from '../app.js';
 import { CHORD_CHARTS, SEARCH_EXTRA, TUNES } from '../mock.js';
 import { parseChordPro, linesHtml, diagramsHtml } from '../chordchart.js';
-import { VERSIONS } from '../musicxml.js';
+import { VERSIONS, VERSION_HELP } from '../musicxml.js';
 import { keySelect } from './chordsview.js';
 import { sheetUrl } from '../sheet-art.js';
 
@@ -230,10 +230,11 @@ function pasteChart() {
 }
 
 // ================= score =================
+export const GEN_STAGES = ['Read the score', 'Arrange', 'Write the score', 'Draw the pages'];
 export const STAGES = ['Download audio', 'Separate voice and instruments', 'Find the notes', 'Read the lyrics', 'Find key, beat and chords', 'Write the score', 'Draw the pages'];
 
 export function addScoreView(main) {
-  const f = { src: 'yt', outputs: new Set(['original']), method: 'Direct transcription' };
+  const f = { src: 'yt', outputs: new Set(['original']) };
   main.innerHTML = `
     <header class="top"><a class="icon-btn back" href="#/library" aria-label="Back">‹ Back</a><h1>Add score</h1></header>
     <div class="pad narrow" id="sf-jobs"></div>
@@ -244,16 +245,11 @@ export function addScoreView(main) {
       <div id="sf-file" hidden><label class="drop small"><input type="file" id="sf-audio" accept="audio/*,video/*" hidden><span class="btn">${icon('upload')}Choose audio file</span><span class="muted" id="sf-fname">MP3, M4A, WAV or a video</span></label></div>
       <label class="field">Title <input id="sf-title" placeholder="Filled in from the link or file"></label>
       <fieldset><legend>What do you want? <small class="muted">Pick one or more — each becomes its own entry.</small></legend><div class="cards" id="sf-out">
-        ${[['original', 'Piano', 'Two staves, both hands'], ['vocal', 'Piano + vocals', 'Melody with lyrics above the piano'], ['lead', 'Lead sheet', 'Melody, lyrics and chord names']].map(([v, k, d], i) =>
-          `<button type="button" class="card-opt ${i ? '' : 'on'}" data-o="${v}" aria-pressed="${!i}"><b>${k}</b><small>${d}</small></button>`).join('')}</div></fieldset>
-      <fieldset><legend>How?</legend><div class="cards" id="sf-method">
-        ${[['Direct transcription', 'Write down what is played'], ['Arrangement', 'The whole song as a piano piece'], ['Piano accompaniment', 'Only the accompaniment, no melody']].map(([k, d], i) =>
-          `<button type="button" class="card-opt ${i ? '' : 'on'}" data-v="${k}"><b>${k}</b><small>${d}</small></button>`).join('')}</div></fieldset>
+        ${Object.keys(VERSIONS).map((v, i) =>
+          `<button type="button" class="card-opt ${i ? '' : 'on'}" data-o="${v}" aria-pressed="${!i}"><b>${VERSIONS[v]}</b><small>${VERSION_HELP[v]}</small></button>`).join('')}</div></fieldset>
       <p class="muted">Runs on the Mac and takes about 3–6 minutes for a 4-minute song. Progress shows at the top of this page; you can keep using Meowsic meanwhile.</p>
       <button class="primary big" id="sf-go">${icon('wave')}Start</button>
     </form>`;
-  const pick = (id, key) => { $(id, main).onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; f[key] = b.dataset.v; $(id, main).querySelectorAll('[data-v]').forEach((x) => x.classList.toggle('on', x === b)); }; };
-  pick('#sf-method', 'method');
   $('#sf-out', main).onclick = (e) => {
     const b = e.target.closest('[data-o]');
     if (!b) return;
@@ -271,7 +267,7 @@ export function addScoreView(main) {
     const url = $('#sf-url', main).value.trim();
     if (f.src === 'yt' && !/^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//.test(url)) return toast('Paste a YouTube link first.');
     if (f.src === 'file' && !f.file) return toast('Choose an audio file first.');
-    store.addJob({ title: $('#sf-title', main).value.trim() || 'Untitled song', source: f.src === 'yt' ? 'YouTube · ' + url.replace(/^https?:\/\/(www\.)?/, '') : 'Audio file · ' + f.file, outputs: [...f.outputs], output: [...f.outputs].map((v) => VERSIONS[v]).join(' + '), method: f.method });
+    store.addJob({ title: $('#sf-title', main).value.trim() || 'Untitled song', source: f.src === 'yt' ? 'YouTube · ' + url.replace(/^https?:\/\/(www\.)?/, '') : 'Audio file · ' + f.file, outputs: [...f.outputs], output: [...f.outputs].map((v) => VERSIONS[v]).join(' + ') });
     e.target.reset();
     $('#sf-fname', main).textContent = 'MP3, M4A, WAV or a video';
     f.file = null;
@@ -286,9 +282,9 @@ function jobsList(host) {
     host.hidden = !jobs.length;
     host.innerHTML = `<h2 class="sub-h">In progress and done</h2>` + jobs.map((j) => `
       <section class="job ${j.status}">
-        <div class="job-head"><div><b>${esc(j.title)}</b><small>${esc(j.source)} · ${esc(j.output)} · ${esc(j.method)}</small></div>
+        <div class="job-head"><div><b>${esc(j.title)}</b><small>${esc(j.source)} · ${esc(j.output)}</small></div>
           ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : j.status === 'done' ? `${(j.items || []).map((x) => `<a class="btn primary" href="#/item/${x.id}">Open ${VERSIONS[x.version]}</a>`).join('')}<button data-dismiss="${j.id}">Dismiss</button>` : `<button data-dismiss="${j.id}">Dismiss</button>`}</div>
-        <ol class="stages">${STAGES.map((s, i) => `<li class="${i < j.stage || j.status === 'done' ? 'done' : i === j.stage && j.status === 'running' ? 'now' : ''}"><span>${s}</span>${i === j.stage && j.status === 'running' ? `<progress max="1" value="${j.progress}"></progress>` : ''}</li>`).join('')}</ol>
+        <ol class="stages">${(j.gen ? GEN_STAGES : STAGES).map((s, i) => `<li class="${i < j.stage || j.status === 'done' ? 'done' : i === j.stage && j.status === 'running' ? 'now' : ''}"><span>${s}</span>${i === j.stage && j.status === 'running' ? `<progress max="1" value="${j.progress}"></progress>` : ''}</li>`).join('')}</ol>
         <small class="muted">${j.status === 'running' ? `Started ${ago(j.startedAt)}` : j.status === 'done' ? `Finished ${ago(j.doneAt)}` : 'Cancelled'}</small>
       </section>`).join('');
   };
@@ -314,12 +310,12 @@ export function tickJobs() {
       let { stage, progress } = j;
       progress += 0.12 + Math.random() * 0.1;
       if (progress >= 1) { stage++; progress = 0; }
-      if (stage >= STAGES.length) {
-        const tune = tunes[Math.floor(Math.random() * tunes.length)];
-        const made = (j.outputs || ['original']).map((version) => store.add({ kind: 'score', title: j.title, artist: '', tags: [VERSIONS[version]], tune, version,
-          source: j.source, method: j.method, key: 'C major', bpm: TUNES[tune].bpm, transpose: 0 }));
+      if (stage >= (j.gen ? GEN_STAGES : STAGES).length) {
+        const tune = j.tune || tunes[Math.floor(Math.random() * tunes.length)];
+        const made = (j.outputs || ['original']).map((version) => store.add({ kind: 'score', title: j.title, artist: j.artist || '', tags: [VERSIONS[version], ...(j.tags || [])], tune, version,
+          source: j.source, key: j.key || 'C major', bpm: TUNES[tune].bpm, transpose: 0 }));
         store.updateJob(j.id, { status: 'done', stage, progress: 1, doneAt: Date.now(), items: made.map((x) => ({ id: x.id, version: x.version })) }, { quiet: false });
-        toast(`Score ready: ${j.title}`, { label: 'Open', run: () => go(`#/item/${made[0].id}`) });
+        toast(made.length > 1 ? `${made.length} new versions of ${j.title} are ready` : `${VERSIONS[made[0].version]} of ${j.title} is ready`, { label: 'Open', run: () => go(`#/item/${made[0].id}`) });
       } else store.updateJob(j.id, { stage, progress });
     }
   }, 700);

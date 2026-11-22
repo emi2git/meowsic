@@ -1,9 +1,9 @@
 // Score viewer: OpenSheetMusicDisplay notation, piano playback with a moving bar,
 // tempo, transpose, zoom; export lives in the More menu. Each version is its own entry.
 import { store } from '../store.js';
-import { $, esc, icon, iconOn, toast, menu } from '../ui.js';
+import { $, esc, icon, iconOn, toast, menu, sheet as modal } from '../ui.js';
 import { TUNES } from '../mock.js';
-import { musicXml, tuneNotes, VERSIONS } from '../musicxml.js';
+import { musicXml, tuneNotes, VERSIONS, VERSION_HELP } from '../musicxml.js';
 import { ScorePlayer } from '../audio.js';
 import { InkLayer } from './annotate.js';
 
@@ -122,6 +122,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
 // Export entries for the item's More menu
 export function scoreExportMenu(it, view) {
   return [
+    { label: 'Generate another version…', icon: 'plus', run: () => generateVersions(it) },
     { label: 'Export MusicXML (for MuseScore)', icon: 'download', run: () => download(`${it.title} - ${VERSIONS[view.version]}.musicxml`, view.xml(), 'application/vnd.recordare.musicxml+xml') },
     { label: 'Export MIDI', icon: 'download', run: () => toast('MIDI export comes with the Mac server (phase 2).') },
     { label: 'Export PDF', icon: 'download', run: () => toast('PDF export comes with the Mac server (phase 2).') },
@@ -179,4 +180,32 @@ function download(name, text, type) {
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+// make other arrangements of this score; each one becomes its own entry, tagged with its version
+function generateVersions(it) {
+  const have = new Set(store.items().filter((x) => x.kind === 'score' && x.title === it.title && x.tune === it.tune).map((x) => x.version));
+  const pick = new Set();
+  const s = modal(`<h2>Generate from “${esc(it.title)}”</h2>
+    <p class="muted">Pick one or more. Each becomes its own entry in the library.</p>
+    <div class="cards one-col" id="gv">${Object.keys(VERSIONS).map((v) => `<button type="button" class="card-opt" data-o="${v}" ${have.has(v) ? 'disabled' : ''}>
+      <b>${VERSIONS[v]}${have.has(v) ? ' <small class="muted">— already have it</small>' : ''}</b><small>${VERSION_HELP[v]}</small></button>`).join('')}</div>
+    <div class="modal-actions"><button data-close>Cancel</button><button class="primary" data-ok disabled>Generate</button></div>`, { wide: true });
+  const ok = s.el.querySelector('[data-ok]');
+  s.el.querySelector('#gv').onclick = (e) => {
+    const b = e.target.closest('[data-o]');
+    if (!b || b.disabled) return;
+    const v = b.dataset.o;
+    pick.has(v) ? pick.delete(v) : pick.add(v);
+    b.classList.toggle('on', pick.has(v));
+    ok.disabled = !pick.size;
+    ok.textContent = pick.size > 1 ? `Generate ${pick.size}` : 'Generate';
+  };
+  ok.onclick = () => {
+    const outputs = [...pick];
+    store.addJob({ gen: true, title: it.title, artist: it.artist, tags: it.tags.filter((t) => !Object.values(VERSIONS).includes(t)), tune: it.tune, key: it.key,
+      source: `From the score “${it.title}”`, outputs, output: outputs.map((v) => VERSIONS[v]).join(' + ') });
+    s.close();
+    toast(`Generating ${outputs.map((v) => VERSIONS[v]).join(', ')} — progress is in Add → Score`);
+  };
 }
