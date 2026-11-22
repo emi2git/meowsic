@@ -22,3 +22,4 @@ Plan (in order):
 ## 01:35 — migration done, real runners verified
 - Migration: 964 items (+4 Trash) in ~/Documents/Meowsic, 3.8 GB; verify OK; re-runs idempotent. 58 Meowsic-1 sheets wait for Photos "Download Originals" (user turned it on ~01:35) → re-run `migrate/migrate.py` later.
 - Real jobs through the UI: version 3 s, 20 s transcription 12 s (scratchpad/e2e/jobs.mjs).
+- USER REQUEST: after the Photos originals download finishes AND the migration re-run is done, open Photos → Settings (osascript: click menu item "Settings…" of menu "Photos") so the user can switch back to "Optimize Mac Storage". Tell the user.

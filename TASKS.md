@@ -39,7 +39,7 @@
 - [ ] Switch the server to HTTPS; Meowsic launcher in ~/Applications; certificate profile for iPad + iPhone
 - [ ] Test everything on the real library (Mac, iPad, iPhone sizes)
 - [ ] Retire Emi Songbook, Emi Music Note and old Meowsic.app launchers (after migration passes)
-- [ ] Pages only in iCloud (~198): re-run migration after "Download Originals" is turned on in Photos (user)
+- [ ] 58 iCloud-only sheets: re-run migration when Photos has downloaded originals (turned on 2026-11-23 01:35), then open Photos Settings so the user switches back to "Optimize Mac Storage"
 
 ## Requirements (agreed, not built yet)
 - ~~Icons per entry~~ — dropped by the user (2026-11-22): no song icons.
