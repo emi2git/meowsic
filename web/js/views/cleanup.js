@@ -1,20 +1,27 @@
-// Clean up: trim screen junk off sheet pages (✕ button, status bar, player bar, page dots) and fix odd
-// titles. The Mac finds the junk and suggests a trim; you check each one, move the lines if needed, and
-// trim. Everything can be undone (Z), and the original photo is always kept.
+// Clean up: every sheet song with what the Mac found — screen junk to trim (✕, status bar, player bar,
+// page dots), page dots that don't match the song's pages (photos grouped wrongly), odd titles.
+// Review any song: trim each page (suggested box, or draw your own), rename, mark it good. Everything
+// can be undone (Z) and the original photo is always kept.
 import { store } from '../store.js';
 import { $, esc, toast, sheet as modal, confirmSheet } from '../ui.js';
 
 const KEYS = [
-  ['Enter / T', 'Trim as shown, next page'],
-  ['F', 'Looks fine — no trim'],
-  ['→ / J', 'Next'], ['← / K', 'Back'],
-  ['↑ ↓', 'Move the top line'], ['Shift ↑ ↓', 'Move the bottom line'],
+  ['Enter / T', 'Trim this page as shown, go on'],
+  ['F', 'This page is fine — no trim'],
+  ['G', 'Whole song is good, next song'],
+  ['→ / J', 'Next page'], ['← / K', 'Previous page'],
+  ['] / N', 'Next song'], ['[ / P', 'Previous song'],
+  ['↑ ↓', 'Move the top edge'], ['Shift ↑ ↓', 'Move the bottom edge'],
+  ['⌥ ← →', 'Move the left edge'], ['⌥ Shift ← →', 'Move the right edge'],
+  ['Drag on the page', 'Draw your own crop box'],
+  ['X', 'Back to the suggested box'], ['C', 'Whole page (clear the box)'],
   ['R', 'Rename the song'],
   ['Z / ⌘Z', 'Undo the last thing'],
   ['O', 'Back to the original photo'],
-  ['1 / 2', 'Pages tab / Titles tab'],
+  ['1 / 2', 'Songs / Odd titles'],
   ['?', 'These shortcuts'],
 ];
+const FILTERS = [['look', 'Needs a look'], ['good', 'Good'], ['all', 'All']];
 
 const api = async (method, path, body) => {
   const r = await fetch('/api' + path, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -22,149 +29,222 @@ const api = async (method, path, body) => {
   if (!r.ok) throw new Error(data.detail || 'The Mac said no.');
   return data;
 };
+const isGood = (s) => s.reviewed || !s.issues.length;
+const full = () => ({ top: 0, bottom: 1, left: 0, right: 1 });
 
 export function cleanupView(main) {
   if (store.mode !== 'server') {
     main.innerHTML = '<header class="top"><h1>Clean up</h1></header><p class="pad muted">Clean up needs the Mac.</p>';
     return;
   }
-  const st = { tab: 'pages', pages: [], titles: [], i: 0, ti: 0, scan: null, crop: null, undo: [], busy: false, renaming: false };
+  const st = { tab: 'songs', filter: 'look', songs: [], titles: [], sid: null, pi: 0, ti: 0, scan: null, crop: null, undo: [], busy: false, renaming: false };
   main.innerHTML = `<header class="top"><h1>Clean up</h1>
-      <div class="cu-tabs" role="tablist"><button data-tab="pages">Pages to trim <i id="cu-np"></i></button><button data-tab="titles">Odd titles <i id="cu-nt"></i></button></div>
+      <div class="cu-tabs" role="tablist"><button data-tab="songs">Songs</button><button data-tab="titles">Odd titles <i id="cu-nt"></i></button></div>
+      <div class="cu-tabs cu-filter" id="cu-filter">${FILTERS.map(([k, l]) => `<button data-f="${k}">${l} <i></i></button>`).join('')}</div>
       <span class="muted small" id="cu-scan"></span>
       <div class="top-actions"><button id="cu-all" class="ghost">Trim all…</button><button id="cu-rescan" class="ghost">Scan again</button><button id="cu-keys" class="ghost" title="Keyboard shortcuts (?)">⌨︎ Keys</button></div></header>
     <div class="cu" id="cu"></div>`;
   const body = $('#cu', main);
 
+  const shown = () => st.songs.filter((s) => (st.filter === 'all' ? true : st.filter === 'good' ? isGood(s) : !isGood(s)));
+  const song = () => st.songs.find((s) => s.id === st.sid);
+  const pg = () => song()?.pages[st.pi];
+
   const load = async () => {
     const d = await api('GET', '/cleanup');
-    st.scan = d.scan;
-    const was = st.pages[st.i] && `${st.pages[st.i].id}:${st.pages[st.i].page}`;
-    st.pages = d.pages; st.titles = d.titles;
-    if (was) { const k = st.pages.findIndex((p) => `${p.id}:${p.page}` === was); if (k >= 0) st.i = k; }
-    st.i = Math.min(st.i, Math.max(0, st.pages.length - 1));
+    st.scan = d.scan; st.songs = d.songs; st.titles = d.titles;
+    if (!song()) { st.sid = shown()[0]?.id || null; st.pi = 0; }
     st.ti = Math.min(st.ti, Math.max(0, st.titles.length - 1));
     draw();
-    if (d.scan.running) setTimeout(() => main.isConnected && load(), 4000);
+    if (d.scan.running) setTimeout(() => main.isConnected && !st.busy && load(), 6000);
+  };
+  // refresh one song after a change (the Mac looks at the page again)
+  const reloadSong = async (id) => {
+    const d = await api('GET', `/cleanup?id=${encodeURIComponent(id)}`);
+    const fresh = d.songs[0], k = st.songs.findIndex((s) => s.id === id);
+    if (fresh && k >= 0) st.songs[k] = fresh;
+    st.titles = st.titles.filter((t) => t.id !== id).concat(d.titles).sort((a, b) => a.title.localeCompare(b.title));
   };
 
-  const cur = () => st.pages[st.i];
   const drawHead = () => {
-    $('#cu-np', main).textContent = st.pages.filter((p) => p.suggest).length || '';
     $('#cu-nt', main).textContent = st.titles.length || '';
     main.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === st.tab));
+    const n = { look: st.songs.filter((s) => !isGood(s)).length, good: st.songs.filter(isGood).length, all: st.songs.length };
+    main.querySelectorAll('[data-f]').forEach((b) => { b.classList.toggle('on', b.dataset.f === st.filter); b.querySelector('i').textContent = n[b.dataset.f]; });
+    $('#cu-filter', main).hidden = st.tab !== 'songs';
     const s = st.scan;
     $('#cu-scan', main).textContent = s?.running ? `Looking at pages… ${s.done} / ${s.total}` : '';
-    $('#cu-all', main).hidden = st.tab !== 'pages' || !st.pages.some((p) => p.suggest);
+    $('#cu-all', main).hidden = st.tab !== 'songs' || !st.songs.some((x) => !x.reviewed && x.pages.some((p) => p.trim));
   };
+
+  const songLine = (s) => (s.reviewed ? 'marked good' : s.issues.length ? s.issues.map((i) => i.text).join(' · ') : 'looks good') + (s.trimmed ? ` · ${s.trimmed} trimmed` : '');
 
   const draw = () => {
     drawHead();
     body.classList.toggle('titles', st.tab === 'titles');
     if (st.tab === 'titles') return drawTitles();
-    if (!st.pages.length) {
-      body.innerHTML = `<p class="pad muted">${st.scan?.running ? 'Looking for pages to trim…' : st.scan?.total ? 'Nothing to trim. 🎉' : 'Not scanned yet.'} ${!st.scan?.running ? '<button id="cu-go" class="primary">Scan pages</button>' : ''}</p>`;
-      $('#cu-go', body)?.addEventListener('click', rescan);
+    const list = shown();
+    if (!list.length) {
+      body.innerHTML = `<p class="pad muted">${st.scan?.running ? 'Looking at pages…' : st.filter === 'look' ? 'Nothing needs a look. 🎉' : 'No songs here.'}</p>`;
       return;
     }
-    const p = cur(), it = store.get(p.id);
-    st.crop = st.crop?.key === `${p.id}:${p.page}` ? st.crop : { key: `${p.id}:${p.page}`, top: p.suggest?.top ?? 0, bottom: p.suggest?.bottom ?? 1 };
+    if (!list.some((s) => s.id === st.sid)) { st.sid = list[0].id; st.pi = 0; }
+    const s = song(), p = pg(), it = store.get(s.id);
+    if (!p) { body.innerHTML = '<p class="pad muted">This song has no pages.</p>'; return; }
+    const key = `${s.id}:${p.page}`;
+    if (st.crop?.key !== key) st.crop = { key, ...full(), ...(p.trim ? { top: p.trim.top, bottom: p.trim.bottom } : {}) };
+    const ver = it?.updatedAt || 0;
     body.innerHTML = `
-      <ol class="cu-list" id="cu-list">${st.pages.map((x, k) => `<li class="${k === st.i ? 'on' : ''} ${x.suggest ? '' : 'done'}" data-k="${k}"><b>${esc(x.title)}</b><small>p ${x.page}${x.suggest ? ' · ' + esc(x.suggest.reasons.join(', ')) : ' · trimmed'}${x.trims ? ` · ${x.trims}×` : ''}</small></li>`).join('')}</ol>
+      <ol class="cu-list" id="cu-list">${list.map((x) => `<li class="${x.id === st.sid ? 'on' : ''} ${isGood(x) ? 'good' : 'look'}" data-id="${x.id}">
+        <b>${esc(store.get(x.id)?.title || x.title)}</b><small>${x.pages.length} p · ${esc(songLine(x))}</small></li>`).join('')}</ol>
       <section class="cu-main">
         <div class="cu-bar">
-          <input id="cu-title" value="${esc(it?.title || p.title)}" aria-label="Title" readonly title="R to rename">
-          <span class="muted small">Page ${p.page} of ${it?.pages ?? '?'} · ${st.i + 1} / ${st.pages.length}</span>
+          <input id="cu-title" value="${esc(it?.title || s.title)}" aria-label="Title" readonly title="R to rename">
           <span class="grow"></span>
           ${p.trims ? '<button id="cu-orig" class="ghost">Original (O)</button>' : ''}
-          <button id="cu-fine" class="ghost">Looks fine (F)</button>
-          <button id="cu-trim" class="primary">Trim (Enter)</button>
+          <button id="cu-fine" class="ghost" title="F">Page is fine</button>
+          <button id="cu-good" class="ghost" title="G">${s.reviewed ? 'Needs a look' : 'Song is good'}</button>
+          <button id="cu-trim" class="primary" title="Enter">Trim</button>
         </div>
+        ${s.issues.length ? `<div class="cu-issues">${s.issues.map((i) => `<span class="cu-issue ${i.kind}">${esc(i.text)}</span>`).join('')}${s.issues.some((i) => i.kind === 'dots') ? `<a class="link small" href="#/item/${s.id}" target="_blank">Open the song to split or join ›</a>` : ''}</div>` : ''}
+        <div class="cu-strip">${s.pages.map((x, k) => `<button class="${k === st.pi ? 'on' : ''}" data-p="${k}" title="Page ${x.page}">
+          <img src="${store.fileUrl(s.id, it?.pageFiles?.[x.page - 1] || x.file)}?v=${ver}" alt="" loading="lazy">
+          <span>${x.page}${x.dots ? ` · dot ${x.dots.lit ?? '?'}/${x.dots.count}` : ''}${x.trim ? ' · ✂' : x.trims ? ' · ✓' : ''}</span></button>`).join('')}</div>
         <div class="cu-stage" id="cu-stage"><div class="cu-img">
-          <img id="cu-img" src="${store.fileUrl(p.id, it?.pageFiles?.[p.page - 1] || p.file)}?v=${it?.updatedAt || 0}" alt="" draggable="false">
-          <div class="cu-shade top"></div><div class="cu-shade bottom"></div>
-          <div class="cu-line top" data-edge="top"><span>drag</span></div><div class="cu-line bottom" data-edge="bottom"><span>drag</span></div>
+          <img id="cu-img" src="${store.fileUrl(s.id, it?.pageFiles?.[p.page - 1] || p.file)}?v=${ver}" alt="" draggable="false">
+          <div class="cu-shade"></div>
+          <div class="cu-box"><i data-e="top"></i><i data-e="bottom"></i><i data-e="left"></i><i data-e="right"></i>
+            <i data-e="top left"></i><i data-e="top right"></i><i data-e="bottom left"></i><i data-e="bottom right"></i></div>
         </div></div>
+        <p class="cu-hint muted small">${p.trim ? `Suggested: ${esc(p.trim.reasons.join(', '))}. ` : ''}Drag the edges, or drag on the page to draw your own box. ? = keys</p>
       </section>`;
-    placeLines();
+    placeBox();
     body.querySelector('.cu-list li.on')?.scrollIntoView({ block: 'nearest' });
-    $('#cu-list', body).onclick = (e) => { const li = e.target.closest('[data-k]'); if (li) { st.i = +li.dataset.k; draw(); } };
+    $('#cu-list', body).onclick = (e) => { const li = e.target.closest('[data-id]'); if (li) { st.sid = li.dataset.id; st.pi = 0; st.crop = null; draw(); } };
+    body.querySelector('.cu-strip').onclick = (e) => { const b = e.target.closest('[data-p]'); if (b) { st.pi = +b.dataset.p; draw(); } };
     $('#cu-trim', body).onclick = doTrim;
     $('#cu-fine', body).onclick = fine;
+    $('#cu-good', body).onclick = songGood;
     $('#cu-orig', body)?.addEventListener('click', original);
     $('#cu-title', body).onclick = () => rename();
-    for (const ln of body.querySelectorAll('.cu-line')) ln.onpointerdown = dragLine;
+    $('.cu-img', body).onpointerdown = drag;
   };
 
-  const placeLines = () => {
+  const placeBox = () => {
     const c = st.crop, box = $('.cu-img', body);
     if (!box) return;
-    box.style.setProperty('--t', c.top * 100 + '%');
-    box.style.setProperty('--b', c.bottom * 100 + '%');
+    for (const k of ['top', 'bottom', 'left', 'right']) box.style.setProperty('--' + k[0], c[k] * 100 + '%');
   };
-  const dragLine = (e) => {
-    const edge = e.currentTarget.dataset.edge, img = $('#cu-img', body);
+  // drag an edge / corner of the box, or anywhere else on the page to draw a new box
+  const drag = (e) => {
+    const img = $('#cu-img', body), r = img.getBoundingClientRect();
+    const at = (ev) => [Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height))];
+    const edges = e.target.dataset?.e?.split(' ');
+    const [x0, y0] = at(e), c = st.crop;
     e.preventDefault();
     const move = (ev) => {
-      const r = img.getBoundingClientRect();
-      let y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height));
-      if (edge === 'top') st.crop.top = Math.min(y, st.crop.bottom - 0.2); else st.crop.bottom = Math.max(y, st.crop.top + 0.2);
-      placeLines();
+      const [x, y] = at(ev);
+      if (edges) {
+        for (const ed of edges) {
+          if (ed === 'top') c.top = Math.min(y, c.bottom - 0.1);
+          if (ed === 'bottom') c.bottom = Math.max(y, c.top + 0.1);
+          if (ed === 'left') c.left = Math.min(x, c.right - 0.1);
+          if (ed === 'right') c.right = Math.max(x, c.left + 0.1);
+        }
+      } else if (Math.abs(x - x0) > 0.02 || Math.abs(y - y0) > 0.02) {
+        Object.assign(c, { top: Math.min(y, y0), bottom: Math.max(y, y0), left: Math.min(x, x0), right: Math.max(x, x0) });
+      }
+      placeBox();
     };
-    const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); };
+    const up = () => {
+      removeEventListener('pointermove', move); removeEventListener('pointerup', up);
+      if (c.bottom - c.top < 0.2 || c.right - c.left < 0.2) { Object.assign(c, full()); placeBox(); toast('Box too small — whole page'); }
+    };
     addEventListener('pointermove', move); addEventListener('pointerup', up);
   };
   const nudge = (edge, d) => {
-    if (edge === 'top') st.crop.top = Math.min(st.crop.bottom - 0.2, Math.max(0, st.crop.top + d));
-    else st.crop.bottom = Math.max(st.crop.top + 0.2, Math.min(1, st.crop.bottom + d));
-    placeLines();
+    const c = st.crop;
+    if (!c) return;
+    if (edge === 'top') c.top = Math.min(c.bottom - 0.2, Math.max(0, c.top + d));
+    if (edge === 'bottom') c.bottom = Math.max(c.top + 0.2, Math.min(1, c.bottom + d));
+    if (edge === 'left') c.left = Math.min(c.right - 0.2, Math.max(0, c.left + d));
+    if (edge === 'right') c.right = Math.max(c.left + 0.2, Math.min(1, c.right + d));
+    placeBox();
   };
 
-  const step = (d) => {
-    if (st.tab === 'titles') { st.ti = Math.max(0, Math.min(st.titles.length - 1, st.ti + d)); return drawTitles(); }
-    st.i = Math.max(0, Math.min(st.pages.length - 1, st.i + d)); draw();
+  const goPage = (d) => {
+    const s = song(); if (!s) return;
+    const k = st.pi + d;
+    if (k >= 0 && k < s.pages.length) { st.pi = k; return draw(); }
+    goSong(d, d < 0);
   };
-  const nextTodo = () => { const k = st.pages.findIndex((x, j) => j > st.i && x.suggest); st.i = k >= 0 ? k : Math.min(st.i + 1, st.pages.length - 1); };
+  const goSong = (d, last = false) => {
+    const list = shown(), k = list.findIndex((x) => x.id === st.sid);
+    const nx = list[Math.max(0, Math.min(list.length - 1, (k < 0 ? 0 : k) + d))];
+    if (!nx) return;
+    st.sid = nx.id; st.pi = last ? nx.pages.length - 1 : 0; st.crop = null; draw();
+  };
+  // after an action on a page: the next page that still needs a trim in this song, else the next page
+  const onward = () => {
+    const s = song();
+    if (!s) return draw();
+    const k = s.pages.findIndex((x, j) => j > st.pi && x.trim);
+    if (k >= 0) st.pi = k; else if (st.pi < s.pages.length - 1) st.pi++;
+    draw();
+  };
 
   const busy = async (fn) => { if (st.busy) return; st.busy = true; try { await fn(); } catch (e) { toast(e.message); } finally { st.busy = false; } };
 
-  const doTrim = () => busy(async () => {
-    const p = cur(), c = st.crop;
-    if (c.top <= 0.001 && c.bottom >= 0.999) return fine();
-    const it = await api('POST', `/items/${p.id}/pages/${p.page}/trim`, { top: c.top, bottom: c.bottom });
-    store.putItem(it);
-    st.undo.push({ label: 'trim', run: async () => { store.putItem(await api('POST', `/items/${p.id}/pages/${p.page}/untrim`, {})); }, at: p });
-    p.suggest = null; p.trims++; st.crop = null;
-    nextTodo(); draw();
-  });
+  const doTrim = () => {
+    const c = st.crop;
+    if (!c) return;
+    if (c.top <= 0.001 && c.bottom >= 0.999 && c.left <= 0.001 && c.right >= 0.999) return fine();
+    return busy(async () => {
+      const s = song(), p = pg();
+      store.putItem(await api('POST', `/items/${s.id}/pages/${p.page}/trim`, { top: c.top, bottom: c.bottom, left: c.left, right: c.right }));
+      st.undo.push({ label: 'trim', run: async () => store.putItem(await api('POST', `/items/${s.id}/pages/${p.page}/untrim`, {})), at: [s.id, st.pi] });
+      await reloadSong(s.id); st.crop = null; onward();
+    });
+  };
   const fine = () => busy(async () => {
-    const p = cur(), key = `${p.id}:${p.page}`;
+    const s = song(), p = pg(), key = `${s.id}:${p.page}`;
     await api('POST', '/cleanup/ok', { key });
-    st.undo.push({ label: 'looks fine', run: () => api('POST', '/cleanup/ok', { key, undo: true }), at: p });
-    if (p.trims) p.suggest = null; else st.pages.splice(st.i, 1);
-    st.crop = null;
-    if (p.trims) nextTodo();
-    st.i = Math.min(st.i, st.pages.length - 1); draw();
+    st.undo.push({ label: 'page is fine', run: () => api('POST', '/cleanup/ok', { key, undo: true }), at: [s.id, st.pi] });
+    await reloadSong(s.id); st.crop = null; onward();
+  });
+  const songGood = () => busy(async () => {
+    const s = song(), key = `song:${s.id}`, was = s.reviewed;
+    await api('POST', '/cleanup/ok', { key, undo: was });
+    st.undo.push({ label: was ? 'needs a look' : 'song is good', run: () => api('POST', '/cleanup/ok', { key, undo: !was }), at: [s.id, 0] });
+    const k = shown().findIndex((x) => x.id === s.id);
+    await reloadSong(s.id);
+    if (!was) toast(`“${s.title}” is good`);
+    const after = shown();
+    if (!after.some((x) => x.id === s.id)) { const nx = after[Math.min(k, after.length - 1)]; st.sid = nx?.id || null; st.pi = 0; st.crop = null; draw(); }
+    else if (!was) goSong(1);
+    else draw();
   });
   const original = () => busy(async () => {
-    const p = cur();
+    const s = song(), p = pg();
     if (!p?.trims) return;
-    store.putItem(await api('POST', `/items/${p.id}/pages/${p.page}/untrim`, { all: true }));
+    store.putItem(await api('POST', `/items/${s.id}/pages/${p.page}/untrim`, { all: true }));
     toast('Back to the original photo');
-    st.crop = null; await load();
+    await reloadSong(s.id); st.crop = null; draw();
   });
   const undo = () => busy(async () => {
     const u = st.undo.pop();
     if (!u) return toast('Nothing to undo');
     await u.run();
     toast(`Undone: ${u.label}`);
-    st.crop = null; await load();
-    if (u.at && st.tab === 'pages') { const k = st.pages.findIndex((x) => x.id === u.at.id && x.page === u.at.page); if (k >= 0) { st.i = k; draw(); } }
+    if (u.at) { await reloadSong(u.at[0]); if (st.tab === 'songs') { st.sid = u.at[0]; st.pi = u.at[1]; if (!shown().some((x) => x.id === st.sid)) st.filter = 'all'; } }
+    else await load();
+    st.crop = null; draw();
   });
 
   // rename: the title box becomes editable; Enter saves, Esc cancels
-  const rename = (id = st.tab === 'pages' ? cur()?.id : st.titles[st.ti]?.id) => {
-    const inp = st.tab === 'pages' ? $('#cu-title', body) : body.querySelector(`.cu-trow[data-id="${id}"] input`);
+  const setTitle = async (id, title) => store.putItem(await api('PATCH', `/items/${id}`, { title }));
+  const rename = (id = st.tab === 'songs' ? st.sid : st.titles[st.ti]?.id) => {
+    const inp = st.tab === 'songs' ? $('#cu-title', body) : body.querySelector(`.cu-trow[data-id="${id}"] input`);
     const it = store.get(id);
     if (!inp || !it) return;
     st.renaming = true;
@@ -176,17 +256,16 @@ export function cleanupView(main) {
       if (!save || !t || t === old) { inp.value = old; return; }
       busy(async () => {
         await setTitle(id, t);
-        st.undo.push({ label: 'rename', run: () => setTitle(id, old) });
+        st.undo.push({ label: 'rename', run: async () => { await setTitle(id, old); }, at: st.tab === 'songs' ? [id, st.pi] : null });
         toast(`Renamed to “${t}”`);
-        if (st.tab === 'titles') { st.titles.splice(st.ti, 1); st.ti = Math.min(st.ti, st.titles.length - 1); }
-        await load(); // file names follow the title
+        await reloadSong(id); // file names follow the title
+        if (st.tab === 'titles') st.ti = Math.min(st.ti, st.titles.length - 1);
+        draw();
       });
     };
     inp.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter') done(true); else if (e.key === 'Escape') done(false); };
     inp.onblur = () => done(true);
   };
-
-  const setTitle = async (id, title) => store.putItem(await api('PATCH', `/items/${id}`, { title }));
 
   const drawTitles = () => {
     if (!st.titles.length) { body.innerHTML = '<p class="pad muted">No odd titles. 🎉</p>'; return; }
@@ -210,26 +289,33 @@ export function cleanupView(main) {
     const key = `title:${x.id}`;
     await api('POST', '/cleanup/ok', { key });
     st.undo.push({ label: 'title is fine', run: () => api('POST', '/cleanup/ok', { key, undo: true }) });
-    st.titles.splice(st.ti, 1); st.ti = Math.min(st.ti, st.titles.length - 1); drawTitles(); drawHead();
+    await reloadSong(x.id); st.ti = Math.min(st.ti, st.titles.length - 1); drawTitles(); drawHead();
   });
+  const step = (d) => { st.ti = Math.max(0, Math.min(st.titles.length - 1, st.ti + d)); drawTitles(); };
 
   const rescan = () => busy(async () => { st.scan = await api('POST', '/cleanup/scan'); drawHead(); setTimeout(load, 1500); });
   const trimAll = async () => {
-    const todo = st.pages.filter((p) => p.suggest);
+    const todo = st.songs.filter((s) => !s.reviewed).flatMap((s) => s.pages.filter((p) => p.trim).map((p) => ({ id: s.id, p })));
     if (!(await confirmSheet({ title: `Trim all ${todo.length} pages?`, body: 'Each page is trimmed as suggested. The original photos are kept — each can go back with Original (O).', ok: 'Trim all' }))) return;
     const m = modal(`<h2>Trimming…</h2><progress id="cu-p" max="${todo.length}" value="0"></progress><p class="muted small" id="cu-pm"></p>`);
     let n = 0;
-    for (const p of todo) {
+    st.busy = true;
+    for (const { id, p } of todo) {
       if (!m.el.isConnected) break;
-      try { store.putItem(await api('POST', `/items/${p.id}/pages/${p.page}/trim`, { top: p.suggest.top, bottom: p.suggest.bottom })); p.suggest = null; p.trims++; } catch {}
+      try { store.putItem(await api('POST', `/items/${id}/pages/${p.page}/trim`, { top: p.trim.top, bottom: p.trim.bottom })); } catch {}
       n++; $('#cu-p', m.el).value = n; $('#cu-pm', m.el).textContent = `${n} / ${todo.length}`;
     }
+    st.busy = false;
     m.close();
     store.logEvent('cleanup', `Trimmed ${n} pages`);
-    toast(`Trimmed ${n} pages`); draw();
+    toast(`Trimmed ${n} pages`); await load();
   };
 
-  main.querySelector('.cu-tabs').onclick = (e) => { const b = e.target.closest('[data-tab]'); if (b) { st.tab = b.dataset.tab; draw(); } };
+  main.querySelectorAll('.cu-tabs').forEach((t) => (t.onclick = (e) => {
+    const b = e.target.closest('[data-tab], [data-f]'); if (!b) return;
+    if (b.dataset.tab) st.tab = b.dataset.tab; else { st.filter = b.dataset.f; st.crop = null; }
+    draw();
+  }));
   $('#cu-rescan', main).onclick = rescan;
   $('#cu-all', main).onclick = trimAll;
   const help = () => modal(`<h2>Keyboard shortcuts</h2><table class="cu-keys">${KEYS.map(([k, d]) => `<tr><td><kbd>${k}</kbd></td><td>${d}</td></tr>`).join('')}</table><div class="modal-actions"><button class="primary" data-close>OK</button></div>`);
@@ -238,15 +324,20 @@ export function cleanupView(main) {
   const onKey = (e) => {
     if (!main.isConnected) return removeEventListener('keydown', onKey);
     if (st.renaming || document.querySelector('.modal') || e.target.matches?.('input:not([readonly]), textarea')) return;
-    const k = e.key, pages = st.tab === 'pages';
+    const k = e.key, songs = st.tab === 'songs';
+    if (songs && e.altKey && (k === 'ArrowLeft' || k === 'ArrowRight')) { e.preventDefault(); return nudge(e.shiftKey ? 'right' : 'left', k === 'ArrowLeft' ? -0.005 : 0.005); }
     const act = {
-      Enter: () => (pages ? doTrim() : rename()), t: () => pages && doTrim(),
-      f: () => (pages ? fine() : titleFine()),
-      ArrowRight: () => step(1), j: () => step(1), ArrowLeft: () => step(-1), k: () => step(-1),
-      ArrowUp: () => (pages ? nudge(e.shiftKey ? 'bottom' : 'top', -0.005) : step(-1)),
-      ArrowDown: () => (pages ? nudge(e.shiftKey ? 'bottom' : 'top', 0.005) : step(1)),
-      r: () => rename(), z: () => undo(), o: () => pages && original(),
-      1: () => { st.tab = 'pages'; draw(); }, 2: () => { st.tab = 'titles'; draw(); }, '?': help,
+      Enter: () => (songs ? doTrim() : rename()), t: () => songs && doTrim(),
+      f: () => (songs ? fine() : titleFine()), g: () => songs && songGood(),
+      ArrowRight: () => songs && goPage(1), j: () => (songs ? goPage(1) : step(1)),
+      ArrowLeft: () => songs && goPage(-1), k: () => (songs ? goPage(-1) : step(-1)),
+      ']': () => songs && goSong(1), n: () => songs && goSong(1), '[': () => songs && goSong(-1), p: () => songs && goSong(-1),
+      ArrowUp: () => (songs ? nudge(e.shiftKey ? 'bottom' : 'top', -0.005) : step(-1)),
+      ArrowDown: () => (songs ? nudge(e.shiftKey ? 'bottom' : 'top', 0.005) : step(1)),
+      x: () => { if (songs && pg()) { st.crop = null; draw(); } },
+      c: () => { if (songs && st.crop) { Object.assign(st.crop, full()); placeBox(); } },
+      r: () => rename(), z: () => undo(), o: () => songs && original(),
+      1: () => { st.tab = 'songs'; draw(); }, 2: () => { st.tab = 'titles'; draw(); }, '?': help,
     }[k.length === 1 ? k.toLowerCase() : k];
     if (!act || (e.metaKey && k.toLowerCase() !== 'z') || e.ctrlKey || e.altKey) return;
     e.preventDefault(); act();

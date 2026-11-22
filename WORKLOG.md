@@ -59,3 +59,9 @@ Next: frontend refactor (dead list-view code in library.js, shared helpers), mig
 - web/js/views/cleanup.js: Utilities → Clean up. Keys: Enter/T trim+next, F fine, →/J ←/K, ↑↓ top line, Shift↑↓ bottom line, R rename, Z/⌘Z undo, O original, 1/2 tabs, ? help. "Trim all…" with confirm.
 - Test scratchpad/e2e/cleanup.mjs 20/20 (:5190). Server tests 62 passed. Real server restarted (start.sh, log ~/Documents/Meowsic/work/server.log).
 - server/app.py registration is uncommitted together with the AI agent's ai.py work.
+
+## 04:20 — Clean up round 2
+- trim.py: even top/bottom margins; page dots read from the original photo (count + lit dot); page numbers no longer mistaken for dots.
+- cleanup.py: every sheet song with issues (trim / dots: mixed songs, missing or extra pages, same page twice, out of order / odd title), "song is good" (G), ?id= for one song; cache v2.
+- cleanup.js rebuilt: songs list with status + filters (Needs a look / Good / All), page strip with dot numbers, free crop box (edges, corners, draw your own), keys ] [ for songs, ⌥←→ left/right edges, X suggested box, C whole page.
+- Test e2e/cleanup.mjs 27/27; server tests 62 passed. Real server restarted, rescan running.

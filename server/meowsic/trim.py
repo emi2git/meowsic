@@ -33,8 +33,7 @@ def _bands(ink_rows, min_gap):
     return out
 
 
-def analyze(path) -> dict | None:
-    a = _load(path)
+def _trim(a) -> dict | None:
     h, w, _ = a.shape
     gray = a.mean(axis=2)
     sat = a.max(axis=2) - a.min(axis=2)
@@ -77,20 +76,23 @@ def analyze(path) -> dict | None:
     bottom = h
     for b in reversed(info[last + 1:]):
         player = b['x0'] < 0.15 and b['x1'] > 0.85 and b['fill'] < 0.12   # buttons at both sides, gap between
-        small = b['h'] < 0.012 and b['x0'] > 0.25 and b['x1'] < 0.75       # page dots, home bar (centred)
+        small = b['h'] < 0.012 and b['x0'] > 0.25 and b['x1'] < 0.75 and b['x1'] - b['x0'] > 0.04  # page dots, home bar (centred, wider than a page number)
         if b['s'] / h > 0.85 and (player or small or b['colour']):
             bottom = b['s']; reasons.append('player bar' if player else 'page dots' if small else 'coloured bar')
         else:
             break
     if not {'top bar', 'player bar', 'page dots', 'coloured bar'} & set(reasons): return None  # a page number alone is not junk
-    pad = int(h * 0.008)
-    t = max(0, top + pad) if top else 0
-    bt = min(h, bottom - pad) if bottom < h else h
-    # never cut into the music: keep the gap above the first staff band and below the last
-    nxt = next((b['s'] for b in info if b['s'] >= top), 0)
-    prv = max((b['e'] for b in info if b['e'] <= bottom), default=h)
-    t = min(t, max(0, nxt - pad)) if top else 0
-    bt = max(bt, min(h, prv + pad)) if bottom < h else h
+    # even margins: the white space kept above the music ≈ the white space kept below it
+    c_top = next((b['s'] for b in info if b['s'] >= top), 0)
+    c_bot = max((b['e'] for b in info if b['e'] <= bottom), default=h)
+    cap = int(h * 0.035)
+    gap_t = c_top - top if top else c_top          # room we may keep above
+    gap_b = bottom - c_bot if bottom < h else h - c_bot
+    if top and bottom < h: m_t = m_b = min(gap_t, gap_b, cap)
+    elif top: m_t = min(gap_t, cap, h - c_bot); m_b = None
+    else: m_b = min(gap_b, cap, c_top); m_t = None
+    t = c_top - m_t if m_t is not None else 0
+    bt = c_bot + m_b if m_b is not None else h
     if t <= 0 and bt >= h: return None
     return {'top': round(t / h, 4), 'bottom': round(bt / h, 4), 'reasons': sorted(set(reasons))}
 
@@ -103,3 +105,47 @@ def crop(src, dst, top: float, bottom: float, left: float = 0, right: float = 1)
     fmt = 'PNG' if str(dst).lower().endswith('.png') else 'JPEG'
     if fmt == 'JPEG' and out.mode not in ('RGB', 'L'): out = out.convert('RGB')
     out.save(dst, fmt, **({'quality': 92} if fmt == 'JPEG' else {}))
+
+
+def _dots(path):
+    """The page dots of a reader app under the page: how many, and which one is lit (1-based)."""
+    im = ImageOps.exif_transpose(Image.open(path)).convert('L')
+    W0, H0 = im.size
+    y0 = int(H0 * 0.86)
+    g = np.asarray(im.crop((int(W0 * 0.25), y0, int(W0 * 0.75), H0)), dtype=np.int16)
+    bg = np.median(g)
+    mask = g < bg - 25
+    out = None
+    for s, e in _bands(mask.any(axis=1), min_gap=2):
+        bh = e - s
+        if not (H0 * 0.002 <= bh <= H0 * 0.014): continue
+        cols = mask[s:e].any(axis=0)
+        runs, x = [], 0
+        while x < len(cols):
+            if cols[x]:
+                x1 = x
+                while x1 < len(cols) and cols[x1]: x1 += 1
+                runs.append((x, x1)); x = x1
+            else: x += 1
+        if not runs or len(runs) > 20: continue
+        if len(runs) == 1 and not (0.4 < (runs[0][0] + runs[0][1]) / 2 / len(cols) < 0.6): continue  # one page: one dot, centred
+        if not all(W0 * 0.003 <= r1 - r0 <= W0 * 0.016 and 0.5 <= (r1 - r0) / bh <= 2 for r0, r1 in runs): continue
+        centres = [(r0 + r1) / 2 for r0, r1 in runs]
+        steps = np.diff(centres)
+        if len(steps) > 1 and steps.std() / steps.mean() > 0.2: continue
+        shade = [g[s:e, r0:r1][mask[s:e, r0:r1]].mean() for r0, r1 in runs]
+        k = int(np.argmin(shade))
+        rest = [v for i, v in enumerate(shade) if i != k]
+        lit = 1 if len(runs) == 1 else k + 1 if np.median(rest) - shade[k] > 25 else None
+        out = {'count': len(runs), 'lit': lit}
+    return out
+
+
+def analyze(path, original=None) -> dict:
+    """{'trim': {top, bottom, reasons} | None, 'dots': {count, lit} | None}. Dots come from the
+    original photo when the page was trimmed already (the dots are cut off then)."""
+    t = _trim(_load(path))
+    try: d = _dots(original or path)
+    except Exception: d = None
+    if t: t = {'top': float(t['top']), 'bottom': float(t['bottom']), 'reasons': t['reasons']}
+    return {'trim': t, 'dots': d}

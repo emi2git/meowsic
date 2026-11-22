@@ -44,6 +44,22 @@ def _pages(c):
                      'WHERE i.deleted_at IS NULL AND i.folder IS NOT NULL ORDER BY i.created_at DESC, p.page').fetchall()
 
 
+CACHE_V = 2
+
+
+def _snaps(d: Path, page) -> list[Path]:
+    """Earlier versions of a page kept by trims, oldest first (the first is the original photo)."""
+    h = d / '.history'
+    if not h.is_dir(): return []
+    return sorted((p for p in h.glob(f'p{page}-*') if p.suffix != '.json'), key=lambda p: int(p.stem.split('-')[1]))
+
+
+def _analyze(d: Path, page, file):
+    snaps = _snaps(d, page)
+    try: return trim.analyze(d / file, snaps[0] if snaps else None)
+    except Exception: return {'trim': None, 'dots': None}
+
+
 def _run_scan(app):
     cf = app.state.cfg
     try:
@@ -51,22 +67,20 @@ def _run_scan(app):
         try: rows = _pages(c)
         finally: c.close()
         with _lock: data = _load(cf)
+        if data.get('v') != CACHE_V: data['pages'] = {}
         _scan.update(total=len(rows), done=0)
         for k, (iid, page, file, folder) in enumerate(rows):
-            p = cf.items_dir / folder / file
+            d = cf.items_dir / folder
             key = f'{iid}:{page}'
-            try: mt = int(p.stat().st_mtime)
+            try: mt = int((d / file).stat().st_mtime)
             except OSError: _scan['done'] = k + 1; continue
             old = data['pages'].get(key)
             if not old or old[0] != mt or old[2] != file:
-                try: res = trim.analyze(p)
-                except Exception: res = None
-                if res: res = {'top': float(res['top']), 'bottom': float(res['bottom']), 'reasons': res['reasons']}
-                data['pages'][key] = [mt, res, file]
+                data['pages'][key] = [mt, _analyze(d, page, file), file]
             _scan['done'] = k + 1
             if k % 200 == 0:
-                with _lock: _save(cf, {**_load(cf), 'pages': data['pages']})
-        with _lock: _save(cf, {**_load(cf), 'pages': data['pages']})
+                with _lock: _save(cf, {**_load(cf), 'v': CACHE_V, 'pages': data['pages']})
+        with _lock: _save(cf, {**_load(cf), 'v': CACHE_V, 'pages': data['pages']})
     finally:
         _scan['running'] = False
 
@@ -102,29 +116,63 @@ def odd_title(title: str, kind: str):
     return None
 
 
+def dot_issues(pages) -> list[str]:
+    """What the reader-app page dots say about how the photos were grouped into this song."""
+    seen = [p['dots'] for p in pages if p.get('dots')]
+    if not seen: return []
+    n = len(pages)
+    counts = sorted({x['count'] for x in seen})
+    out = []
+    if len(counts) > 1:
+        out.append(f"page dots disagree ({' / '.join(map(str, counts))} pages) — photos of different songs mixed?")
+    elif counts[0] != n and len(seen) == n:
+        out.append(f"page dots say {counts[0]} page{'s' if counts[0] > 1 else ''}, the song has {n}" + (' — pages missing?' if counts[0] > n else ' — extra pages?'))
+    elif counts[0] < n:
+        out.append(f"page dots say {counts[0]} page{'s' if counts[0] > 1 else ''}, the song has {n} — extra pages?")
+    lits = [p['dots']['lit'] if p.get('dots') else None for p in pages]
+    known = [l for l in lits if l]
+    if len(known) != len(set(known)):
+        dup = sorted({l for l in known if known.count(l) > 1})
+        out.append(f"the same page twice (dot {', '.join(map(str, dup))})")
+    elif known != sorted(known):
+        out.append('pages out of order (dots ' + ' '.join(str(l or '?') for l in lits) + ')')
+    return out
+
+
 @router.get('/cleanup')
-def cleanup_state(request: Request, c=Depends(conn), cf=Depends(cfg)):
+def cleanup_state(request: Request, id: str | None = None, c=Depends(conn), cf=Depends(cfg)):
+    """Every sheet song with its pages and issues, plus odd titles. ?id= = just that song."""
     with _lock: data = _load(cf)
+    if data.get('v') != CACHE_V: data['pages'] = {}
     ok = set(data.get('ok', []))
-    hist = {}
-    pages = []
-    titles = {r[0]: (r[1], r[2]) for r in c.execute('SELECT id, title, kind FROM item WHERE deleted_at IS NULL')}
+    items = {r[0]: {'id': r[0], 'title': r[1], 'kind': r[2], 'folder': r[3], 'pages': []}
+             for r in c.execute('SELECT id, title, kind, folder FROM item WHERE deleted_at IS NULL' + (' AND id=?' if id else ''), (id,) if id else ())}
+    missing = False
     for iid, page, file, folder in _pages(c):
+        if iid not in items: continue
         key = f'{iid}:{page}'
-        h = folder_path(cf, folder) / '.history'
-        n = len([p for p in h.glob(f'p{page}-*') if p.suffix != '.json']) if h.is_dir() else 0
-        if n: hist[key] = n
-        res = (data['pages'].get(key) or [0, None])[1]
-        if (res and key not in ok) or n:
-            pages.append({'id': iid, 'page': page, 'file': file, 'title': titles.get(iid, ('',))[0],
-                          'suggest': res if key not in ok else None, 'trims': n})
-    odd = []
-    for iid, (title, kind) in titles.items():
-        why = odd_title(title, kind)
-        if why and f'title:{iid}' not in ok: odd.append({'id': iid, 'title': title, 'kind': kind, 'why': why})
-    if not _scan['running'] and any(f'{iid}:{pg}' not in data['pages'] for iid, pg, _f, _d in _pages(c)):
-        start_scan(request.app)  # new pages since the last scan
-    return {'scan': dict(_scan), 'pages': pages, 'titles': sorted(odd, key=lambda x: x['title'].lower())}
+        ent = data['pages'].get(key)
+        if not ent: missing = True
+        res = (ent or [0, None])[1] or {}
+        n = len(_snaps(folder_path(cf, folder), page))
+        items[iid]['pages'].append({'page': page, 'file': file, 'trim': None if key in ok else res.get('trim'),
+                                    'dots': res.get('dots'), 'trims': n, 'scanned': bool(ent)})
+    songs, odd = [], []
+    for it in items.values():
+        why = odd_title(it['title'], it['kind'])
+        if why and f'title:{it["id"]}' not in ok: odd.append({'id': it['id'], 'title': it['title'], 'kind': it['kind'], 'why': why})
+        if it['kind'] != 'sheet': continue
+        issues = []
+        nt = sum(1 for p in it['pages'] if p['trim'])
+        if nt: issues.append({'kind': 'trim', 'text': f"{nt} page{'s' if nt > 1 else ''} to trim"})
+        issues += [{'kind': 'dots', 'text': t} for t in dot_issues(it['pages'])]
+        if why and f'title:{it["id"]}' not in ok: issues.append({'kind': 'title', 'text': f'title: {why}'})
+        songs.append({'id': it['id'], 'title': it['title'], 'pages': it['pages'], 'issues': issues,
+                      'reviewed': f'song:{it["id"]}' in ok, 'trimmed': sum(p['trims'] > 0 for p in it['pages'])})
+    if missing and not _scan['running']:
+        start_scan(request.app)  # pages not looked at yet
+    songs.sort(key=lambda x: x['title'].lower())
+    return {'scan': dict(_scan), 'songs': songs, 'titles': sorted(odd, key=lambda x: x['title'].lower())}
 
 
 @router.post('/cleanup/scan')
@@ -208,13 +256,10 @@ def untrim_page(item_id: str, page: int, body: dict = Body(default={}), c=Depend
 
 def _forget(cf, item_id, page, path=None):
     """The page file changed: look at it again now."""
-    res = None
-    if path is not None:
-        try: res = trim.analyze(path)
-        except Exception: res = None
-        if res: res = {'top': float(res['top']), 'bottom': float(res['bottom']), 'reasons': res['reasons']}
     with _lock:
         data = _load(cf)
-        if path is None: data['pages'].pop(f'{item_id}:{page}', None)
-        else: data['pages'][f'{item_id}:{page}'] = [int(path.stat().st_mtime), res, path.name]
+        key = f'{item_id}:{page}'
+        if path is None: data['pages'].pop(key, None)
+        else: data['pages'][key] = [int(path.stat().st_mtime), _analyze(path.parent, page, path.name), path.name]
+        data['v'] = CACHE_V
         _save(cf, data)
