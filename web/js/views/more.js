@@ -1,0 +1,168 @@
+// Stats, practice tools (metronome, tuner, reference tones) and settings.
+import { store } from '../store.js';
+import { $, esc, icon, badge, ago, mins, toast, confirmSheet, CAT } from '../ui.js';
+import { applyTheme } from '../app.js';
+import { Metronome, Tuner, playTone } from '../audio.js';
+import { thumbHtml } from './actions.js';
+
+const DAY = 86400000, WEEK = 7 * DAY;
+
+// ================= stats =================
+export function statsView(main) {
+  const plays = store.plays();
+  const now = Date.now();
+  const last30 = plays.filter((p) => p.openedAt > now - 30 * DAY);
+  const total30 = last30.reduce((s, p) => s + p.closedAt - p.openedAt, 0);
+  const days = new Set(plays.map((p) => new Date(p.openedAt).toDateString()));
+  let streak = 0;
+  const has = (d) => days.has(new Date(now - d * DAY).toDateString());
+  for (let d = has(0) ? 0 : 1; has(d); d++) streak++;
+  const weeks = Array.from({ length: 10 }, (_, i) => {
+    const end = now - (9 - i) * WEEK, start = end - WEEK;
+    const m = plays.filter((p) => p.openedAt > start && p.openedAt <= end).reduce((s, p) => s + p.closedAt - p.openedAt, 0) / 60000;
+    return { label: new Date(start + DAY).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }), m: Math.round(m) };
+  });
+  const max = Math.max(30, ...weeks.map((w) => w.m));
+  const nice = Math.ceil(max / 60) * 60;
+  const per = new Map();
+  for (const p of plays) { const e = per.get(p.itemId) || { n: 0, t: 0, last: 0 }; e.n++; e.t += p.closedAt - p.openedAt; e.last = Math.max(e.last, p.openedAt); per.set(p.itemId, e); }
+  const ranked = [...per.entries()].map(([id, e]) => ({ it: store.get(id), ...e })).filter((x) => x.it && !x.it.deleted);
+  const most = [...ranked].sort((a, b) => b.t - a.t).slice(0, 8);
+  const recent = [...ranked].sort((a, b) => b.last - a.last).slice(0, 8);
+  const row = (x, right) => `<li class="row" onclick="location.hash='#/item/${x.it.id}'">${thumbHtml(x.it)}<div class="row-main"><div class="row-title">${esc(x.it.title)}</div><div class="row-sub">${badge(x.it.kind)}</div></div><div class="row-when">${right}</div></li>`;
+
+  main.innerHTML = `<header class="top"><h1>Stats</h1></header>
+    <div class="pad">
+      <div class="tiles">
+        <div class="tile"><small>Practice, last 30 days</small><b>${mins(total30)}</b></div>
+        <div class="tile"><small>Sessions, last 30 days</small><b>${last30.length}</b></div>
+        <div class="tile"><small>Pieces played, all time</small><b>${per.size}</b></div>
+        <div class="tile"><small>Day streak</small><b>${streak} ${icon('paw', 'paw-ic')}</b></div>
+      </div>
+      <section class="card">
+        <h2>Practice minutes per week</h2>
+        <div class="chart-bars" role="img" aria-label="Practice minutes per week for the last 10 weeks">
+          <div class="axis">${[nice, nice / 2, 0].map((v) => `<span>${v}</span>`).join('')}</div>
+          <div class="bars">${weeks.map((w) => `<div class="bar-col" tabindex="0" data-tip="Week of ${w.label}: ${w.m} min"><div class="bar" style="height:${(w.m / nice) * 100}%"></div><span>${w.label}</span></div>`).join('')}</div>
+          <div class="tip" id="tip" hidden></div>
+        </div>
+        <details class="table-view"><summary>Show as table</summary><table><tr><th>Week of</th><th>Minutes</th></tr>${weeks.map((w) => `<tr><td>${w.label}</td><td>${w.m}</td></tr>`).join('')}</table></details>
+      </section>
+      <div class="two-col">
+        <section class="card"><h2>Most practised</h2><ul class="rows compact">${most.map((x) => row(x, mins(x.t))).join('') || '<li class="muted">Nothing yet</li>'}</ul></section>
+        <section class="card"><h2>Recently played</h2><ul class="rows compact">${recent.map((x) => row(x, ago(x.last))).join('') || '<li class="muted">Nothing yet</li>'}</ul></section>
+      </div>
+      <p class="muted small">A session counts when a piece stays open for at least 10 seconds.</p>
+    </div>`;
+  const tip = $('#tip', main), bars = main.querySelector('.bars');
+  const show = (col) => { const r = col.getBoundingClientRect(), p = bars.getBoundingClientRect(); tip.hidden = false; tip.textContent = col.dataset.tip; tip.style.left = r.left - p.left + r.width / 2 + 'px'; };
+  bars.addEventListener('pointerover', (e) => { const c = e.target.closest('.bar-col'); if (c) show(c); });
+  bars.addEventListener('focusin', (e) => { const c = e.target.closest('.bar-col'); if (c) show(c); });
+  bars.addEventListener('pointerleave', () => (tip.hidden = true));
+}
+
+// ================= practice tools =================
+export function toolsView(main) {
+  main.innerHTML = `<header class="top"><h1>Metronome &amp; tuner</h1></header>
+    <div class="pad two-col">
+      <section class="card metro">
+        <h2>${icon('metronome')} Metronome</h2>
+        <div class="beats" id="mt-beats"></div>
+        <div class="bpm"><button class="round" id="mt-down" aria-label="Slower">−</button><div><b id="mt-bpm">90</b><small>beats per minute</small></div><button class="round" id="mt-up" aria-label="Faster">+</button></div>
+        <input type="range" id="mt-range" min="30" max="240" value="90" aria-label="Tempo">
+        <div class="row-ctl"><label class="ctl">Beats per bar <select id="mt-per">${[1, 2, 3, 4, 6].map((n) => `<option ${n === 4 ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+          <button id="mt-tap">Tap tempo</button></div>
+        <button class="primary big" id="mt-go">${icon('play')}Start</button>
+      </section>
+      <section class="card tuner">
+        <h2>${icon('mic')} Tuner</h2>
+        <div class="note-big" id="tn-note">–</div>
+        <div class="needle"><div class="scale"><span>−50</span><span>0</span><span>+50</span></div><div class="pin" id="tn-pin"></div></div>
+        <p class="muted center" id="tn-info">Play one note at a time.</p>
+        <button class="primary big" id="tn-go">${icon('mic')}Start listening</button>
+        <h3>Reference notes</h3>
+        <div class="ref"><span class="muted">Ukulele</span>${[['G', 67], ['C', 60], ['E', 64], ['A', 69]].map(([n, m]) => `<button data-m="${m}">${n}</button>`).join('')}</div>
+        <div class="ref"><span class="muted">Piano</span><button data-m="69">A 440</button><button data-m="60">Middle C</button></div>
+      </section>
+    </div>`;
+  const met = new Metronome((b) => { main.querySelectorAll('#mt-beats span').forEach((s, i) => s.classList.toggle('on', i === b)); });
+  const drawBeats = () => ($('#mt-beats', main).innerHTML = Array.from({ length: met.beats }, (_, i) => `<span class="${i === 0 ? 'first' : ''}"></span>`).join(''));
+  const setBpm = (v) => { met.bpm = Math.max(30, Math.min(240, Math.round(v))); $('#mt-bpm', main).textContent = met.bpm; $('#mt-range', main).value = met.bpm; };
+  drawBeats();
+  $('#mt-down', main).onclick = () => setBpm(met.bpm - 1);
+  $('#mt-up', main).onclick = () => setBpm(met.bpm + 1);
+  $('#mt-range', main).oninput = (e) => setBpm(+e.target.value);
+  $('#mt-per', main).onchange = (e) => { met.beats = +e.target.value; drawBeats(); };
+  let taps = [];
+  $('#mt-tap', main).onclick = () => { const t = performance.now(); taps = taps.filter((x) => t - x < 3000); taps.push(t); if (taps.length > 1) setBpm((60000 * (taps.length - 1)) / (t - taps[0])); };
+  $('#mt-go', main).onclick = (e) => { if (met.running) { met.stop(); e.currentTarget.innerHTML = `${icon('play')}Start`; } else { met.start(); e.currentTarget.innerHTML = `${icon('pause')}Stop`; } };
+
+  const tn = new Tuner((p) => {
+    if (!p) return;
+    $('#tn-note', main).innerHTML = `${p.name}<sub>${p.octave}</sub>`;
+    $('#tn-pin', main).style.left = `${50 + p.cents}%`;
+    $('#tn-pin', main).classList.toggle('good', Math.abs(p.cents) < 6);
+    $('#tn-info', main).textContent = `${p.f.toFixed(1)} Hz · ${p.cents > 0 ? '+' : ''}${p.cents} cents${Math.abs(p.cents) < 6 ? ' · in tune' : p.cents > 0 ? ' · a little sharp' : ' · a little flat'}`;
+  });
+  let listening = false;
+  $('#tn-go', main).onclick = async (e) => {
+    const b = e.currentTarget;
+    if (listening) { tn.stop(); listening = false; b.innerHTML = `${icon('mic')}Start listening`; return; }
+    try { await tn.start(); listening = true; b.innerHTML = `${icon('pause')}Stop`; } catch (err) { $('#tn-info', main).textContent = err.message.includes('secure') ? err.message : 'The microphone is not available: ' + err.message; }
+  };
+  main.querySelectorAll('.ref [data-m]').forEach((b) => (b.onclick = () => playTone(+b.dataset.m, 2)));
+  return () => { met.stop(); tn.stop(); };
+}
+
+// ================= settings =================
+export function settingsView(main) {
+  let theme = 'system';
+  try { theme = localStorage.getItem('meowsic-theme') || 'system'; } catch {}
+  const items = store.items();
+  main.innerHTML = `<header class="top"><h1>Settings</h1></header>
+    <div class="pad narrow settings">
+      <section class="card"><h2>${icon('wifi')} Mac connection</h2>
+        <dl class="kv"><dt>Server</dt><dd>https://meowsic.local:5180 <span class="pill ok">Connected (mock)</span></dd>
+        <dt>Last sync</dt><dd>${ago(Date.now() - 4 * 60000)}</dd>
+        <dt>Waiting to sync</dt><dd>0 changes</dd></dl>
+        <p class="muted small">Adding music, chord search and transcription need the Mac. Reading the library works offline.</p></section>
+      <section class="card"><h2>${icon('download')} Offline on this device</h2>
+        <label class="ctl check"><input type="checkbox" checked> Keep the whole library readable offline</label>
+        <dl class="kv"><dt>Stored here</dt><dd>${items.length} items · about ${Math.round(items.filter((x) => x.kind === 'sheet').reduce((s, x) => s + x.pages, 0) * 0.45)} MB</dd></dl></section>
+      <section class="card"><h2>${icon('moon')} Appearance</h2>
+        <div class="seg" id="st-theme">${[['system', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([k, l]) => `<button data-t="${k}" class="${theme === k ? 'on' : ''}">${l}</button>`).join('')}</div></section>
+      <section class="card"><h2>${icon('upload')} Backup</h2>
+        <p class="muted small">The Mac also keeps a daily copy of the database (last 30 days).</p>
+        <div class="row-ctl"><button id="st-export">${icon('download')}Export backup</button>
+        <label class="btn">${icon('upload')}Import backup<input type="file" id="st-import" accept="application/json,.json" hidden></label></div></section>
+      <section class="card"><h2>${icon('restore')} Bring in the old apps</h2>
+        <ul class="plain">
+          <li>${icon('check')} Meowsic 1 (iPad): 485 sheets, 11 chord charts, 1 score, 31 tags <small class="muted">— phase 2</small></li>
+          <li>${icon('check')} Emi Songbook: 11 songs, 3 collections <small class="muted">— phase 2</small></li>
+          <li>${icon('check')} Emi Music Note: 4 transcriptions <small class="muted">— phase 2</small></li>
+        </ul></section>
+      <section class="card"><h2>${icon('info')} Mock data</h2>
+        <p class="muted small">This is the UI preview. Everything you change is kept in this browser only.</p>
+        <button class="danger-text" id="st-reset">Reset mock data</button></section>
+      <p class="center muted">${CAT}<br>Meowsic 2.0 · UI preview</p>
+    </div>`;
+  $('#st-theme', main).onclick = (e) => {
+    const b = e.target.closest('[data-t]');
+    if (!b) return;
+    try { localStorage.setItem('meowsic-theme', b.dataset.t); } catch {}
+    applyTheme();
+    main.querySelectorAll('#st-theme button').forEach((x) => x.classList.toggle('on', x === b));
+  };
+  $('#st-export', main).onclick = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([store.exportJson()], { type: 'application/json' }));
+    a.download = `meowsic-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+  };
+  $('#st-import', main).onchange = async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try { store.importJson(await f.text()); toast('Backup imported'); } catch (err) { toast(err.message); }
+  };
+  $('#st-reset', main).onclick = async () => { if (await confirmSheet({ title: 'Reset the mock data?', body: 'Your test changes in this browser are thrown away.', ok: 'Reset', danger: true })) { store.reset(); toast('Mock data reset'); } };
+}
