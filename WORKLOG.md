@@ -23,3 +23,10 @@ Plan (in order):
 - Migration: 964 items (+4 Trash) in ~/Documents/Meowsic, 3.8 GB; verify OK; re-runs idempotent. 58 Meowsic-1 sheets wait for Photos "Download Originals" (user turned it on ~01:35) → re-run `migrate/migrate.py` later.
 - Real jobs through the UI: version 3 s, 20 s transcription 12 s (scratchpad/e2e/jobs.mjs).
 - USER REQUEST: after the Photos originals download finishes AND the migration re-run is done, open Photos → Settings (osascript: click menu item "Settings…" of menu "Photos") so the user can switch back to "Optimize Mac Storage". Tell the user.
+
+## 01:55 — live on the real library
+- Server running: `server/start.sh` (HTTPS :5180, ~/Documents/Meowsic, certs in ~/Documents/Meowsic/certs). Launcher ~/Applications/Meowsic.app (make-app-launchers.sh, https). Log ~/Library/Logs/Meowsic.log.
+- Old launchers Emi Songbook.app, Emi Music Note.app, old native Meowsic.app moved to the Trash (repos + data kept); their servers stopped.
+- Read-only check on real data at Mac/iPad/iPhone sizes: all screens OK, no console errors (scratchpad/e2e/reallib.mjs, run with NODE_EXTRA_CA_CERTS=~/Documents/Meowsic/certs/meowsic-ca.pem).
+- UI preview tests now need `?preview=1` (samples only there). 160/160.
+Next: real-score note editing → print real scores → frontend refactor → migration re-run when Photos originals are down → reopen Photos Settings for the user.

@@ -745,3 +745,5 @@ p.count-row { text-align: center; }
 .lib-table .c-ver { width: 150px; color: var(--ink2); }
 .side-foot.offline { color: var(--warn); }
 .side-foot.mock { color: var(--mute); }
+.lib-table td.c-more { overflow: visible; text-overflow: clip; }
+.lib-table .c-more { width: 52px; }
