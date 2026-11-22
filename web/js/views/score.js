@@ -1,7 +1,7 @@
 // Score viewer: OpenSheetMusicDisplay notation, piano playback with a moving bar,
 // versions, tempo, transpose, zoom; export lives in the More menu.
 import { store } from '../store.js';
-import { $, esc, icon, toast, menu } from '../ui.js';
+import { $, esc, icon, iconOn, toast, menu } from '../ui.js';
 import { TUNES } from '../mock.js';
 import { musicXml, tuneNotes, VERSIONS } from '../musicxml.js';
 import { ScorePlayer } from '../audio.js';
@@ -141,9 +141,9 @@ export function scoreToolbar(bar, it, view) {
       <input type="range" id="sc-pos" min="0" max="${total}" step="0.25" value="0" aria-label="Position">
       <span class="time" id="sc-time">0:00 / ${fmt(secs(total))}</span>
     </div>
-    <label class="ctl" title="Tempo"><select id="sc-rate" aria-label="Tempo">${[0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25].map((r) => `<option value="${r}" ${r === view.player.rate ? 'selected' : ''}>Tempo ${Math.round(r * 100)}%</option>`).join('')}</select></label>
+    <div class="stepper" aria-label="Tempo" title="Tempo"><button id="sc-slow" aria-label="Slower">−</button><span id="sc-rate">${Math.round(t.bpm * view.player.rate)} bpm</span><button id="sc-fast" aria-label="Faster">+</button></div>
     <div class="stepper" aria-label="Transpose"><button id="sc-tdown" aria-label="Transpose down">♭</button><span id="sc-tval">${it.transpose ? (it.transpose > 0 ? '+' : '') + it.transpose : '0'}</span><button id="sc-tup" aria-label="Transpose up">♯</button></div>
-    <div class="stepper zoom" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out">−</button><button id="sc-zin" aria-label="Zoom in">+</button></div>`;
+    <div class="stepper zoom" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out" title="Zoom out">${iconOn('zoomout')}</button><button id="sc-zin" aria-label="Zoom in" title="Zoom in">${iconOn('zoomin')}</button></div>`;
 
   const p = () => view.player;
   const playBtn = $('#sc-play', bar);
@@ -157,7 +157,15 @@ export function scoreToolbar(bar, it, view) {
   host.addEventListener('ended', onEnd);
   pos.oninput = () => p().seek(+pos.value);
   $('#sc-ver', bar).onchange = async (e) => { await view.setVersion(e.target.value); setPlay(); };
-  $('#sc-rate', bar).onchange = (e) => { p().setRate(+e.target.value); time.textContent = `${fmt(secs(+pos.value))} / ${fmt(secs(total))}`; };
+  // tempo in beats per minute, 5 at a time; the score's own tempo is the starting point
+  const rate = (d) => {
+    const bpm = Math.max(30, Math.min(220, Math.round(t.bpm * p().rate / 5) * 5 + d * 5));
+    p().setRate(bpm / t.bpm);
+    $('#sc-rate', bar).textContent = `${bpm} bpm`;
+    time.textContent = `${fmt(secs(+pos.value))} / ${fmt(secs(total))}`;
+  };
+  $('#sc-slow', bar).onclick = () => rate(-1);
+  $('#sc-fast', bar).onclick = () => rate(1);
   const tr = async (d) => { const n = Math.max(-6, Math.min(6, (it.transpose || 0) + d)); await view.setTranspose(n); $('#sc-tval', bar).textContent = n ? (n > 0 ? '+' : '') + n : '0'; };
   $('#sc-tdown', bar).onclick = () => tr(-1);
   $('#sc-tup', bar).onclick = () => tr(1);

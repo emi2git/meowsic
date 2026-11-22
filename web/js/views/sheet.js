@@ -91,7 +91,7 @@ export function sheetToolbar(bar, it, view) {
   bar.innerHTML = `
     <span class="pageno" id="pageno"></span>
     <button class="icon-btn hide-phone" id="sv-spread" title="One or two pages"><span id="sv-spread-l"></span></button>
-    <button class="icon-btn" id="sv-ink" title="Annotate" aria-label="Annotate">${iconOn('pen')}</button>`;
+    <button class="icon-btn" id="sv-ink" title="Annotate" aria-label="Annotate">${iconOn('write')}</button>`;
   const setL = () => ($('#sv-spread-l', bar).textContent = view.spread ? '2 pages' : '1 page');
   setL();
   $('#sv-spread', bar).onclick = () => { view.setSpread(!view.spread); setL(); };

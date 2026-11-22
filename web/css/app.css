@@ -211,7 +211,7 @@ body[data-view="item"] #main, body[data-view="perform"] #main { overflow: hidden
 .stepper { display: inline-flex; align-items: center; border: 1px solid var(--line2); border-radius: 12px; overflow: hidden; background: var(--card); }
 .stepper button { border: 0; border-radius: 0; min-height: 38px; padding: 0 12px; background: none; }
 .stepper button + button, .stepper span + button { border-left: 1px solid var(--line); }
-.stepper span { padding: 0 10px; min-width: 34px; text-align: center; font-weight: 700; border-left: 1px solid var(--line); }
+.stepper span { white-space: nowrap; padding: 0 10px; min-width: 34px; text-align: center; font-weight: 700; border-left: 1px solid var(--line); }
 .toggle { min-height: 38px; }
 .toggle.on { background: var(--acc-soft); border-color: var(--acc); color: var(--ink); }
 .pageno { font-weight: 700; color: var(--ink2); margin-right: auto; }

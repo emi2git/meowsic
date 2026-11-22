@@ -49,7 +49,7 @@ export function itemView(main, { parts }) {
     // annotate scores too
     const ink = document.createElement('button');
     ink.className = 'icon-btn';
-    ink.innerHTML = iconOn('pen');
+    ink.innerHTML = iconOn('write');
     ink.title = 'Annotate';
     ink.setAttribute('aria-label', 'Annotate');
     ink.onclick = () => startInk(view, $('.viewer', main));
