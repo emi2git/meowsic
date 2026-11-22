@@ -49,3 +49,6 @@ Next: frontend refactor (dead list-view code in library.js, shared helpers), mig
 - web/js/views/autotag.js: aiCall (sync or job), Auto-tag review dialog. Wired: selection bar "Auto-tag", item ⋯ "Auto-tag…", Generate tags → POST /api/ai/collections, new sheets / chord charts / finished jobs → quiet auto-tag → "Tags found — Review".
 - Server side being built by an agent (mlx-lm, model in ~/ai/models).
 - Background loop re-running Meowsic-1 import every 20 min until the Photos originals are down (still 158 pages at 03:00).
+
+## — iCloud-only sheets done
+- Fetched only the 157 needed originals with osxphotos --download-missing --use-photokit (2 min), re-ran import: +55 sheets (+3 Trash), 3 refilled; 1 page gone from Photos. Verify passed.
