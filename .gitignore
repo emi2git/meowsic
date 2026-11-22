@@ -12,3 +12,7 @@ Meowsic.xcodeproj/
 
 # macOS
 .DS_Store
+
+# Python tools env and downloaded models stay out of git (models live in ~/ai/models)
+tools/.venv/
+__pycache__/

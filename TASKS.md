@@ -18,6 +18,11 @@
 - [x] Settings: Mac connection, offline, backup export / import, theme, reset mock data
 - [x] Test every screen on Mac, iPad and iPhone sizes in light and dark
 
+## Requirements (agreed, not built yet)
+- [ ] **Icons per entry (offline AI):** every sheet, score and chord chart gets a meaningful icon from Phosphor (MIT; SF Symbols are not allowed in a web app). Rule first from tags (Christmas → snowflake, Musical → theatre masks…); no matching tag → local text model (model2vec potion-base-8M in `~/ai/models`) matches the title to the closest icon; else a default per type. Runs on the Mac, no internet.
+- [ ] **Auto-tag on request (offline AI):** select items or use ⋯ → Auto-tag…; the Mac reads title + page text (Apple Vision) and a local model suggests tags from the user's tag list; user ticks/unticks before saving. Bigger local LLM (≈3B via MLX) is the phase-2 upgrade if the small model is not good enough.
+- [ ] **Printed / Never printed:** Meowsic records every print; Auto-tag sets the tag Printed or Never printed. Works with the tag filter and Print all.
+
 ## Phase 2: backend (after UI approval)
 - [ ] (see DESIGN.md once approved)
 - [ ] Compare model candidates in docs/model-candidates.md on our own recordings and sheets
