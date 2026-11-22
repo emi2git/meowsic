@@ -3,7 +3,7 @@
 import { store } from '../store.js';
 import { $, esc, icon, iconOn, toast, menu, sheet as modal } from '../ui.js';
 import { TUNES } from '../mock.js';
-import { musicXml, tuneNotes, VERSIONS, VERSION_HELP } from '../musicxml.js';
+import { musicXml, tuneNotes, VERSIONS, VERSION_HELP, barBeats, midiOf, nameOf } from '../musicxml.js';
 import { ScorePlayer } from '../audio.js';
 import { InkLayer } from './annotate.js';
 
@@ -21,7 +21,8 @@ export function loadOsmd() {
 const fmt = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
 
 export function scoreBody(root, it, { perform = false } = {}) {
-  const tune = TUNES[it.tune];
+  // an edited score keeps its own bars on the entry (it.measures); otherwise the original tune
+  let tune = it.measures ? { ...TUNES[it.tune], measures: structuredClone(it.measures) } : TUNES[it.tune];
   const version = it.version || 'original';
   // each score reopens the way you left it: key (transpose), tempo and zoom are saved on the entry
   let zoom = it.zoom || (perform ? 1.25 : 1) * (innerWidth < 760 ? 0.62 : 1);
@@ -106,9 +107,46 @@ export function scoreBody(root, it, { perform = false } = {}) {
   const ro = new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => osmd && (osmd.render(), measureStops(), place(player.now()), ink?.fit()), 250); });
   ro.observe(root);
 
+  // bar under a click: find the drawn stop nearest the click on that line, then which bar its beat falls in
+  const barAt = (cx, cy) => {
+    const r = $('#osmd', root).getBoundingClientRect();
+    const host = bar?.parentElement?.getBoundingClientRect() || r;
+    const x = cx - host.left, y = cy - host.top;
+    const line = stops.filter((s) => y >= s.top - 30 && y <= s.top + s.h + 30);
+    if (!line.length) return -1;
+    const st = line.reduce((b, s) => (s.x <= x + 6 && s.x > b.x ? s : b), line[0]);
+    let acc = 0;
+    for (let i = 0; i < tune.measures.length; i++) { const b = barBeats(tune, tune.measures[i]); if (st.q < acc + b - 1e-6) return i; acc += b; }
+    return tune.measures.length - 1;
+  };
+  let selBox = null;
+  const showBar = (i) => {
+    selBox?.remove(); selBox = null;
+    if (i < 0) return;
+    let a = 0; for (let k = 0; k < i; k++) a += barBeats(tune, tune.measures[k]);
+    const b = a + barBeats(tune, tune.measures[i]);
+    const inBar = stops.filter((s) => s.q >= a - 1e-6 && s.q < b - 1e-6);
+    if (!inBar.length || !bar) return;
+    const next = stops.find((s) => s.q >= b - 1e-6 && s.top === inBar[0].top);
+    const x0 = Math.min(...inBar.map((s) => s.x)) - 14, x1 = (next ? next.x : Math.max(...inBar.map((s) => s.x)) + 40) - 8;
+    selBox = document.createElement('div');
+    selBox.className = 'barsel';
+    Object.assign(selBox.style, { left: x0 + 'px', top: inBar[0].top - 6 + 'px', width: x1 - x0 + 'px', height: inBar[0].h + 12 + 'px' });
+    bar.parentElement.append(selBox);
+  };
+
   return {
     ready,
-    tune,
+    get tune() { return tune; },
+    barAt, showBar,
+    // replace the bars (edit), save on the entry, redraw and replay from the new notes
+    async setMeasures(ms, { save = true } = {}) {
+      tune = { ...TUNES[it.tune], measures: ms };
+      if (save) store.update(it.id, { measures: ms });
+      makePlayer();
+      await render();
+    },
+    async revert() { store.update(it.id, { measures: undefined }); delete it.measures; tune = TUNES[it.tune]; makePlayer(); await render(); },
     get player() { return player; },
     get version() { return version; },
     async setTranspose(n) { store.update(it.id, { transpose: n }); player.shift = n; await render(); },
@@ -136,9 +174,8 @@ export function scoreExportMenu(it, view) {
 
 export function scoreToolbar(bar, it, view) {
   const t = view.tune;
-  const bars = t.measures.length;
   const secs = (q) => (q / (t.bpm * view.player.rate)) * 60;
-  const total = bars * t.beats;
+  const total = t.measures.reduce((s, m) => s + barBeats(t, m), 0);
   bar.innerHTML = `
     <div class="transport">
       <button class="play" id="sc-play" aria-label="Play">Play</button>
@@ -147,6 +184,7 @@ export function scoreToolbar(bar, it, view) {
     </div>
     <div class="stepper" aria-label="Tempo" title="Tempo"><button id="sc-slow" aria-label="Slower">−</button><span id="sc-rate">${Math.round(t.bpm * view.player.rate)} bpm</span><button id="sc-fast" aria-label="Faster">+</button></div>
     <div class="stepper" aria-label="Transpose"><button id="sc-tdown" aria-label="Transpose down">♭</button><span id="sc-tval">${it.transpose ? (it.transpose > 0 ? '+' : '') + it.transpose : '0'}</span><button id="sc-tup" aria-label="Transpose up">♯</button></div>
+    <button class="icon-btn" id="sc-edit" title="Edit notes" aria-label="Edit notes">${iconOn('edit')}</button>
     <div class="stepper zoom" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out" title="Zoom out (−)">${iconOn('zoomout')}</button><button id="sc-zreset" class="zreset" title="Reset zoom (0)">${Math.round(view.zoom * 100)}%</button><button id="sc-zin" aria-label="Zoom in" title="Zoom in (+)">${iconOn('zoomin')}</button></div>`;
 
   const p = () => view.player;
@@ -177,6 +215,7 @@ export function scoreToolbar(bar, it, view) {
   $('#sc-zout', bar).onclick = () => { view.setZoom(view.zoom - 0.15); zl(); };
   $('#sc-zin', bar).onclick = () => { view.setZoom(view.zoom + 0.15); zl(); };
   $('#sc-zreset', bar).onclick = () => { view.zoomReset(); zl(); };
+  $('#sc-edit', bar).onclick = (e) => scoreEditor(view, it, bar.closest('.viewer'), e.currentTarget);
   bar.closest('.viewer')?.addEventListener('zoomchange', zl);
   const onSpace = (e) => { if (e.key === ' ' && !e.target.closest('input,select,textarea,button')) { e.preventDefault(); playBtn.click(); } };
   document.addEventListener('keydown', onSpace);
@@ -222,4 +261,80 @@ function generateVersions(it) {
     s.close();
     toast(`Making ${outputs.map((v) => VERSIONS[v]).join(', ')} — progress is in Add → Score`);
   };
+}
+
+// ================= score editor =================
+// Click a bar, pick a note, change it. A bar whose notes no longer add up to the song's meter gets
+// its own time signature automatically (5 beats in a 4/4 song → that bar becomes 5/4).
+const LENGTHS = [[0.5, '⅛'], [1, '¼'], [1.5, '¼·'], [2, '½'], [3, '½·'], [4, '1']];
+function scoreEditor(view, it, host, btn) {
+  if (host.querySelector('.editbar')) { host.querySelector('.editbar').remove(); view.showBar(-1); btn.classList.remove('on'); return; }
+  btn.classList.add('on');
+  let ms = structuredClone(view.tune.measures);
+  let bi = 0, ni = 0;
+  const undo = [];
+  const panel = document.createElement('div');
+  panel.className = 'editbar';
+  host.append(panel);
+  const paper = host.querySelector('#paper');
+  const meter = view.tune.beats;
+  const draw = () => {
+    const m = ms[bi];
+    ni = Math.max(0, Math.min(ni, m.mel.length - 1));
+    const beats = m.mel.reduce((s, [, d]) => s + d, 0);
+    const n = m.mel[ni];
+    panel.innerHTML = `
+      <div class="eb-row">
+        <b>Bar ${bi + 1}</b><button class="icon-btn" data-a="pbar" ${bi ? '' : 'disabled'} title="Previous bar">‹</button><button class="icon-btn" data-a="nbar" ${bi < ms.length - 1 ? '' : 'disabled'} title="Next bar">›</button>
+        <span class="eb-meter ${beats !== meter ? 'changed' : ''}">${beats} beat${beats === 1 ? '' : 's'} · ${Number.isInteger(beats) ? `${beats}/4` : `${beats * 2}/8`}${beats !== meter ? ` <small>(song is ${meter}/4 — this bar's time signature was changed to fit)</small>` : ''}</span>
+        <span class="grow"></span>
+        <button data-a="undo" ${undo.length ? '' : 'disabled'}>Undo</button>
+        <button data-a="revert">Revert to original</button>
+        <button class="primary" data-a="done">Done</button>
+      </div>
+      <div class="eb-notes">${m.mel.map(([p, d], i) => `<button class="eb-note ${i === ni ? 'on' : ''}" data-n="${i}">${p === 'r' ? 'rest' : p}<small>${LENGTHS.find((l) => l[0] === d)?.[1] || d}</small></button>`).join('')}
+        <button class="eb-add" data-a="add" title="Add a note after the selected one">+ note</button></div>
+      <div class="eb-row">
+        <span class="muted">Note</span>
+        <div class="stepper"><button data-a="down" title="Lower (↓)">▼</button><button data-a="up" title="Higher (↑)">▲</button></div>
+        <div class="stepper"><button data-a="o-" title="Octave lower">8va−</button><button data-a="o+" title="Octave higher">8va+</button></div>
+        <div class="stepper eb-len">${LENGTHS.map(([d, l]) => `<button data-len="${d}" class="${n && n[1] === d ? 'on' : ''}" title="${d} beat${d === 1 ? '' : 's'}">${l}</button>`).join('')}</div>
+        <button data-a="rest">${n && n[0] === 'r' ? 'Make note' : 'Make rest'}</button>
+        <button class="danger-text" data-a="del" ${m.mel.length > 1 ? '' : 'disabled'}>Delete note</button>
+        <label class="ctl">Chord <input id="eb-chord" value="${m.chord || ''}" size="5"></label>
+      </div>`;
+    view.showBar(bi);
+  };
+  const commit = async () => { await view.setMeasures(structuredClone(ms)); view.showBar(bi); draw(); };
+  const edit = async (fn) => { undo.push(structuredClone(ms)); fn(ms[bi]); await commit(); };
+  const shift = (p, k) => (p === 'r' ? p : nameOf(Math.max(36, Math.min(96, midiOf(p) + k))));
+  panel.onclick = async (e) => {
+    const nb = e.target.closest('[data-n]');
+    if (nb) { ni = +nb.dataset.n; draw(); return; }
+    const lb = e.target.closest('[data-len]');
+    if (lb) return edit((m) => { m.mel[ni][1] = +lb.dataset.len; });
+    const a = e.target.closest('[data-a]')?.dataset.a;
+    if (!a) return;
+    if (a === 'pbar') { bi--; ni = 0; draw(); }
+    if (a === 'nbar') { bi++; ni = 0; draw(); }
+    if (a === 'up' || a === 'down') await edit((m) => { m.mel[ni][0] = shift(m.mel[ni][0], a === 'up' ? 1 : -1); });
+    if (a === 'o+' || a === 'o-') await edit((m) => { m.mel[ni][0] = shift(m.mel[ni][0], a === 'o+' ? 12 : -12); });
+    if (a === 'rest') await edit((m) => { const p = m.mel[ni][0]; m.mel[ni][0] = p === 'r' ? (m.mel[ni - 1]?.[0] !== 'r' && m.mel[ni - 1]?.[0]) || 'C5' : 'r'; });
+    if (a === 'add') { await edit((m) => { const [p, d] = m.mel[ni] || ['C5', 1]; m.mel.splice(ni + 1, 0, [p === 'r' ? 'C5' : p, d]); }); ni++; draw(); }
+    if (a === 'del') await edit((m) => { m.mel.splice(ni, 1); });
+    if (a === 'undo' && undo.length) { ms = undo.pop(); await commit(); }
+    if (a === 'revert') { undo.push(structuredClone(ms)); await view.revert(); ms = structuredClone(view.tune.measures); view.showBar(bi); draw(); }
+    if (a === 'done') { panel.remove(); view.showBar(-1); btn.classList.remove('on'); paper.removeEventListener('click', pick); document.removeEventListener('keydown', keys); }
+  };
+  panel.onchange = (e) => { if (e.target.id === 'eb-chord') edit((m) => { m.chord = e.target.value.trim() || m.chord; }); };
+  const pick = (e) => { const i = view.barAt(e.clientX, e.clientY); if (i >= 0) { bi = i; ni = 0; draw(); } };
+  paper.addEventListener('click', pick);
+  const keys = (e) => {
+    if (!host.contains(panel) || e.target.closest('input')) return;
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); panel.querySelector(`[data-a="${e.key === 'ArrowUp' ? 'up' : 'down'}"]`).click(); }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); ni = Math.max(0, Math.min(ms[bi].mel.length - 1, ni + (e.key === 'ArrowRight' ? 1 : -1))); draw(); }
+    if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); panel.querySelector('[data-a="del"]').click(); }
+  };
+  document.addEventListener('keydown', keys);
+  draw();
 }

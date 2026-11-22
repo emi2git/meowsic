@@ -12,7 +12,7 @@ function pitch(p) {
 export const midiOf = (p) => { const q = pitch(p); return 12 * (q.octave + 1) + notePc(q.step) + q.alter; };
 
 const STEP_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
-const nameOf = (midi) => STEP_NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
+export const nameOf = (midi) => STEP_NAMES[midi % 12] + (Math.floor(midi / 12) - 1);
 
 function noteXml(p, q, { staff, voice = 1, chord = false, lyric = null } = {}) {
   const [type, dot] = TYPES[q] || ['quarter', 0];
@@ -48,16 +48,23 @@ function voicing(ch) {
 
 const backup = (q) => `<backup><duration>${q * DIV}</duration></backup>`;
 
+// beats in bar i: its notes decide (a bar edited to 5 beats becomes 5/4); empty bars use the song's meter
+export const barBeats = (tune, m) => { const sum = m.mel.reduce((s, [, d]) => s + d, 0); return sum > 0 ? sum : tune.beats; };
+const timeXml = (b) => (Number.isInteger(b) ? `<time><beats>${b}</beats><beat-type>4</beat-type></time>` : `<time><beats>${b * 2}</beats><beat-type>8</beat-type></time>`);
+const meterChange = (tune, i) => { const b = barBeats(tune, tune.measures[i]); return i > 0 && b !== barBeats(tune, tune.measures[i - 1]) ? `<attributes>${timeXml(b)}</attributes>` : ''; };
+// split a length into note values that can be written (4, 3, 2, 1.5, 1, 0.5)
+const pieces = (q) => { const out = []; for (const v of [4, 3, 2, 1.5, 1, 0.5]) while (q >= v - 1e-9) { out.push(v); q -= v; } return out; };
+
 function attrs(tune, staves, clefs) {
   return `<attributes><divisions>${DIV}</divisions><key><fifths>${tune.fifths || 0}</fifths></key>` +
-    `<time><beats>${tune.beats}</beats><beat-type>4</beat-type></time>${staves > 1 ? `<staves>${staves}</staves>` : ''}` +
+    `${timeXml(barBeats(tune, tune.measures[0]))}${staves > 1 ? `<staves>${staves}</staves>` : ''}` +
     clefs.map((c, i) => `<clef${staves > 1 ? ` number="${i + 1}"` : ''}><sign>${c[0]}</sign><line>${c[1]}</line></clef>`).join('') + '</attributes>';
 }
 
 function melodyPart(tune, { harmony, lyrics }) {
   let li = 0;
   return tune.measures.map((m, i) => {
-    let x = `<measure number="${i + 1}">` + (i === 0 ? attrs(tune, 1, [['G', 2]]) + `<direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${tune.bpm}</per-minute></metronome></direction-type><sound tempo="${tune.bpm}"/></direction>` : '');
+    let x = `<measure number="${i + 1}">` + meterChange(tune, i) + (i === 0 ? attrs(tune, 1, [['G', 2]]) + `<direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>${tune.bpm}</per-minute></metronome></direction-type><sound tempo="${tune.bpm}"/></direction>` : '');
     if (harmony && m.chord && (i === 0 || tune.measures[i - 1].chord !== m.chord)) x += harmonyXml(m.chord); // chord name only where it changes
     for (const [p, q] of m.mel) x += noteXml(p, q, { lyric: lyrics && p !== 'r' ? tune.lyrics?.[li++] : null });
     return x + '</measure>';
@@ -67,12 +74,13 @@ function melodyPart(tune, { harmony, lyrics }) {
 function pianoPart(tune, { melody, harmony, easy = false, octave = 0 }) {
   return tune.measures.map((m, i) => {
     const { bass, rh } = voicing(m.chord);
-    let x = `<measure number="${i + 1}">` + (i === 0 ? attrs(tune, 2, [['G', 2], ['F', 4]]) : '');
+    const mb = barBeats(tune, m);
+    let x = `<measure number="${i + 1}">` + meterChange(tune, i) + (i === 0 ? attrs(tune, 2, [['G', 2], ['F', 4]]) : '');
     if (harmony && m.chord && (i === 0 || tune.measures[i - 1].chord !== m.chord)) x += harmonyXml(m.chord); // chord name only where it changes
     if (melody) for (const [p, q] of m.mel) x += noteXml(p === 'r' || !octave ? p : nameOf(midiOf(p) + octave), q, { staff: 1 });
-    else rh.forEach((p, k) => (x += noteXml(p, tune.beats, { staff: 1, chord: k > 0 })));
-    x += backup(tune.beats);
-    if (easy || tune.beats === 3) x += noteXml(bass, tune.beats, { staff: 2, voice: 2 });
+    else for (const d of pieces(mb)) rh.forEach((p, k) => (x += noteXml(p, d, { staff: 1, chord: k > 0 })));
+    x += backup(mb);
+    if (easy || mb !== 4) for (const d of pieces(mb)) x += noteXml(bass, d, { staff: 2, voice: 2 });
     else x += noteXml(bass, 2, { staff: 2, voice: 2 }) + noteXml(nameOf(midiOf(bass) + 7), 2, { staff: 2, voice: 2 });
     return x + '</measure>';
   }).join('');
@@ -100,14 +108,16 @@ export function musicXml(tune, version) {
 // playback notes in quarter-note time: [{q, d, n, v}]
 export function tuneNotes(tune, version) {
   const out = [];
-  tune.measures.forEach((m, i) => {
-    const q0 = i * tune.beats;
+  let q0 = 0;
+  tune.measures.forEach((m) => {
+    const mb = barBeats(tune, m);
     let q = q0;
     if (version !== 'accomp') for (const [p, d] of m.mel) { if (p !== 'r') out.push({ q, d, n: midiOf(p) + (version === 'duet' ? 12 : 0), v: 96 }); q += d; }
     const { bass, rh } = voicing(m.chord);
-    if (version === 'easy' || tune.beats === 3) out.push({ q: q0, d: tune.beats, n: midiOf(bass), v: 70 });
+    if (version === 'easy' || mb !== 4) out.push({ q: q0, d: mb, n: midiOf(bass), v: 70 });
     else { out.push({ q: q0, d: 2, n: midiOf(bass), v: 70 }); out.push({ q: q0 + 2, d: 2, n: midiOf(bass) + 7, v: 62 }); }
-    if (['vocal', 'duet', 'accomp', 'pro'].includes(version)) rh.forEach((p) => out.push({ q: q0, d: tune.beats, n: midiOf(p), v: 52 }));
+    if (['vocal', 'duet', 'accomp', 'pro'].includes(version)) rh.forEach((p) => out.push({ q: q0, d: mb, n: midiOf(p), v: 52 }));
+    q0 += mb;
   });
   return out.sort((a, b) => a.q - b.q);
 }

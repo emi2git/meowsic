@@ -23,6 +23,7 @@
 - [ ] **Auto-tag on request (offline AI):** select items or use ⋯ → Auto-tag…; the Mac reads title + page text (Apple Vision) and a local model suggests tags from the user's tag list; user ticks/unticks before saving. Bigger local LLM (≈3B via MLX) is the phase-2 upgrade if the small model is not good enough.
 - [ ] **Make tags by collection (offline AI, on request):** "Make tags…" groups songs into new tags by movie, musical, singer or composer (e.g. Frozen, Les Misérables, Andrew Lloyd Webber). Works from the **song title** (the user keeps titles correct); printed page text only breaks ties for shared titles. Local LLM ≈8B via MLX (Qwen 2.5 7B / Llama 3.1 8B, ~5 GB in `~/ai/models`). Chord charts use the artist from their source. User reviews suggested tags and songs before saving.
 - [ ] **Auto-tag new music:** every newly added sheet, score or chord chart runs auto-tag and make-tags-by-collection automatically; when tags are found, Meowsic asks the user to review them (tick / untick) before saving. Nothing is tagged without review.
+- [x] **Edit score (UI):** ✎ in the score bar → click a bar → raise/lower, octave, length, rest, add, delete, chord name; undo; revert. A bar whose notes don't fit the meter gets its own time signature (5 beats in 4/4 → 5/4). Phase 2: same edits on the real MusicXML via music21.
 - [ ] **Printed / Never printed:** Meowsic records every print; Auto-tag sets the tag Printed or Never printed. Works with the tag filter and Print all.
 
 ## Phase 2: backend (after UI approval)
