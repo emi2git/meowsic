@@ -18,6 +18,29 @@
 - [x] Settings: Mac connection, offline, backup export / import, theme, reset mock data
 - [x] Test every screen on Mac, iPad and iPhone sizes in light and dark
 
+## Phase 2 — status (2026-11-23)
+### Done
+- [x] Server (FastAPI + SQLite): items, tags, plays, annotations, logs, jobs, settings, backup, sheet upload, chord search (Ultimate Guitar / Hợp Âm Chuẩn) — 36 tests
+- [x] Folders / files named `<id> <title>` and `<id> <title> <n>.<ext>`; renamed with the title
+- [x] Original date (photo taken / file / transcribed / fetched) + added date in Info
+- [x] UI talks to the server; offline copy + outbox; real uploads, chord search, real scores view + play — 18 end-to-end checks
+- [x] HTTPS certificate made (`~/Documents/Meowsic/certs`)
+- [x] Service worker (offline library)
+- [x] Edit score (sample scores): click a note, note box, note/rest, lengths with pictures (incl. dotted, 1/16), triplets, add, delete, undo, reset; bar time signature auto-changes
+- [x] Library: table with per-view columns, one main tag, numbered pages, sort by heading, multi-select, multi-tag filter
+### In progress
+- [ ] Migration of Meowsic 1 + Emi Songbook + Emi Music Note + 2023 folder (agent running)
+- [ ] Real transcription + "Make another version" (music21) on the server (agent running)
+### Next
+- [ ] Remove sample data from what the user sees (samples only for automated tests); real connection status in the sidebar / Settings
+- [ ] Note editing on real (transcribed) scores — edit the MusicXML itself
+- [ ] Print real scores (from MusicXML), not drawn samples
+- [ ] Frontend clean-up / refactor (store split, dead code from the old list view, shared helpers)
+- [ ] Switch the server to HTTPS; Meowsic launcher in ~/Applications; certificate profile for iPad + iPhone
+- [ ] Test everything on the real library (Mac, iPad, iPhone sizes)
+- [ ] Retire Emi Songbook, Emi Music Note and old Meowsic.app launchers (after migration passes)
+- [ ] Pages only in iCloud (~198): re-run migration after "Download Originals" is turned on in Photos (user)
+
 ## Requirements (agreed, not built yet)
 - ~~Icons per entry~~ — dropped by the user (2026-11-22): no song icons.
 - [ ] **Auto-tag on request (offline AI):** select items or use ⋯ → Auto-tag…; the Mac reads title + page text (Apple Vision) and a local model suggests tags from the user's tag list; user ticks/unticks before saving. Bigger local LLM (≈3B via MLX) is the phase-2 upgrade if the small model is not good enough.
