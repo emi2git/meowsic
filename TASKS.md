@@ -8,7 +8,6 @@
 - [x] Sheet viewer: pages, swipe/arrows, 1 or 2 pages, thumbnails, rename, tags, split / merge
 - [x] Chord viewer: transpose, key list with original marked, ukulele diagrams pinned, font size
 - [x] Score viewer: versions, notation, piano playback, tempo, loop bars, transpose, zoom, downloads
-- [x] Performance mode: full screen, tap / pedal page turns, auto-scroll chords, screen stays awake
 - [x] Annotations: pen, highlighter, eraser, undo, per page
 - [x] Add sheets: pick photos / PDFs, review grouping, edit titles and tags
 - [x] Add chords: search English / Vietnamese, preview, save

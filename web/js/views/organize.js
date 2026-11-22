@@ -1,18 +1,18 @@
-// Tags (filter, print all, play all as a set list) and the bin.
+// Tags (filter, print all) and the bin.
 import { store } from '../store.js';
-import { $, esc, icon, badge, ago, menu, toast, promptSheet, confirmSheet, CAT } from '../ui.js';
+import { $, esc, icon, iconOn, badge, ago, menu, toast, promptSheet, confirmSheet, CAT } from '../ui.js';
 import { go } from '../app.js';
 import { thumbHtml, metaText, itemMenu } from './actions.js';
 
 // ================= tags =================
 export function tagsView(main) {
   main.innerHTML = `<header class="top"><h1>Tags</h1><span class="grow"></span><button class="primary" id="tg-add">${icon('plus')}New tag</button></header>
-    <div class="pad"><p class="muted">Tap a tag to see its music. Use ⋯ to print everything with a tag or play it all as a set list (A–Z).</p><div class="tag-grid" id="tg"></div></div>`;
+    <div class="pad"><p class="muted">Tap a tag to see its music. Use ⋯ to print everything with a tag (A–Z).</p><div class="tag-grid" id="tg"></div></div>`;
   const draw = () => {
     const counts = store.tagCounts();
     const tags = [...store.db.tags].sort((a, b) => (counts.get(b) || 0) - (counts.get(a) || 0) || a.localeCompare(b));
     $('#tg', main).innerHTML = tags.map((t) => `<div class="tag-card"><a href="#/library?tag=${encodeURIComponent(t)}"><b>${esc(t)}</b><span>${counts.get(t) || 0}</span></a>
-      <button class="icon-btn" data-t="${esc(t)}" aria-label="More for ${esc(t)}">More</button></div>`).join('');
+      <button class="icon-btn" data-t="${esc(t)}" aria-label="More for ${esc(t)}" title="More">${iconOn('more')}</button></div>`).join('');
   };
   $('#tg', main).onclick = (e) => {
     const b = e.target.closest('[data-t]');
@@ -20,7 +20,6 @@ export function tagsView(main) {
     const t = b.dataset.t;
     menu(b, [
       { label: 'Rename', icon: 'edit', run: async () => { const n = await promptSheet({ title: 'Rename tag', value: t }); if (n) store.renameTag(t, n); } },
-      { label: 'Play all (set list)', icon: 'perform', run: () => { const f = store.tagItems(t)[0]; f ? go(`#/perform/${f.id}?tag=${encodeURIComponent(t)}`) : null; } },
       { label: 'Print all', icon: 'print', run: () => go(`#/print?tag=${encodeURIComponent(t)}`) },
       '-',
       { label: 'Delete tag', icon: 'bin', danger: true, run: async () => { if (await confirmSheet({ title: `Delete the tag “${t}”?`, body: 'The music keeps everything else; only this tag is removed.', ok: 'Delete', danger: true })) store.deleteTag(t); } },

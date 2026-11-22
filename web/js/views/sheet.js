@@ -1,6 +1,6 @@
 // Sheet viewer: page images with swipe / arrow / pedal turns, 1 or 2 pages, thumbnails, ink.
 import { store } from '../store.js';
-import { $, esc, icon, toast, sheet as modal, confirmSheet } from '../ui.js';
+import { $, esc, icon, iconOn, toast, sheet as modal, confirmSheet } from '../ui.js';
 import { sheetUrl } from '../sheet-art.js';
 import { InkLayer, inkToolbar } from './annotate.js';
 import { go } from '../app.js';
@@ -23,7 +23,7 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
     ${perform ? '' : `<div class="strip" id="strip">${Array.from({ length: it.pages }, (_, i) =>
       `<button data-p="${i + 1}" aria-label="Page ${i + 1}"><img src="${pageSrc(it, i + 1)}" alt="" loading="lazy"><span>${i + 1}</span></button>`).join('')}</div>`}`;
 
-  const wide = () => root.clientWidth > root.clientHeight * 1.15 && root.clientWidth > 700;
+  const wide = () => root.clientWidth > 700;
   const twoUp = () => spread && wide() && it.pages > 1;
 
   const draw = () => {
@@ -91,7 +91,7 @@ export function sheetToolbar(bar, it, view) {
   bar.innerHTML = `
     <span class="pageno" id="pageno"></span>
     <button class="icon-btn hide-phone" id="sv-spread" title="One or two pages"><span id="sv-spread-l"></span></button>
-    <button class="icon-btn" id="sv-ink" title="Annotate">${icon('pen')}<span>Annotate</span></button>`;
+    <button class="icon-btn" id="sv-ink" title="Annotate" aria-label="Annotate">${iconOn('pen')}</button>`;
   const setL = () => ($('#sv-spread-l', bar).textContent = view.spread ? '2 pages' : '1 page');
   setL();
   $('#sv-spread', bar).onclick = () => { view.setSpread(!view.spread); setL(); };

@@ -53,6 +53,8 @@ const P = {
 };
 // Icons are switched off for now (user request); every control carries a text label instead.
 export const ICONS_ON = false;
+// the few icons the user asked to keep (Annotate, More) use iconOn
+export const iconOn = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[name] || ''}</svg>`;
 export const icon = (name, cls = '') => (ICONS_ON ? `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[name] || ''}</svg>` : '');
 
 export const CAT = ''; // mascot removed for now

@@ -1,6 +1,6 @@
 // Library: every sheet, chord chart and score in one list.
 import { store } from '../store.js';
-import { $, esc, icon, badge, ago, menu, KIND, CAT } from '../ui.js';
+import { $, esc, icon, iconOn, badge, ago, menu, KIND, CAT } from '../ui.js';
 import { go, addMenu } from '../app.js';
 import { thumbHtml, metaText, itemMenu, editTags, binItems } from './actions.js';
 
@@ -22,20 +22,20 @@ export function libraryView(main, { q }) {
   const setQ = (k, v) => { const p = new URLSearchParams(q); v ? p.set(k, v) : p.delete(k); go('#/library' + (p.toString() ? '?' + p : '')); };
 
   main.innerHTML = `
-    <header class="top">
+    <header class="top lib-top">
       <h1>${kind ? KIND[kind].plural : 'All music'}</h1>
+      <div class="seg" role="tablist">${[['', 'All'], ['sheet', 'Sheets'], ['chords', 'Chords'], ['score', 'Scores']].map(([k, l]) =>
+        `<button role="tab" class="${kind === k ? 'on' : ''}" data-kind="${k}">${k ? icon(KIND[k].icon) : ''}${l}</button>`).join('')}</div>
+      <button class="chip-btn ${tag ? 'on' : ''}" id="lib-tag">${icon('tag')}${tag ? esc(tag) : 'Any tag'}${tag ? `<span class="x" id="lib-tag-x" aria-label="Clear tag">×</span>` : ''}</button>
+      ${tag ? `<a class="icon-btn btn" href="#/print?tag=${encodeURIComponent(tag)}">${icon('print')}<span>Print all</span></a>` : ''}
+      
+      <label class="sort">Sort <select id="lib-sort">${Object.entries(SORTS).map(([k, [l]]) => `<option value="${k}" ${state.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    
       <label class="search">${icon('search')}<input type="search" id="lib-q" placeholder="Search titles, artists, tags" value="${esc(state.q)}" aria-label="Search"></label>
       <button class="icon-btn" id="lib-select" title="Select">${icon('select')}<span>Select</span></button>
       <button class="primary hide-phone" id="lib-add">${icon('plus')}Add</button>
     </header>
-    <div class="filters">
-      <div class="seg" role="tablist">${[['', 'All'], ['sheet', 'Sheets'], ['chords', 'Chords'], ['score', 'Scores']].map(([k, l]) =>
-        `<button role="tab" class="${kind === k ? 'on' : ''}" data-kind="${k}">${k ? icon(KIND[k].icon) : ''}${l}</button>`).join('')}</div>
-      <button class="chip-btn ${tag ? 'on' : ''}" id="lib-tag">${icon('tag')}${tag ? esc(tag) : 'Any tag'}${tag ? `<span class="x" id="lib-tag-x" aria-label="Clear tag">×</span>` : ''}</button>
-      ${tag ? `<button class="icon-btn" id="lib-perform">${icon('perform')}<span>Play all</span></button><a class="icon-btn btn" href="#/print?tag=${encodeURIComponent(tag)}">${icon('print')}<span>Print all</span></a>` : ''}
-      <span class="grow"></span>
-      <label class="sort">Sort <select id="lib-sort">${Object.entries(SORTS).map(([k, [l]]) => `<option value="${k}" ${state.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-    </div>
+
     <ul class="rows" id="lib-rows"></ul>
     <div class="selbar" id="selbar" hidden></div>`;
 
@@ -59,7 +59,7 @@ export function libraryView(main, { q }) {
             ${it.tags.length ? `<div class="row-tags">${it.tags.slice(0, 4).map((t) => `<span class="tagchip">${esc(t)}</span>`).join('')}${it.tags.length > 4 ? `<span class="tagchip more">+${it.tags.length - 4}</span>` : ''}</div>` : ''}
           </div>
           <div class="row-when hide-s">${state.sort === 'most' ? `${store.playCount(it.id)} plays` : state.sort === 'played' ? ago(store.lastPlayed(it.id)) : ago(it.createdAt)}</div>
-          ${state.select ? '' : `<button class="icon-btn row-more" aria-label="More for ${esc(it.title)}">More</button>`}
+          ${state.select ? '' : `<button class="icon-btn row-more" aria-label="More for ${esc(it.title)}" title="More">${iconOn('more')}</button>`}
         </li>`).join('') +
         (list.length > state.shown ? `<li class="more-row"><button id="lib-more">Show ${Math.min(PAGE, list.length - state.shown)} more of ${list.length - state.shown}</button></li>` : '') +
         `<li class="count-row">${list.length} item${list.length === 1 ? '' : 's'}</li>`;
@@ -96,7 +96,6 @@ export function libraryView(main, { q }) {
   $('#lib-q', main).oninput = (e) => { state.q = e.target.value; state.shown = PAGE; draw(); };
   $('#lib-select', main).onclick = () => { state.select = !state.select; state.sel.clear(); draw(); };
   $('#lib-add', main).onclick = (e) => addMenu(e.currentTarget);
-  $('#lib-perform', main)?.addEventListener('click', () => { const first = store.tagItems(tag)[0]; if (first) go(`#/perform/${first.id}?tag=${encodeURIComponent(tag)}`); });
   $('#lib-rows', main).onclick = (e) => {
     const row = e.target.closest('.row');
     if (!row) return;

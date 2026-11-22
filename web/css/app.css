@@ -474,13 +474,9 @@ legend { font-weight: 700; margin-bottom: 8px; }
   .hide-phone { display: none !important; }
   .top { padding: 10px 14px; padding-top: calc(10px + env(safe-area-inset-top)); min-height: 56px; flex-wrap: wrap; }
   .top h1 { font-size: 20px; }
-  .top.item-top { flex-wrap: wrap; row-gap: 2px; }
-  .item-title { order: 10; flex-basis: 100%; }
-  .item-title h1 { font-size: 20px; white-space: normal; }
   .item-top .grow { display: block; }
   .item-top .icon-btn { padding: 0 7px; font-size: 15px; }
   .rows.ordered .handle { display: none; }
-  body[data-view="library"] .top .search { order: 5; flex-basis: 100%; max-width: none; margin: 0; }
   .filters { padding: 10px 14px 4px; gap: 8px; }
   .filters .seg { width: 100%; }
   .filters .seg button { flex: 1; padding: 0 6px; }
@@ -529,4 +525,29 @@ legend { font-weight: 700; margin-bottom: 8px; }
   #print-root .pcat .cat-face { fill: none; stroke: #222; stroke-width: 1.4; }
   #print-root .pcat .cat-ear, #print-root .pcat .cat-nose { fill: none; }
   #print-root .pcat .cat-eye { fill: #222; }
+}
+
+/* one header band */
+.item-top { gap: 8px; flex-wrap: wrap; }
+.item-top .item-title { font-size: 18px; min-width: 0; max-width: 34%; flex: 0 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: text; }
+.toolbar.inline { border: 0; padding: 0; background: none; min-height: 0; flex: 1; justify-content: flex-end; gap: 8px; flex-wrap: nowrap; min-width: 0; }
+.toolbar.inline .pageno { margin-right: 0; font-weight: 600; font-size: 14px; }
+.toolbar.inline .transport { min-width: 90px; max-width: 280px; flex: 1 1 160px; }
+.toolbar.inline .time { display: none; }
+.toolbar.inline .ctl select, .toolbar.inline .stepper button, .toolbar.inline .toggle, .toolbar.inline button { min-height: 34px; }
+.toolbar.inline .stepper button { padding: 0 9px; }
+.toolbar.inline .transport .play { height: 34px; min-width: 64px; }
+.toolbar.inline .ctl { font-size: 13px; }
+.lib-top { flex-wrap: wrap; row-gap: 8px; }
+.lib-top .search { max-width: 300px; margin-left: 0; }
+.lib-top .sort { margin-left: auto; }
+@media (max-width: 760px) {
+  .item-top .item-title { max-width: none; flex: 1; order: 0; font-size: 17px; }
+  .toolbar.inline { order: 20; flex-basis: 100%; justify-content: flex-start; flex-wrap: wrap; }
+  .toolbar.inline .lbl, .toolbar.inline .zoom { display: none; }
+  .toolbar.inline .transport { flex-basis: 100%; max-width: none; }
+  .lib-top .search { order: 5; flex-basis: 100%; max-width: none; }
+  .lib-top .seg { order: 6; width: 100%; }
+  .lib-top .seg button { flex: 1; }
+  .lib-top .chip-btn, .lib-top .sort { order: 7; }
 }

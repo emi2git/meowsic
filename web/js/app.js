@@ -3,7 +3,6 @@ import { store } from './store.js';
 import { $, esc, icon, CAT, KIND, menu } from './ui.js';
 import { libraryView } from './views/library.js';
 import { itemView } from './views/item.js';
-import { performView } from './views/perform.js';
 import { addSheetsView, addChordsView, addScoreView } from './views/add.js';
 import { tagsView, binView } from './views/organize.js';
 import { printView } from './views/print.js';
@@ -20,7 +19,7 @@ export function parseHash() {
 }
 
 const ROUTES = {
-  library: libraryView, item: itemView, perform: performView,
+  library: libraryView, item: itemView,
   'add-sheets': addSheetsView, 'add-chords': addChordsView, 'add-score': addScoreView, jobs: addScoreView,
   tags: tagsView, bin: binView,
   print: printView, stats: statsView, settings: settingsView,

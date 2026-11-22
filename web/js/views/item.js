@@ -1,11 +1,11 @@
 // One item (sheet, chord chart or score): header, toolbar, body, details panel.
 import { store } from '../store.js';
-import { $, esc, icon, badge, ago, mins, CAT } from '../ui.js';
+import { $, esc, icon, iconOn, badge, ago, mins, CAT } from '../ui.js';
 import { go } from '../app.js';
 import { itemMenu, editTags, rename, metaText } from './actions.js';
 import { sheetBody, sheetToolbar, sheetExtraMenu, startInk } from './sheet.js';
 import { chordsBody, chordsToolbar } from './chordsview.js';
-import { scoreBody, scoreToolbar } from './score.js';
+import { scoreBody, scoreToolbar, scoreExportMenu } from './score.js';
 
 export function itemView(main, { parts }) {
   const it = store.get(parts[1]);
@@ -18,16 +18,10 @@ export function itemView(main, { parts }) {
     <div class="viewer k-${it.kind}">
       <header class="top item-top">
         <a class="icon-btn back" href="${back}" aria-label="Back">‹ Back</a>
-        <div class="item-title">
-          <h1 id="it-title" title="Rename">${esc(it.title)}</h1>
-          <div class="row-sub">${badge(it.kind)}<span>${esc(it.artist || '')}</span></div>
-        </div>
-        <span class="grow"></span>
-        <button class="icon-btn" id="it-perform" title="Performance mode">${icon('perform')}<span>Perform</span></button>
-        <button class="icon-btn" id="it-info" title="Details">Details</button>
-        <button class="icon-btn" id="it-more" aria-label="More">More</button>
+        <h1 class="item-title" id="it-title" title="${esc(it.title)}${it.artist ? ' — ' + esc(it.artist) : ''} (tap to rename)">${esc(it.title)}</h1>
+        <div class="toolbar inline" id="it-bar"></div>
+        <button class="icon-btn" id="it-more" aria-label="More" title="More">${iconOn('more')}</button>
       </header>
-      <div class="toolbar" id="it-bar"></div>
       <div class="viewer-body">
         <div class="scroll-host" id="it-body"></div>
         <aside class="details" id="it-details" hidden></aside>
@@ -55,9 +49,11 @@ export function itemView(main, { parts }) {
     // annotate scores too
     const ink = document.createElement('button');
     ink.className = 'icon-btn';
-    ink.innerHTML = `${icon('pen')}<span>Annotate</span>`;
+    ink.innerHTML = iconOn('pen');
+    ink.title = 'Annotate';
+    ink.setAttribute('aria-label', 'Annotate');
     ink.onclick = () => startInk(view, $('.viewer', main));
-    $('#it-info', main).before(ink);
+    $('#it-more', main).before(ink);
   }
 
   const details = $('#it-details', main);
@@ -77,10 +73,13 @@ export function itemView(main, { parts }) {
     $('#dt-close', details).onclick = () => (details.hidden = true);
     $('#dt-tags', details).onclick = () => editTags(it.id);
   };
-  $('#it-info', main).onclick = () => { details.hidden = !details.hidden; if (!details.hidden) drawDetails(); };
+  const toggleDetails = () => { details.hidden = !details.hidden; if (!details.hidden) drawDetails(); };
   $('#it-title', main).onclick = () => rename(it.id);
-  $('#it-perform', main).onclick = () => go(`#/perform/${it.id}`);
-  $('#it-more', main).onclick = (e) => itemMenu(e.currentTarget, it.id, it.kind === 'sheet' ? sheetExtraMenu(it, view) : []);
+  $('#it-more', main).onclick = (e) => itemMenu(e.currentTarget, it.id, [
+    { label: 'Details', icon: 'info', run: toggleDetails },
+    ...(it.kind === 'sheet' ? sheetExtraMenu(it, view) : []),
+    ...(it.kind === 'score' ? scoreExportMenu(it, view) : []),
+  ]);
 
   const off = store.on(() => {
     if (!store.get(it.id) || it.deleted) return go('#/library');

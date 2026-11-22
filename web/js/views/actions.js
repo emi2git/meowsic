@@ -51,7 +51,6 @@ export function binItems(ids) {
 export function itemMenu(anchor, id, extra = []) {
   menu(anchor, [
     { label: 'Open', icon: 'right', run: () => go(`#/item/${id}`) },
-    { label: 'Performance mode', icon: 'perform', run: () => go(`#/perform/${id}`) },
     '-',
     { label: 'Rename', icon: 'edit', run: () => rename(id) },
     { label: 'Edit tags', icon: 'tag', run: () => editTags(id) },

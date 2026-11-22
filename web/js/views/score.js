@@ -1,5 +1,5 @@
 // Score viewer: OpenSheetMusicDisplay notation, piano playback with a moving bar,
-// versions, tempo, loop bars, transpose, zoom, downloads.
+// versions, tempo, transpose, zoom; export lives in the More menu.
 import { store } from '../store.js';
 import { $, esc, icon, toast, menu } from '../ui.js';
 import { TUNES } from '../mock.js';
@@ -120,24 +120,30 @@ export function scoreBody(root, it, { perform = false } = {}) {
   };
 }
 
+// Export entries for the item's More menu
+export function scoreExportMenu(it, view) {
+  return [
+    { label: 'Export MusicXML (for MuseScore)', icon: 'download', run: () => download(`${it.title} - ${VERSIONS[view.version]}.musicxml`, view.xml(), 'application/vnd.recordare.musicxml+xml') },
+    { label: 'Export MIDI', icon: 'download', run: () => toast('MIDI export comes with the Mac server (phase 2).') },
+    { label: 'Export PDF', icon: 'download', run: () => toast('PDF export comes with the Mac server (phase 2).') },
+  ];
+}
+
 export function scoreToolbar(bar, it, view) {
   const t = view.tune;
   const bars = t.measures.length;
   const secs = (q) => (q / (t.bpm * view.player.rate)) * 60;
   const total = bars * t.beats;
   bar.innerHTML = `
-    <label class="ctl">Version <select id="sc-ver">${it.versions.map((v) => `<option value="${v}" ${v === view.version ? 'selected' : ''}>${VERSIONS[v]}</option>`).join('')}</select></label>
+    <label class="ctl" title="Version"><span class="lbl">Version</span> <select id="sc-ver">${it.versions.map((v) => `<option value="${v}" ${v === view.version ? 'selected' : ''}>${VERSIONS[v]}</option>`).join('')}</select></label>
     <div class="transport">
       <button class="play" id="sc-play" aria-label="Play">Play</button>
       <input type="range" id="sc-pos" min="0" max="${total}" step="0.25" value="0" aria-label="Position">
       <span class="time" id="sc-time">0:00 / ${fmt(secs(total))}</span>
     </div>
-    <label class="ctl">Tempo <select id="sc-rate">${[0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25].map((r) => `<option value="${r}" ${r === view.player.rate ? 'selected' : ''}>${Math.round(r * 100)}% · ${Math.round(t.bpm * r)}</option>`).join('')}</select></label>
-    <button class="toggle ${view.player.loop ? 'on' : ''}" id="sc-loop">${icon('loop')}<span>Loop</span></button>
-    <span class="loop-bars" id="sc-loopbars" ${view.player.loop ? '' : 'hidden'}>bars <input type="number" id="sc-la" min="1" max="${bars}" value="${view.player.loop ? view.player.loop[0] / t.beats + 1 : 1}"> to <input type="number" id="sc-lb" min="1" max="${bars}" value="${view.player.loop ? view.player.loop[1] / t.beats : Math.min(4, bars)}"></span>
+    <label class="ctl" title="Tempo"><select id="sc-rate" aria-label="Tempo">${[0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25].map((r) => `<option value="${r}" ${r === view.player.rate ? 'selected' : ''}>Tempo ${Math.round(r * 100)}%</option>`).join('')}</select></label>
     <div class="stepper" aria-label="Transpose"><button id="sc-tdown" aria-label="Transpose down">♭</button><span id="sc-tval">${it.transpose ? (it.transpose > 0 ? '+' : '') + it.transpose : '0'}</span><button id="sc-tup" aria-label="Transpose up">♯</button></div>
-    <div class="stepper" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out">−</button><button id="sc-zin" aria-label="Zoom in">+</button></div>
-    <button class="icon-btn" id="sc-dl" title="Download">${icon('download')}<span>Files</span></button>`;
+    <div class="stepper zoom" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out">−</button><button id="sc-zin" aria-label="Zoom in">+</button></div>`;
 
   const p = () => view.player;
   const playBtn = $('#sc-play', bar);
@@ -152,30 +158,11 @@ export function scoreToolbar(bar, it, view) {
   pos.oninput = () => p().seek(+pos.value);
   $('#sc-ver', bar).onchange = async (e) => { await view.setVersion(e.target.value); setPlay(); };
   $('#sc-rate', bar).onchange = (e) => { p().setRate(+e.target.value); time.textContent = `${fmt(secs(+pos.value))} / ${fmt(secs(total))}`; };
-  const setLoop = () => {
-    const a = Math.max(1, Math.min(bars, +$('#sc-la', bar).value || 1));
-    const b = Math.max(a, Math.min(bars, +$('#sc-lb', bar).value || a));
-    p().loop = [(a - 1) * t.beats, b * t.beats];
-    if (p().now() < p().loop[0] || p().now() > p().loop[1]) p().seek(p().loop[0]);
-  };
-  $('#sc-loop', bar).onclick = (e) => {
-    const on = !p().loop;
-    e.currentTarget.classList.toggle('on', on);
-    $('#sc-loopbars', bar).hidden = !on;
-    if (on) setLoop(); else p().loop = null;
-  };
-  $('#sc-la', bar).onchange = setLoop;
-  $('#sc-lb', bar).onchange = setLoop;
   const tr = async (d) => { const n = Math.max(-6, Math.min(6, (it.transpose || 0) + d)); await view.setTranspose(n); $('#sc-tval', bar).textContent = n ? (n > 0 ? '+' : '') + n : '0'; };
   $('#sc-tdown', bar).onclick = () => tr(-1);
   $('#sc-tup', bar).onclick = () => tr(1);
   $('#sc-zout', bar).onclick = () => view.setZoom(view.zoom - 0.15);
   $('#sc-zin', bar).onclick = () => view.setZoom(view.zoom + 0.15);
-  $('#sc-dl', bar).onclick = (e) => menu(e.currentTarget, [
-    { label: 'MusicXML (for MuseScore)', icon: 'download', run: () => download(`${it.title} - ${VERSIONS[view.version]}.musicxml`, view.xml(), 'application/vnd.recordare.musicxml+xml') },
-    { label: 'MIDI', icon: 'download', run: () => toast('MIDI download comes with the Mac server (phase 2).') },
-    { label: 'PDF', icon: 'print', run: () => toast('PDF download comes with the Mac server (phase 2).') },
-  ]);
   const onSpace = (e) => { if (e.key === ' ' && !e.target.closest('input,select,textarea,button')) { e.preventDefault(); playBtn.click(); } };
   document.addEventListener('keydown', onSpace);
   return () => { host.removeEventListener('tick', onTick); host.removeEventListener('ended', onEnd); document.removeEventListener('keydown', onSpace); };
