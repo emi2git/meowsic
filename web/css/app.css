@@ -666,3 +666,14 @@ p.count-row { text-align: center; }
 .pages.zoomed .page { cursor: grab; }
 .pages.zoomed.panning, .pages.zoomed.panning .page { cursor: grabbing; user-select: none; }
 .stepper .zreset { min-width: 58px; font-size: 13px; font-weight: 700; border-left: 1px solid var(--line); }
+
+/* |‹| page window |›| */
+.sheet-frame { display: flex; height: 100%; min-height: 0; background: var(--bg2); }
+.sheet-frame .pages { flex: 1; min-width: 0; height: 100% !important; padding: 4px 6px; }
+.turn-strip { flex: none; width: 40px; height: 100%; min-height: 0; padding: 0; border: 0; border-radius: 0; background: var(--bg2); color: var(--ink2); font-size: 28px; font-weight: 300; }
+.turn-strip:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 6%, var(--bg2)); }
+.turn-strip:disabled { opacity: .25; }
+.turn-strip.prev { border-right: 1px solid var(--line); } .turn-strip.next { border-left: 1px solid var(--line); }
+@media (max-width: 760px) { .turn-strip { width: 28px; font-size: 22px; } }
+.sheet-frame .page { flex: none; max-width: none !important; }
+.sheet-frame .page-row { height: auto; }

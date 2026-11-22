@@ -13,17 +13,18 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
   let tool = null;
 
   root.innerHTML = `
-    <div class="pages ${perform ? 'perform' : ''}" id="pages" tabindex="-1">
-      <div class="page-row" id="page-row"></div>
-    </div>
-`;
+    <div class="sheet-frame">
+      <button class="turn-strip prev" aria-label="Previous page" title="Previous page">‹</button>
+      <div class="pages ${perform ? 'perform' : ''}" id="pages" tabindex="-1"><div class="page-row" id="page-row"></div></div>
+      <button class="turn-strip next" aria-label="Next page" title="Next page">›</button>
+    </div>`;
 
   // two pages side by side only in a Mac browser (mouse / trackpad and a wide window); iPad and iPhone show one
   const pages = $('#pages', root);
-  // zoom steps: on a Mac browser the first step is two pages side by side; then one page fitted
-  // to the screen; then bigger, and the page scrolls. iPad / iPhone start at one page.
+  // zoom steps (100% = one page at 1.5× the screen height): Mac starts at 50% = two pages side by
+  // side; iPad / iPhone start at one page fitted to the screen (67%). Bigger pages scroll.
   const canTwo = () => it.pages > 1 && matchMedia('(pointer: fine)').matches && root.clientWidth > 900;
-  const levels = () => (canTwo() ? ['two', 1, 1.5, 2, 3] : [1, 1.5, 2, 3]);
+  const levels = () => (canTwo() ? ['two', 1.5, 2.25, 3] : [1, 1.5, 2.25, 3]);
   let zoom = it.zoom ?? levels()[0];
   if (!levels().includes(zoom)) zoom = levels()[0];
   const twoUp = () => zoom === 'two' && canTwo();
@@ -36,6 +37,8 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
     const row = $('#page-row', root);
     const big = typeof zoom === 'number' && zoom > 1;
     pages.classList.toggle('zoomed', big);
+    root.querySelector('.turn-strip.prev').disabled = page <= 1;
+    root.querySelector('.turn-strip.next').disabled = page + (twoUp() ? 2 : 1) > it.pages;
     // zoomed: the page keeps its shape and grows in both directions (height = zoom × screen height)
     const fitH = pages.clientHeight - 16;
     row.style.height = '';
@@ -43,11 +46,19 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
     row.innerHTML = show.map((p) => `<div class="page" data-p="${p}"><img src="${pageSrc(it, p)}" alt="Page ${p} of ${esc(it.title)}" draggable="false"></div>`).join('');
     row.querySelectorAll('.page').forEach((w) => {
       const img = w.querySelector('img');
-      if (row.dataset.h) w.style.height = row.dataset.h + 'px';
-      const mk = () => {
-        if (img.naturalWidth) w.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`; // real photos keep their own shape
-        const l = new InkLayer(w, it.id, +w.dataset.p); l.setTool(tool); layers.push(l);
+      // size the page box to the page's own shape, so the picture fills it with no empty band
+      const size = () => {
+        const ratio = img.naturalWidth ? img.naturalWidth / img.naturalHeight : 850 / 1100;
+        w.style.aspectRatio = String(ratio);
+        if (row.dataset.h) { w.style.height = row.dataset.h + 'px'; w.style.width = ''; return; }
+        const n = show.length, gap = 4;
+        const H = pages.clientHeight - 8, W = (pages.clientWidth - 12 - gap * (n - 1)) / n;
+        const h = Math.min(H, W / ratio);
+        w.style.height = h + 'px';
+        w.style.width = h * ratio + 'px';
       };
+      size();
+      const mk = () => { size(); const l = new InkLayer(w, it.id, +w.dataset.p); l.setTool(tool); layers.push(l); };
       img.complete ? mk() : img.addEventListener('load', mk, { once: true });
     });
     root.querySelectorAll('#strip button').forEach((b) => b.classList.toggle('on', show.includes(+b.dataset.p)));
@@ -56,6 +67,8 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
   const step = () => (twoUp() ? 2 : 1);
   const next = () => { if (page + step() <= it.pages) { page += step(); draw(); } else onEnd?.(); };
   const prev = () => { if (page > 1) { page = Math.max(1, page - step()); draw(); } };
+  root.querySelector('.turn-strip.prev').onclick = prev;
+  root.querySelector('.turn-strip.next').onclick = next;
 
   $('#strip', root)?.addEventListener('click', (e) => { const b = e.target.closest('[data-p]'); if (b) { page = +b.dataset.p; draw(); } });
 
@@ -124,7 +137,7 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
       if (L[i] === zoom) return;
       this.zoomTo(L[i]);
     },
-    get zoomLabel() { return zoom === 'two' ? '2 pages' : zoom === 1 ? 'Fit' : `${Math.round(zoom * 100)}%`; },
+    get zoomLabel() { return zoom === 'two' ? '50%' : `${Math.round((zoom / 1.5) * 100)}%`; },
     destroy() { document.removeEventListener('keydown', onKey); ro.disconnect(); layers.forEach((l) => l.destroy()); },
   };
 }

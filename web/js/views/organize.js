@@ -7,7 +7,7 @@ import { thumbHtml, metaText, itemMenu } from './actions.js';
 // ================= tags =================
 export function tagsView(main) {
   main.innerHTML = `<header class="top"><h1>Tags</h1><span class="grow"></span><button id="mt-open">Make tags…</button><button class="primary" id="tg-add">${icon('plus')}New tag</button></header>
-    <div class="pad"><p class="muted">Tap a tag to see its music. Use ⋯ to print everything with a tag (A–Z).</p><div class="tag-grid" id="tg"></div></div>`;
+    <div class="pad"><div class="tag-grid" id="tg"></div></div>`;
   const draw = () => {
     const counts = store.tagCounts();
     const tags = [...store.db.tags].sort((a, b) => (counts.get(b) || 0) - (counts.get(a) || 0) || a.localeCompare(b));
