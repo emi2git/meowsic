@@ -224,7 +224,7 @@ body[data-view="item"] #main, body[data-view="perform"] #main { overflow: hidden
 .details dd { margin: 4px 0 0; }
 
 /* sheet pages */
-.pages { position: relative; height: calc(100% - 92px); display: flex; align-items: center; justify-content: center; padding: 14px 56px; background: var(--bg2); outline: none; touch-action: pan-y pinch-zoom; user-select: none; -webkit-user-select: none; }
+.pages { position: relative; height: calc(100% - 40px); display: flex; align-items: center; justify-content: center; padding: 14px 56px; background: var(--bg2); outline: none; touch-action: pan-y pinch-zoom; user-select: none; -webkit-user-select: none; }
 .pages.perform { height: 100%; padding: 6px; background: #111113; }
 .page-row { display: flex; gap: 10px; height: 100%; align-items: center; justify-content: center; max-width: 100%; }
 .page { position: relative; height: 100%; max-width: 100%; aspect-ratio: 850 / 1100; box-shadow: 0 2px 14px rgba(0, 0, 0, .18); border-radius: 4px; overflow: hidden; background: var(--paper); }
@@ -234,11 +234,10 @@ body[data-view="item"] #main, body[data-view="perform"] #main { overflow: hidden
 .turn.prev { left: 6px; } .turn.next { right: 6px; }
 .perform .turn { opacity: 0; }
 .perform:hover .turn { opacity: .5; }
-.strip { height: 92px; display: flex; gap: 8px; padding: 8px 14px; overflow-x: auto; border-top: 1px solid var(--line); background: var(--bg); }
-.strip button { padding: 0; height: 74px; width: 58px; min-height: 0; border-radius: 6px; flex: none; position: relative; overflow: hidden; background: var(--paper); }
-.strip button.on { border: 2px solid var(--acc); }
-.strip img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
-.strip span { position: absolute; right: 3px; bottom: 2px; font-size: 11px; background: var(--ink); color: var(--bg); border-radius: 6px; padding: 0 5px; }
+.dots { height: 40px; display: flex; gap: 4px; align-items: center; justify-content: center; border-top: 1px solid var(--line); background: var(--bg); }
+.dots button { min-height: 0; width: 22px; height: 22px; padding: 0; border: 0; background: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+.dots button::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: var(--line2); }
+.dots button.on::before { background: var(--acc); width: 11px; height: 11px; }
 .ink { position: absolute; inset: 0; pointer-events: none; touch-action: none; }
 .ink.active { pointer-events: auto; cursor: crosshair; }
 .inkbar { position: absolute; left: 50%; bottom: 108px; transform: translateX(-50%); z-index: 40; display: flex; gap: 4px; align-items: center; background: var(--card); border: 1px solid var(--line2); padding: 6px; border-radius: 18px; box-shadow: 0 10px 34px rgba(0, 0, 0, .25); max-width: calc(100% - 24px); overflow-x: auto; }
@@ -486,10 +485,8 @@ legend { font-weight: 700; margin-bottom: 8px; }
   .hide-s { display: none; }
   .pad { padding: 14px; }
   .toolbar { padding: 8px 12px; gap: 8px; }
-  .pages { padding: 6px 4px; height: calc(100% - 80px); }
+  .pages { padding: 6px 4px; height: calc(100% - 40px); }
   .turn { display: none; }
-  .strip { height: 80px; }
-  .strip button { height: 62px; width: 48px; }
   .chart { padding: 0 14px 60px; }
   .cd { width: 48px; height: 74px; }
   .selbar { margin: 0 10px 10px; bottom: 8px; }
@@ -551,3 +548,4 @@ legend { font-weight: 700; margin-bottom: 8px; }
   .lib-top .seg button { flex: 1; }
   .lib-top .chip-btn, .lib-top .sort { order: 7; }
 }
+.pages:only-child { height: 100%; }

@@ -9,8 +9,6 @@ export const pageSrc = (it, p) => (it.upload && store.sessionImage(`${it.id}:${p
 
 export function sheetBody(root, it, { perform = false, onEnd } = {}) {
   let page = 1;
-  let spread = false;
-  try { spread = localStorage.getItem('meowsic-spread') === '1'; } catch {}
   let layers = [];
   let tool = null;
 
@@ -20,13 +18,14 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
       <div class="page-row" id="page-row"></div>
       <button class="turn next" aria-label="Next page">›</button>
     </div>
-    ${perform ? '' : `<div class="strip" id="strip">${Array.from({ length: it.pages }, (_, i) =>
-      `<button data-p="${i + 1}" aria-label="Page ${i + 1}"><img src="${pageSrc(it, i + 1)}" alt="" loading="lazy"><span>${i + 1}</span></button>`).join('')}</div>`}`;
+    ${perform || it.pages < 2 ? '' : `<div class="dots" id="strip">${Array.from({ length: it.pages }, (_, i) =>
+      `<button data-p="${i + 1}" aria-label="Page ${i + 1}"></button>`).join('')}</div>`}`;
 
-  const wide = () => root.clientWidth > 700;
-  const twoUp = () => spread && wide() && it.pages > 1;
+  // two pages side by side only in a Mac browser (mouse / trackpad and a wide window); iPad and iPhone show one
+  const twoUp = () => it.pages > 1 && matchMedia('(pointer: fine)').matches && root.clientWidth > 900;
 
   const draw = () => {
+    if (twoUp() && page % 2 === 0) page--;
     layers.forEach((l) => l.destroy());
     layers = [];
     const show = twoUp() ? [page, page + 1].filter((p) => p <= it.pages) : [page];
@@ -40,7 +39,6 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
     root.querySelector('.prev').disabled = page <= 1;
     root.querySelector('.next').disabled = page + (twoUp() ? 2 : 1) > it.pages;
     root.querySelectorAll('#strip button').forEach((b) => b.classList.toggle('on', show.includes(+b.dataset.p)));
-    root.querySelector('#strip .on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     root.dispatchEvent(new CustomEvent('pagechange', { detail: { page, show, pages: it.pages }, bubbles: true }));
   };
   const step = () => (twoUp() ? 2 : 1);
@@ -77,8 +75,6 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
 
   return {
     get page() { return page; },
-    setSpread(v) { spread = v; try { localStorage.setItem('meowsic-spread', v ? '1' : '0'); } catch {} if (spread && page % 2 === 0) page--; draw(); },
-    get spread() { return spread; },
     setTool(t) { tool = t; layers.forEach((l) => l.setTool(t)); pages.classList.toggle('inking', !!t); },
     undo() { layers.at(-1)?.undo(); },
     clear() { layers.forEach((l) => l.clear()); },
@@ -90,11 +86,7 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
 export function sheetToolbar(bar, it, view) {
   bar.innerHTML = `
     <span class="pageno" id="pageno"></span>
-    <button class="icon-btn hide-phone" id="sv-spread" title="One or two pages"><span id="sv-spread-l"></span></button>
     <button class="icon-btn" id="sv-ink" title="Annotate" aria-label="Annotate">${iconOn('write')}</button>`;
-  const setL = () => ($('#sv-spread-l', bar).textContent = view.spread ? '2 pages' : '1 page');
-  setL();
-  $('#sv-spread', bar).onclick = () => { view.setSpread(!view.spread); setL(); };
   $('#sv-ink', bar).onclick = () => startInk(view, document.querySelector('.viewer'));
 }
 
