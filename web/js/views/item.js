@@ -88,11 +88,23 @@ export function itemView(main, { parts }) {
     if (d.fullscreenElement || d.webkitFullscreenElement) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
     else (el.requestFullscreen || el.webkitRequestFullscreen).call(el);
   });
+  // keyboard: + zooms in, − zooms out (sheet, score, chord text)
+  const zoomKey = (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest('input,textarea,select')) return;
+    if (e.key === '0') { e.preventDefault(); if (it.kind === 'sheet') view.zoomReset(); else if (it.kind === 'score') view.zoomReset(); else view.setSize(18); return; }
+    const d = e.key === '+' || e.key === '=' ? 1 : e.key === '-' || e.key === '_' ? -1 : 0;
+    if (!d) return;
+    e.preventDefault();
+    if (it.kind === 'sheet') view.zoomBy(d);
+    else if (it.kind === 'score') view.setZoom(view.zoom + d * 0.15);
+    else view.setSize(view.size + d * 2);
+  };
+  document.addEventListener('keydown', zoomKey);
   const off = store.on(() => {
     if (!store.get(it.id) || it.deleted) return go('#/library');
     $('#it-title', main).textContent = it.title;
     if (!details.hidden) drawDetails();
   });
   const opened = Date.now();
-  return () => { if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); off(); offBar?.(); view.destroy(); store.logPlay(it.id, opened, Date.now()); };
+  return () => { document.removeEventListener('keydown', zoomKey); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); off(); offBar?.(); view.destroy(); store.logPlay(it.id, opened, Date.now()); };
 }

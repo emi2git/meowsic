@@ -34,7 +34,7 @@ export function chordsBody(root, it, { perform = false } = {}) {
   const off = store.on(draw);
   return {
     draw,
-    setSize(px) { size = Math.max(12, Math.min(40, px)); try { localStorage.setItem('meowsic-chord-size', size); } catch {} $('#chart', root).style.setProperty('--chart-size', (perform ? size + 6 : size) + 'px'); },
+    setSize(px) { size = Math.max(12, Math.min(40, px)); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); try { localStorage.setItem('meowsic-chord-size', size); } catch {} $('#chart', root).style.setProperty('--chart-size', (perform ? size + 6 : size) + 'px'); },
     get size() { return size; },
     setSpeed(s) { speed = s; cancelAnimationFrame(raf); last = 0; if (s) raf = requestAnimationFrame(tick); },
     get speed() { return speed; },
@@ -55,10 +55,13 @@ export function keySelect(it) {
 export function chordsToolbar(bar, it, view) {
   const drawBar = () => {
     bar.innerHTML = `${keySelect(it)}
-      <div class="stepper" aria-label="Text size"><button id="cv-sm" aria-label="Smaller text" title="Smaller">${iconOn('zoomout')}</button><button id="cv-lg" aria-label="Larger text" title="Larger">${iconOn('zoomin')}</button></div>`;
+      <div class="stepper" aria-label="Text size"><button id="cv-sm" aria-label="Smaller text" title="Smaller (−)">${iconOn('zoomout')}</button><button id="cv-reset" class="zreset" title="Reset size (0)">${Math.round(view.size / 18 * 100)}%</button><button id="cv-lg" aria-label="Larger text" title="Larger (+)">${iconOn('zoomin')}</button></div>`;
     $('#cv-key', bar).onchange = (e) => store.update(it.id, { transpose: +e.target.value });
-    $('#cv-sm', bar).onclick = () => view.setSize(view.size - 2);
-    $('#cv-lg', bar).onclick = () => view.setSize(view.size + 2);
+    const sl = () => ($('#cv-reset', bar).textContent = `${Math.round(view.size / 18 * 100)}%`);
+    $('#cv-sm', bar).onclick = () => { view.setSize(view.size - 2); sl(); };
+    $('#cv-lg', bar).onclick = () => { view.setSize(view.size + 2); sl(); };
+    $('#cv-reset', bar).onclick = () => { view.setSize(18); sl(); };
+    bar.closest('.viewer')?.addEventListener('zoomchange', sl);
   };
   drawBar();
   return store.on(() => { if (document.activeElement?.id !== 'cv-key') drawBar(); });

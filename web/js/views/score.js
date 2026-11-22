@@ -112,7 +112,8 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get player() { return player; },
     get version() { return version; },
     async setTranspose(n) { store.update(it.id, { transpose: n }); player.shift = n; await render(); },
-    setZoom(z) { zoom = Math.max(0.6, Math.min(2, z)); store.update(it.id, { zoom }); osmd.zoom = zoom; osmd.render(); measureStops(); place(player.now()); ink?.fit(); },
+    zoomReset() { this.setZoom(innerWidth < 760 ? 0.62 : 1); },
+    setZoom(z) { zoom = Math.max(0.6, Math.min(2, Math.round(z * 100) / 100)); store.update(it.id, { zoom }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zoom; osmd.render(); measureStops(); place(player.now()); ink?.fit(); },
     get zoom() { return zoom; },
     setTool(t) { ink?.setTool(t); },
     undo() { ink?.undo(); }, clear() { ink?.clear(); },
@@ -146,7 +147,7 @@ export function scoreToolbar(bar, it, view) {
     </div>
     <div class="stepper" aria-label="Tempo" title="Tempo"><button id="sc-slow" aria-label="Slower">−</button><span id="sc-rate">${Math.round(t.bpm * view.player.rate)} bpm</span><button id="sc-fast" aria-label="Faster">+</button></div>
     <div class="stepper" aria-label="Transpose"><button id="sc-tdown" aria-label="Transpose down">♭</button><span id="sc-tval">${it.transpose ? (it.transpose > 0 ? '+' : '') + it.transpose : '0'}</span><button id="sc-tup" aria-label="Transpose up">♯</button></div>
-    <div class="stepper zoom" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out" title="Zoom out">${iconOn('zoomout')}</button><button id="sc-zin" aria-label="Zoom in" title="Zoom in">${iconOn('zoomin')}</button></div>`;
+    <div class="stepper zoom" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out" title="Zoom out (−)">${iconOn('zoomout')}</button><button id="sc-zreset" class="zreset" title="Reset zoom (0)">${Math.round(view.zoom * 100)}%</button><button id="sc-zin" aria-label="Zoom in" title="Zoom in (+)">${iconOn('zoomin')}</button></div>`;
 
   const p = () => view.player;
   const playBtn = $('#sc-play', bar);
@@ -172,8 +173,11 @@ export function scoreToolbar(bar, it, view) {
   const tr = async (d) => { const n = Math.max(-6, Math.min(6, (it.transpose || 0) + d)); await view.setTranspose(n); $('#sc-tval', bar).textContent = n ? (n > 0 ? '+' : '') + n : '0'; };
   $('#sc-tdown', bar).onclick = () => tr(-1);
   $('#sc-tup', bar).onclick = () => tr(1);
-  $('#sc-zout', bar).onclick = () => view.setZoom(view.zoom - 0.15);
-  $('#sc-zin', bar).onclick = () => view.setZoom(view.zoom + 0.15);
+  const zl = () => ($('#sc-zreset', bar).textContent = `${Math.round(view.zoom * 100)}%`);
+  $('#sc-zout', bar).onclick = () => { view.setZoom(view.zoom - 0.15); zl(); };
+  $('#sc-zin', bar).onclick = () => { view.setZoom(view.zoom + 0.15); zl(); };
+  $('#sc-zreset', bar).onclick = () => { view.zoomReset(); zl(); };
+  bar.closest('.viewer')?.addEventListener('zoomchange', zl);
   const onSpace = (e) => { if (e.key === ' ' && !e.target.closest('input,select,textarea,button')) { e.preventDefault(); playBtn.click(); } };
   document.addEventListener('keydown', onSpace);
   return () => { host.removeEventListener('tick', onTick); host.removeEventListener('ended', onEnd); document.removeEventListener('keydown', onSpace); };

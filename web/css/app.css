@@ -663,3 +663,6 @@ p.count-row { text-align: center; }
 .pages.zoomed .page-row { margin: 0 auto; height: auto; width: max-content; max-width: none; flex: none; }
 .pages.zoomed .page { max-width: none; flex: none; }
 .pages:not(.inking) .page { cursor: pointer; }
+.pages.zoomed .page { cursor: grab; }
+.pages.zoomed.panning, .pages.zoomed.panning .page { cursor: grabbing; user-select: none; }
+.stepper .zreset { min-width: 58px; font-size: 13px; font-weight: 700; border-left: 1px solid var(--line); }

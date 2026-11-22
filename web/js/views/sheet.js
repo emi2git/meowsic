@@ -68,7 +68,23 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
   // click / tap to turn: see below; swipe works too
   // (when zoomed in, dragging moves around the page instead of turning it)
   let sx = null, sy = 0;
-  pages.addEventListener('pointerdown', (e) => { if (tool) { sx = null; return; } sx = e.clientX; sy = e.clientY; });
+  let pan = null;
+  pages.addEventListener('pointerdown', (e) => {
+    if (tool) { sx = null; return; }
+    sx = e.clientX; sy = e.clientY;
+    if (e.pointerType === 'mouse' && pages.classList.contains('zoomed') && !e.target.closest('button')) {
+      pan = { x: e.clientX, y: e.clientY, l: pages.scrollLeft, t: pages.scrollTop };
+      pages.classList.add('panning');
+    }
+  });
+  pages.addEventListener('pointermove', (e) => {
+    if (!pan) return;
+    pages.scrollLeft = pan.l - (e.clientX - pan.x);
+    pages.scrollTop = pan.t - (e.clientY - pan.y);
+  });
+  const endPan = () => { pan = null; pages.classList.remove('panning'); };
+  pages.addEventListener('pointerleave', endPan);
+  document.addEventListener('pointerup', endPan);
   pages.addEventListener('pointerup', (e) => {
     if (sx === null || tool) return;
     const dx = e.clientX - sx, dy = e.clientY - sy;
@@ -106,14 +122,13 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
     undo() { layers.at(-1)?.undo(); },
     clear() { layers.forEach((l) => l.clear()); },
     goTo(p) { page = p; draw(); },
+    zoomReset() { this.zoomTo(levels()[0]); },
+    zoomTo(z) { zoom = z; store.update(it.id, { zoom }); pages.scrollTo({ top: 0, left: 0 }); draw(); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); },
     zoomBy(d) {
       const L = levels();
       const i = Math.max(0, Math.min(L.length - 1, L.indexOf(zoom) + d));
       if (L[i] === zoom) return;
-      zoom = L[i];
-      store.update(it.id, { zoom });
-      pages.scrollTo({ top: 0, left: 0 });
-      draw();
+      this.zoomTo(L[i]);
     },
     get zoomLabel() { return zoom === 'two' ? '2 pages' : zoom === 1 ? 'Fit' : `${Math.round(zoom * 100)}%`; },
     destroy() { document.removeEventListener('keydown', onKey); ro.disconnect(); layers.forEach((l) => l.destroy()); },
@@ -123,11 +138,14 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
 export function sheetToolbar(bar, it, view) {
   bar.innerHTML = `
     <span class="pageno" id="pageno"></span>
-    <div class="stepper zoom" aria-label="Zoom"><button id="sv-zout" aria-label="Zoom out" title="Zoom out">${iconOn('zoomout')}</button><button id="sv-zin" aria-label="Zoom in" title="Zoom in">${iconOn('zoomin')}</button></div>
+    <div class="stepper zoom" aria-label="Zoom"><button id="sv-zout" aria-label="Zoom out" title="Zoom out (−)">${iconOn('zoomout')}</button><button id="sv-zreset" class="zreset" title="Reset zoom (0)">${view.zoomLabel}</button><button id="sv-zin" aria-label="Zoom in" title="Zoom in (+)">${iconOn('zoomin')}</button></div>
     <button class="icon-btn ink-toggle" id="sv-ink" title="Annotate" aria-label="Annotate">${iconOn('write')}</button>`;
   $('#sv-ink', bar).onclick = () => startInk(view, document.querySelector('.viewer'));
-  $('#sv-zout', bar).onclick = () => view.zoomBy(-1);
-  $('#sv-zin', bar).onclick = () => view.zoomBy(1);
+  const lab = () => ($('#sv-zreset', bar).textContent = view.zoomLabel);
+  $('#sv-zout', bar).onclick = () => { view.zoomBy(-1); lab(); };
+  $('#sv-zin', bar).onclick = () => { view.zoomBy(1); lab(); };
+  $('#sv-zreset', bar).onclick = () => { view.zoomReset(); lab(); };
+  bar.closest('.viewer')?.addEventListener('zoomchange', lab);
 }
 
 // the Annotate button toggles: first click opens the pen bar, second click closes it
