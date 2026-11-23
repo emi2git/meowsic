@@ -310,6 +310,16 @@ body[data-view="item"] #main, body[data-view="perform"] #main { overflow: hidden
 .perform-wrap .chart .diagrams { top: 0; }
 
 /* ---------- add ---------- */
+/* Add music: three big short choices (Sheet, Chords, Score) */
+.menu.add-menu { min-width: 220px; padding: 8px; }
+.menu.add-menu button { min-height: 56px; font-size: 19px; font-weight: 700; padding: 0 18px; }
+/* where it comes from: compact one-word buttons inside each Add view */
+.src-row { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin: 8px 0 12px; }
+.src-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 120px; min-height: 56px; padding: 0 20px; border: 1px solid var(--line2); border-radius: 14px; background: var(--card); color: var(--ink); cursor: pointer; text-decoration: none; font-size: 17px; }
+.src-btn.primary { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
+.add-src.over { outline: 2.5px dashed var(--acc); outline-offset: -4px; border-radius: 22px; background: var(--acc-soft); }
+.help-sec ul { margin: 0; padding-left: 20px; }
+.help-sec li { margin: 6px 0; line-height: 1.45; }
 .drop { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; border: 2.5px dashed var(--line2); border-radius: 22px; padding: 40px 24px; background: var(--card); cursor: pointer; }
 .drop.over { border-color: var(--acc); background: var(--acc-soft); }
 .drop .cat { width: 72px; height: 72px; }
@@ -1257,3 +1267,5 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 :root[data-device="phone"] .fb-body { padding: 0 12px 12px 12px; }
 :root[data-device="phone"] .fb-acts button { flex: 1; }
 :root[data-device="phone"] .fb-bar .primary { flex: 1; }
+/* Add music sources: two per row on iPhone */
+:root[data-device="phone"] .src-btn { flex: 1 1 40%; min-width: 0; }

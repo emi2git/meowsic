@@ -12,6 +12,7 @@ import { activityView } from './views/activity.js';
 import { cleanupView } from './views/cleanup.js';
 import { photoImportView } from './views/photoimport.js';
 import { makeTagsView } from './views/maketags.js';
+import { helpView } from './views/help.js';
 import { placeBanner } from './conn.js';
 import './textinput.js'; // mic + double-tap select-all on every text box
 
@@ -31,7 +32,7 @@ const ROUTES = {
   library: libraryView, item: itemView,
   'add-sheets': addSheetsView, 'add-photos': photoImportView, 'add-chords': addChordsView, 'add-score': addScoreView, jobs: addScoreView,
   tags: tagsView, bin: binView,
-  print: printView, stats: statsView, activity: activityView, activities: activityView, cleanup: cleanupView, manage: cleanupView, 'make-tags': makeTagsView, developer: developerView, settings: settingsView,
+  print: printView, stats: statsView, activity: activityView, activities: activityView, cleanup: cleanupView, manage: cleanupView, 'make-tags': makeTagsView, developer: developerView, settings: settingsView, help: helpView,
 };
 
 function route() {
@@ -69,6 +70,7 @@ export function renderSide() {
       <a class="nav${on(v === 'activity' || v === 'activities')}" href="#/activity"><span>Activities</span>${store.jobs().some((j) => j.status === 'running') ? '<i class="live">•</i>' : ''}</a>
       ${store.mode === 'server' ? `<a class="nav${on(v === 'cleanup')}" href="#/manage"><span>Manage library</span></a>` : ''}
       <a class="nav${on(v === 'bin')}" href="#/bin">${icon('bin')}<span>Trash</span><i>${store.items({ deleted: true }).length || ''}</i></a>
+      <a class="nav${on(v === 'help')}" href="#/help"><span>Help</span></a>
       <a class="nav${on(v === 'settings')}" href="#/settings">${icon('settings')}<span>Settings</span></a>
       <a class="nav${on(v === 'developer')}" href="#/developer"><span>Developer</span></a>
     </nav>
@@ -81,24 +83,26 @@ export function renderSide() {
     tab('#/tags', 'tag', 'Tags', v === 'tags') +
     `<button id="tab-add" class="tab-add" aria-label="Add music">Add</button>` +
     tab('#/stats', 'stats', 'Stats', v === 'stats') +
-    `<button id="tab-more" class="${['bin', 'settings', 'print', 'activity', 'activities', 'developer', 'cleanup', 'manage'].includes(v) ? 'on' : ''}">${icon('more')}<span>Utilities</span></button>`;
+    `<button id="tab-more" class="${['bin', 'settings', 'print', 'activity', 'activities', 'developer', 'cleanup', 'manage', 'help'].includes(v) ? 'on' : ''}">${icon('more')}<span>Utilities</span></button>`;
   $('#tab-add').onclick = (e) => addMenu(e.currentTarget);
   $('#tab-more').onclick = (e) => menu(e.currentTarget, [
     { label: 'Activities', icon: 'wave', run: () => go('#/activity') },
     ...(store.mode === 'server' ? [{ label: 'Manage library', icon: 'tools', run: () => go('#/manage') }] : []),
     { label: 'Trash', icon: 'bin', run: () => go('#/bin') },
+    { label: 'Help', icon: 'info', run: () => go('#/help') },
     { label: 'Settings', icon: 'settings', run: () => go('#/settings') },
     { label: 'Developer', icon: 'tools', run: () => go('#/developer') },
   ]);
 }
 
 export function addMenu(anchor) {
+  // three short choices; where the music comes from is picked inside each one (explained in Help)
   menu(anchor, [
-    { label: 'Sheet music — photos or PDF', icon: 'photo', run: () => go('#/add-sheets') },
-    ...(store.mode === 'server' ? [{ label: 'Sheet music — from Photos (SHEET album)', icon: 'photo', run: () => go('#/add-photos') }] : []),
-    { label: 'Chords — search the web', icon: 'chords', run: () => go('#/add-chords') },
-    { label: 'Score — from a recording', icon: 'wave', run: () => go('#/add-score') },
+    { label: 'Sheet', icon: 'photo', run: () => go('#/add-sheets') },
+    { label: 'Chords', icon: 'chords', run: () => go('#/add-chords') },
+    { label: 'Score', icon: 'wave', run: () => go('#/add-score') },
   ]);
+  document.querySelector('.menu')?.classList.add('add-menu');
 }
 
 // ---------- theme ----------

@@ -4,10 +4,11 @@ import { $, esc, icon, toast, platformOf, tagPicker, sheet as modal, CAT, ago } 
 import { go } from '../app.js';
 import { CHORD_CHARTS, SEARCH_EXTRA, TUNES } from '../mock.js';
 import { parseChordPro, linesHtml, diagramsHtml } from '../chordchart.js';
-import { VERSIONS, VERSION_HELP } from '../musicxml.js';
+import { VERSIONS } from '../musicxml.js';
 import { autoTag } from './autotag.js';
 import { keySelect } from './chordsview.js';
 import { sheetUrl } from '../sheet-art.js';
+import { isTouch, isDesktop } from '../device.js';
 
 const titleCase = (s) => s.replace(/\s+/g, ' ').trim().replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase();
@@ -19,27 +20,19 @@ export function addSheetsView(main) {
   if (pending) return reviewSheets(main);
   main.innerHTML = `
     <header class="top"><a class="icon-btn back" href="#/library?kind=sheet" aria-label="Back">‹ Back</a><h1>Add sheet music</h1></header>
-    <div class="pad narrow">
-      ${store.mode === 'server' ? `<a class="drop small pi-from" href="#/add-photos">${icon('photo')}<span><b>From Photos</b><br><span class="muted">The new photos in your “SHEET” album in Apple Photos — grouped into songs, ready to check</span></span></a>` : ''}
-      <label class="drop" id="drop">
-        ${CAT}
-        <b>Choose photos or PDFs</b>
-        <span class="muted">On iPad and iPhone this opens your photo library, the camera or Files. On the Mac you can also drag files here.</span>
-        <input type="file" id="files" accept="image/*,application/pdf" multiple hidden>
-        <span class="btn primary">${icon('photo')}Choose…</span>
-      </label>
-      ${store.mode === 'mock' ? '<p class="center"><button class="link" id="sample">No photos handy? Try with 7 sample pages</button></p>' : ''}
-      <div class="how">
-        <h3>What happens next</h3>
-        <ol>
-          <li>The Mac reads each page and finds its title.</li>
-          <li>Pages are grouped into sheets: a page with a title starts a new sheet, the pages after it join it.</li>
-          <li>You check the grouping, fix titles and tags, then add them.</li>
-        </ol>
+    <div class="pad narrow add-src" id="drop">
+      <div class="src-row">
+        <label class="src-btn primary" id="src-files">${icon('upload')}<b>Files</b><input type="file" id="files" accept="image/*,application/pdf" multiple hidden></label>
+        ${isTouch() ? `<label class="src-btn" id="src-camera">${icon('photo')}<b>Camera</b><input type="file" id="camera" accept="image/*" capture="environment" hidden></label>` : ''}
+        ${store.mode === 'server' ? `<a class="src-btn pi-from" href="#/add-photos">${icon('photo')}<b>Photos</b></a>` : ''}
+        ${store.mode === 'mock' ? `<button class="src-btn" id="sample">${icon('sheet')}<b>Samples</b></button>` : ''}
       </div>
+      <p class="muted small center">${isDesktop() ? 'Or drop files here · ' : ''}<a class="link" href="#/help">Help</a></p>
     </div>`;
   const input = $('#files', main);
   input.onchange = () => input.files.length && analyse(main, [...input.files]);
+  const cam = $('#camera', main);
+  if (cam) cam.onchange = () => cam.files.length && analyse(main, [...cam.files]);
   const drop = $('#drop', main);
   drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
   drop.ondragleave = () => drop.classList.remove('over');
@@ -189,7 +182,7 @@ export function addChordsView(main) {
             `<button type="button" data-s="${k}" class="${chordState.src === k ? 'on' : ''}">${l}</button>`).join('')}</div>
         </form>
         <ul class="rows compact" id="cs-results"></ul>
-        <p class="pad center"><button class="link" id="cs-paste">Or paste a chord chart yourself</button></p>
+        <p class="pad center"><button class="src-btn" id="cs-paste">${icon('text')}<b>Paste</b></button> <a class="link small" href="#/help">Help</a></p>
       </div>
       <div class="pane-r" id="cs-preview"><div class="empty">${CAT}<p>Search for a song, then pick a result to preview it.</p></div></div>
     </div>`;
@@ -297,26 +290,14 @@ export function addScoreView(main) {
     <header class="top"><a class="icon-btn back" href="#/library?kind=sheet" aria-label="Back">‹ Back</a><h1>Add score</h1></header>
     <div class="pad narrow" id="sf-jobs"></div>
     <form class="pad narrow form" id="sf">
-      <h2 class="sub-h">New score from a recording</h2>
-      <div class="seg" id="sf-src"><button type="button" data-s="yt" class="on">${icon('link')}YouTube link</button><button type="button" data-s="file">${icon('upload')}Audio file</button></div>
+      <div class="seg" id="sf-src"><button type="button" data-s="yt" class="on">${icon('link')}YouTube</button><button type="button" data-s="file">${icon('upload')}Audio file</button></div>
       <div id="sf-yt"><input id="sf-url" type="url" placeholder="https://www.youtube.com/watch?v=…" aria-label="YouTube link"></div>
       <div id="sf-file" hidden><label class="drop small"><input type="file" id="sf-audio" accept="audio/*,video/*" hidden><span class="btn">${icon('upload')}Choose audio file</span><span class="muted" id="sf-fname">MP3, M4A, WAV or a video</span></label></div>
       <label class="field">Title <input id="sf-title" placeholder="Filled in from the link or file"></label>
-      <fieldset><legend>What do you want? <small class="muted">Pick one or more — each becomes its own entry.</small></legend><div class="cards" id="sf-out">
-        ${Object.keys(VERSIONS).map((v, i) =>
-          `<button type="button" class="card-opt ${i ? '' : 'on'}" data-o="${v}" aria-pressed="${!i}"><b>${VERSIONS[v]}</b><small>${VERSION_HELP[v]}</small></button>`).join('')}</div></fieldset>
-      <p class="muted">Runs on the Mac and takes about 3–6 minutes for a 4-minute song. Progress shows at the top of this page; you can keep using Meowsic meanwhile.</p>
       <button class="primary big" id="sf-go">${icon('wave')}Start</button>
+      <p class="muted small center"><a class="link" href="#/help">Help</a></p>
     </form>`;
-  $('#sf-out', main).onclick = (e) => {
-    const b = e.target.closest('[data-o]');
-    if (!b) return;
-    const v = b.dataset.o;
-    if (f.outputs.has(v) && f.outputs.size === 1) return toast('Pick at least one.');
-    f.outputs.has(v) ? f.outputs.delete(v) : f.outputs.add(v);
-    b.classList.toggle('on', f.outputs.has(v));
-    b.setAttribute('aria-pressed', f.outputs.has(v));
-  };
+  // a recording always becomes the Original; other versions are made from the score (⋯ → Make another version)
   $('#sf-src', main).onclick = (e) => { const b = e.target.closest('[data-s]'); if (!b) return; f.src = b.dataset.s; $('#sf-src', main).querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); $('#sf-yt', main).hidden = f.src !== 'yt'; $('#sf-file', main).hidden = f.src !== 'file'; };
   $('#sf-url', main).oninput = (e) => { if (/youtu/.test(e.target.value) && !$('#sf-title', main).value) $('#sf-title', main).value = 'Song from YouTube'; };
   $('#sf-audio', main).onchange = (e) => { const file = e.target.files[0]; if (!file) return; f.file = file.name; f.fileObj = file; $('#sf-fname', main).textContent = file.name; if (!$('#sf-title', main).value) $('#sf-title', main).value = titleCase(file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ')); };

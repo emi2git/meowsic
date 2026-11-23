@@ -531,7 +531,7 @@ function generateVersions(it) {
   const pick = new Set();
   const s = modal(`<h2>Make another version of “${esc(it.title)}”</h2>
     <p class="muted">Pick one or more. Each becomes its own entry in the library.</p>
-    <div class="cards one-col" id="gv">${Object.keys(VERSIONS).map((v) => `<button type="button" class="card-opt" data-o="${v}">
+    <div class="cards one-col" id="gv">${Object.keys(VERSIONS).filter((v) => v !== 'original').map((v) => // the original exists already `<button type="button" class="card-opt" data-o="${v}">
       <b>${VERSIONS[v]}${have.has(v) ? ' <small class="have">· you have one</small>' : ''}</b><small>${VERSION_HELP[v]}</small></button>`).join('')}</div>
     <p class="warn" id="gv-warn" hidden></p>
     <div class="modal-actions"><button data-close>Cancel</button><button class="primary" data-ok disabled>Make</button></div>`, { wide: true });

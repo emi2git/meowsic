@@ -40,7 +40,7 @@ check('fake album: 7 photos, all new', al0.photos.length === 7 && al0.new === 7 
 
 const page = await newPage({ width: 1440, height: 900 });
 await page.goto(BASE + '#/add-sheets', { waitUntil: 'networkidle0' });
-check('Add sheet music offers From Photos', !!(await page.$('a.pi-from[href="#/add-photos"]')));
+check('Add sheet offers Photos', !!(await page.$('a.pi-from[href="#/add-photos"]')));
 await page.click('a.pi-from'); await sleep(800);
 check('album screen: 7 new', /7 new/.test(await page.$eval('.pi-count', (e) => e.textContent)));
 // a wrong album name: clear message, then back
