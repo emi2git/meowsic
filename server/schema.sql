@@ -149,6 +149,26 @@ CREATE TABLE IF NOT EXISTS sheet_note (       -- notes for Claude (empty text = 
   at       INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS version_decision ( -- "Versions": keep / delete per item (versions.py); the log keeps every change
+  item_id   TEXT PRIMARY KEY REFERENCES item(id) ON DELETE CASCADE,
+  decision  TEXT NOT NULL CHECK (decision IN ('keep','delete')),
+  at        INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS version_log (      -- history of every keep / delete / clear / trashed (append only)
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id    TEXT NOT NULL,
+  group_key  TEXT NOT NULL DEFAULT '',
+  op         TEXT NOT NULL,                   -- keep | delete | clear | trashed
+  at         INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS version_notsame (  -- "these are not the same song": the group's items then; undo sets undone_at
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_key  TEXT NOT NULL,
+  item_ids   TEXT NOT NULL,                   -- JSON list; the group hides while its items are all in here
+  at         INTEGER NOT NULL,
+  undone_at  INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS page_later (       -- pages left for later (the current marks)
   item_id  TEXT NOT NULL REFERENCES item(id) ON DELETE CASCADE,
   page     INTEGER NOT NULL,

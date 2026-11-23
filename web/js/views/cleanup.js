@@ -4,6 +4,7 @@
 //  · Fix pages — what the Mac found per song (screen junk to trim, pages grouped wrongly): trim each page
 //    (suggested box or your own), split, rename, delete.
 //  · Titles — titles that look like file names or typos.
+//  · Books → sheets (cleanup-books.js) and Versions — the same song more than once, side by side (cleanup-versions.js).
 // Only sheets — books are left out everywhere. Each sheet can carry a short note for Claude (what should
 // happen to it); it saves as you type.
 // Every action can be undone (Undo button, U or Z); the original photo of a trimmed page is always kept.
@@ -11,6 +12,7 @@ import { store } from '../store.js';
 import { go } from '../app.js';
 import { $, esc, toast, menu, sheet as modal, confirmSheet } from '../ui.js';
 import { makeBooks, BOOK_KEYS } from './cleanup-books.js';
+import { makeVersions, VERSION_KEYS } from './cleanup-versions.js';
 import { titleBox } from '../title-detect.js';
 
 const KEYS = {
@@ -40,6 +42,7 @@ const KEYS = {
   ],
   titles: [['Enter / R', 'Rename'], ['F', 'Title is fine'], ['↑ ↓', 'Next / previous'], ['U / Z', 'Undo']],
   books: BOOK_KEYS,
+  versions: VERSION_KEYS,
 };
 // what the Mac found, in plain words
 const ISSUE = { trim: 'Screen junk to trim', mixed: 'Pages from different songs', incomplete: 'Pages missing', extra: 'Extra pages',
@@ -75,7 +78,8 @@ export function cleanupView(main) {
         <button data-tab="sort">Go through sheets</button>
         <button data-tab="songs">Fix pages <i id="cu-nf"></i></button>
         <button data-tab="titles">Titles <i id="cu-nt"></i></button>
-        <button data-tab="books">Books → sheets</button></div>
+        <button data-tab="books">Books → sheets</button>
+        <button data-tab="versions">Versions</button></div>
       <span class="grow"></span>
       <span class="muted small" id="cu-scan"></span>
       <button id="cu-undo" class="cu-undo" disabled title="Undo (U)">↶ Undo</button>
@@ -83,6 +87,7 @@ export function cleanupView(main) {
     <div class="cu" id="cu"></div>`;
   const body = $('#cu', main);
   const books = makeBooks({ body, st, busy: (f) => busy(f), undo: () => undo(), help: () => help(), drawHead: () => drawHead(), tab: (t) => { st.tab = t; draw(); } });
+  const versions = makeVersions({ body, st, busy: (f) => busy(f), undo: () => undo(), help: () => help(), drawHead: () => drawHead(), tab: (t) => { st.tab = t; draw(); } });
 
   // the song you're on stays in the list until you move off it — otherwise finishing its last trim
   // would drop it from "To do" and throw you back to the top of the list (the same song again and again)
@@ -132,6 +137,7 @@ export function cleanupView(main) {
     body.className = 'cu ' + st.tab;
     if (st.tab === 'titles') return drawTitles();
     if (st.tab === 'books') return books.draw();
+    if (st.tab === 'versions') return versions.draw();
     if (st.tab === 'sort') return drawSort();
     const list = shown();
     const filt = `<div class="cu-filter">${FILTERS.map(([k, l]) => `<button data-f="${k}" class="${st.filter === k ? 'on' : ''}">${l} <i>${{ look: st.songs.filter(isTodo).length, later: st.songs.filter(isLater).length, good: st.songs.filter(isGood).length, all: st.songs.length }[k]}</i></button>`).join('')}</div>`;
@@ -362,7 +368,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     toast(`Undone: ${u.label}`);
     if (u.tab) { st.tab = u.tab; if (u.sortId) { st.sort.id = u.sortId; st.sort.summary = false; } }
     if (u.at) { await reloadSong(u.at[0]); if (st.tab === 'songs') { st.sid = u.at[0]; st.pi = u.at[1]; if (!shown().some((x) => x.id === st.sid)) st.filter = 'all'; } }
-    else if (!u.sortId) await load();
+    else if (!u.sortId && !u.local) await load();  // local: the tab keeps its own state (Versions)
     st.crop = u.box ? { ...u.box } : null; draw();
   });
 
@@ -656,9 +662,10 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     if (!main.isConnected || !location.hash.startsWith('#/cleanup') || !body.isConnected) return removeEventListener('keydown', onKey);
     if (st.renaming || document.querySelector('.modal') || e.target.matches?.('input:not([readonly]), textarea')) return;
     const k = e.key, songs = st.tab === 'songs';
-    const tabKey = { Digit1: 'sort', Digit2: 'songs', Digit3: 'titles' }[e.code];  // ⌥1/2/3 switch tabs anywhere
+    const tabKey = { Digit1: 'sort', Digit2: 'songs', Digit3: 'titles', Digit4: 'books', Digit5: 'versions' }[e.code];  // ⌥1…5 switch tabs anywhere
     if (e.altKey && tabKey && !e.metaKey && !e.ctrlKey) { e.preventDefault(); st.tab = tabKey; return draw(); }
     if (st.tab === 'books') return books.onKey(e);
+    if (st.tab === 'versions') return versions.onKey(e);
     if (st.tab === 'sort') {
       const a = { d: () => decide('delete'), Delete: () => decide('delete'), Backspace: () => decide('delete'), k: () => decide('keep'), Enter: () => decide('keep'),
         ArrowRight: () => sortStep(1), ArrowLeft: () => sortStep(-1), z: undo, u: undo, '?': help,
