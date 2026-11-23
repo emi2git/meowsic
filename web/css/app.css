@@ -814,3 +814,5 @@ p.count-row { text-align: center; }
 button.danger { color: var(--danger); }
 #toast, .toast { pointer-events: none; }
 .toast button, .toast a { pointer-events: auto; }
+/* iPad / iPhone: no room for Artist and Added (still sortable from the sort menu) */
+@media (pointer: coarse) { .lib-table .c-artist, .lib-table .c-when { display: none; } .lib-table .c-title { width: auto; } .lib-table .c-tag { width: 160px; } }
