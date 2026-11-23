@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse
 
 from . import trim
 from .db import folder_path, get_item, now_ms
-from .items import cfg, conn, must_item
+from .items import cfg, conn, must_item, update_item
 
 router = APIRouter(prefix='/api')
 _lock = threading.Lock()
@@ -261,6 +261,81 @@ def notes_set(body: dict = Body(...), cf=Depends(cfg)):
         else: notes.pop(iid, None)
         _save(cf, data)
     return {'id': iid, 'text': text}
+
+
+# Suggested names (made by Claude from outside): {item_id: {title?, artist?, why, at, status, ...}} in cleanup.json.
+# Accepted / dismissed ones stay (status + what changed) but are no longer shown; every rename goes to
+# <data>/history/renames-cleanup.jsonl, which is only ever appended to.
+def _history(cf, line: dict):
+    d = cf.data / 'history'
+    d.mkdir(exist_ok=True)
+    with open(d / 'renames-cleanup.jsonl', 'a') as f: f.write(json.dumps(line, ensure_ascii=False) + '\n')
+
+
+@router.get('/cleanup/suggest')
+def suggest_get(c=Depends(conn), cf=Depends(cfg)):
+    """Open suggestions: [{id, title, artist (current), suggest: {title?, artist?}, why, at}], oldest first."""
+    with _lock: sug = _load(cf).get('suggest', {})
+    out = []
+    for iid, s in sug.items():
+        if s.get('status', 'open') != 'open': continue
+        r = c.execute('SELECT title, artist FROM item WHERE id=? AND deleted_at IS NULL', (iid,)).fetchone()
+        if not r: continue
+        out.append({'id': iid, 'title': r[0], 'artist': r[1] or '', 'why': s.get('why', ''), 'at': s.get('at', 0),
+                    'suggest': {k: s[k] for k in ('title', 'artist') if s.get(k) is not None}})
+    return sorted(out, key=lambda x: x['at'])
+
+
+@router.post('/cleanup/suggest')
+def suggest_set(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
+    """{id, title?, artist?, why}: add or replace the suggestion for that item."""
+    iid = body.get('id')
+    if not iid: raise HTTPException(400, 'No id')
+    must_item(c, iid)
+    ent = {k: str(body[k]).strip() for k in ('title', 'artist') if body.get(k) is not None}
+    if not ent.get('title') and 'artist' not in ent: raise HTTPException(400, 'Suggest a title or an artist')
+    ent.update(why=(body.get('why') or '').strip(), at=now_ms(), status='open')
+    with _lock:
+        data = _load(cf)
+        data.setdefault('suggest', {})[iid] = ent
+        _save(cf, data)
+    return {'id': iid, **ent}
+
+
+@router.post('/cleanup/suggest/{item_id}/done')
+def suggest_done(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
+    """{action: 'accept', title?, artist?} renames the item (like PATCH /items/{id}); 'dismiss' keeps the name;
+    'undo' takes the last accept / dismiss back (an accept is renamed back to the old name)."""
+    act = body.get('action')
+    if act not in ('accept', 'dismiss', 'undo'): raise HTTPException(400, 'action must be accept, dismiss or undo')
+    with _lock: ent = _load(cf).get('suggest', {}).get(item_id)
+    if not ent: raise HTTPException(404, 'No suggestion for that item')
+    it = must_item(c, item_id)
+    t = now_ms()
+    if act == 'accept':
+        if ent.get('status', 'open') != 'open': raise HTTPException(409, 'Already done')
+        new = {k: str(body.get(k, ent.get(k))).strip() for k in ('title', 'artist') if body.get(k, ent.get(k)) is not None}
+        if 'title' in new and not new['title']: new.pop('title')
+        new = {k: v for k, v in new.items() if v != (it.get(k) or '')}
+        old = {k: it.get(k) or '' for k in new}
+        if new:
+            update_item(item_id, dict(new), c, cf)
+            _history(cf, {'at': t, 'id': item_id, 'old': old, 'new': new, 'why': ent.get('why', ''), 'via': 'suggest'})
+        ent.update(status='accepted', doneAt=t, old=old, new=new)
+    elif act == 'dismiss':
+        if ent.get('status', 'open') != 'open': raise HTTPException(409, 'Already done')
+        ent.update(status='dismissed', doneAt=t)
+    else:
+        if ent.get('status') == 'accepted' and ent.get('old'):
+            update_item(item_id, dict(ent['old']), c, cf)
+            _history(cf, {'at': t, 'id': item_id, 'old': ent.get('new', {}), 'new': ent['old'], 'why': 'undo', 'via': 'suggest'})
+        for k in ('doneAt', 'old', 'new'): ent.pop(k, None)
+        ent['status'] = 'open'
+    with _lock:
+        data = _load(cf)
+        data.setdefault('suggest', {})[item_id] = ent
+        _save(cf, data)
+    return {'id': item_id, 'status': ent['status'], 'item': get_item(c, item_id)}
 
 
 FULL = {'top': 0.0, 'bottom': 1.0, 'left': 0.0, 'right': 1.0}

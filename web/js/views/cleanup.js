@@ -56,7 +56,7 @@ export function cleanupView(main) {
     return;
   }
   let tab0 = 'sort'; try { tab0 = localStorage.getItem('meowsic-cu-tab') || 'sort'; } catch {}
-  const st = { tab: tab0, filter: 'look', songs: [], titles: [], sid: null, pi: 0, ti: 0, scan: null, crop: null, carry: null, undo: [], busy: false, renaming: false,
+  const st = { tab: tab0, filter: 'look', songs: [], titles: [], sid: null, pi: 0, ti: 0, scan: null, crop: null, carry: null, undo: [], sug: [], busy: false, renaming: false,
     sort: { dec: {}, id: null, show: 'todo', summary: false }, notes: {}, noteDue: null };
   main.innerHTML = `<header class="top cu-top">
       <a class="icon-btn back cu-back" href="#/library" aria-label="Back to the library">‹ Library</a>
@@ -79,8 +79,8 @@ export function cleanupView(main) {
   const pg = () => song()?.pages[st.pi];
 
   const load = async () => {
-    const [d, so] = await Promise.all([api('GET', '/cleanup'), api('GET', '/cleanup/sort')]);
-    st.scan = d.scan; st.songs = d.songs; st.titles = d.titles; st.sort.dec = so.decisions;
+    const [d, so, sg] = await Promise.all([api('GET', '/cleanup'), api('GET', '/cleanup/sort'), api('GET', '/cleanup/suggest').catch(() => [])]);
+    st.sug = sg; st.scan = d.scan; st.songs = d.songs; st.titles = d.titles; st.sort.dec = so.decisions;
     for (const s of d.songs) if (!(s.id in st.notes)) st.notes[s.id] = s.note || ''; // what is typed here always wins
     if (!song()) { st.sid = shown()[0]?.id || null; st.pi = 0; }
     st.ti = Math.min(st.ti, Math.max(0, st.titles.length - 1));
@@ -97,7 +97,7 @@ export function cleanupView(main) {
   };
 
   const drawHead = () => {
-    $('#cu-nt', main).textContent = st.titles.length || '';
+    $('#cu-nt', main).textContent = st.titles.length + st.sug.length || '';
     $('#cu-nf', main).textContent = st.songs.filter((s) => !isGood(s)).length || '';
     main.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === st.tab));
     const s = st.scan;
@@ -523,14 +523,32 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     };
   });
 
+  // suggested names (from Claude): edit if needed, then Use this or Keep mine
+  const sugHtml = () => (st.sug.length ? `<section class="cu-sug"><h3>Suggested names (${st.sug.length})</h3><ul>${st.sug.map((x) => `<li class="cu-srow" data-id="${x.id}">
+    <div class="cu-scur"><small class="muted">Now</small> <b>${esc(x.title)}</b>${x.artist ? ` <span class="muted">· ${esc(x.artist)}</span>` : ''} <a class="link small" href="#/item/${x.id}" target="_blank">Open</a></div>
+    <label><small class="muted">Title</small><input data-k="title" value="${esc(x.suggest.title ?? x.title)}" aria-label="Suggested title"></label>
+    <label><small class="muted">Artist</small><input data-k="artist" value="${esc(x.suggest.artist ?? x.artist)}" aria-label="Suggested artist"></label>
+    <small class="muted cu-why">${esc(x.why)}</small>
+    <div class="cu-sbtn"><button class="ghost small" data-keep>Keep mine</button><button class="primary small" data-use>Use this</button></div></li>`).join('')}</ul></section>` : '');
+  const sugDone = (id, action) => busy(async () => {
+    const li = body.querySelector(`.cu-srow[data-id="${id}"]`), x = st.sug.find((s) => s.id === id); if (!li || !x) return;
+    const v = (k) => li.querySelector(`[data-k="${k}"]`).value.trim();
+    const r = await api('POST', `/cleanup/suggest/${id}/done`, action === 'accept' ? { action, title: v('title') || x.title, artist: v('artist') } : { action });
+    if (r.item) store.putItem(r.item);
+    st.undo.push({ label: action === 'accept' ? 'rename' : 'keep mine', run: async () => { const u = await api('POST', `/cleanup/suggest/${id}/done`, { action: 'undo' }); if (u.item) store.putItem(u.item); } });
+    toast(action === 'accept' ? `Renamed to “${r.item.title}”` : 'Kept the name');
+    st.sug = st.sug.filter((s) => s.id !== id);
+    await reloadSong(id); st.ti = Math.min(st.ti, Math.max(0, st.titles.length - 1)); drawTitles(); drawHead();
+  });
   const drawTitles = () => {
-    if (!st.titles.length) { body.innerHTML = '<p class="pad muted">No odd titles. 🎉</p>'; return; }
-    body.innerHTML = `<p class="pad small muted">Titles that look like file names, page numbers or typos. R or click to rename · F if it's fine · Z to undo.</p>
+    if (!st.titles.length) { body.innerHTML = sugHtml() + '<p class="pad muted">No odd titles. 🎉</p>'; return wireSug(); }
+    body.innerHTML = sugHtml() + `<p class="pad small muted">Titles that look like file names, page numbers or typos. R or click to rename · F if it's fine · Z to undo.</p>
       <ul class="cu-titles">${st.titles.map((x, k) => `<li class="cu-trow ${k === st.ti ? 'on' : ''}" data-id="${x.id}" data-k="${k}">
         <input value="${esc(store.get(x.id)?.title ?? x.title)}" readonly aria-label="Title">
         <span class="badge k-${x.kind}">${x.kind}</span><small class="muted">${esc(x.why)}</small>
         <a class="link small" href="#/item/${x.id}" target="_blank">Open</a>
         <button class="ghost small" data-fine>Fine</button></li>`).join('')}</ul>`;
+    wireSug();
     body.querySelector('.cu-trow.on')?.scrollIntoView({ block: 'nearest' });
     body.querySelector('.cu-titles').onclick = (e) => {
       const li = e.target.closest('[data-k]'); if (!li) return;
@@ -539,6 +557,11 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
       if (e.target.tagName === 'INPUT') { drawTitles(); rename(li.dataset.id); }
       else drawTitles();
     };
+  };
+  const wireSug = () => {
+    const sec = body.querySelector('.cu-sug'); if (!sec) return;
+    sec.onclick = (e) => { const li = e.target.closest('.cu-srow'); if (!li) return; if (e.target.closest('[data-use]')) sugDone(li.dataset.id, 'accept'); else if (e.target.closest('[data-keep]')) sugDone(li.dataset.id, 'dismiss'); };
+    sec.onkeydown = (e) => { if (e.target.tagName !== 'INPUT') return; e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); sugDone(e.target.closest('.cu-srow').dataset.id, 'accept'); } };
   };
   const titleFine = () => busy(async () => {
     const x = st.titles[st.ti]; if (!x) return;

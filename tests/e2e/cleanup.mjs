@@ -180,6 +180,41 @@ check('renamed title leaves the list', !(await page.$$eval('.cu-trow input', (e)
 await page.keyboard.press('?'); await sleep(300);
 check('? shows the shortcuts', (await page.$$('.modal .cu-keys tr')).length >= 4);
 await page.keyboard.press('Escape'); await sleep(200);
+// Suggested names: show, edit + Use this (renames, history), Undo, Keep mine (DATA = the server's data dir, for history)
+{
+  const mr = (await api('/items')).find((x) => x.title === 'Moon River');
+  await post('/cleanup/suggest', { id: mr.id, title: 'Moon River (Mancini)', artist: 'Henry Mancini', why: 'test suggestion' });
+  await page.reload({ waitUntil: 'networkidle0' }); await sleep(800); await page.keyboard.press('3'); await sleep(400);
+  const row = `.cu-srow[data-id="${mr.id}"]`;
+  check('suggestion shows with count', !!(await page.$(row)) && /Suggested names \(\d+\)/.test(await page.$eval('.cu-sug h3', (e) => e.textContent))
+    && +(await page.$eval('#cu-nt', (e) => e.textContent)) >= 1);
+  for (const [w, h] of [[1376, 1032], [1032, 1376], [420, 912]]) {
+    const q = await b.newPage(); await q.setViewport({ width: w, height: h, hasTouch: true, isMobile: true });
+    await q.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(900); await q.keyboard.press('3'); await sleep(500);
+    const fit = await q.evaluate((sel) => { const r = document.querySelector(sel)?.getBoundingClientRect(); return !!r && r.right <= innerWidth + 1 && document.documentElement.scrollWidth <= innerWidth + 1
+      && [...document.querySelectorAll(sel + ' input, ' + sel + ' button')].every((x) => x.getBoundingClientRect().right <= innerWidth + 1); }, row);
+    check(`suggestion fits ${w}×${h} (no sideways scroll)`, fit);
+    await q.screenshot({ path: `cleanup-suggest-${w}.png` }); await q.close();
+  }
+  const ti = `${row} input[data-k="title"]`;
+  await page.click(ti); await page.$eval(ti, (e) => e.select()); await page.keyboard.type('Moon River Edited fzr'); await sleep(300);
+  check('typing in a suggestion box triggers no shortcuts', (await page.$eval(ti, (e) => e.value)) === 'Moon River Edited fzr' && (await api('/items/' + mr.id)).title === 'Moon River');
+  await page.click(`${row} [data-use]`); await sleep(1500);
+  const it1 = await api('/items/' + mr.id);
+  check('Use this renames with the edited title + artist', it1.title === 'Moon River Edited fzr' && it1.artist === 'Henry Mancini' && it1.folder.includes('Moon River Edited fzr'), JSON.stringify([it1.title, it1.artist, it1.folder]));
+  check('accepted suggestion leaves the list', !(await page.$(row)));
+  if (process.env.DATA) {
+    const fs = await import('node:fs');
+    const last = JSON.parse(fs.readFileSync(process.env.DATA + '/history/renames-cleanup.jsonl', 'utf8').trim().split('\n').at(-1));
+    check('history line written', last.id === mr.id && last.old.title === 'Moon River' && last.new.title === 'Moon River Edited fzr' && last.at > 0, JSON.stringify(last));
+  }
+  await page.click('#cu-undo'); await sleep(1800);
+  const it2 = await api('/items/' + mr.id);
+  check('Undo restores the old title + artist', it2.title === 'Moon River' && it2.artist === mr.artist && !it2.folder.includes('Edited'), JSON.stringify([it2.title, it2.artist]));
+  check('Undo brings the suggestion back', !!(await page.$(row)));
+  await page.click(`${row} [data-keep]`); await sleep(1200);
+  check('Keep mine hides it and keeps the name', !(await page.$(row)) && (await api('/items/' + mr.id)).title === 'Moon River' && !(await api('/cleanup/suggest')).some((x) => x.id === mr.id));
+}
 for (let i = 0; i < 40; i++) { await sleep(1000); if (!(await api('/cleanup')).scan.running) break; }
 await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
 await page.keyboard.press('2'); await sleep(500);

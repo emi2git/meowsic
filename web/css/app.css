@@ -722,6 +722,13 @@ p.count-row { text-align: center; }
 .cu-trow.on { background: var(--acc-soft); }
 .cu-trow input { font: inherit; flex: 0 1 420px; border: 1px solid transparent; border-radius: 6px; padding: 4px 8px; background: transparent; color: var(--ink); }
 .cu-trow small { flex: 1; }
+.cu-sug { padding: 8px 16px 4px; } .cu-sug h3 { margin: 4px 0 6px; font-size: 15px; } .cu-sug ul { list-style: none; margin: 0; padding: 0; }
+.cu-srow { display: flex; flex-wrap: wrap; align-items: end; gap: 6px 10px; padding: 8px; border-bottom: 1px solid var(--line); min-width: 0; }
+.cu-scur { flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; }
+.cu-srow label { display: flex; flex-direction: column; gap: 2px; flex: 1 1 200px; min-width: 0; }
+.cu-srow input { font: inherit; min-width: 0; width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; background: var(--bg); color: var(--ink); }
+.cu-why { flex: 1 1 160px; min-width: 0; overflow-wrap: anywhere; align-self: center; }
+.cu-sbtn { display: flex; gap: 8px; margin-left: auto; }
 .cu-keys td { padding: 4px 10px 4px 0; } .cu-keys kbd { font: 12px ui-monospace, monospace; background: var(--bg2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
 .cu-list li.bad::before { background: var(--danger); }
 .cu-issue.mixed, .cu-issue.empty, .cu-issue.incomplete, .cu-issue.extra, .cu-issue.twice, .cu-issue.order { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
