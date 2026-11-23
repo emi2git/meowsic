@@ -5,11 +5,13 @@ Used by the server job kind `omr` (sheet ⋯ → "Make a score (beta)…"), and 
 
 | Step | Tool |
 |---|---|
+| Before reading (server side) | junk trimmed off (`trim.py`), then coloured pen lines / highlighter taken off (`server/meowsic/inkclean.py`; coloured words and chord names stay). Work files in the job folder: `in<k>-raw.png`, `in<k>.png` (read), `in<k>-ink.png` (what was taken off) |
 | Notes, rests, rhythm, ties, key, time | **homr** 0.7 (deep-learning OMR; models in `~/ai/models/homr`, linked into the venv) |
 | Second opinion on every bar; lyrics/chord fallback | **Audiveris** (`~/Applications/Audiveris.app`) |
 | Chord names | Apple Vision on the strip above each top staff + shape matching for lone letters (C, F, B♭) |
-| Words | Apple Vision under each top staff (Vietnamese + English), syllables from hyphens |
-| Bars marked "⚠ check" | the two readers disagree, or the bar doesn't add up to the time signature |
+| Words | Apple Vision under each top staff (Vietnamese + English), syllables from hyphens; each line of words is a verse (`<lyric number="1">`, `2`, …). Audiveris fills gaps (its Tesseract reads eng, + vie when `vie.traineddata` is in its tessdata) |
+| Bars marked "⚠ check" | the two readers disagree, or the bar didn't add up to the time signature |
+| Full bars | every bar is then made to add up (pickup: rest in front; short: missing dot or a rest; long: shortened; empty: whole rest) — `report.json` `filled` lists each change |
 
 Setup: `python3.12 -m venv .venv && .venv/bin/pip install homr onnxruntime music21 pyobjc-framework-Vision`,
 `.venv/bin/homr --init`, then move the `.onnx` files to `~/ai/models/homr` and symlink them back.
@@ -23,5 +25,5 @@ Setup: `python3.12 -m venv .venv && .venv/bin/pip install homr onnxruntime music
 | Mặt Trời Bé Con (lead sheet, 3 verses) | 36 | 35/36 — two-voice bar 36 | 11/18 (raised ♭/⁷ hard) | left out (several verses) | 5, 10, 16 (false), 36 (right) |
 | Ru (2/4 with a 3/4 middle) | 83 | not checked bar by bar | — | — | 34–51: time change missed |
 
-Known gaps: x noteheads, two voices in one staff, mid-piece time-signature changes, several verses of words,
+Known gaps: x noteheads, two voices in one staff, mid-piece time-signature changes, verse lines read out of order,
 chord names with small raised ♭/⁷, singer labels and tempo words (not read).

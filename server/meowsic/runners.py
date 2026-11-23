@@ -176,8 +176,9 @@ OMR_STEP = {'notes': 0, 'lyrics': 1, 'chords': 1, 'words': 1, 'check': 2, 'done'
 
 
 def omr_runner(ctx: JobContext):
-    """Sheet pages → one score: junk trimmed off each page, then omr/omr.py (homr + Audiveris + Vision)."""
-    from . import trim
+    """Sheet pages → one score: junk trimmed off each page, coloured marks taken off, then omr/omr.py
+    (homr + Audiveris + Vision)."""
+    from . import inkclean, trim
     job, p = ctx.job, ctx.params
     c = connect(ctx.cfg)
     try: src = get_item(c, p.get('fromItemId', ''))
@@ -189,11 +190,9 @@ def omr_runner(ctx: JobContext):
     work = ctx.work
     pages = []
     ctx.update(stage=0, progress=0, msg=f'{len(src["pageFiles"])} page(s)')
-    for k, f in enumerate(src['pageFiles'], 1):
-        dst = work / f'in{k}.png'
-        r = trim.analyze(d / f)
-        box = r['trim'] or {}
-        trim.crop(d / f, dst, box.get('top', 0), box.get('bottom', 1))
+    for k, f in enumerate(src['pageFiles'], 1):  # coloured pen lines / highlighter off first: they read as notes
+        dst, r = inkclean.prepare_page(d / f, work, k, trim.analyze(d / f)['trim'])
+        if inkclean.said(k, r): ctx.update(msg=inkclean.said(k, r))
         pages.append(str(dst))
     out = work / 'out'
     proc = subprocess.Popen([str(py), str(OMR_DIR / 'omr.py'), '--out', str(out), '--title', job['title'], *pages],

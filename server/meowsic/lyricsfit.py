@@ -364,7 +364,7 @@ def omr_python() -> Path | None:
 
 def read_sheet(cfg, sheet: dict, on_event=None, cancelled=lambda: False) -> Path:
     """The sheet's pages read as a score with words (cached per sheet version). Returns its MusicXML path."""
-    from . import trim
+    from . import inkclean, trim
     from .db import folder_path
     cache = cfg.work_dir / 'lyricsfit' / f"{sheet['id']}-{sheet.get('updatedAt') or 0}"
     if (cache / 'out' / 'score.musicxml').is_file(): return cache / 'out' / 'score.musicxml'
@@ -376,9 +376,7 @@ def read_sheet(cfg, sheet: dict, on_event=None, cancelled=lambda: False) -> Path
     d = folder_path(cfg, sheet['folder'])
     pages = []
     for k, f in enumerate(sheet['pageFiles'], 1):
-        dst = cache / f'in{k}.png'
-        box = trim.analyze(d / f)['trim'] or {}
-        trim.crop(d / f, dst, box.get('top', 0), box.get('bottom', 1))
+        dst, _ = inkclean.prepare_page(d / f, cache, k, trim.analyze(d / f)['trim'])
         pages.append(str(dst))
     proc = subprocess.Popen([str(py), str(OMR_DIR / 'omr.py'), '--first-verse', '--out', str(cache / 'out'), '--title', 'sheet', *pages],
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=str(OMR_DIR))
