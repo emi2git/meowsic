@@ -1334,20 +1334,31 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 :root[data-device="phone"] .uke-panel::before { content: ''; display: block; width: 38px; height: 4px; border-radius: 2px; background: var(--line2); margin: 6px auto 0; flex: none; }
 :root[data-device="phone"] .uk-grid { grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); }
 
-/* ===== Ease rests (js/views/easerests.js): a panel under the score while previewing ===== */
-.viewer.easing .viewer-body { padding-bottom: 150px; }
-.ease-panel { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 45; background: var(--card); border: 1px solid var(--line2); border-radius: 16px; box-shadow: 0 10px 34px rgba(0, 0, 0, .22); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
-.er-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.er-title { font-size: 16px; }
-.er-seg button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .15); }
-.er-count { font-weight: 700; color: var(--ink2); }
-.er-help { margin: 0; font-size: 13px; }
-.er-acts { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
-.er-acts button { min-height: 42px; padding: 0 14px; }
-:root[data-device="tablet"] .ease-panel, :root[data-device="phone"] .ease-panel { left: 0; right: 0; bottom: 0; border-radius: 16px 16px 0 0; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
-:root[data-device="phone"] .viewer.easing .viewer-body { padding-bottom: 210px; }
-:root[data-device="phone"] .viewer.easing #it-bar { display: none; }
-:root[data-device="phone"] .er-acts button { flex: 1 1 40%; min-height: 48px; }
+/* ===== Simple piano (js/views/simplepiano.js): a panel over the score while previewing; iPad / iPhone: a bottom sheet ===== */
+.viewer.simplifying .viewer-body { padding-bottom: 230px; }
+.sp-panel { position: absolute; right: 12px; bottom: 12px; width: min(520px, calc(100% - 24px)); z-index: 45; background: var(--card); border: 1px solid var(--line2); border-radius: 16px; box-shadow: 0 10px 34px rgba(0, 0, 0, .22); padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 8px; max-height: 70%; overflow: auto; }
+.sp-row { display: flex; align-items: center; gap: 10px; }
+.sp-title { font-size: 16px; }
+.sp-count { font-weight: 700; color: var(--ink2); flex: 1; font-size: 13px; }
+.sp-x { width: 36px; height: 36px; min-height: 36px; padding: 0; border-radius: 50%; font-size: 20px; line-height: 1; }
+.sp-slider { display: grid; grid-template-columns: auto 1fr 2.4em; align-items: center; gap: 10px; font-weight: 600; }
+.sp-slider input { width: 100%; min-height: 32px; }
+.sp-slider b { text-align: right; font-variant-numeric: tabular-nums; }
+.sp-help { margin: -4px 0 0; font-size: 13px; }
+.sp-toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
+.sp-tg { display: flex; align-items: center; gap: 8px; min-height: 36px; cursor: pointer; }
+.sp-tg input { width: 20px; height: 20px; flex: none; accent-color: var(--acc); }
+.sp-acts { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.sp-acts .grow { flex: 1; }
+.sp-acts button { min-height: 42px; padding: 0 14px; }
+:root[data-device="tablet"] .sp-panel, :root[data-device="phone"] .sp-panel { left: 0; right: 0; bottom: 0; width: auto; border-radius: 16px 16px 0 0; padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+:root[data-device="phone"] .viewer.simplifying .viewer-body { padding-bottom: 360px; }
+:root[data-device="phone"] .viewer.simplifying #it-bar { display: none; }
+:root[data-device="phone"] .sp-toggles { gap: 0 8px; font-size: 14px; }
+:root[data-device="phone"] .sp-tg { min-height: 40px; }
+:root[data-device="phone"] .sp-slider { grid-template-columns: 1fr 2.4em; }
+:root[data-device="phone"] .sp-slider span { grid-column: 1 / -1; }
+:root[data-device="phone"] .sp-acts button { flex: 1 1 40%; min-height: 48px; }
 
 /* ===== score toolbar: the three round toggles (chords piano/ukulele/off, kids note names, voice); one icon each, the icon shows the state ===== */
 .tg-row { display: inline-flex; gap: 6px; align-items: center; flex: none; }
@@ -1360,7 +1371,6 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .uke-panel[data-mode="piano"] .uk-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
 .uk-chord svg.pn-box { width: 104px; height: auto; display: block; }
 :root[data-device="phone"] .uke-panel[data-mode="piano"] .uk-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
-.er-acts .grow { flex: 1; }
 .uk-head { position: relative; padding-right: 44px; }
 .uk-head .muted { flex-basis: 100%; }
 .uk-head .uk-close { position: absolute; right: 4px; top: 6px; }

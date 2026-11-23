@@ -15,7 +15,7 @@ import { isTouch, isNarrow } from '../device.js';
 import { easyOn, setEasy, classicXml, drawNoteLetters, kidsRules } from '../easyscore.js';
 import { chordsMode, setChordsMode, nextMode, MODE_LABEL, ukePanel } from '../ukepanel.js';
 const CHORD_ICON = { piano: 'piano', uke: 'ukulele', off: 'chordgrid' }; // the chords button shows its state
-import { easeRests, canEaseRests } from './easerests.js';
+import { simplePiano } from './simplepiano.js';
 import { paginate, pageOfY, showPage, pagerInput } from '../pager.js';
 
 let osmdReady;
@@ -47,9 +47,6 @@ export function scoreBody(root, it, { perform = false } = {}) {
   const version = it.version || 'original';
   // kids note names (baby toggle, off by default, this device): big noteheads with their letters, all staves
   let easy = easyOn(it);
-  // Ease rests is offered for scores transcribed from a video / audio only (the Mac says)
-  let canEase = false;
-  if (real && store.mode === 'server') canEaseRests(it).then((ok) => { canEase = ok; });
   // iPad / iPhone: no scrolling; the score is cut into screen-high pages, turned like a sheet's
   const paged = isTouch() && !perform;
   let pages = [], page = 0, stopOff = 0;
@@ -418,7 +415,6 @@ export function scoreBody(root, it, { perform = false } = {}) {
     async setEasy(on) { easy = !!on; setEasy(it, easy); root.dispatchEvent(new CustomEvent('easychange', { bubbles: true })); await render(); },
     get zoom() { return zoom; },
     get osmd() { return drawn ? osmd : null; },
-    get canEase() { return canEase; },
     get page() { return page + 1; }, get pages() { return pages.length; },
     get pageLabel() { return paged && pages.length ? `Page ${page + 1} of ${pages.length}` : ''; },
     goTo(n) { goPage(n - 1); },
@@ -437,7 +433,6 @@ export function scoreTools(it, view) {
   return [{ label: 'Make another version…', icon: 'plus', run: () => generateVersions(it) },
     ...(store.mode === 'server' ? [{ label: 'Add lyrics from a sheet…', icon: 'text', run: () => addLyrics(it) }] : []),
     ...(store.mode === 'server' && view.real ? [{ label: 'Fit lyrics…', icon: 'text', run: () => fitLyrics(view, it, document.querySelector('.viewer')) }] : []),
-    ...(store.mode === 'server' && view.real && view.canEase ? [{ label: 'Ease rests…', icon: 'wave', run: () => easeRests(view, it, document.querySelector('.viewer')) }] : []),
     { label: 'Kids note names', icon: 'baby', checked: view.easy, run: () => view.setEasy(!view.easy) },
     { label: `Chords: ${MODE_LABEL[chordsMode()]} (tap for ${MODE_LABEL[nextMode(chordsMode())].toLowerCase()})`, icon: CHORD_ICON[chordsMode()], run: () => document.querySelector('.viewer')?.dispatchEvent(new CustomEvent('uketoggle')) },
     ...(view.real && /<lyric[\s>]/.test(view.xml()) ? [{ label: view.hasVoice ? 'Make it sing again (beta)' : 'Make it sing (beta)', icon: 'wave', run: () => makeItSing(it) }] : []),
@@ -466,6 +461,7 @@ export function scoreToolbar(bar, it, view) {
     <div class="stepper" aria-label="Transpose"><button id="sc-tdown" aria-label="Transpose down">♭</button><span id="sc-tval">${it.transpose ? (it.transpose > 0 ? '+' : '') + it.transpose : '0'}</span><button id="sc-tup" aria-label="Transpose up">♯</button></div>
     <div class="stepper zoom" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out" title="Zoom out (−)">${iconOn('zoomout')}</button><button id="sc-zreset" class="zreset" title="Reset zoom (0)">${Math.round(view.zoom * 100)}%</button><button id="sc-zin" aria-label="Zoom in" title="Zoom in (+)">${iconOn('zoomin')}</button></div>
     <button class="icon-btn" id="sc-edit" title="Edit notes" aria-label="Edit notes">${iconOn('edit')}</button>
+    ${store.mode === 'server' && view.real ? `<button class="icon-btn" id="sc-simple" title="Simple piano: smooth rests and rhythm, main notes, hands…" aria-label="Simple piano">${iconOn('simplepiano')}</button>` : ''}
     <span class="tg-row">
     <button class="tg-btn ${chordsMode() !== 'off' ? 'on' : ''}" id="sc-chords" data-mode="${chordsMode()}" title="${MODE_LABEL[chordsMode()]}" aria-label="${MODE_LABEL[chordsMode()]}">${iconOn(CHORD_ICON[chordsMode()])}</button>
     <button class="tg-btn ${view.easy ? 'on' : ''}" id="sc-names" aria-pressed="${view.easy}" title="Kids note names: big noteheads with the note's letter" aria-label="Kids note names">${iconOn('baby')}</button>
@@ -540,6 +536,8 @@ export function scoreToolbar(bar, it, view) {
   viewer?.addEventListener('uketoggle', onUkeToggle);
   if (chordsMode() !== 'off') view.ready.then(() => { if (!uke && bar.isConnected) setMode(chordsMode()); });
   $('#sc-edit', bar).onclick = (e) => scoreEditor(view, it, bar.closest('.viewer'), e.currentTarget);
+  const simpleBtn = $('#sc-simple', bar);
+  if (simpleBtn) simpleBtn.onclick = () => simplePiano(view, it, bar.closest('.viewer'));
   bar.closest('.viewer')?.addEventListener('zoomchange', zl);
   const onSpace = (e) => { if (e.key === ' ' && !e.target.closest('input,select,textarea,button')) { e.preventDefault(); playBtn.click(); } };
   document.addEventListener('keydown', onSpace);
