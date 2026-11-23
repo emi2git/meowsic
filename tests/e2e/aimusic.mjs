@@ -1,4 +1,4 @@
-// AI music through the UI (server on $BASE, default :5195, temp data with one AI piece added by
+// AI Studio through the UI (server on $BASE, default :5195, temp data with one AI piece added by
 // ~/git/scripts/meowsic-add-ai-score.py): left bar, list, badge, viewer, playback, Scores view, search, phone tabs
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5195/';
@@ -12,21 +12,21 @@ const rows = () => page.$$eval('.lib-table tbody tr', (e) => e.map((x) => x.text
 
 const items = await api('/items');
 const ai = items.find((x) => x.ai);
-check('server has one AI piece', items.filter((x) => x.ai).length === 1 && ai.kind === 'score' && ai.tags.includes('AI music'), JSON.stringify(items.map((x) => [x.title, x.ai])));
+check('server has one AI piece', items.filter((x) => x.ai).length === 1 && ai.kind === 'score' && ai.tags.includes('AI Studio'), JSON.stringify(items.map((x) => [x.title, x.ai])));
 
 await page.goto(`${BASE}#/library`, { waitUntil: 'networkidle0' }); await sleep(600);
 const side = await page.$$eval('#side .nav.sub', (e) => e.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
-check('left bar: Sheets, Chords, Books, AI music, Scores', side.map((s) => s.replace(/ ?\d+$/, '')).join(',') === 'Sheets,Chords,Books,AI music,Scores', side.join(' | '));
-check('AI music count 1, Scores count without it', /^AI music ?1$/.test(side[3]) && side[4] === `Scores${items.filter((x) => x.kind === 'score' && !x.ai).length}`, side.join(' | '));
-check('All music shows an AI music badge', await page.$$eval('.lib-table tbody tr', (e, t) => e.some((x) => x.textContent.includes(t) && x.querySelector('.badge.k-ai')?.textContent === 'AI music'), ai.title));
+check('left bar: Sheets, Scores, Chords, Books, AI Studio', side.map((s) => s.replace(/ ?\d+$/, '')).join(',') === 'Sheets,Scores,Chords,Books,AI Studio', side.join(' | '));
+check('AI Studio count 1, Scores count without it', /^AI Studio ?1$/.test(side[4]) && side[1].replace(" ", "") === `Scores${items.filter((x) => x.kind === 'score' && !x.ai).length}`, side.join(' | '));
+check('All music shows an AI Studio badge', await page.$$eval('.lib-table tbody tr', (e, t) => e.some((x) => x.textContent.includes(t) && x.querySelector('.badge.k-ai')?.textContent === 'AI Studio'), ai.title));
 
 await page.goto(`${BASE}#/library?kind=ai`, { waitUntil: 'networkidle0' }); await sleep(600);
-check('heading says AI music', (await page.$eval('#libhead h1', (e) => e.textContent)) === 'AI music');
+check('heading says AI Studio', (await page.$eval('#libhead h1', (e) => e.textContent)) === 'AI Studio');
 const r = await rows();
-check('AI music list has just the piece', r.length === 1 && r[0].includes(ai.title), r.join(' | '));
+check('AI Studio list has just the piece', r.length === 1 && r[0].includes(ai.title), r.join(' | '));
 const heads = await page.$$eval('.lib-table thead th', (e) => e.map((x) => x.textContent.replace(/[▲▼]/g, '').trim()).filter(Boolean));
 check('columns Title, Version, Tag, Key, Added', heads.join(',') === 'Title,Version,Tag,Key,Added', heads.join(','));
-check('left bar AI music is on', await page.$eval('#side .nav.sub.on', (e) => e.textContent.includes('AI music')));
+check('left bar AI Studio is on', await page.$eval('#side .nav.sub.on', (e) => e.textContent.includes('AI Studio')));
 
 await page.goto(`${BASE}#/library?kind=score`, { waitUntil: 'networkidle0' }); await sleep(600);
 check('Scores view does not list it', !(await rows()).some((x) => x.includes(ai.title)));
@@ -46,13 +46,13 @@ check('button says Pause while playing', (await page.$eval('#sc-play', (e) => e.
 await page.click('#sc-play');
 await page.screenshot({ path: 'aimusic.png' });
 
-// iPhone: segmented tabs in the same order, AI music tab filters
+// iPhone: segmented tabs in the same order, AI Studio tab filters
 await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
 await page.goto(`${BASE}#/library`, { waitUntil: 'networkidle0' }); await sleep(600);
 const tabs = await page.$$eval('#libhead .seg button', (e) => e.map((x) => x.textContent.trim()));
-check('phone tabs: All, Sheets, Chords, Books, AI music, Scores', tabs.join(',') === 'All,Sheets,Chords,Books,AI music,Scores', tabs.join(','));
+check('phone tabs: All, Sheets, Scores, Chords, Books, AI Studio', tabs.join(',') === 'All,Sheets,Scores,Chords,Books,AI Studio', tabs.join(','));
 await page.click('#libhead .seg button[data-kind="ai"]'); await sleep(600);
-check('phone AI music tab lists it', (await page.evaluate(() => location.hash)).includes('kind=ai') && (await page.$$eval('.lib-table tbody tr', (e) => e.length)) === 1);
+check('phone AI Studio tab lists it', (await page.evaluate(() => location.hash)).includes('kind=ai') && (await page.$$eval('.lib-table tbody tr', (e) => e.length)) === 1);
 const segH = await page.$eval('#libhead .seg', (e) => e.getBoundingClientRect().height);
 check('phone tabs fit on one row', segH < 60, String(segH));
 check('no horizontal scroll on phone', await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));

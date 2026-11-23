@@ -20,7 +20,7 @@ if (DATA) check('files on disk under items/Books/', fs.readdirSync(`${DATA}/item
 check('page image still loads', await page.evaluate(async (u) => (await fetch(u)).ok, `/api/items/${it.id}/file/${encodeURIComponent(it.pageFiles[0])}`));
 await page.goto(`${BASE}#/library`, { waitUntil: 'networkidle0' }); await sleep(600);
 const side = await page.$$eval('.side .nav.sub', (e) => e.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
-check('left bar: Sheets, Chords, Books, Scores', side.length >= 4 && /^Sheets/.test(side[0]) && /^Chords/.test(side[1]) && /^Books/.test(side[2]), side.join(' | '));
+check('left bar: Sheets, Scores, Chords, Books', side.length >= 4 && /^Sheets/.test(side[0]) && /^Scores/.test(side[1]) && /^Chords/.test(side[2]) && /^Books/.test(side[3]), side.join(' | '));
 await page.goto(`${BASE}#/library?kind=book`, { waitUntil: 'networkidle0' }); await sleep(600);
 const rows = await page.$$eval('.lib-table tbody tr', (e) => e.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
 check('Books list has the book, with its cover', rows.some((r) => r.includes('Cleanup test')) && (await page.$$('.lib-table .cover img')).length === rows.length, rows.join(' | '));

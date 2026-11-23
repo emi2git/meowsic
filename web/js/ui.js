@@ -71,11 +71,11 @@ export const KIND = {
   sheet: { label: 'Sheet', plural: 'Sheets', icon: 'sheet' },
   book: { label: 'Book', plural: 'Books', icon: 'book' },
   chords: { label: 'Chords', plural: 'Chords', icon: 'chords' },
-  ai: { label: 'AI music', plural: 'AI music', icon: 'ai' },
+  ai: { label: 'AI Studio', plural: 'AI Studio', icon: 'ai' },
   score: { label: 'Score', plural: 'Scores', icon: 'score' },
 };
 // a book is a sheet with book = 1 (many pages, many songs); everywhere else it reads as its own kind
-// AI music is a score with ai = 1 (composed by Claude, added only by ~/git/scripts/meowsic-add-ai-score.py)
+// AI Studio is a score with ai = 1 (composed by Claude, added only by ~/git/scripts/meowsic-add-ai-score.py)
 export const kindOf = (it) => (it.kind === 'sheet' && it.book ? 'book' : it.kind === 'score' && it.ai ? 'ai' : it.kind);
 export const badge = (x) => { const kind = typeof x === 'string' ? x : kindOf(x); return `<span class="badge k-${kind}">${icon(KIND[kind].icon)}${KIND[kind].label}</span>`; };
 

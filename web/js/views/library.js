@@ -55,7 +55,7 @@ export function libraryView(main, { q }) {
     <header class="top lib-top selband" id="selband" hidden></header>
     <header class="top lib-top" id="libhead">
       <h1>${kind ? KIND[kind].plural : 'All music'}</h1>
-      <div class="seg phone-only" role="tablist">${[['', 'All'], ['sheet', 'Sheets'], ['chords', 'Chords'], ['book', 'Books'], ['ai', 'AI music'], ['score', 'Scores']].map(([k, l]) =>
+      <div class="seg phone-only" role="tablist">${[['', 'All'], ['sheet', 'Sheets'], ['score', 'Scores'], ['chords', 'Chords'], ['book', 'Books'], ['ai', 'AI Studio']].map(([k, l]) =>
         `<button role="tab" class="${kind === k ? 'on' : ''}" data-kind="${k}">${k ? icon(KIND[k].icon) : ''}${l}</button>`).join('')}</div>
       ${tags.map((t) => `<span class="tag-on">${esc(t)}<button class="x" data-untag="${esc(t)}" aria-label="Remove tag ${esc(t)}" title="Remove">×</button></span>`).join('')}
       ${tags.length > 1 ? `<button class="link clear-tags" id="lib-tags-clear">Clear all</button>` : ''}
