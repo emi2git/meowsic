@@ -54,7 +54,7 @@ export function cleanupView(main) {
     return;
   }
   let tab0 = 'sort'; try { tab0 = localStorage.getItem('meowsic-cu-tab') || 'sort'; } catch {}
-  const st = { tab: tab0, filter: 'look', songs: [], titles: [], sid: null, pi: 0, ti: 0, scan: null, crop: null, carry: {}, undo: [], busy: false, renaming: false,
+  const st = { tab: tab0, filter: 'look', songs: [], titles: [], sid: null, pi: 0, ti: 0, scan: null, crop: null, carry: null, undo: [], busy: false, renaming: false,
     sort: { dec: {}, id: null, show: 'todo', summary: false }, notes: {}, noteDue: null };
   main.innerHTML = `<header class="top cu-top">
       <a class="icon-btn back cu-back" href="#/library" aria-label="Back to the library">‹ Library</a>
@@ -177,14 +177,14 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     const ci = $('.cu-img', body); if (ci) ci.onpointerdown = drag;
   };
 
-  // the box a page starts with: its own crop > the last crop set on another page of this sheet > the Mac's suggestion.
+  // the box a page starts with: its own crop > the last crop set anywhere this session (any song) > the Mac's suggestion.
   // Boxes are always on the ORIGINAL photo (the stage shows the original, never the cropped file).
   const startBox = (s, p, prefer) => {
-    const key = `${s.id}:${p.page}`, cc = st.carry[s.id], sug = p.trim || p.box;
+    const key = `${s.id}:${p.page}`, cc = st.carry, sug = p.trim || p.box;
     const pick = (b) => ({ top: b.top, bottom: b.bottom, left: b.left ?? 0, right: b.right ?? 1 });
     if (prefer !== 'suggested') {
       if (p.crop) return { key, ...pick(p.crop), from: 'Cropped' };
-      if (cc && cc.page !== p.page) return { key, ...pick(cc.box), from: `Same as page ${cc.page}` };
+      if (cc && !(cc.sid === s.id && cc.page === p.page)) return { key, ...pick(cc.box), from: cc.sid === s.id ? `Same as page ${cc.page}` : `Same as last crop (${cc.title} p${cc.page})` };
     }
     if (sug) return { key, ...full(), ...pick(sug), from: 'Suggested' };
     return { key, ...full(), from: 'Whole page' };
@@ -265,10 +265,10 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     if (same(pg().crop, c)) { st.crop = null; return onward(); }  // already cropped like this
     return busy(async () => {
       const s = song(), p = pg(), box = { top: c.top, bottom: c.bottom, left: c.left, right: c.right };
-      const prev = st.carry[s.id];
+      const prev = st.carry;
       store.putItem(await api('POST', `/items/${s.id}/pages/${p.page}/trim`, box));
-      st.carry[s.id] = { box, page: p.page };  // the next page of this sheet starts with this box
-      st.undo.push({ label: 'trim', run: async () => { store.putItem(await api('POST', `/items/${s.id}/pages/${p.page}/untrim`, {})); st.carry[s.id] = prev; }, at: [s.id, st.pi] });
+      st.carry = { box, sid: s.id, page: p.page, title: store.get(s.id)?.title || s.title };  // the next page (any song) starts with this box
+      st.undo.push({ label: 'trim', run: async () => { store.putItem(await api('POST', `/items/${s.id}/pages/${p.page}/untrim`, {})); st.carry = prev; }, at: [s.id, st.pi] });
       await reloadSong(s.id); st.crop = null; onward();
     });
   };
@@ -297,7 +297,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     const s = song(), p = pg();
     if (!p?.trims) return;
     store.putItem(await api('POST', `/items/${s.id}/pages/${p.page}/untrim`, { all: true }));
-    if (st.carry[s.id]?.page === p.page) delete st.carry[s.id];
+    if (st.carry?.sid === s.id && st.carry.page === p.page) st.carry = null;  // only when this page was the source
     toast('Back to the original photo');
     await reloadSong(s.id);
     if (next === true) { st.crop = null; return onward(); }

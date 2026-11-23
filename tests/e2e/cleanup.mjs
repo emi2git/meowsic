@@ -112,8 +112,16 @@ check('U puts the previous box back (suggested)', (await page.$eval('.cu-img', (
   await page.keyboard.press('t'); await sleep(1800);
   check('trim crops the page to the box', sizeOk(await imgSize(sh.id, 5), cropPx(O, b1)), `${await imgSize(sh.id, 5)} vs ${cropPx(O, b1)}`);
   check('next page starts with the same box', near(await boxNow(page), b1) && (await hint(page)) === 'Same as page 5', `${JSON.stringify(await boxNow(page))} ${await hint(page)}`);
+  {  // …and so does the first page of another song
+    const other = (await api('/cleanup')).songs.find((x) => x.id !== sh.id && x.pages.length && !x.pages[0].crop);
+    await page.click('[data-f="all"]'); await sleep(300);
+    await page.evaluate((id) => document.querySelector(`#cu-list li[data-id="${id}"]`)?.click(), other.id); await sleep(600);
+    check('next song starts with the last crop too', near(await boxNow(page), b1) && (await hint(page)) === 'Same as last crop (Cleanup test p5)', `${other.title}: ${await hint(page)}`);
+    await page.click('[data-f="look"]'); await sleep(300);
+    await page.evaluate((id) => document.querySelector(`#cu-list li[data-id="${id}"]`)?.click(), sh.id); await sleep(500);
+  }
   await page.click('.cu-strip button[data-p="4"]'); await sleep(800);
-  const nat = await page.$eval('#cu-img', (e) => [e.naturalWidth, e.naturalHeight]);
+  const nat =await page.$eval('#cu-img', (e) => [e.naturalWidth, e.naturalHeight]);
   check('after Trim the stage still shows the original photo', nat[0] === O[0] && nat[1] === O[1], `${nat} vs ${O}`);
   check('…with the box where it was cropped', near(await boxNow(page), b1) && (await hint(page)) === 'Cropped', JSON.stringify(await boxNow(page)));
   check('page reports its crop', near(Object.fromEntries(Object.entries((await api('/cleanup?id=' + sh.id)).songs[0].pages[4].crop).map(([k, v]) => [k[0], v])), b1, 0.001));

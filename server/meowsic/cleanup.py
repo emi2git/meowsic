@@ -172,7 +172,7 @@ def cleanup_state(request: Request, id: str | None = None, c=Depends(conn), cf=D
             if t: t = {**t, **on(t)}
             if box: box = on(box)
         items[iid]['pages'].append({'page': page, 'file': file, 'trim': t, 'dots': res.get('dots'), 'box': box,
-                                    'crop': crop, 'trims': len(steps), 'scanned': bool(ent)})
+                                    'crop': crop, 'trims': len(_stack(steps)), 'scanned': bool(ent)})
     songs, odd = [], []
     for it in items.values():
         why = odd_title(it['title'], it['kind'])
@@ -283,10 +283,34 @@ def _steps(d: Path, page) -> list[dict]:
         e = by[ts]
         try: m = json.loads(e['meta'].read_text()) if e['meta'] else {}
         except Exception: m = {}
+        e['op'] = m.get('op', 'trim')
         e['crop'] = {k: float(m.get(k, FULL[k])) for k in FULL}
         e['abs'] = bool(m.get('abs'))
         out.append(e)
     return out
+
+
+def _stack(steps) -> list[dict]:
+    """Replay the append-only history: the active crops of the original, oldest first. Undo and
+    'Original photo' are entries too ({op: 'undo'} / {op: 'reset'}): nothing in .history is ever removed."""
+    st = []
+    for e in steps:
+        if e['op'] == 'undo':
+            if st: st.pop()
+        elif e['op'] == 'reset': st = []
+        else: st.append(dict(e['crop']) if e['abs'] or not st else _compose(st[-1], e['crop']))
+    return st
+
+
+def _add(d: Path, page, steps, meta) -> Path:
+    """Append one entry to the page's history (always a new file)."""
+    h = d / '.history'
+    h.mkdir(exist_ok=True)
+    ts = max([now_ms()] + [e['ts'] + 1 for e in steps])
+    while any(h.glob(f'p{page}-{ts}.*')): ts += 1
+    f = h / f'p{page}-{ts}.json'
+    f.write_text(json.dumps(meta))
+    return f
 
 
 def _compose(outer, inner):
@@ -299,10 +323,8 @@ def _compose(outer, inner):
 
 def _crop_of(steps) -> dict | None:
     """The crop of the original photo the page shows now (None = the whole original)."""
-    cur = None
-    for e in steps:
-        cur = dict(e['crop']) if e['abs'] or cur is None else _compose(cur, e['crop'])
-    return {k: round(v, 4) for k, v in cur.items()} if cur else None
+    st = _stack(steps)
+    return {k: round(v, 4) for k, v in st[-1].items()} if st else None
 
 
 def _original(steps):
@@ -356,19 +378,13 @@ def trim_page(item_id: str, page: int, body: dict = Body(...), c=Depends(conn), 
     d = folder_path(cf, it['folder'])
     file = _page_row(c, item_id, page)
     src = d / file
-    h = d / '.history'
-    h.mkdir(exist_ok=True)
     steps = _steps(d, page)
     before = _crop_of(steps)
-    ts = max([now_ms()] + [e['ts'] + 1 for e in steps])
-    meta = {**box, 'abs': True}
-    if _original(steps):
-        (h / f'p{page}-{ts}.json').write_text(json.dumps(meta))
-        orig = _original(steps)
-    else:
-        orig = h / f'p{page}-{ts}{src.suffix}'
+    meta = _add(d, page, steps, {'op': 'trim', **box, 'abs': True})
+    orig = _original(steps)
+    if not orig:  # first trim: keep the original photo (same stamp as this entry)
+        orig = meta.with_suffix(src.suffix)
         shutil.copy2(src, orig)
-        orig.with_suffix('.json').write_text(json.dumps(meta))
     trim.crop(orig, src, top, bottom, left, right)
     _restroke(c, item_id, page, before, box)
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), item_id))
@@ -383,21 +399,11 @@ def untrim_page(item_id: str, page: int, body: dict = Body(default={}), c=Depend
     d = folder_path(cf, it['folder'])
     file = _page_row(c, item_id, page)
     steps = _steps(d, page)
-    if not steps: raise HTTPException(404, 'Nothing to undo')
+    if not _stack(steps): raise HTTPException(404, 'Nothing to undo')
     before = _crop_of(steps)
-    orig = _original(steps)
-    if body.get('all'):
-        if orig: shutil.copy2(orig, d / file)
-        gone, steps = steps, []
-    else:
-        gone, steps = steps[-1:], steps[:-1]
-        if orig and not _original(steps):  # the last trim was the only one: the original goes back as it is
-            shutil.copy2(orig, d / file)
-        else:
-            _render(d, file, steps)
-    for e in gone:
-        for f in (e['img'], e['meta']):
-            if f and f.exists(): f.unlink()
+    _add(d, page, steps, {'op': 'reset' if body.get('all') else 'undo'})  # history only grows
+    steps = _steps(d, page)
+    _render(d, file, steps)
     _restroke(c, item_id, page, before, _crop_of(steps))
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), item_id))
     _forget(cf, item_id, page, d / file)

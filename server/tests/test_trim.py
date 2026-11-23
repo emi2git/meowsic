@@ -116,4 +116,23 @@ def test_old_style_trims(client):
     assert page(client, it)['crop']['bottom'] == 0.75 and size(client, it) == (200, 200)
     it = client.post(f'/api/items/{it["id"]}/pages/1/untrim', json={'all': True}).json()
     assert page(client, it)['crop'] is None and size(client, it) == (200, 400)
-    assert not list(h.glob('p1-*'))
+    assert len(list(h.glob('p1-*.png'))) == 2  # old images all kept
+
+
+def test_history_is_never_removed(client):
+    """Keep all history: trim / undo / Original photo only add entries; the original stays."""
+    it = make(client, n=1)
+    h = client.app.state.cfg.items_dir / it['folder'] / '.history'
+    seen = set()
+    def grows():
+        now = {(f.name, f.read_bytes()) for f in h.glob('p1-*')}
+        assert seen <= now, 'a history file was removed or changed'
+        seen.update(now)
+    for act in [('trim', {'top': 0.25, 'bottom': 0.75}), ('trim', {'top': 0.1, 'bottom': 0.9}), ('untrim', {}),
+                ('untrim', {'all': True}), ('trim', {'top': 0.5, 'bottom': 1.0}), ('untrim', {})]:
+        client.post(f'/api/items/{it["id"]}/pages/1/{act[0]}', json=act[1]); grows()
+    assert len(list(h.glob('p1-*.png'))) == 1 and len(list(h.glob('p1-*.json'))) == 6
+    assert page(client, it)['crop'] is None and page(client, it)['trims'] == 0 and size(client, it) == (200, 400)
+    assert orig_size(client, it) == (200, 400)
+    it = trim(client, it, top=0.0, bottom=0.5)  # still crops from the one original
+    assert size(client, it) == (200, 200) and len(list(h.glob('p1-*.png'))) == 1
