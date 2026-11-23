@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi.responses import FileResponse
 
 from . import trim
 from .db import folder_path, get_item, now_ms
@@ -162,10 +163,16 @@ def cleanup_state(request: Request, id: str | None = None, c=Depends(conn), cf=D
         ent = data['pages'].get(key)
         if not ent: missing = True
         res = (ent or [0, None])[1] or {}
-        n = len(_snaps(folder_path(cf, folder), page))
+        steps = _steps(folder_path(cf, folder), page)
+        crop = _crop_of(steps)
         skip = key in ok
-        items[iid]['pages'].append({'page': page, 'file': file, 'trim': None if skip else res.get('trim'),
-                                    'dots': res.get('dots'), 'box': None if skip else res.get('box'), 'trims': n, 'scanned': bool(ent)})
+        t, box = (None, None) if skip else (res.get('trim'), res.get('box'))
+        if crop:  # the scan looked at the cropped file: say it on the original photo, like everything else here
+            on = lambda b: {k: round(v, 4) for k, v in _compose(crop, {**FULL, **{k: b[k] for k in ('top', 'bottom')}}).items()}
+            if t: t = {**t, **on(t)}
+            if box: box = on(box)
+        items[iid]['pages'].append({'page': page, 'file': file, 'trim': t, 'dots': res.get('dots'), 'box': box,
+                                    'crop': crop, 'trims': len(steps), 'scanned': bool(ent)})
     songs, odd = [], []
     for it in items.values():
         why = odd_title(it['title'], it['kind'])
@@ -208,15 +215,6 @@ def _page_row(c, item_id, page):
     r = c.execute('SELECT file FROM sheet_page WHERE item_id=? AND page=?', (item_id, page)).fetchone()
     if not r: raise HTTPException(404, 'No such page')
     return r[0]
-
-
-def _shift_strokes(c, item_id, page, f):
-    r = c.execute('SELECT strokes FROM annotation WHERE item_id=? AND page=?', (item_id, str(page))).fetchone()
-    if not r: return
-    strokes = json.loads(r[0])
-    for s in strokes:
-        s['pts'] = [[x, f(y)] for x, y, *rest in s.get('pts', [])]
-    c.execute('UPDATE annotation SET strokes=? WHERE item_id=? AND page=?', (json.dumps(strokes), item_id, str(page)))
 
 
 @router.get('/cleanup/sort')
@@ -265,11 +263,94 @@ def notes_set(body: dict = Body(...), cf=Depends(cfg)):
     return {'id': iid, 'text': text}
 
 
+FULL = {'top': 0.0, 'bottom': 1.0, 'left': 0.0, 'right': 1.0}
+
+
+def _steps(d: Path, page) -> list[dict]:
+    """The trims of a page, oldest first: {ts, img (Path | None), meta (Path | None), crop, abs}.
+    The oldest image is the original photo. Old-style trims keep an image of the page before each trim and
+    a .json crop relative to that image; new trims write only a .json with the crop of the original (abs)."""
+    h = d / '.history'
+    if not h.is_dir(): return []
+    by = {}
+    for f in h.glob(f'p{page}-*'):
+        try: ts = int(f.stem.split('-')[1])
+        except (IndexError, ValueError): continue
+        e = by.setdefault(ts, {'ts': ts, 'img': None, 'meta': None})
+        e['meta' if f.suffix == '.json' else 'img'] = f
+    out = []
+    for ts in sorted(by):
+        e = by[ts]
+        try: m = json.loads(e['meta'].read_text()) if e['meta'] else {}
+        except Exception: m = {}
+        e['crop'] = {k: float(m.get(k, FULL[k])) for k in FULL}
+        e['abs'] = bool(m.get('abs'))
+        out.append(e)
+    return out
+
+
+def _compose(outer, inner):
+    """inner is a crop of the image that outer cut out of the original: the same box on the original."""
+    o = outer or FULL
+    h, w = o['bottom'] - o['top'], o['right'] - o['left']
+    return {'top': o['top'] + inner['top'] * h, 'bottom': o['top'] + inner['bottom'] * h,
+            'left': o['left'] + inner['left'] * w, 'right': o['left'] + inner['right'] * w}
+
+
+def _crop_of(steps) -> dict | None:
+    """The crop of the original photo the page shows now (None = the whole original)."""
+    cur = None
+    for e in steps:
+        cur = dict(e['crop']) if e['abs'] or cur is None else _compose(cur, e['crop'])
+    return {k: round(v, 4) for k, v in cur.items()} if cur else None
+
+
+def _original(steps):
+    return next((e['img'] for e in steps if e['img']), None)
+
+
+def _restroke(c, item_id, page, a, b):
+    """Notes are kept relative to the page file: it was crop a of the original, now it is crop b."""
+    a, b = a or FULL, b or FULL
+    if a == b: return
+    def f(x, y):
+        ox, oy = a['left'] + x * (a['right'] - a['left']), a['top'] + y * (a['bottom'] - a['top'])
+        return [(ox - b['left']) / (b['right'] - b['left']), (oy - b['top']) / (b['bottom'] - b['top'])]
+    r = c.execute('SELECT strokes FROM annotation WHERE item_id=? AND page=?', (item_id, str(page))).fetchone()
+    if not r: return
+    strokes = json.loads(r[0])
+    for s in strokes:
+        s['pts'] = [f(x, y) + rest for x, y, *rest in s.get('pts', [])]
+    c.execute('UPDATE annotation SET strokes=? WHERE item_id=? AND page=?', (json.dumps(strokes), item_id, str(page)))
+
+
+def _render(d: Path, file, steps):
+    """Make the page file again from the original photo and the crop the steps give."""
+    orig, crop = _original(steps), _crop_of(steps)
+    if not orig: return
+    if crop: trim.crop(orig, d / file, crop['top'], crop['bottom'], crop['left'], crop['right'])
+    else: shutil.copy2(orig, d / file)
+
+
+@router.get('/items/{item_id}/pages/{page}/original')
+def page_original(item_id: str, page: int, c=Depends(conn), cf=Depends(cfg)):
+    """The original photo of a page: the oldest kept version if it was trimmed, else the page file."""
+    it = must_item(c, item_id)
+    d = folder_path(cf, it['folder'])
+    file = _page_row(c, item_id, page)
+    p = _original(_steps(d, page)) or d / file
+    if not p.is_file(): raise HTTPException(404, 'No such file')
+    return FileResponse(p, media_type={'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg'}.get(p.suffix.lower()))
+
+
 @router.post('/items/{item_id}/pages/{page}/trim')
 def trim_page(item_id: str, page: int, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
+    """Crop the page to {top, bottom, left, right} of its ORIGINAL photo (a trimmed page is cut from the
+    original again, never from the cropped file). The original is kept once in .history; undo goes back
+    one crop."""
     it = must_item(c, item_id)
-    top, bottom = float(body.get('top', 0)), float(body.get('bottom', 1))
-    left, right = float(body.get('left', 0)), float(body.get('right', 1))
+    box = {k: float(body.get(k, FULL[k])) for k in FULL}
+    top, bottom, left, right = box['top'], box['bottom'], box['left'], box['right']
     if not (0 <= top < bottom <= 1 and 0 <= left < right <= 1) or bottom - top < 0.2 or right - left < 0.2:
         raise HTTPException(400, 'Bad trim')
     d = folder_path(cf, it['folder'])
@@ -277,11 +358,19 @@ def trim_page(item_id: str, page: int, body: dict = Body(...), c=Depends(conn), 
     src = d / file
     h = d / '.history'
     h.mkdir(exist_ok=True)
-    snap = h / f'p{page}-{now_ms()}{src.suffix}'
-    shutil.copy2(src, snap)
-    snap.with_suffix('.json').write_text(json.dumps({'top': top, 'bottom': bottom, 'left': left, 'right': right}))
-    trim.crop(src, src, top, bottom, left, right)
-    _shift_strokes(c, item_id, page, lambda y: (y - top) / (bottom - top))
+    steps = _steps(d, page)
+    before = _crop_of(steps)
+    ts = max([now_ms()] + [e['ts'] + 1 for e in steps])
+    meta = {**box, 'abs': True}
+    if _original(steps):
+        (h / f'p{page}-{ts}.json').write_text(json.dumps(meta))
+        orig = _original(steps)
+    else:
+        orig = h / f'p{page}-{ts}{src.suffix}'
+        shutil.copy2(src, orig)
+        orig.with_suffix('.json').write_text(json.dumps(meta))
+    trim.crop(orig, src, top, bottom, left, right)
+    _restroke(c, item_id, page, before, box)
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), item_id))
     _forget(cf, item_id, page, src)
     return get_item(c, item_id)
@@ -289,22 +378,27 @@ def trim_page(item_id: str, page: int, body: dict = Body(...), c=Depends(conn), 
 
 @router.post('/items/{item_id}/pages/{page}/untrim')
 def untrim_page(item_id: str, page: int, body: dict = Body(default={}), c=Depends(conn), cf=Depends(cfg)):
-    """Undo the last trim of a page ({all: true} = back to the original)."""
+    """Undo the last trim of a page (back to the crop before it); {all: true} = back to the original."""
     it = must_item(c, item_id)
     d = folder_path(cf, it['folder'])
     file = _page_row(c, item_id, page)
-    h = d / '.history'
-    snaps = sorted((p for p in h.glob(f'p{page}-*') if p.suffix != '.json'), key=lambda p: int(p.stem.split('-')[1])) if h.is_dir() else []
-    if not snaps: raise HTTPException(404, 'Nothing to undo')
-    undo = snaps if body.get('all') else [snaps[-1]]
-    shutil.copy2(undo[0], d / file)
-    for snap in reversed(undo):  # newest first: put the notes back where they were
-        meta = snap.with_suffix('.json')
-        if meta.exists():
-            m = json.loads(meta.read_text())
-            _shift_strokes(c, item_id, page, lambda y, m=m: m['top'] + y * (m['bottom'] - m['top']))
-            meta.unlink()
-        snap.unlink()
+    steps = _steps(d, page)
+    if not steps: raise HTTPException(404, 'Nothing to undo')
+    before = _crop_of(steps)
+    orig = _original(steps)
+    if body.get('all'):
+        if orig: shutil.copy2(orig, d / file)
+        gone, steps = steps, []
+    else:
+        gone, steps = steps[-1:], steps[:-1]
+        if orig and not _original(steps):  # the last trim was the only one: the original goes back as it is
+            shutil.copy2(orig, d / file)
+        else:
+            _render(d, file, steps)
+    for e in gone:
+        for f in (e['img'], e['meta']):
+            if f and f.exists(): f.unlink()
+    _restroke(c, item_id, page, before, _crop_of(steps))
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), item_id))
     _forget(cf, item_id, page, d / file)
     return get_item(c, item_id)
