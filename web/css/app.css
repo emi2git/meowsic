@@ -816,3 +816,16 @@ button.danger { color: var(--danger); }
 .toast button, .toast a { pointer-events: auto; }
 /* iPad / iPhone: no room for Artist and Added (still sortable from the sort menu) */
 @media (pointer: coarse) { .lib-table .c-artist, .lib-table .c-when { display: none; } .lib-table .c-title { width: auto; } .lib-table .c-tag { width: 160px; } }
+/* iPad / iPhone: a sheet, chord chart or score gets the whole screen (‹ Back returns to the library) */
+@media (pointer: coarse) {
+  body[data-view="item"] .app, body[data-view="perform"] .app { grid-template-columns: 1fr; }
+  body[data-view="item"] .side, body[data-view="perform"] .side { display: none; }
+}
+/* iPad portrait score: the controls get their own row under the title */
+@media (pointer: coarse) and (min-width: 761px) and (max-width: 1100px) {
+  body[data-view="item"] .k-score .item-top { flex-wrap: wrap; row-gap: 6px; }
+  body[data-view="item"] .k-score .toolbar.inline + .icon-btn { margin-left: auto; }
+  body[data-view="item"] .k-score .toolbar.inline { order: 20; flex-basis: 100%; justify-content: flex-start; }
+  body[data-view="item"] .k-score .toolbar.inline .transport { max-width: none; }
+  body[data-view="item"] .k-score .toolbar.inline .stepper { flex: none; }
+}

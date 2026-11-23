@@ -36,7 +36,11 @@ export function scoreBody(root, it, { perform = false } = {}) {
   };
   const version = it.version || 'original';
   // each score reopens the way you left it: key (transpose), tempo and zoom are saved on the entry
-  let zoom = it.zoom || (perform ? 1.25 : 1) * (innerWidth < 760 ? 0.62 : 1);
+  // iPad / iPhone keep their own zoom (this device only): a Mac zoom would overflow an iPhone
+  const zDef = () => (perform ? 1.25 : 1) * (innerWidth < 760 ? 0.62 : 1);
+  const zLocal = matchMedia('(pointer: coarse)').matches, zKey = `meowsic-zoom-${it.id}`;
+  let zoom = zDef();
+  if (zLocal) { try { zoom = +localStorage.getItem(zKey) || zoom; } catch {} } else zoom = it.zoom || zoom;
   let osmd, player, stops = [], bar, ink = null;
 
   root.innerHTML = `<div class="score-wrap ${perform ? 'perform' : ''}"><div class="score-paper" id="paper"><div id="osmd"></div></div></div>`;
@@ -189,8 +193,8 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get player() { return player; },
     get version() { return version; },
     async setTranspose(n) { store.update(it.id, { transpose: n }); player.shift = n; await render(); },
-    zoomReset() { this.setZoom(innerWidth < 760 ? 0.62 : 1); },
-    setZoom(z) { zoom = Math.max(0.6, Math.min(2, Math.round(z * 100) / 100)); store.update(it.id, { zoom }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zoom; osmd.render(); tagNotes(); measureStops(); place(player.now()); ink?.fit(); },
+    zoomReset() { this.setZoom(zDef()); },
+    setZoom(z) { zoom = Math.max(0.6, Math.min(2, Math.round(z * 100) / 100)); if (zLocal) { try { localStorage.setItem(zKey, zoom); } catch {} } else store.update(it.id, { zoom }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zoom; osmd.render(); tagNotes(); measureStops(); place(player.now()); ink?.fit(); },
     get zoom() { return zoom; },
     setTool(t) { ink?.setTool(t); },
     undo() { ink?.undo(); }, clear() { ink?.clear(); },
