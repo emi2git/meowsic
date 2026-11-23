@@ -35,6 +35,7 @@ const ROUTES = {
 };
 
 function route() {
+  if (/^#\/?feedback\b/.test(location.hash)) return void location.replace('#/developer'); // feedback lives on Developer
   const { parts, q } = parseHash();
   const name = parts[0] === 'manage' ? 'cleanup' : parts[0] || 'library'; // #/manage = Manage library (was #/cleanup)
   const view = ROUTES[name] || libraryView;
