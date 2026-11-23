@@ -44,6 +44,7 @@ export function classicXml(xml, it) {
     root.insertBefore(mk('movement-title', it.title), root.firstElementChild);
     changed = true;
   }
+  if (snapHarmonies(doc)) changed = true;
   let ident = root.querySelector(':scope > identification');
   root.querySelectorAll(':scope > identification > creator').forEach((c) => { const t = c.textContent.trim(); if (/^music21$/i.test(t)) { c.remove(); changed = true; } else if (t === 'Meowsic AI') { c.textContent = 'Meowsic'; changed = true; } });
   if (it && isAiScore(it) && ![...root.querySelectorAll(':scope > identification > creator')].some((c) => c.getAttribute('type') === 'composer')) {
@@ -54,7 +55,43 @@ export function classicXml(xml, it) {
   }
   return changed ? new XMLSerializer().serializeToString(doc) : xml;
 }
-export const hasChordSymbols = (xml) => /<harmony[\s>]/.test(xml || '');
+// A chord symbol must start where a note (or rest) of its own staff starts. One that sits between them —
+// e.g. a <harmony><staff>1</staff> written among the left hand's notes, or one with an <offset> — makes OSMD
+// build an empty staff entry and crash ("Cannot read properties of undefined (reading 'parentVoiceEntry')").
+// Such a symbol moves to the nearest note start of its staff (an earlier one on a tie); returns how many moved.
+export function snapHarmonies(doc) {
+  let moved = 0;
+  for (const m of doc.querySelectorAll('part > measure')) {
+    if (!m.querySelector(':scope > harmony')) continue;
+    let cur = 0;
+    const starts = new Map(), hs = []; // staff → [{t, el}], harmonies
+    const num = (el, sel) => +(el.querySelector(sel)?.textContent || 0);
+    for (const el of m.children) {
+      const tag = el.tagName;
+      if (tag === 'note') {
+        if (el.querySelector(':scope > grace')) continue;
+        if (el.querySelector(':scope > chord')) continue;
+        const s = num(el, ':scope > staff') || 1;
+        if (!starts.has(s)) starts.set(s, []);
+        starts.get(s).push({ t: cur, el });
+        cur += num(el, ':scope > duration');
+      } else if (tag === 'backup') cur = Math.max(0, cur - num(el, ':scope > duration'));
+      else if (tag === 'forward') cur += num(el, ':scope > duration');
+      else if (tag === 'harmony') hs.push({ el, t: cur + num(el, ':scope > offset'), off: !!el.querySelector(':scope > offset'), s: num(el, ':scope > staff') || 1 });
+    }
+    for (const h of hs) {
+      const list = starts.get(h.s) || [];
+      if (!h.off && list.some((x) => x.t === h.t)) continue;
+      if (!list.length) { h.el.remove(); moved++; continue; }
+      const near = list.reduce((b, x) => (Math.abs(x.t - h.t) < Math.abs(b.t - h.t) ? x : b), list[0]);
+      h.el.querySelector(':scope > offset')?.remove();
+      m.insertBefore(h.el, near.el);
+      moved++;
+    }
+  }
+  return moved;
+}
+export const hasChordSymbols =(xml) => /<harmony[\s>]/.test(xml || '');
 
 // every graphical note of the drawn score, staff by staff (tab staves left out)
 function* graphicalNotes(osmd) {

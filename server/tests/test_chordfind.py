@@ -172,6 +172,23 @@ def test_rechord_xml_swaps_only_the_symbols():
     assert cf.rechord_xml(r.xml).xml == r.xml                    # stable: a second pass changes nothing
 
 
+def test_rechord_xml_staff1_symbols_sit_on_staff1_notes(monkeypatch):
+    """A chord change where only the left hand starts a note: the <staff>1 symbol goes before the right-hand note
+    sounding then (+ <offset>), never among the left hand's notes (OSMD crashed: "reading 'parentVoiceEntry'")."""
+    rh = note_xml('C', 5, 3, typ='half') + note_xml('E', 5, 1, typ='quarter')
+    lh = note_xml('C', 3, 2, staff=2) + note_xml('F', 3, 2, staff=2)
+    data = ('<?xml version="1.0"?><score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>'
+            '<part id="P1"><measure number="1"><attributes><divisions>1</divisions><key><fifths>0</fifths></key>'
+            '<time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves></attributes>' + harmony('C', 'major') + rh +
+            '<backup><duration>4</duration></backup>' + lh + '</measure></part></score-partwise>').encode()
+    monkeypatch.setattr(cf, 'find_chords', lambda *a, **k: [cf.Chord(0, C, '', 'C'), cf.Chord(2, F, '', 'F')])
+    out = cf.rechord_xml(data).xml.decode()
+    left = out[out.index('<backup>'):]
+    assert '<harmony>' not in left                                # nothing written among the left hand's notes
+    right = out[:out.index('<backup>')]
+    assert right.count('<harmony>') == 2 and '<offset>2</offset>' in right
+
+
 def test_rechord_xml_melody_only_uses_old_symbols_as_hints():
     """A lead sheet (tune alone): the old symbols stand in for the piano they were heard from."""
     body = (harmony('A', 'major') + note_xml('E', 5, 2) + harmony('A', 'major-seventh', 'G#') + note_xml('C', 5, 2, 1) +

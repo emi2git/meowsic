@@ -55,6 +55,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
   let zoom = zDef();
   if (zLocal) { try { zoom = +localStorage.getItem(zKey) || zoom; } catch {} } else zoom = it.zoom || zoom;
   let osmd, player, stops = [], bar, ink = null, inkTool = null;
+  let drawn = false; // OSMD has loaded and drawn the score (a resize / zoom before that must not render: "Before render, please load…")
 
   root.innerHTML = `<div class="score-wrap ${perform ? 'perform' : ''} ${paged ? 'paged' : ''}"><div class="score-paper" id="paper"><div class="score-clip" id="clip"><div class="score-sheet" id="sheet"><div id="osmd"></div></div></div></div></div>`;
   const paper = $('#paper', root), clip = $('#clip', root), sheet = $('#sheet', root);
@@ -200,11 +201,12 @@ export function scoreBody(root, it, { perform = false } = {}) {
     place(player?.now() || 0, follow);
     ink?.fit();
   };
-  const relayout = () => { osmd.render(); afterLayout(!!player?.playing); };
+  const relayout = () => { if (!osmd || !drawn) return; osmd.render(); afterLayout(!!player?.playing); };
 
   const render = async () => {
     await loadOsmd();
     const O = window.opensheetmusicdisplay;
+    drawn = false;
     $('#osmd', root).innerHTML = '';
     osmd = new O.OpenSheetMusicDisplay($('#osmd', root), {
       autoResize: false, backend: 'svg', drawTitle: true, drawMetronomeMarks: true, drawSubtitle: false, drawComposer: true, drawPartNames: version === 'vocal',
@@ -231,6 +233,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
       osmd.updateGraphic();
     }
     osmd.render();
+    drawn = true;
     ink?.destroy();
     ink = new InkLayer(sheet, it.id, `score-${version}`);
     afterLayout(true);
@@ -274,7 +277,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
   const ready = (real ? loadReal() : Promise.resolve()).then(() => { makePlayer(); return render(); }).catch((e) => { $('#osmd', root).innerHTML = `<p class="err">${esc(e.message)}</p>`; });
 
   let rt;
-  const ro = new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => osmd && relayout(), 250); });
+  const ro = new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(relayout, 250); });
   ro.observe(root);
 
   // bar under a click: find the drawn stop nearest the click on that line, then which bar its beat falls in

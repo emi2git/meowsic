@@ -343,7 +343,7 @@ class _Measure:
     length: float = 0.0
     beats: int = 4
     beat_type: int = 4
-    points: list = None       # [(quarters into the measure, byte offset, is a chord-continuation note)]
+    points: list = None       # [(quarters into the measure, byte offset, is a chord-continuation note, staff | None)]
 
 
 class _Reader:
@@ -378,7 +378,7 @@ class _Reader:
             self.measures.append(self.m)
         elif name == 'note':
             self.n = {'start': self.byte(), 'chord': False, 'rest': False, 'grace': False, 'dur': 0, 'step': None,
-                      'alter': 0.0, 'octave': None, 'tie_stop': False, 'cue': False}
+                      'alter': 0.0, 'octave': None, 'tie_stop': False, 'cue': False, 'staff': 1}
         elif name == 'harmony':
             self.h = {'start': self.byte(), 'root': '', 'alter': 0.0, 'kind': '', 'text': None, 'bass': '', 'balter': 0.0, 'offset': 0.0}
             self.h['text'] = attrs.get('text')
@@ -417,6 +417,9 @@ class _Reader:
             self.m.beat_type = self.beat_type
         elif name == 'chromatic' and par == 'transpose': self.transpose = int(float(t))
         elif par == 'note' and name == 'duration': self.n['dur'] = float(t)
+        elif par == 'note' and name == 'staff':
+            try: self.n['staff'] = int(t)
+            except ValueError: pass
         elif par == 'pitch' and name == 'step': self.n['step'] = t
         elif par == 'pitch' and name == 'alter': self.n['alter'] = float(t)
         elif par == 'pitch' and name == 'octave': self.n['octave'] = int(t)
@@ -430,9 +433,9 @@ class _Reader:
         elif name == 'note':
             n, q = self.n, 1 / self.divisions
             if not n['chord'] and not n['grace']:
-                self.m.points.append((self.cur * q, n['start'], False))
+                self.m.points.append((self.cur * q, n['start'], False, n['staff']))
             elif n['chord']:
-                self.m.points.append((self.last_onset * q, n['start'], True))
+                self.m.points.append((self.last_onset * q, n['start'], True, n['staff']))
             if not n['grace']:
                 onset = self.last_onset if n['chord'] else self.cur
                 if not n['rest'] and not n['cue'] and n['step'] and n['octave'] is not None:
@@ -443,10 +446,10 @@ class _Reader:
                     self.cur += n['dur']
                     self.maxpos = max(self.maxpos, self.cur)
         elif name == 'backup':
-            self.m.points.append((self.cur / self.divisions, self.bf['start'], False))
+            self.m.points.append((self.cur / self.divisions, self.bf['start'], False, None))
             self.cur = max(0, self.cur - self.bf['dur'])
         elif name == 'forward':
-            self.m.points.append((self.cur / self.divisions, self.bf['start'], False))
+            self.m.points.append((self.cur / self.divisions, self.bf['start'], False, None))
             self.cur += self.bf['dur']
             self.maxpos = max(self.maxpos, self.cur)
         elif name == 'harmony':
@@ -597,6 +600,9 @@ def rechord_xml(data: bytes) -> Rechorded:
         m = ms[mi]
         into = c.at - bars[mi].start
         pts = sorted(m.points, key=lambda p: p[1])
+        if multi_staff:  # a symbol marked <staff>1 must sit at a staff-1 note: anchored on a left-hand note or a
+            # <backup>, OSMD makes an empty staff-1 entry there and crashes ("reading 'parentVoiceEntry'")
+            pts = [p for p in pts if p[3] == 1] or pts
         exact = [p for p in pts if abs(p[0] - into) < 1e-6 and not p[2]]
         if exact:
             at, off = exact[0][1], None
