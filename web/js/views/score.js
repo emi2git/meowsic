@@ -9,6 +9,7 @@ import { scoreEditor } from './scoreeditor.js';
 import { InkLayer } from './annotate.js';
 import { attachSwipe, flipBy } from '../swipe.js';
 import { isTouch, isNarrow } from '../device.js';
+import { easyOn, setEasy, creditOf, chordsOf, drawNoteLetters, easyHeaderHtml } from '../easyscore.js';
 
 let osmdReady;
 export function loadOsmd() {
@@ -37,15 +38,18 @@ export function scoreBody(root, it, { perform = false } = {}) {
     tune = { title: it.title, bpm: info.bpm, beats: info.beats, measures: [], real: true };
   };
   const version = it.version || 'original';
+  // "super easy piano" look: title + keyboard chord diagrams + credit on top, letters in the noteheads
+  let easy = easyOn(it);
+
   // each score reopens the way you left it: key (transpose), tempo and zoom are saved on the entry
   // iPad / iPhone keep their own zoom (this device only): a Mac zoom would overflow an iPhone
-  const zDef = () => (perform ? 1.25 : 1) * (isNarrow() ? 0.62 : 1);
+  const zDef = () => (perform ? 1.25 : 1) * (isNarrow() ? 0.62 : 1) * (easy ? 1.5 : 1);
   const zLocal = isTouch(), zKey = `meowsic-zoom-${it.id}`;
   let zoom = zDef();
   if (zLocal) { try { zoom = +localStorage.getItem(zKey) || zoom; } catch {} } else zoom = it.zoom || zoom;
   let osmd, player, stops = [], bar, ink = null, inkTool = null;
 
-  root.innerHTML = `<div class="score-wrap ${perform ? 'perform' : ''}"><div class="score-paper" id="paper"><div id="osmd"></div></div></div>`;
+  root.innerHTML = `<div class="score-wrap ${perform ? 'perform' : ''}"><div class="score-paper" id="paper"><div id="easyhead"></div><div id="osmd"></div></div></div>`;
   const paper = $('#paper', root);
 
   // melody notes (first staff) get data-bar / data-note so a click can select them
@@ -102,16 +106,27 @@ export function scoreBody(root, it, { perform = false } = {}) {
     root.dispatchEvent(new CustomEvent('tick', { detail: { q }, bubbles: true }));
   };
 
+  // after every layout: letters in the noteheads and the header (chords follow transpose)
+  const decorate = () => {
+    const head = $('#easyhead', root);
+    paper.classList.toggle('easy', easy);
+    if (!easy) { head.innerHTML = ''; return; }
+    drawNoteLetters(osmd);
+    head.innerHTML = easyHeaderHtml({ title: it.title, credit: real ? creditOf(xmlText) : it.artist || '', chords: chordsOf(osmd), scale: isNarrow() ? 0.8 : Math.max(1, (zoom / 1.5) * 1.25) });
+  };
+  const relayout = () => { osmd.render(); decorate(); tagNotes(); measureStops(); place(player.now()); ink?.fit(); };
+
   const render = async () => {
     await loadOsmd();
     const O = window.opensheetmusicdisplay;
     $('#osmd', root).innerHTML = '';
     osmd = new O.OpenSheetMusicDisplay($('#osmd', root), {
-      autoResize: false, backend: 'svg', drawTitle: true, drawSubtitle: false, drawComposer: false, drawPartNames: version === 'vocal',
+      autoResize: false, backend: 'svg', drawTitle: !easy, drawMetronomeMarks: !easy, drawSubtitle: false, drawComposer: false, drawPartNames: version === 'vocal',
       drawPartAbbreviations: false, drawMeasureNumbersOnlyAtSystemStart: true, followCursor: false,
     });
     const r = osmd.EngravingRules;
-    r.MinNoteDistance = 2.0; r.ChordSymbolXSpacing = 1.5; r.LyricsHeight = 1.8;
+    r.MinNoteDistance = easy ? 2.6 : 2.0; r.ChordSymbolXSpacing = 1.5; r.LyricsHeight = 1.8;
+    if (easy) { r.DefaultFontFamily = 'Helvetica Neue, Helvetica, Arial, sans-serif'; r.PageTopMargin = 2; r.InstantaneousTempoTextHeight = 1.7; r.UnknownTextHeight = 1.7; }
     await osmd.load(real ? xmlText : musicXml({ ...tune, title: it.title }, version));
     osmd.zoom = zoom;
     if (it.transpose) {
@@ -120,6 +135,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
       osmd.updateGraphic();
     }
     osmd.render();
+    decorate();
     tagNotes();
     measureStops();
     ink?.destroy();
@@ -140,7 +156,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
   const ready = (real ? loadReal() : Promise.resolve()).then(() => { makePlayer(); return render(); }).catch((e) => { $('#osmd', root).innerHTML = `<p class="err">${esc(e.message)}</p>`; });
 
   let rt;
-  const ro = new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => osmd && (osmd.render(), tagNotes(), measureStops(), place(player.now()), ink?.fit()), 250); });
+  const ro = new ResizeObserver(() => { clearTimeout(rt); rt = setTimeout(() => osmd && relayout(), 250); });
   ro.observe(root);
 
   // bar under a click: find the drawn stop nearest the click on that line, then which bar its beat falls in
@@ -256,7 +272,9 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get version() { return version; },
     async setTranspose(n) { store.update(it.id, { transpose: n }); player.shift = n; await render(); },
     zoomReset() { this.setZoom(zDef()); },
-    setZoom(z) { zoom = Math.max(0.6, Math.min(2, Math.round(z * 100) / 100)); if (zLocal) { try { localStorage.setItem(zKey, zoom); } catch {} } else store.update(it.id, { zoom }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zoom; osmd.render(); tagNotes(); measureStops(); place(player.now()); ink?.fit(); },
+    setZoom(z) { zoom = Math.max(0.6, Math.min(2, Math.round(z * 100) / 100)); if (zLocal) { try { localStorage.setItem(zKey, zoom); } catch {} } else store.update(it.id, { zoom }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zoom; relayout(); },
+    get easy() { return easy; },
+    async setEasy(on) { easy = !!on; setEasy(it, easy); await render(); },
     get zoom() { return zoom; },
     setTool(t) { inkTool = t; ink?.setTool(t); },
     undo() { ink?.undo(); }, clear() { ink?.clear(); },
@@ -271,6 +289,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
 // Export entries for the item's More menu
 export function scoreTools(it, view) {
   return [{ label: 'Make another version…', icon: 'plus', run: () => generateVersions(it) },
+    { label: 'Note names in noteheads', icon: 'text', checked: view.easy, run: () => view.setEasy(!view.easy) },
     ...(it.measures ? [{ label: 'Revert note edits', icon: 'restore', run: async () => { await view.revert(); document.querySelector('.editbar')?.dispatchEvent(new Event('close')); toast('Back to the original notes'); } }] : [])];
 }
 export function scoreExportMenu(it, view) {

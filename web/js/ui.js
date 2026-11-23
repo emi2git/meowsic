@@ -147,7 +147,7 @@ export function menu(anchor, entries) {
   const m = document.createElement('div');
   m.className = 'menu';
   m.setAttribute('role', 'menu');
-  m.innerHTML = entries.map((e, i) => (e === '-' ? '<hr>' : `<button role="menuitem" data-i="${i}" class="${e.danger ? 'danger' : ''}">${e.icon ? icon(e.icon) : ''}<span>${esc(e.label)}</span></button>`)).join('');
+  m.innerHTML = entries.map((e, i) => (e === '-' ? '<hr>' : `<button role="${'checked' in e ? 'menuitemcheckbox' : 'menuitem'}" data-i="${i}" class="${e.danger ? 'danger' : ''}"${'checked' in e ? ` aria-checked="${!!e.checked}"` : ''}>${e.icon ? icon(e.icon) : ''}<span>${esc(e.label)}</span>${'checked' in e ? `<b class="mcheck">${e.checked ? '✓' : ''}</b>` : ''}</button>`)).join('');
   document.body.append(m);
   const r = anchor.getBoundingClientRect();
   const mw = m.offsetWidth, mh = m.offsetHeight;
