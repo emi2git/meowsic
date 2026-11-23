@@ -178,9 +178,9 @@ for (const [name, vp] of [['mac', { width: 1440, height: 900 }], ['ipad', { widt
 console.log('mac: Edit pages from the sheet');
 await mac.goto(BASE + `#/item/${sh.id}`, { waitUntil: 'networkidle0' }); await mac.reload({ waitUntil: 'networkidle0' }); await sleep(1200);
 await mac.waitForSelector('#it-more', { timeout: 8000 }); await mac.$eval('#it-more', (e) => e.click()); await sleep(400);
-const menuItems = await mac.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
-check('item menu has Edit pages…, no Split… / Join…', menuItems.includes('Edit pages…') && !menuItems.some((x) => /^(Split|Join)…$/.test(x)), menuItems.join('|'));
-await mac.evaluate(() => [...document.querySelectorAll('.menu button')].find((b) => b.textContent.trim() === 'Edit pages…').click()); await sleep(1500);
+const menuItems = await mac.$$eval('.menu button, .info-actions button', (e) => e.map((x) => x.textContent.trim()));
+check('the sheet Info actions have Edit pages…, no Split… / Join…', menuItems.includes('Edit pages…') && !menuItems.some((x) => /^(Split|Join)…$/.test(x)), menuItems.join('|'));
+await mac.evaluate(() => [...document.querySelectorAll('.menu button, .info-actions button')].find((b) => b.textContent.trim() === 'Edit pages…').click()); await sleep(1500);
 check('Edit pages opens this sheet in Organize pages', (await mac.evaluate(() => location.hash)).startsWith(`#/manage?id=${sh.id}`) && (await mac.$eval('#bs-grid', (e) => e.dataset.id)) === sh.id);
 check('Back says the sheet', (await mac.$eval('.cu-back', (e) => e.textContent)).includes(T));
 await mac.$eval('.cu-back', (e) => e.click()); await sleep(1000);

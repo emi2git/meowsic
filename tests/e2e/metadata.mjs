@@ -64,7 +64,7 @@ for (const [name, d] of Object.entries(DEV)) {
   const facts = await p.$eval('.if-facts', (e) => e.textContent);
   check(`${name}: Info shows type, pages, file, practice, dates`, ['Type', 'Pages', 'File', 'Practice', 'Added'].every((w) => facts.includes(w)), facts.slice(0, 200));
   const acts = await p.$$eval('.info-actions button', (e) => e.map((x) => x.textContent.trim()));
-  check(`${name}: sheet actions in Info (Rename, Edit tags, Split, Print, Trash), no book toggle`, ['Rename…', 'Edit tags…', 'Split…', 'Print…', 'Move to Trash'].every((a) => acts.includes(a)) && !acts.some((a) => /book/i.test(a)), acts.join('|'));
+  check(`${name}: sheet actions in Info (Rename, Edit tags, Edit pages, Print, Trash), no book toggle`, ['Rename…', 'Edit tags…', 'Edit pages…', 'Print…', 'Move to Trash'].every((a) => acts.includes(a)) && !acts.some((a) => /book/i.test(a)), acts.join('|'));
   if (name === 'iphone') {
     const r = await p.$eval('.info-modal', (e) => { const r = e.getBoundingClientRect(); return [r.width, r.height, innerWidth, innerHeight]; });
     check('iphone: Info is full screen', Math.abs(r[0] - r[2]) < 2 && Math.abs(r[1] - r[3]) < 2, r.join());
