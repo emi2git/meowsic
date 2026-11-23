@@ -4,7 +4,6 @@ import { $, esc, icon, iconOn, toast, sheet as modal, confirmSheet } from '../ui
 import { sheetUrl } from '../sheet-art.js';
 import { InkLayer, inkToolbar } from './annotate.js';
 import { go } from '../app.js';
-import { titleBox } from '../title-detect.js';
 import { attachSwipe, backToLibrary } from '../swipe.js';
 import { isTouch, isDesktop } from '../device.js';
 import { watchImage, markFailed } from '../conn.js';
@@ -236,68 +235,8 @@ export function startInk(view, host) {
 
 export function sheetExtraMenu(it, view) {
   return [
-    { label: 'Split…', icon: 'split', run: () => splitAt(it, view.page) },
-    { label: 'Join…', icon: 'merge', run: () => mergeInto(it) },
     ...(store.mode === 'server' ? [{ label: 'Make a score (beta)…', icon: 'wave', run: () => makeScore(it) }] : []),
   ];
-}
-
-async function splitAt(it, page) {
-  if (page <= 1) return toast('Go to the page where the new sheet should start.');
-  const fallback = `${it.title} (part 2)`;
-  let title = fallback;
-  if (store.mode === 'server') { // the new sheet's title, read off its first page (you can change it)
-    title = await new Promise((resolve) => {
-      let answered = false;
-      const s = modal(`<h2>${esc(`Split “${it.title}” at page ${page}?`)}</h2><p class="muted">${esc(`Pages ${page}–${it.pages} become a new sheet.`)}</p>
-        <form><label class="field">New sheet's title <input id="sp-title" value="${esc(fallback)}"><small class="bs-det muted" id="sp-det"></small></label>
-        <div class="modal-actions"><button type="button" data-close>Cancel</button><button class="primary" data-ok>Split</button></div></form>`,
-      { onClose: () => { if (!answered) resolve(null); } });
-      const inp = $('#sp-title', s.el);
-      titleBox(inp, $('#sp-det', s.el), it.id, fallback, it.updatedAt || 0)(page);
-      s.el.querySelector('form').onsubmit = (e) => { e.preventDefault(); answered = true; s.close(); resolve(inp.value.trim() || fallback); };
-    });
-    if (title == null) return;
-  } else {
-    const ok = await confirmSheet({ title: `Split “${it.title}” at page ${page}?`, body: `Pages ${page}–${it.pages} become a new sheet.`, ok: 'Split' });
-    if (!ok) return;
-  }
-  if (store.mode === 'server') { // move the real page photos
-    const res = await fetch(`/api/items/${it.id}/split`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, pages: Array.from({ length: it.pages - page + 1 }, (_, k) => page + k) }) });
-    const d = await res.json();
-    if (!res.ok) return toast(d.detail || 'Could not split');
-    store.putItem(d.item); store.putItem(d.new);
-    return toast('Split into two sheets', { label: 'Open new', run: () => go(`#/item/${d.new.id}`) });
-  }
-  const n = store.add({ kind: 'sheet', title: it.title + ' (part 2)', artist: it.artist, tags: [...it.tags], pages: it.pages - page + 1, source: it.source });
-  store.update(it.id, { pages: page - 1 });
-  toast('Split into two sheets', { label: 'Open new', run: () => go(`#/item/${n.id}`) });
-}
-
-function mergeInto(it) {
-  const others = store.items().filter((x) => x.kind === 'sheet' && x.id !== it.id).sort((a, b) => a.title.localeCompare(b.title));
-  const s = modal(`<h2>Merge “${esc(it.title)}” with…</h2><p class="muted">The other sheet's pages are added after this one's, and it is removed from the list.</p>
-    <input type="search" placeholder="Find a sheet" id="mg-q">
-    <div class="list-pick" id="mg-list"></div><div class="modal-actions"><button data-close>Cancel</button></div>`, { wide: true });
-  const list = $('#mg-list', s.el);
-  const draw = (q = '') => (list.innerHTML = others.filter((x) => x.title.toLowerCase().includes(q.toLowerCase())).slice(0, 40)
-    .map((x) => `<button data-id="${x.id}"><img src="${pageSrc(x, 1)}" alt=""><span>${esc(x.title)}</span><i>${x.pages} p</i></button>`).join(''));
-  draw();
-  $('#mg-q', s.el).oninput = (e) => draw(e.target.value);
-  list.onclick = (e) => {
-    const b = e.target.closest('[data-id]');
-    if (!b) return;
-    const o = store.get(b.dataset.id);
-    if (store.mode === 'server') {
-      fetch(`/api/items/${it.id}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ other: o.id }) })
-        .then(async (res) => { const d = await res.json(); if (!res.ok) return toast(d.detail || 'Could not join'); store.putItem(d.item); o.deleted = true; store.putItem({ ...o, deleted: true, pages: 0 }); s.close(); toast(`Joined — now ${d.item.pages} pages`); });
-      return;
-    }
-    store.update(it.id, { pages: it.pages + o.pages, tags: [...new Set([...it.tags, ...o.tags])] });
-    store.purge(o.id);
-    s.close();
-    toast(`Merged — now ${it.pages} pages`);
-  };
 }
 
 // photo → score (beta): the Mac reads the notes, chord names and words; unsure bars are marked "check"

@@ -206,7 +206,7 @@ def sheets_list(c=Depends(conn), cf=Depends(cfg)):
 def sheet_get(item_id: str, detect: bool = False, c=Depends(conn), cf=Depends(cfg)):
     """One sheet: its marks, and (detect=1) where new songs probably start, read off every page
     (title, page dots, music at the top, layout): suggest {page: {title, confidence, sure, why}}."""
-    r = book_get(item_id, c=c, books=False)
+    r = book_get(item_id, c=c, books=bool(must_item(c, item_id).get('book')))  # books too (Organize pages)
     if not detect: return r
     from .cleanup import _analyze, _original, _steps
     it = get_item(c, item_id)

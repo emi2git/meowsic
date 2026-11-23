@@ -5,7 +5,7 @@ import { $, esc, icon, CAT, KIND, kindOf, menu } from './ui.js';
 import { libraryView } from './views/library.js';
 import { itemView } from './views/item.js';
 import { addSheetsView, addChordsView, addScoreView } from './views/add.js';
-import { tagsView, binView } from './views/organize.js';
+import { tagsView } from './views/organize.js';
 import { printView } from './views/print.js';
 import { statsView, settingsView, developerView } from './views/more.js';
 import { activityView } from './views/activity.js';
@@ -31,14 +31,18 @@ export function parseHash() {
 const ROUTES = {
   library: libraryView, item: itemView,
   'add-sheets': addSheetsView, 'add-photos': photoImportView, 'add-chords': addChordsView, 'add-score': addScoreView, jobs: addScoreView,
-  tags: tagsView, bin: binView,
+  tags: tagsView,
   print: printView, stats: statsView, activity: activityView, activities: activityView, cleanup: cleanupView, manage: cleanupView, 'make-tags': makeTagsView, developer: developerView, settings: settingsView, help: helpView,
 };
 
 function route() {
   if (/^#\/?feedback\b/.test(location.hash)) return void location.replace('#/developer'); // feedback lives on Developer
   const { parts, q } = parseHash();
-  const name = parts[0] === 'manage' ? 'cleanup' : parts[0] || 'library'; // #/manage = Manage library (was #/cleanup)
+  // #/manage = Manage library → Organize pages; the old #/cleanup, #/organize and #/manage/<old tab> go there
+  // Trash is a Manage library tab now: #/bin and #/trash go to #/manage/trash
+  if (parts[0] === 'bin' || parts[0] === 'trash') { location.replace('#/manage/trash'); return; }
+  if (parts[0] === 'cleanup' || parts[0] === 'organize' || (parts[0] === 'manage' && parts.length > 1 && !(parts[1] === 'trash' && parts.length === 2))) { location.replace('#/manage' + (q.toString() ? '?' + q : '')); return; }
+  const name = parts[0] === 'manage' ? 'cleanup' : parts[0] || 'library';
   const view = ROUTES[name] || libraryView;
   if (typeof cleanup === 'function') cleanup();
   cleanup = null;
@@ -68,8 +72,7 @@ export function renderSide() {
       <a class="nav${on(v === 'stats')}" href="#/stats">${icon('stats')}<span>Stats</span></a>
       <h3>Utilities</h3>
       <a class="nav${on(v === 'activity' || v === 'activities')}" href="#/activity"><span>Activities</span>${store.jobs().some((j) => j.status === 'running') ? '<i class="live">•</i>' : ''}</a>
-      ${store.mode === 'server' ? `<a class="nav${on(v === 'cleanup')}" href="#/manage"><span>Manage library</span></a>` : ''}
-      <a class="nav${on(v === 'bin')}" href="#/bin">${icon('bin')}<span>Trash</span><i>${store.items({ deleted: true }).length || ''}</i></a>
+      <a class="nav${on(v === 'cleanup')}" href="#/manage"><span>Manage library</span></a>
       <a class="nav${on(v === 'help')}" href="#/help"><span>Help</span></a>
       <a class="nav${on(v === 'settings')}" href="#/settings">${icon('settings')}<span>Settings</span></a>
       <a class="nav${on(v === 'developer')}" href="#/developer"><span>Developer</span></a>
@@ -87,8 +90,7 @@ export function renderSide() {
   $('#tab-add').onclick = (e) => addMenu(e.currentTarget);
   $('#tab-more').onclick = (e) => menu(e.currentTarget, [
     { label: 'Activities', icon: 'wave', run: () => go('#/activity') },
-    ...(store.mode === 'server' ? [{ label: 'Manage library', icon: 'tools', run: () => go('#/manage') }] : []),
-    { label: 'Trash', icon: 'bin', run: () => go('#/bin') },
+    { label: 'Manage library', icon: 'tools', run: () => go('#/manage') },
     { label: 'Help', icon: 'info', run: () => go('#/help') },
     { label: 'Settings', icon: 'settings', run: () => go('#/settings') },
     { label: 'Developer', icon: 'tools', run: () => go('#/developer') },

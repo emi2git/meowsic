@@ -95,7 +95,7 @@ CREATE INDEX IF NOT EXISTS play_item ON play_session(item_id, opened_at);
 
 CREATE TABLE IF NOT EXISTS job (              -- transcriptions, "make another version", AI tag suggestions, photo → score, lyrics from a sheet, make it sing
   id          TEXT PRIMARY KEY,
-  kind        TEXT NOT NULL CHECK (kind IN ('transcribe','version','tags','omr','lyrics','sing')),
+  kind        TEXT NOT NULL CHECK (kind IN ('transcribe','version','tags','omr','lyrics','sing','organize')),
   title       TEXT NOT NULL,
   source      TEXT NOT NULL DEFAULT '',
   outputs     TEXT NOT NULL,                  -- JSON array of versions
@@ -241,4 +241,15 @@ CREATE TABLE IF NOT EXISTS photo_import (    -- every Add music → From Photos;
   at         INTEGER NOT NULL,
   record     TEXT NOT NULL,                   -- JSON {id, album, session, at, sheets: [{id, title, pages, photos, cropped}]}
   undone_at  INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS organize_reviewed (  -- Organize pages: "This is a complete song" — scans never bring it up again
+  item_id  TEXT PRIMARY KEY REFERENCES item(id) ON DELETE CASCADE,
+  at       INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS organize_scan (      -- Organize pages → Refresh: the newest scan's "Recommended to check" list
+  id       INTEGER PRIMARY KEY CHECK (id = 1),
+  job_id   TEXT,
+  at       INTEGER NOT NULL,
+  result   TEXT NOT NULL                        -- JSON {candidates: [{id, kind, score, reason, pages, others}], items}
 );

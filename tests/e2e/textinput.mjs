@@ -41,25 +41,15 @@ const say = (s) => page.evaluate((s) => (window.__say = s), s);
 const micOf = (sel) => page.$eval(sel, (el) => { const m = el.nextElementSibling; if (!m?.classList.contains('ti-mic') || m.hidden) return null; const a = m.getBoundingClientRect(), r = el.getBoundingClientRect(); return { w: a.width, h: a.height, inside: a.left >= r.left - 1 && a.right <= r.right + 1 && a.top >= r.top - 1 && a.bottom <= r.bottom + 1, lang: m.dataset.lang }; });
 const tapMic = (sel) => page.$eval(sel, (el) => { const q = el.nextElementSibling.getBoundingClientRect(); return { x: q.x, y: q.y, width: q.width, height: q.height }; }).then((r) => page.mouse.click(r.x + r.width / 2, r.y + r.height / 2));
 
-if (process.env.BASE) { // real server: speaking into the Clean up note saves it (autosave), and title rename works
-  console.log('Clean up (real server)');
-  await page.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(1500);
-  await page.keyboard.down('Alt'); await page.keyboard.press('1'); await page.keyboard.up('Alt'); await sleep(600);
-  const nid = await page.$eval('#cu-note', (e) => e.dataset.id);
-  check('note box has a mic', !!(await micOf('#cu-note')));
-  await page.click('#cu-note'); await page.keyboard.type('old note text'); await sleep(900);
-  await say({ alts: [['split after page two', 0.9]] });
-  await tapMic('#cu-note'); await sleep(1200);
-  const notes = await fetch(ORIGIN + '/api/cleanup/notes').then((r) => r.json());
-  check('spoken note replaced the old text and was saved', notes.some((x) => x.id === nid && x.text === 'split after page two'), JSON.stringify(notes.filter((x) => x.id === nid)));
-  check('note box kept focus', await page.evaluate(() => document.activeElement?.id === 'cu-note'));
+if (process.env.BASE) { // real server: Manage library → Organize pages: the find box has a mic, and speaking fills it
+  console.log('Organize pages (real server)');
+  await page.goto(BASE + '#/manage', { waitUntil: 'networkidle0' }); await sleep(1500);
+  check('find box has a mic', !!(await micOf('#og-find')));
+  await page.click('#og-find');
+  await say({ alts: [['moon river', 0.9]] });
+  await tapMic('#og-find'); await sleep(1200);
+  check('spoken words fill the find box', /moon river/i.test(await page.$eval('#og-find', (e) => e.value)), await page.$eval('#og-find', (e) => e.value));
   await page.keyboard.press('Escape'); await sleep(200);
-  await fetch(ORIGIN + '/api/cleanup/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: nid, text: '' }) });
-  await page.keyboard.down('Alt'); await page.keyboard.press('2'); await page.keyboard.up('Alt'); await sleep(600);
-  check('read-only title box: no mic until renaming', !(await micOf('#cu-title')));
-  await page.click('#cu-title'); await sleep(300);
-  check('renaming: title box gets a mic', !!(await micOf('#cu-title')));
-  await page.keyboard.press('Escape'); await sleep(300);
   check('no page errors', !errs.length, errs.join(' | '));
   console.log(`\n${pass} passed, ${fail} failed`);
   await b.close(); process.exit(fail ? 1 : 0);
