@@ -1,6 +1,6 @@
 // iPad / iPhone sheet + book viewer uses the whole screen: the page picture fills the width or the
 // height of the area under the top bar (fit, aspect kept), edge to edge. Turning, zoom, ink and the
-// top bar still work; the Mac layout keeps its |‹| page |›| strips. Clean up: books get no trim.
+// top bar still work; the Mac layout keeps its |‹| page |›| strips. Clean up: books are not in it.
 // Needs a test server with a multi-page sheet and a book: FILL_BASE=http://localhost:5194/ (never :5180)
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.FILL_BASE || 'http://localhost:5190/';
@@ -76,20 +76,9 @@ await m.screenshot({ path: `${out}/fill-mac-sheet.png` });
 check('Mac: 40px turn strips', mac.strip === 40, JSON.stringify(mac));
 check('Mac: page padding 4px 48px', mac.pad === '4px 48px', mac.pad);
 
-// Clean up: a book gets no trim suggestions, is never waiting for the scan, still shows in Go through sheets
+// Clean up shows sheets only: a book is not in it at all (so it gets no trim suggestions either)
 const cu = await m.evaluate(() => fetch('/api/cleanup').then((r) => r.json()));
-const cb = cu.songs.find((s) => s.id === book.id);
-check('Clean up: book has no trim issue', cb && !cb.issues.some((i) => i.kind === 'trim'), JSON.stringify(cb?.issues));
-check('Clean up: book pages have no trim / box', cb && cb.pages.every((p) => !p.trim && !p.box && p.scanned));
-await m.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(800);
-await m.evaluate(() => document.querySelector('[data-tab="sort"]').click()); await sleep(600);
-await m.evaluate(() => document.querySelector('[data-show="all"]')?.click()); await sleep(300);
-let found = false;
-for (let k = 0; k < cu.songs.length && !found; k++) {
-  found = (await m.$eval('.sv-title b', (e) => e.textContent)) === book.title;
-  if (!found) { await m.click('#sv-next'); await sleep(250); }
-}
-check('Clean up: book still in Go through sheets', found);
-check('Clean up: book not counted in Fix pages', !(await m.$eval('#cu-nf', (e) => e.textContent)) || !cb.issues.length);
+check('Clean up: book not listed', !cu.songs.some((s) => s.id === book.id));
+check('Clean up: book not among odd titles', !cu.titles.some((t) => t.id === book.id));
 console.log(`\n${pass} passed, ${fail} failed`); console.log(errs.length ? 'errors:\n' + errs.join('\n') : 'no page errors');
 await b.close();
