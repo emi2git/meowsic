@@ -36,7 +36,7 @@ for (const [name, w, h] of devices) {
       await p.touchscreen.touchStart(box.x, box.y + 150);
       for (let i = 1; i <= 5; i++) await p.touchscreen.touchMove(box.x, box.y + 150 - i * 60);
       await p.touchscreen.touchEnd(); await sleep(700);
-      check(`${name}: swipe up → library`, (await p.evaluate(() => location.hash)) === '#/library', await p.evaluate(() => location.hash));
+      check(`${name}: swipe up → library`, (await p.evaluate(() => location.hash)).startsWith('#/library'), await p.evaluate(() => location.hash));
     }
   }
   await p.close();

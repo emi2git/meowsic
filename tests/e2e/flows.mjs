@@ -96,43 +96,69 @@ await page.click('#sb-done'); await sleep(100);
 check('Cancel clears selection', await page.$eval('#selband', (e) => e.hidden));
 
 console.log('Sheet viewer');
+// the shown page(s) = the filled page dots (no "Page n of N" text in the top bar)
+const shown = () => page.$$eval('#sv-dots i.on', (e) => e.map((x) => x.dataset.p).join('–'));
+// fitted = the whole page(s) inside the page window
+const fits = () => page.$eval('#pages', (e) => { const r = e.getBoundingClientRect(); return [...e.querySelectorAll('.page')].every((p) => { const b = p.getBoundingClientRect(); return b.top >= r.top - 1 && b.bottom <= r.bottom + 1 && b.left >= r.left - 1 && b.right <= r.right + 1; }) && e.scrollHeight <= e.clientHeight + 1; });
+// a zoom saved on the entry by the old scale (1.5 = old "100%", bigger than the frame) is ignored
+await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('meowsic-mock-v6')); d.items.find((x) => x.id === 's-001').zoom = 1.5; localStorage.setItem('meowsic-mock-v6', JSON.stringify(d)); });
+await page.reload({ waitUntil: 'networkidle0' });
 await go('#/item/s-001');
-check('Mac shows two pages', (await text('#pageno')) === 'Page 1–2 of 3' && (await count('.page')) === 2, await text('#pageno'));
-check('no page dots', (await count('.dots')) === 0);
+check('old entry zoom (old scale) is ignored', (await text('#sv-zreset')) === '100%');
+await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('meowsic-mock-v6')); delete d.items.find((x) => x.id === 's-001').zoom; localStorage.setItem('meowsic-mock-v6', JSON.stringify(d)); });
+await page.reload({ waitUntil: 'networkidle0' }); await go('#/item/s-001');
+check('Mac shows two pages', (await shown()) === '1–2' && (await count('.page')) === 2, await shown());
+check('no "Page n of N" text in the top bar', !(await page.$('#pageno')));
+check('page dots: one per page, both shown pages filled', (await count('#sv-dots i')) === 3 && (await count('#sv-dots i.on')) === 2);
+check('page dots centered at the bottom of the frame', await page.$eval('#sv-dots', (d) => { const r = d.getBoundingClientRect(), f = d.closest('.sheet-frame').getBoundingClientRect(), dots = [...d.children].map((i) => i.getBoundingClientRect()); const mid = (dots[0].left + dots.at(-1).right) / 2; return Math.abs(mid - (f.left + f.width / 2)) <= 2 && f.bottom - r.bottom <= 6 && dots[0].width <= 6; }));
+check('opens at 100% = the spread fits the frame', (await text('#sv-zreset')) === '100%' && (await fits()));
+check('no old page dots bar', (await count('.dots')) === 0);
 check('no floating page buttons', (await count('.turn')) === 0);
 check('turn strips beside the page window, full height', await page.$eval('.turn-strip.next', (b) => b.getBoundingClientRect().height === document.querySelector('#pages').getBoundingClientRect().height));
 await page.click('.turn-strip.next'); await sleep(200);
-check('› strip turns to the next pages', (await text('#pageno')) === 'Page 3 of 3');
+check('› strip turns to the next pages', (await shown()) === '3');
 await page.click('.turn-strip.prev'); await sleep(200);
 { const r = await page.$eval('#pages', (e) => { const b = e.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; });
   const pg = async (i) => page.$$eval('.page', (e, i) => { const b = e[i].getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; }, i);
   let a = await pg(0);
   await page.mouse.click(a.x + a.w * 0.8, a.y + a.h / 2); await sleep(200);
-  check('two pages: click inner half of left page does nothing', (await text('#pageno')) === 'Page 1–2 of 3');
+  check('two pages: click inner half of left page does nothing', (await shown()) === '1–2');
   let b2 = await pg(1);
   await page.mouse.click(b2.x + b2.w * 0.8, b2.y + b2.h / 2); await sleep(200);
-  check('two pages: outer half of right page → next', (await text('#pageno')) === 'Page 3 of 3');
+  check('two pages: outer half of right page → next', (await shown()) === '3');
   a = await pg(0);
   await page.mouse.click(a.x + a.w * 0.8, a.y + a.h / 2); await sleep(200);
-  check('one page: right half → next does nothing at the end', (await text('#pageno')) === 'Page 3 of 3');
+  check('one page: right half → next does nothing at the end', (await shown()) === '3');
   await page.mouse.click(a.x + a.w * 0.2, a.y + a.h / 2); await sleep(200);
-  check('one page shown: left half → previous', (await text('#pageno')) === 'Page 1–2 of 3'); }
+  check('one page shown: left half → previous', (await shown()) === '1–2'); }
+await page.click('#sv-dots i[data-p="3"]'); await sleep(250);
+check('tapping a page dot goes to that page', (await shown()) === '3');
+await page.click('#sv-dots i[data-p="1"]'); await sleep(250);
+const pw = () => page.$eval('.page', (e) => e.getBoundingClientRect().width);
+const w100 = await pw();
 await page.click('#sv-zin'); await sleep(250);
-check('zoom + from two pages shows one page', (await count('.page')) === 1);
-check('zoom + again makes the page bigger and scrollable', await page.$eval('#pages', (e) => e.classList.contains('zoomed') && e.scrollHeight > e.clientHeight));
+check('zoom + shows 125%, still two pages, bigger and scrollable', (await text('#sv-zreset')) === '125%' && (await count('.page')) === 2 && Math.abs((await pw()) / w100 - 1.25) < 0.02
+  && await page.$eval('#pages', (e) => e.classList.contains('zoomed') && (e.scrollHeight > e.clientHeight || e.scrollWidth > e.clientWidth)), `${await text('#sv-zreset')} ${(await pw()) / w100}`);
+await page.click('#sv-zin'); await sleep(250);
 { const r = await page.$eval('#pages', (e) => { const b = e.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
-  const before = await page.$eval('#pages', (e) => e.scrollTop);
-  await page.mouse.move(r.x, r.y); await page.mouse.down(); await page.mouse.move(r.x - 60, r.y - 200, { steps: 6 }); await page.mouse.up(); await sleep(150);
-  check('hand tool: drag moves the zoomed page', (await page.$eval('#pages', (e) => e.scrollTop)) > before + 100); }
+  const pos = () => page.$eval('#pages', (e) => e.scrollTop + e.scrollLeft);
+  const before = await pos();
+  await page.mouse.move(r.x, r.y); await page.mouse.down(); await page.mouse.move(r.x - 200, r.y - 200, { steps: 6 }); await page.mouse.up(); await sleep(150);
+  check('hand tool: drag moves the zoomed page', (await pos()) > before + 100); }
+check('zoom is kept on this device only, not on the entry', (await page.evaluate(() => localStorage.getItem('meowsic.sheetZoom.s-001'))) === '1.5' && (await db()).items.find((x) => x.id === 's-001').zoom == null);
+await page.keyboard.press('-'); await page.keyboard.press('-'); await sleep(250);
+check('− key back to 100%: the spread fits again', (await text('#sv-zreset')) === '100%' && (await fits()) && (await count('.page')) === 2);
 await page.keyboard.press('-'); await sleep(250);
-check('− key zooms back to two pages', (await count('.page')) === 2);
-await page.keyboard.press('='); await sleep(250);
-check('+ key zooms in to one page', (await count('.page')) === 1);
-check('middle zoom button shows 100% for one page', (await text('#sv-zreset')) === '100%');
+check('− to 75%: smaller pages, still whole', (await text('#sv-zreset')) === '75%' && Math.abs((await pw()) / w100 - 0.75) < 0.02 && (await fits()));
+await page.keyboard.press('='); await page.keyboard.press('='); await sleep(250);
+check('+ key zooms in to 125%', (await text('#sv-zreset')) === '125%');
+await go('#/library'); await go('#/item/s-001'); await sleep(300);
+check('reopens at the zoom left on this device', (await text('#sv-zreset')) === '125%');
 await page.click('#sv-zreset'); await sleep(200);
-check('reset button returns to two pages at 50%', (await count('.page')) === 2 && (await text('#sv-zreset')) === '50%');
-await page.keyboard.press('=');
-await page.keyboard.press('-'); await sleep(250);
+check('reset button returns to 100% (fit)', (await count('.page')) === 2 && (await text('#sv-zreset')) === '100%' && (await fits()));
+await page.setViewport({ width: 1100, height: 700 }); await sleep(500);
+check('re-fits on resize', (await fits()) && (await text('#sv-zreset')) === '100%');
+await page.setViewport({ width: 1366, height: 1024 }); await sleep(500);
 check('left bar stays while viewing', await page.$eval('#side', (e) => getComputedStyle(e).display !== 'none'));
 await page.click('#it-full'); await sleep(400);
 check('full screen hides the left bar', await page.$eval('#side', (e) => getComputedStyle(e).display === 'none'));
@@ -141,7 +167,7 @@ check('leaving full screen brings it back', await page.$eval('#side', (e) => get
 check('slim header', await page.$eval('.item-top', (e) => e.offsetHeight <= 50), await page.$eval('.item-top', (e) => e.offsetHeight));
 check('full screen button', !!(await page.$('#it-full')));
 await page.keyboard.press('ArrowRight'); await sleep(200);
-check('arrow / pedal turns to the next pair', (await text('#pageno')) === 'Page 3 of 3');
+check('arrow / pedal turns to the next pair', (await shown()) === '3');
 await sleep(1500); await page.click('#sv-ink'); await sleep(600);
 const box = await page.$eval('.page', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
 await page.mouse.move(box.x + 100, box.y + 100); await page.mouse.down();

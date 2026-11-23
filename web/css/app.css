@@ -609,7 +609,7 @@ p.count-row { text-align: center; }
 .stepper .zreset { min-width: 58px; font-size: 13px; font-weight: 700; border-left: 1px solid var(--line); }
 
 /* |‹| page window |›| */
-.sheet-frame { display: flex; height: 100%; min-height: 0; background: var(--bg2); }
+.sheet-frame { position: relative; display: flex; height: 100%; min-height: 0; background: var(--bg2); }
 .sheet-frame .pages { flex: 1; min-width: 0; height: 100% !important; padding: 4px 6px; }
 .turn-strip { flex: none; width: 40px; height: 100%; min-height: 0; padding: 0; border: 0; border-radius: 0; background: var(--bg2); color: var(--ink2); font-size: 28px; font-weight: 300; }
 .turn-strip:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 6%, var(--bg2)); }
@@ -1140,10 +1140,16 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 }
 #st-voice .seg { margin-bottom: 6px; }
 @media (prefers-reduced-motion: reduce) { .ti-mic.on { animation: none; } }
-/* score pages on iPad/iPhone: page dots like printed songbooks — one per page, current one black */
-.score-dots { position: absolute; left: 0; right: 0; bottom: 10px; display: flex; justify-content: center; gap: 7px; pointer-events: none; z-index: 4; }
-.score-dots i { width: 7px; height: 7px; border-radius: 50%; border: 1.2px solid #222; background: #fff; }
-.score-dots i.on { background: #222; }
+/* page dots, sheet (#sv-dots, sheet.js) and score pages (.score-dots, score.js), every device: one
+   small thin ring per page, the shown page(s) filled (both pages of a Mac spread), centered at the
+   bottom of the view frame. Sheet dots can be tapped to go to that page. */
+:is(.page-dots, .score-dots) { position: absolute; left: 0; right: 0; bottom: 3px; height: 9px; display: flex; justify-content: center; align-items: center; gap: 6px; pointer-events: none; z-index: 4; color: var(--ink2); }
+:is(.page-dots, .score-dots):empty { display: none; }
+:is(.page-dots, .score-dots) i { position: relative; box-sizing: border-box; width: 5px; height: 5px; border-radius: 50%; border: 1px solid currentColor; opacity: .45; }
+:is(.page-dots, .score-dots) i.on { background: currentColor; opacity: .75; }
+.score-dots { color: #222; }
+.page-dots i { pointer-events: auto; cursor: pointer; }
+.page-dots i::after { content: ''; position: absolute; inset: -8px -4px; }
 
 /* ===== Library: sort from the Title heading (no sort button) ===== */
 /* tap Title = A–Z ⇄ Z–A; the tiny ⌄ beside it opens Title A–Z / Z–A / Most played / Recently added */

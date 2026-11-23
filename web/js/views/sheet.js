@@ -23,17 +23,26 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
       <button class="turn-strip prev" aria-label="Previous page" title="Previous page">‹</button>
       <div class="pages ${perform ? 'perform' : ''}" id="pages" tabindex="-1"><div class="page-row" id="page-row"></div></div>
       <button class="turn-strip next" aria-label="Next page" title="Next page">›</button>
+      <div class="page-dots" id="sv-dots" role="tablist" aria-label="Pages"></div>
     </div>`;
 
   // two pages side by side only in a Mac browser (mouse / trackpad and a wide window); iPad and iPhone show one
   const pages = $('#pages', root);
-  // zoom steps (100% = one page at 1.5× the screen height): Mac starts at 50% = two pages side by
-  // side; iPad / iPhone start at one page fitted to the screen (67%). Bigger pages scroll.
+  // zoom: 100% = the page fits the frame (whole page visible): one page on iPad / iPhone, two side by
+  // side on a Mac in a wide window. The steps scale that fitted size; bigger than 100% scrolls.
+  // Kept per item on this device only (localStorage): a zoom picked on the Mac never makes the iPad
+  // open overflowing. The old shared item.zoom (other scale, 100% = 1.5× the screen) is ignored.
   const canTwo = () => it.pages > 1 && isDesktop() && root.clientWidth > 900;
-  const levels = () => (canTwo() ? ['two', 1.5, 2.25, 3] : [1, 1.5, 2.25, 3]);
-  let zoom = it.zoom ?? levels()[0];
-  if (!levels().includes(zoom)) zoom = levels()[0];
-  const twoUp = () => zoom === 'two' && canTwo();
+  const LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  const zKey = `meowsic.sheetZoom.${it.id}`;
+  let zoom = 1;
+  try { const z = +localStorage.getItem(zKey); if (LEVELS.includes(z)) zoom = z; } catch {}
+  const twoUp = () => canTwo();
+  // room under the page for the page dots: Mac only (iPad / iPhone pages stay edge to edge, the
+  // thin dots sit over the bottom margin of the page)
+  const DOTS = it.pages > 1 && isDesktop() ? 14 : 0;
+  const dots = $('#sv-dots', root);
+  dots.onclick = (e) => { const d = e.target.closest('[data-p]'); if (d) { page = +d.dataset.p; draw(); } };
 
   // page pictures, loaded and decoded ahead (the pages next to the shown ones too), so a turn swaps
   // in a ready picture whose shape is known: the new page never shows at a wrong (bigger) size first
@@ -64,7 +73,9 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
     if (twoUp() && page % 2 === 0) page--;
     const show = twoUp() ? [page, page + 1].filter((p) => p <= it.pages) : [page];
     const row = $('#page-row', root);
-    const big = typeof zoom === 'number' && zoom > 1;
+    const big = zoom > 1;
+    if (dots.childElementCount !== (it.pages > 1 ? it.pages : 0)) dots.innerHTML = it.pages > 1 ? Array.from({ length: it.pages }, (_, k) => `<i data-p="${k + 1}" role="tab" aria-label="Page ${k + 1}"></i>`).join('') : '';
+    [...dots.children].forEach((d) => { const on = show.includes(+d.dataset.p); d.classList.toggle('on', on); d.setAttribute('aria-selected', on); });
     root.querySelector('.turn-strip.prev').disabled = page <= 1;
     root.querySelector('.turn-strip.next').disabled = page + (twoUp() ? 2 : 1) > it.pages;
     root.querySelectorAll('#strip button').forEach((b) => b.classList.toggle('on', show.includes(+b.dataset.p)));
@@ -80,11 +91,17 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
   const put = (row, show, cs, big) => {
     layers.forEach((l) => l.destroy());
     layers = [];
+    // the room a fitted (100%) page gets, measured unzoomed: iPad / iPhone the whole room inside .pages
+    // (no padding there: the page goes edge to edge); Mac: a small margin
+    pages.classList.remove('zoomed');
+    const touch = isTouch(), pcs = getComputedStyle(pages), n = show.length;
+    const gap = touch ? parseFloat(getComputedStyle(row).columnGap) || 0 : 4;
+    const room = {
+      H: pages.clientHeight - (touch ? parseFloat(pcs.paddingTop) + parseFloat(pcs.paddingBottom) : 8) - DOTS,
+      W: (pages.clientWidth - (touch ? parseFloat(pcs.paddingLeft) + parseFloat(pcs.paddingRight) : 12) - gap * (n - 1)) / n,
+    };
     pages.classList.toggle('zoomed', big);
-    // zoomed: the page keeps its shape and grows in both directions (height = zoom × screen height)
-    const fitH = pages.clientHeight - 16;
     row.style.height = '';
-    row.dataset.h = big ? Math.round(fitH * zoom) : '';
     row.replaceChildren(...show.map((p, i) => {
       const w = document.createElement('div');
       w.className = 'page'; w.dataset.p = p;
@@ -100,13 +117,7 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
       const size = () => {
         const ratio = img.naturalWidth ? img.naturalWidth / img.naturalHeight : 850 / 1100;
         w.style.aspectRatio = String(ratio);
-        if (row.dataset.h) { w.style.height = row.dataset.h + 'px'; w.style.width = ''; return; }
-        // iPad / iPhone: the whole room inside .pages (no padding there: the page goes edge to edge); Mac: as before
-        const n = show.length, touch = isTouch(), cs = getComputedStyle(pages);
-        const gap = touch ? parseFloat(getComputedStyle(row).columnGap) || 0 : 4;
-        const H = pages.clientHeight - (touch ? parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) : 8);
-        const W = (pages.clientWidth - (touch ? parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) : 12) - gap * (n - 1)) / n;
-        const h = Math.min(H, W / ratio);
+        const h = Math.max(1, Math.min(room.H, room.W / ratio)) * zoom;
         w.style.height = h + 'px';
         w.style.width = h * ratio + 'px';
       };
@@ -183,22 +194,21 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
     clear() { layers.forEach((l) => l.clear()); },
     goTo(p) { page = p; draw(); },
     redraw() { draw(); },
-    zoomReset() { this.zoomTo(levels()[0]); },
-    zoomTo(z) { zoom = z; store.update(it.id, { zoom }); pages.scrollTo({ top: 0, left: 0 }); draw(); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); },
+    zoomReset() { this.zoomTo(1); },
+    zoomTo(z) { zoom = z; try { z === 1 ? localStorage.removeItem(zKey) : localStorage.setItem(zKey, z); } catch {} pages.scrollTo({ top: 0, left: 0 }); draw(); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); },
     zoomBy(d) {
-      const L = levels();
-      const i = Math.max(0, Math.min(L.length - 1, L.indexOf(zoom) + d));
-      if (L[i] === zoom) return;
-      this.zoomTo(L[i]);
+      const i = Math.max(0, Math.min(LEVELS.length - 1, LEVELS.indexOf(zoom) + d));
+      if (LEVELS[i] === zoom) return;
+      this.zoomTo(LEVELS[i]);
     },
-    get zoomLabel() { return zoom === 'two' ? '50%' : `${Math.round((zoom / 1.5) * 100)}%`; },
+    get zoom() { return zoom; },
+    get zoomLabel() { return `${Math.round(zoom * 100)}%`; },
     destroy() { document.removeEventListener('keydown', onKey); ro.disconnect(); offSwipe(); layers.forEach((l) => l.destroy()); },
   };
 }
 
 export function sheetToolbar(bar, it, view) {
   bar.innerHTML = `
-    <span class="pageno" id="pageno"></span>
     <div class="stepper zoom" aria-label="Zoom"><button id="sv-zout" aria-label="Zoom out" title="Zoom out (−)">${iconOn('zoomout')}</button><button id="sv-zreset" class="zreset" title="Reset zoom (0)">${view.zoomLabel}</button><button id="sv-zin" aria-label="Zoom in" title="Zoom in (+)">${iconOn('zoomin')}</button></div>
     <button class="icon-btn ink-toggle" id="sv-ink" title="Annotate" aria-label="Annotate">${iconOn('write')}</button>`;
   $('#sv-ink', bar).onclick = () => startInk(view, document.querySelector('.viewer'));

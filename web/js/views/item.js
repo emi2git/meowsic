@@ -44,7 +44,7 @@ export function itemView(main, { parts }) {
 
   const body = $('#it-body', main), bar = $('#it-bar', main);
   let view, offBar;
-  // "Page n of N": sheets, and scores / chord charts shown as pages on iPad / iPhone
+  // "Page n of N": scores / chord charts shown as pages on iPad / iPhone (sheets show page dots instead)
   $('.viewer', main).addEventListener('pagechange', (e) => {
     const { show, pages } = e.detail;
     const el = $('#pageno', main);
