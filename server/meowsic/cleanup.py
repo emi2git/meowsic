@@ -39,9 +39,13 @@ def _save(cf, data):
     tmp.replace(_cache_file(cf))
 
 
-def _pages(c):
+def _pages(c, books=True):
+    """(item_id, page, file, folder) of every live sheet page; books=False leaves book pages out
+    (books are scanned songbooks: they never need trimming, so the scan does not look at them)."""
     return c.execute('SELECT p.item_id, p.page, p.file, i.folder FROM sheet_page p JOIN item i ON i.id = p.item_id '
-                     'WHERE i.deleted_at IS NULL AND i.folder IS NOT NULL ORDER BY i.created_at DESC, p.page').fetchall()
+                     'WHERE i.deleted_at IS NULL AND i.folder IS NOT NULL'
+                     + ('' if books else ' AND NOT COALESCE((SELECT book FROM sheet WHERE item_id = i.id), 0)')
+                     + ' ORDER BY i.created_at DESC, p.page').fetchall()
 
 
 CACHE_V = 3
@@ -64,7 +68,7 @@ def _run_scan(app):
     cf = app.state.cfg
     try:
         c = app.state.connect()
-        try: rows = _pages(c)
+        try: rows = _pages(c, books=False)
         finally: c.close()
         with _lock: data = _load(cf)
         if data.get('v') != CACHE_V: data['pages'] = {}
@@ -152,12 +156,14 @@ def cleanup_state(request: Request, id: str | None = None, c=Depends(conn), cf=D
     for iid, page, file, folder in _pages(c):
         if iid not in items: continue
         key = f'{iid}:{page}'
-        ent = data['pages'].get(key)
-        if not ent: missing = True
+        book = items[iid]['book']
+        ent = None if book else data['pages'].get(key)  # books never need trimming: no suggestions, no scan
+        if not ent and not book: missing = True
         res = (ent or [0, None])[1] or {}
         n = len(_snaps(folder_path(cf, folder), page))
-        items[iid]['pages'].append({'page': page, 'file': file, 'trim': None if key in ok else res.get('trim'),
-                                    'dots': res.get('dots'), 'box': None if key in ok else res.get('box'), 'trims': n, 'scanned': bool(ent)})
+        skip = book or key in ok
+        items[iid]['pages'].append({'page': page, 'file': file, 'trim': None if skip else res.get('trim'),
+                                    'dots': res.get('dots'), 'box': None if skip else res.get('box'), 'trims': n, 'scanned': book or bool(ent)})
     songs, odd = [], []
     for it in items.values():
         why = odd_title(it['title'], it['kind'])
