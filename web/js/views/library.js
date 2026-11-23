@@ -6,6 +6,7 @@ import { itemMenu, editTags, binItems, keyShort } from './actions.js';
 import { autoTag } from './autotag.js';
 import { VERSIONS } from '../musicxml.js';
 import { isTouch, onDeviceChange } from '../device.js';
+import { attachSwipe } from '../swipe.js';
 
 const SORTS = {
   added: ['Recently added', (a, b) => b.createdAt - a.createdAt],
@@ -38,8 +39,12 @@ const GENERIC = new Set(['Musical', 'Disney', 'Movie', 'Anime', 'Pop', 'Rock', '
   'English', 'Vietnamese', 'Chinese', 'Russian', 'Korea', 'Japan', 'Singapore', 'Original', 'Piano + vocals', 'Lead sheet', 'Piano duet',
   'Piano accompaniment', 'Piano clear', 'Piano easy', 'Piano pro', 'Printed', 'Never printed']);
 export const mainTag = (it) => it.tags.find((t) => !GENERIC.has(t)) || '';
-const PAGE = 50; // rows per page
-const state = { q: '', sort: 'added', dir: 1, select: false, sel: new Set(), page: 1, anchor: null };
+const PAGE = 50; // rows per page on the Mac (the list scrolls)
+// iPad / iPhone: the page never scrolls; a page of the list = as many rows as fit on the screen
+// (measured after drawing: header, table heading, pager, row height — book rows with covers are
+// taller), swipe left / right for the next / previous page. `per` is the last measured count;
+// `key` is the view (type + tags) the page number belongs to, so coming back from an item keeps it.
+const state = { q: '', sort: 'added', dir: 1, select: false, sel: new Set(), page: 1, anchor: null, per: 0, key: null };
 try { state.sort = localStorage.getItem('meowsic-sort') || 'added'; } catch {}
 
 const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase();
@@ -52,6 +57,10 @@ export function libraryView(main, { q }) {
   const setQ = (k, v) => { const p = new URLSearchParams(q); v ? p.set(k, v) : p.delete(k); go('#/library' + (p.toString() ? '?' + p : '')); };
 
   state.select = false; state.sel.clear(); state.anchor = null;
+  const viewKey = [kind, tags.join(',')].join('|');
+  if (state.key !== viewKey) { state.key = viewKey; state.page = 1; }
+  const fit = () => isTouch(); // rows per page from the screen (no scrolling)
+  let perKind = null; // what `state.per` was measured for (book rows are taller)
   main.innerHTML = `
     <header class="top lib-top selband" id="selband" hidden></header>
     <header class="top lib-top" id="libhead">
@@ -72,7 +81,7 @@ export function libraryView(main, { q }) {
     <div id="lib-rows"></div>`;
   let shownList = [];
 
-  const draw = () => {
+  const draw = (again = true) => {
     const words = fold(state.q).split(/\s+/).filter(Boolean);
     let list = store.items().filter((it) => (!kind || kindOf(it) === kind) && tags.every((t) => it.tags.includes(t)));
     if (words.length) list = list.filter((it) => { const hay = fold([it.title, it.artist, ...it.tags, KIND[kindOf(it)].label].join(' ')); return words.every((w) => hay.includes(w)); });
@@ -84,10 +93,11 @@ export function libraryView(main, { q }) {
       rows.innerHTML = `<ul class="rows"><li class="empty">${CAT}<p>${away ? 'Meowsic can’t reach the Mac. Check that the Mac is on and on the same Wi-Fi.' : state.q || tags.length ? 'No music matches.' : 'Nothing here yet.'}</p>${state.q || tags.length || away || kind === 'ai' ? '' : '<button class="primary" id="empty-add">Add music</button>'}</li></ul>`;
       $('#empty-add', main)?.addEventListener('click', (e) => addMenu(e.currentTarget));
     } else {
-      const pages = Math.max(1, Math.ceil(list.length / PAGE));
+      const per = perPage();
+      const pages = Math.max(1, Math.ceil(list.length / per));
       state.page = Math.min(Math.max(1, state.page), pages);
-      shownList = list.slice((state.page - 1) * PAGE, state.page * PAGE);
-      const more = pager(state.page, pages);
+      shownList = list.slice((state.page - 1) * per, state.page * per);
+      const more = fit() ? miniPager(state.page, pages) : pager(state.page, pages);
       const cnt = `${list.length} item${list.length === 1 ? '' : 's'}`;
       {
         // ▲ = A→Z / oldest first, ▼ = Z→A / newest first; Added starts newest first
@@ -104,18 +114,44 @@ export function libraryView(main, { q }) {
             ${cols.map(([, , c]) => `<td class="${c}${c === 'c-title' ? ' row-title' : ''}">${cell[c](it)}</td>`).join('')}
             <td class="c-more"><button class="icon-btn row-more" aria-label="More for ${esc(it.title)}" title="More">${iconOn('more')}</button></td>
           </tr>`).join('')}</tbody></table><div class="pager-row"><span class="muted">${cnt}</span>${more}</div>`;
-        rows.querySelector('.pager')?.addEventListener('click', (e) => { const b = e.target.closest('[data-pg]'); if (b && !b.disabled) { state.page = +b.dataset.pg; draw(); main.scrollTo({ top: 0 }); } });
+        rows.querySelector('.pager')?.addEventListener('click', (e) => {
+          const b = e.target.closest('[data-pg]');
+          if (!b || b.disabled) return;
+          state.page = b.dataset.pg === 'next' ? state.page + 1 : b.dataset.pg === 'prev' ? state.page - 1 : +b.dataset.pg;
+          draw(); main.scrollTo({ top: 0 });
+        });
         rows.querySelectorAll('[data-sort]').forEach((b) => (b.onclick = () => {
           const k = b.dataset.sort;
           state.dir = state.sort === k ? -state.dir : 1;
-          state.sort = k;
+          state.sort = k; state.page = 1;
           try { localStorage.setItem('meowsic-sort', k); } catch {}
           draw();
         }));
       }
     }
     drawSelbar(list);
+    if (again && list.length && fit()) remeasure();
   };
+
+  // iPad / iPhone: how many rows fit between the header and the pager
+  const perPage = () => (fit() ? state.per || 8 : PAGE);
+  const keyboardUp = () => document.activeElement?.id === 'lib-q';
+  const remeasure = () => {
+    if (keyboardUp() && state.per && perKind === kind) return; // the on-screen keyboard is up: keep the count
+    const box = $('#lib-rows', main), table = box.querySelector('.lib-table'), rows = [...box.querySelectorAll('tr.row')];
+    if (!table || !rows.length || !box.clientHeight) return;
+    const cs = getComputedStyle(table);
+    const room = box.clientHeight - box.querySelector('.pager-row').offsetHeight - table.tHead.offsetHeight - parseFloat(cs.marginTop) - parseFloat(cs.marginBottom);
+    const rowH = Math.max(...rows.map((r) => r.getBoundingClientRect().height));
+    const n = Math.max(1, Math.floor((room + 0.5) / rowH));
+    perKind = kind;
+    if (n === perPage()) return;
+    const first = (state.page - 1) * perPage(); // keep the first row on screen (rotation)
+    state.per = n;
+    state.page = Math.floor(first / n) + 1;
+    draw(false);
+  };
+  const turn = (d) => { const b = main.querySelector(`.pager [data-pg="${d > 0 ? 'next' : 'prev'}"]`); if (b && !b.disabled) b.click(); };
 
   const selecting = () => state.select || state.sel.size > 0;
   const drawSelbar = (list) => {
@@ -162,7 +198,7 @@ export function libraryView(main, { q }) {
   $('#lib-tags-clear', main)?.addEventListener('click', () => setTags([]));
   $('#lib-sort', main).onclick = (e) => menu(e.currentTarget, Object.entries(SORTS).map(([k, [l]]) => ({
     label: (state.sort === k ? '✓ ' : '   ') + l,
-    run: () => { state.sort = k; state.dir = 1; try { localStorage.setItem('meowsic-sort', k); } catch {} $('#lib-sort', main).textContent = `Sort: ${l} ▾`; draw(); },
+    run: () => { state.sort = k; state.dir = 1; state.page = 1; try { localStorage.setItem('meowsic-sort', k); } catch {} $('#lib-sort', main).textContent = `Sort: ${l} ▾`; draw(); },
   })));
   $('#lib-q', main).oninput = (e) => { state.q = e.target.value; state.page = 1; draw(); };
   $('#lib-select', main).onclick = () => { state.select = true; draw(); };
@@ -185,7 +221,15 @@ export function libraryView(main, { q }) {
     if (!row || e.pointerType === 'mouse' || e.target.closest('.row-more,.pick')) return;
     holdT = setTimeout(() => { pressed = true; state.select = true; state.sel.add(row.dataset.id); state.anchor = row.dataset.id; draw(); navigator.vibrate?.(10); }, 450);
   });
-  ['pointerup', 'pointercancel', 'pointermove'].forEach((t) => rowsEl.addEventListener(t, (e) => { if (t !== 'pointermove' || Math.abs(e.movementY) > 4) clearTimeout(holdT); }));
+  ['pointerup', 'pointercancel', 'pointermove'].forEach((t) => rowsEl.addEventListener(t, (e) => { if (t !== 'pointermove' || Math.abs(e.movementY) > 4 || Math.abs(e.movementX) > 4) clearTimeout(holdT); }));
+  // iPad / iPhone: swipe left = next page, right = previous page (taps still open, hold still selects)
+  const offSwipe = attachSwipe(rowsEl, { onLeft: () => turn(1), onRight: () => turn(-1), onUp: null, canStart: () => fit() && !pressed });
+  // rotation / resize: measure again (not while the keyboard is up; once it goes down instead)
+  let rz = 0;
+  const onResize = () => { if (!fit()) return; cancelAnimationFrame(rz); rz = requestAnimationFrame(() => { if (!keyboardUp()) draw(); }); };
+  const onBlur = (e) => { if (e.target.id !== 'lib-q' || !fit()) return; main.scrollTop = 0; scrollTo(0, 0); setTimeout(onResize, 300); };
+  addEventListener('resize', onResize);
+  main.addEventListener('focusout', onBlur);
   rowsEl.addEventListener('contextmenu', (e) => { if (e.target.closest('.row') && e.pointerType !== 'mouse' && isTouch()) e.preventDefault(); });
   const onKey = (e) => {
     if (e.key === '/' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); $('#lib-q', main)?.focus(); }
@@ -194,9 +238,9 @@ export function libraryView(main, { q }) {
   };
   document.addEventListener('keydown', onKey);
   draw();
-  const offDevice = onDeviceChange(draw);
-  const off = store.on(draw);
-  return () => { off(); offDevice(); document.removeEventListener('keydown', onKey); };
+  const offDevice = onDeviceChange(() => draw());
+  const off = store.on(() => draw());
+  return () => { off(); offDevice(); offSwipe(); removeEventListener('resize', onResize); main.removeEventListener('focusout', onBlur); document.removeEventListener('keydown', onKey); };
 }
 
 // tag filter: a list of checkboxes that stays open while you tick; live counts; Clear all
@@ -242,4 +286,11 @@ function pager(page, pages) {
     prev = n;
   }
   return `<nav class="pager" aria-label="Pages"><button data-pg="1" ${page === 1 ? 'disabled' : ''} title="First page">«</button><button data-pg="${page - 1}" ${page === 1 ? 'disabled' : ''} title="Previous page">‹</button>${html}<button data-pg="${page + 1}" ${page === pages ? 'disabled' : ''} title="Next page">›</button><button data-pg="${pages}" ${page === pages ? 'disabled' : ''} title="Last page">»</button></nav>`;
+}
+
+
+// iPad / iPhone: ‹ 3 / 12 ›  (swipe left / right does the same)
+function miniPager(page, pages) {
+  if (pages <= 1) return '';
+  return `<nav class="pager mini" aria-label="Pages"><button data-pg="prev" ${page === 1 ? 'disabled' : ''} aria-label="Previous page" title="Previous page">‹</button><span class="pg-now" aria-current="page">${page} / ${pages}</span><button data-pg="next" ${page === pages ? 'disabled' : ''} aria-label="Next page" title="Next page">›</button></nav>`;
 }
