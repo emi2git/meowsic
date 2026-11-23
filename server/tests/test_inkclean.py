@@ -113,3 +113,12 @@ def test_red_line_on_tinted_jpeg_page(tmp_path):
     assert r['lines'] >= 1
     assert coloured(out)[400:460].sum() < 30
     assert music_kept(clean_page, out) > 0.99
+
+
+def test_prepare_page_trims_cleans_and_enlarges_small_pages(tmp_path):
+    src = tmp_path / 'page.png'
+    page().resize((600, 450)).save(src)
+    dst, r = inkclean.prepare_page(src, tmp_path, 1, {'top': 0.1, 'bottom': 0.9})
+    assert dst == tmp_path / 'in1.png' and (tmp_path / 'in1-raw.png').is_file()
+    assert max(Image.open(dst).size) == inkclean.MIN_SIDE and r['enlarged'] > 1
+    assert Image.open(src).size == (600, 450)  # the original is never touched

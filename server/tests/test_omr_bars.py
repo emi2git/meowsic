@@ -43,11 +43,25 @@ def test_short_long_empty_and_pickup_bars_are_filled():
     assert lyrics(s) == ['a', 'b', 'c', 'd', 'e']
 
 
-def test_too_long_bar_keeps_the_words_of_a_dropped_note():
-    s = score([('C4', 2, 'one'), ('D4', 2, None), ('E4', 2, 'two')])  # 6 beats in 4/4: last note goes
+def test_too_long_bar_is_split_into_voices_no_note_dropped():
+    # 3/4: a tune (3 beats) and an under-part (3 beats) read one after the other
+    s = score([('F#5', 1.5, 'one'), ('G5', 0.5, None), ('A5', 1, None), ('C#5', 0.5, 'two'), ('A4', 0.5, None), ('F#4', 2, None)], ts='3/4')
     omr.fill_bars(s)
     assert omr.bars_full(s) == []
-    assert lyrics(s) == ['one', 'two']
+    assert len([n for n in s.recurse().notes]) == 6
+    assert len(list(s.parts[0].getElementsByClass(m21.stream.Measure)[0].voices)) == 2
+    assert sorted(lyrics(s)) == ['one', 'two']
+    out = m21.converter.parseData(m21.musicxml.m21ToXml.GeneralObjectExporter(s).parse().decode(), format='musicxml')
+    assert omr.bars_full(out) == [] and len(list(out.recurse().notes)) == 6  # survives writing MusicXML
+
+
+def test_unsure_bars_are_kept_in_the_musicxml():
+    rep = {'check': [{'page': 2, 'bar': 3, 'why': []}], 'filled': [{'part': 1, 'bar': 1, 'fix': 'pickup: 1-beat rest in front'},
+           {'part': 1, 'bar': 5, 'fix': 'x'}], 'taken': [{'page': 1, 'bar': 2}]}
+    bars = omr.unsure_bars(rep, [10, 8])
+    assert bars == [2, 5, 13]
+    x = omr.mark_unsure('<score-partwise><identification><encoding/></identification><part-list/></score-partwise>', bars)
+    assert '<miscellaneous-field name="meowsic-check-bars">2 5 13</miscellaneous-field></miscellaneous></identification>' in x
 
 
 def test_full_bars_untouched():
@@ -67,3 +81,21 @@ def test_audiveris_reads_english_and_vietnamese_when_installed(tmp_path, monkeyp
     (tmp_path / 'eng.traineddata').write_bytes(b'x')
     (tmp_path / 'vie.traineddata').write_bytes(b'x')
     assert omr.audiveris_languages()[-1].endswith('=eng+vie')
+
+
+def test_notes_beside_voices_add_up_too():
+    s = score([('C4', 4, None)])
+    m = s.parts[0].getElementsByClass(m21.stream.Measure)[0]
+    v = m21.stream.Voice(); v.append(m21.note.Note('E4', quarterLength=2)); m.insert(0, v)
+    m.append(m21.note.Note('D4', quarterLength=1))  # bar itself: 5 beats; voice: 2
+    omr.fill_bars(s)
+    assert omr.bars_full(s) == []
+
+
+def test_empty_bar_after_a_first_ending_is_dropped_printed_rest_kept():
+    s = score([('C4', 4, None)], [('D4', 4, None)], [], [('r', 4, None)])  # bar 3: nothing printed; bar 4: a whole rest
+    rep = {'check': [{'page': 1, 'bar': 4, 'why': []}], 'notes': []}
+    omr.drop_empty_bars(s, 1, rep)
+    ms = list(s.parts[0].getElementsByClass(m21.stream.Measure))
+    assert len(ms) == 3 and ms[2].notesAndRests[0].isRest
+    assert rep['check'][0]['bar'] == 3 and rep['dropped'] == [{'page': 1, 'bars': [3]}]

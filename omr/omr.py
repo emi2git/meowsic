@@ -110,7 +110,7 @@ def align(hm, am):
 
 
 def bar_len(meas):
-    ts = meas.getContextByClass(m21.meter.TimeSignature)
+    ts = next(iter(meas.getElementsByClass(m21.meter.TimeSignature)), None) or meas.getContextByClass(m21.meter.TimeSignature)
     return float(ts.barDuration.quarterLength) if ts else 4.0
 
 
@@ -369,8 +369,8 @@ def lyric_words(png, xml_path, first_verse=False):
             else: lines.append([wd])
         order = sorted(mine, key=lambda q: (q[0], q[1]))
         lines = [l for l in lines if sum(any(ch.isalpha() for ch in w[0]) for w in l) >= 3]  # stray marks are not a verse
-        if first_verse:  # a line of chord names (the next system's) is not words
-            lines = [l for l in lines if sum(bool(CHORD.match(w[0].strip('.,'))) for w in l) < 0.6 * len(l)]
+        # a line of chord names (the next system's) is not words
+        lines = [l for l in lines if sum(bool(CHORD.match(w[0].strip('.,'))) for w in l) < 0.6 * len(l)]
         for verse, words in enumerate((sorted(l, key=lambda q: q[1]) for l in lines), 1):
             toks, aside = [], []  # [text, centre x, hyphen-after]; x ranges of (Instrumental) etc.
             for t, x, w, _ in words:
@@ -469,6 +469,24 @@ def to_m21_figure(tok):
     return re.sub(r'(^|/)([A-G])b', r'\1\2-', tok)
 
 
+def layers_full(meas):
+    want = bar_len(meas)
+    ls = _layers(meas)
+    return bool(ls) and all(abs(sum(float(n.quarterLength) for n in _timed(c)) - want) < 0.01 for c in ls)
+
+
+def take_bar(dst, src):
+    """Put the notes of bar src (another reader's) into bar dst, keeping dst's clef / key / time / chord names."""
+    import copy
+    for e in list(dst.elements):
+        if isinstance(e, (m21.note.GeneralNote, m21.stream.Voice)) and not isinstance(e, m21.harmony.ChordSymbol): dst.remove(e)
+    for e in src.elements:
+        if isinstance(e, m21.stream.Voice) or (isinstance(e, m21.note.GeneralNote) and not isinstance(e, m21.harmony.ChordSymbol)):
+            x = copy.deepcopy(e)
+            for n in ([x] if not isinstance(x, m21.stream.Voice) else x.notesAndRests): n.lyrics = []  # words come from the page image
+            dst.insert(float(e.offset), x)
+
+
 def merge_page(h, a, page_no, report, chords=None, words=None):
     """Copy lyrics + chord names from Audiveris (a) onto homr (h); mark bars that disagree."""
     hp = top_part(h)
@@ -477,11 +495,19 @@ def merge_page(h, a, page_no, report, chords=None, words=None):
         hm = list(h.parts[0].getElementsByClass(m21.stream.Measure))
     am = list(top_part(a).getElementsByClass(m21.stream.Measure)) if a is not None and a.parts else []
     pairs = align(hm, am) if am else {}
+    # a homr bar that doesn't add up, where Audiveris read the same bar so it does (and found at least as many
+    # notes): Audiveris' notes are taken (homr misreads a beamed run or drops a tied note now and then)
+    for i, j in (pairs.items() if not isinstance(hp, m21.stream.PartStaff) else []):
+        if i == 0 or not layers_full(am[j]) or layers_full(hm[i]): continue
+        if len(real_notes(am[j])) < len(real_notes(hm[i])) or not real_notes(am[j]): continue
+        take_bar(hm[i], am[j])
+        report.setdefault('taken', []).append({'page': page_no, 'bar': i + 1})
     # lyrics read from the page image come first; Audiveris only fills gaps in bars that have words
     worded = set()
     for mi, off, text, syl, verse in words or []:
         if mi >= len(hm): continue
-        n = next((x for x in real_notes(hm[mi]) if abs(float(x.getOffsetInHierarchy(hm[mi])) - off) < 0.01), None)
+        ns = sorted(real_notes(hm[mi]), key=lambda x: abs(float(x.getOffsetInHierarchy(hm[mi])) - off))
+        n = ns[0] if ns and abs(float(ns[0].getOffsetInHierarchy(hm[mi])) - off) < 0.26 else None
         if n is not None and not any(l.number == verse for l in n.lyrics):
             n.lyrics = [*n.lyrics, m21.note.Lyric(text=text, number=verse, syllabic=syl)]
             worded.add(mi)
@@ -539,7 +565,31 @@ def merge_page(h, a, page_no, report, chords=None, words=None):
                 hm[mi].insert(off, cs)
             except Exception:
                 report['notes'].append(f'page {page_no}: chord name “{tok}” not understood')
+    drop_empty_bars(h, page_no, report)
     return h
+
+
+def drop_empty_bars(h, page_no, report):
+    """homr writes an empty bar where a first ending stops at a repeat sign: it is not on the page (it would
+    play as a bar of silence). A printed whole-bar rest is a rest, so it stays."""
+    parts = list(h.parts)
+    if not parts: return
+    bars = [list(p.getElementsByClass(m21.stream.Measure)) for p in parts]
+    gone = [i for i in range(min(len(b) for b in bars))
+            if i > 0 and all(not b[i].recurse().notesAndRests for b in bars)]
+    for i in reversed(gone):
+        for p, b in zip(parts, bars):
+            prev, m = b[i - 1], b[i]
+            for sp in list(h.recurse().getElementsByClass(m21.spanner.Spanner)):
+                if sp.isFirst(m) or sp.isLast(m) or m in sp.getSpannedElements():
+                    sp.replaceSpannedElement(m, prev) if prev not in sp.getSpannedElements() else sp.removeSpannedElements(m)
+            p.remove(m)
+        report['check'] = [c for c in report['check'] if not (c['page'] == page_no and c['bar'] == i + 1)]
+        for c in report['check']:
+            if c['page'] == page_no and c['bar'] > i + 1: c['bar'] -= 1
+        for t in report.get('taken', []):
+            if t['page'] == page_no and t['bar'] > i + 1: t['bar'] -= 1
+    if gone: report.setdefault('dropped', []).append({'page': page_no, 'bars': [i + 1 for i in gone]})
 
 
 FIXED = (m21.clef.Clef, m21.key.KeySignature, m21.meter.TimeSignature, m21.instrument.Instrument, m21.bar.Barline)
@@ -549,7 +599,13 @@ def _timed(c):
     return [n for n in c.notesAndRests if not n.duration.isGrace and not isinstance(n, m21.harmony.ChordSymbol)]
 
 
-def _fill(c, want, pickup):
+def _layers(meas):
+    """What has to add up: each voice, and the notes standing in the bar itself (beside voices they get a voice of their own)."""
+    vs = list(meas.voices)
+    return vs + ([meas] if _timed(meas) else []) if vs else [meas]
+
+
+def _fill(c, want, pickup, meas=None):
     """Make the notes and rests of c (a bar, or one voice of it) add up to `want` quarters. Returns what was done."""
     notes = _timed(c)
     have = sum(float(n.quarterLength) for n in notes)
@@ -567,17 +623,42 @@ def _fill(c, want, pickup):
             last.duration.dots = 1; return 'missing dot on the last note'
         end = max(float(n.offset) + float(n.quarterLength) for n in notes)
         c.insert(end, m21.note.Rest(quarterLength=gap)); return f'{gap:g} beats short: rest added'
-    over = -gap
-    for n in reversed(notes):  # too long: trailing rests go first, then the last notes are shortened
-        if over < 0.01: break
+    # too long: almost always a second voice the reader put after the first (an under-part, a string line);
+    # split it into voices that each fill the bar. No note is dropped.
+    if meas is not None and len(list(meas.voices)) < 4:
+        acc, k = 0.0, 0
+        for j, n in enumerate(notes):
+            if acc + float(n.quarterLength) > want + 0.01: break
+            acc += float(n.quarterLength); k = j + 1
+        if k:
+            v = m21.stream.Voice(id=str(len(list(meas.voices)) + 2))
+            start = float(notes[k].offset)
+            for n in notes[k:]:
+                o = float(n.offset) - start
+                c.remove(n); v.insert(o, n)
+            meas.insert(0, v)
+            done = [f'{-gap:g} beats too long: split into voices']
+            for layer in (c, v):
+                f = _fill(layer, want, False, meas)
+                if f: done.append(f)
+            return '; '.join(done)
+    for n in reversed(notes):  # no way to split: shorten the last notes (their words stay on the bar's notes)
+        if gap > -0.01: break
         ql = float(n.quarterLength)
-        if ql > over + 0.01:
-            n.quarterLength = ql - over; over = 0
-        else:
-            prev = [x for x in notes if x is not n and not x.isRest and x.offset < n.offset]
-            if n.lyrics and prev and not prev[-1].lyrics: prev[-1].lyrics = n.lyrics  # its words are kept
-            c.remove(n); over -= ql
-    return f'{-gap:g} beats too long: shortened'
+        if ql > -gap + 0.01: n.quarterLength = ql + gap; gap = 0
+        elif n.isRest: c.remove(n); gap += ql
+        else: n.quarterLength = ql / 2; gap += ql / 2
+    return 'too long: shortened'
+
+
+def one_voice_each(meas):
+    """Notes standing in a bar beside voices go into a voice of their own (MusicXML writing garbles the mix)."""
+    loose = _timed(meas)
+    if not loose or not list(meas.voices): return
+    v = m21.stream.Voice(id='1')
+    for n in loose:
+        o = float(n.offset); meas.remove(n); v.insert(o, n)
+    meas.insert(0, v)
 
 
 def fill_bars(score):
@@ -587,9 +668,10 @@ def fill_bars(score):
     for pi, part in enumerate(score.parts):
         for k, meas in enumerate(part.getElementsByClass(m21.stream.Measure)):
             want = bar_len(meas)
-            for c in (list(meas.voices) or [meas]):
-                fix = _fill(c, want, pickup=k == 0)
+            for c in _layers(meas):
+                fix = _fill(c, want, k == 0, meas)
                 if fix: done.append({'part': pi + 1, 'bar': k + 1, 'fix': fix})
+            one_voice_each(meas)
     return done
 
 
@@ -598,9 +680,26 @@ def bars_full(score):
     bad = []
     for pi, part in enumerate(score.parts):
         for k, meas in enumerate(part.getElementsByClass(m21.stream.Measure)):
-            for c in (list(meas.voices) or [meas]):
+            for c in _layers(meas):
                 if abs(sum(float(n.quarterLength) for n in _timed(c)) - bar_len(meas)) > 0.01: bad.append((pi + 1, k + 1))
     return bad
+
+
+def unsure_bars(report, page_bars):
+    """Score bar numbers (1-based, all pages joined) to check: readers disagreed, or the bar was changed to add up."""
+    first = [sum(page_bars[:k]) for k in range(len(page_bars))]
+    out = {first[c['page'] - 1] + c['bar'] for c in report['check'] if c['page'] - 1 < len(first)}
+    out |= {t['bar'] for t in report.get('filled', []) if not t['fix'].startswith('pickup')}
+    out |= {first[t['page'] - 1] + t['bar'] for t in report.get('taken', [])}
+    return sorted(out)
+
+
+def mark_unsure(xml, bars):
+    """Keep the bars to check in the MusicXML itself: <miscellaneous-field name="meowsic-check-bars">3 7</...>."""
+    if not bars: return xml
+    f = f'<miscellaneous><miscellaneous-field name="meowsic-check-bars">{" ".join(map(str, bars))}</miscellaneous-field></miscellaneous>'
+    if '</identification>' in xml: return xml.replace('</identification>', f + '</identification>', 1)
+    return __import__('re').sub(r'(<part-list\b)', '<identification>' + f + r'</identification>\1', xml, count=1)
 
 
 def join(scores, title):
@@ -661,10 +760,12 @@ def main():
     report['bars'] = len(score.parts[0].getElementsByClass(m21.stream.Measure))
     report['filled'] = fill_bars(score)  # every bar adds up to its time signature (the check marks stay)
     report['notFull'] = bars_full(score)
+    report['unsure'] = unsure_bars(report, [len(top_part(m).getElementsByClass(m21.stream.Measure)) for m in merged])
     report['lyrics'] = sum(1 for n in score.recurse().notes if n.lyrics)
     score.write('musicxml', fp=str(out / 'score.musicxml'))
     x = (out / 'score.musicxml').read_text()
     x = __import__('re').sub(r'<creator type="composer">Music21</creator>\s*', '', x)
+    x = mark_unsure(x, report['unsure'])
     (out / 'score.musicxml').write_text(x)
     (out / 'report.json').write_text(json.dumps(report, indent=1))
     say('done', f"{report['bars']} bars, {len(report['check'])} to check", report=report)

@@ -25,6 +25,7 @@ from PIL import Image, ImageFilter, ImageOps
 SEED = 70     # colour strength (0..255) of a clearly coloured pixel
 GROW = 35     # ... of the soft edge of a coloured stroke
 ANALYSE = 1600  # longest side the shapes are judged at
+MIN_SIDE = 2000  # pages smaller than this are enlarged before reading
 
 
 def _paper(rgb: np.ndarray) -> np.ndarray:
@@ -228,6 +229,12 @@ def prepare_page(src, work: Path, k: int, box: dict | None = None) -> tuple[Path
     try: r = clean(raw, dst, debug=work / f'in{k}-ink.png')
     except Exception as e:  # never block reading the sheet over this
         import shutil; shutil.copyfile(raw, dst); r = {'lines': 0, 'patches': 0, 'pixels': 0.0, 'error': str(e)}
+    # a small picture (a web image, a phone screenshot): enlarge it, the readers miss small notes and words
+    im = Image.open(dst)
+    if max(im.size) < MIN_SIDE:
+        f = MIN_SIDE / max(im.size)
+        im.convert('RGB').resize((round(im.width * f), round(im.height * f)), Image.LANCZOS).save(dst)
+        r['enlarged'] = round(f, 2)
     return dst, r
 
 
