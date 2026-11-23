@@ -1,9 +1,31 @@
 // Web Audio: sampled piano playback (from Meowsic 1's score reader).
-let ctx;
+// iPad / iPhone: call audioCtx() straight from the tap, before any await.
+// - audioSession 'playback' (Safari 16.4+): Web Audio is heard with the Silent switch on (the default
+//   'ambient' session mutes it, while <audio> elements still play)
+// - a 1-sample silent buffer on the first tap unlocks output on older iOS
+// - 'suspended' and 'interrupted' (iOS: a call, Siri, another app) are resumed on the next tap
+let ctx, unlocked = false;
 export function audioCtx() {
-  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
-  if (ctx.state === 'suspended') ctx.resume();
+  try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch {}
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    ctx.onstatechange = () => { if (ctx.state === 'interrupted') unlocked = false; };
+  }
+  if (ctx.state !== 'running' && ctx.state !== 'closed') { try { const p = ctx.resume(); p?.catch?.(() => {}); } catch {} }
+  if (!unlocked) {
+    try {
+      const src = ctx.createBufferSource();
+      src.buffer = ctx.createBuffer(1, 1, 22050);
+      src.connect(ctx.destination); src.start(0);
+      unlocked = true;
+    } catch {}
+  }
   return ctx;
+}
+export const audioState = () => (ctx ? ctx.state : 'none'); // for tests
+// the next tap anywhere wakes an interrupted / suspended context (iOS), so Play works first time after a call
+for (const ev of ['touchend', 'pointerup', 'keydown']) {
+  addEventListener(ev, () => { if (ctx && ctx.state !== 'running' && ctx.state !== 'closed') audioCtx(); }, { capture: true, passive: true });
 }
 
 // ---------- piano samples (one every three semitones, nearest one pitch-shifted) ----------
@@ -64,8 +86,9 @@ export class ScorePlayer {
   }
   async play() {
     if (this.playing) return;
-    audioCtx();
+    const c = audioCtx(); // synchronous, inside the tap
     await loadPiano();
+    if (c.state !== 'running') { try { await Promise.race([c.resume(), new Promise((ok) => setTimeout(ok, 500))]); } catch {} }
     if (this.posQ >= (this.loop ? this.loop[1] : this.endQ)) this.posQ = this.loop ? this.loop[0] : 0;
     this.out = ctx.createGain(); this.out.gain.value = 0.85;
     const comp = ctx.createDynamicsCompressor();
