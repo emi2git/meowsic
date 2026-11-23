@@ -5,6 +5,7 @@ import { sheetUrl } from '../sheet-art.js';
 import { InkLayer, inkToolbar } from './annotate.js';
 import { go } from '../app.js';
 import { bookToggle } from './actions.js';
+import { attachSwipe } from '../swipe.js';
 
 // real sheets: the page files on the Mac; the UI preview draws mock pages
 export const pageSrc = (it, p) => (it.pageFiles?.[p - 1] && `${store.fileUrl(it.id, it.pageFiles[p - 1])}?v=${it.updatedAt || 0}`) || (it.upload && store.sessionImage(`${it.id}:${p}`)) || sheetUrl(it.title, p, it.pages, { artist: it.artist });
@@ -115,25 +116,8 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
       if (hit === shown[shown.length - 1] && !leftHalf) next();
     }
   });
-  // iPad / iPhone, view mode: swipe up or down = back to the library
-  // (touch events: the browser claims vertical pans, so pointerup never comes for them)
-  if (matchMedia('(pointer: coarse)').matches) {
-    let ts = null;
-    pages.addEventListener('touchstart', (e) => {
-      ts = e.touches.length === 1 && !tool && !pages.classList.contains('zoomed') && (visualViewport?.scale || 1) < 1.05
-        ? { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() } : null;
-    }, { passive: true });
-    pages.addEventListener('touchmove', (e) => { if (e.touches.length > 1) ts = null; }, { passive: true });
-    pages.addEventListener('touchend', (e) => {
-      if (!ts || tool) return;
-      const t = e.changedTouches[0], dx = t.clientX - ts.x, dy = t.clientY - ts.y;
-      const quick = Date.now() - ts.t < 800;
-      ts = null;
-      if (quick && Math.abs(dy) > 90 && Math.abs(dy) > 2 * Math.abs(dx)) {
-        if (history.length > 1) history.back(); else location.hash = '#/library';
-      }
-    });
-  }
+  // iPad / iPhone, view mode: swipe up = back to the library (left / right turn pages, above)
+  const offSwipe = attachSwipe(pages, { canStart: () => !tool && !pages.classList.contains('zoomed') });
   // arrows, page keys and space — Bluetooth page-turn pedals send these
   const onKey = (e) => {
     if (e.target.closest('input,textarea,select')) return;
@@ -159,7 +143,7 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
       this.zoomTo(L[i]);
     },
     get zoomLabel() { return zoom === 'two' ? '50%' : `${Math.round((zoom / 1.5) * 100)}%`; },
-    destroy() { document.removeEventListener('keydown', onKey); ro.disconnect(); layers.forEach((l) => l.destroy()); },
+    destroy() { document.removeEventListener('keydown', onKey); ro.disconnect(); offSwipe(); layers.forEach((l) => l.destroy()); },
   };
 }
 

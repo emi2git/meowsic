@@ -7,6 +7,7 @@ import { musicXml, tuneNotes, VERSIONS, VERSION_HELP, barBeats, xmlInfo } from '
 import { ScorePlayer } from '../audio.js';
 import { scoreEditor } from './scoreeditor.js';
 import { InkLayer } from './annotate.js';
+import { attachSwipe, flipBy } from '../swipe.js';
 
 let osmdReady;
 export function loadOsmd() {
@@ -41,7 +42,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
   const zLocal = matchMedia('(pointer: coarse)').matches, zKey = `meowsic-zoom-${it.id}`;
   let zoom = zDef();
   if (zLocal) { try { zoom = +localStorage.getItem(zKey) || zoom; } catch {} } else zoom = it.zoom || zoom;
-  let osmd, player, stops = [], bar, ink = null;
+  let osmd, player, stops = [], bar, ink = null, inkTool = null;
 
   root.innerHTML = `<div class="score-wrap ${perform ? 'perform' : ''}"><div class="score-paper" id="paper"><div id="osmd"></div></div></div>`;
   const paper = $('#paper', root);
@@ -153,6 +154,66 @@ export function scoreBody(root, it, { perform = false } = {}) {
     for (let i = 0; i < tune.measures.length; i++) { const b = barBeats(tune, tune.measures[i]); if (st.q < acc + b - 1e-6) return i; acc += b; }
     return tune.measures.length - 1;
   };
+  // the beat under a point: nearest drawn line, then between the two stops either side of x
+  const qAt = (cx, cy) => {
+    const host = bar?.parentElement;
+    if (!host || !stops.length) return null;
+    const r = host.getBoundingClientRect(), x = cx - r.left, y = cy - r.top;
+    let best = null, bd = Infinity;
+    for (const st of stops) {
+      const d = y < st.top ? st.top - y : y > st.top + st.h ? y - st.top - st.h : 0;
+      if (d < bd) { bd = d; best = st.top; }
+    }
+    if (bd > 80) return null;
+    const line = stops.filter((st) => st.top === best).sort((a, b) => a.x - b.x || a.q - b.q);
+    if (x <= line[0].x) return line[0].q;
+    for (let i = 0; i < line.length - 1; i++) {
+      const a = line[i], b = line[i + 1];
+      if (x < b.x) return b.x > a.x ? a.q + ((b.q - a.q) * (x - a.x)) / (b.x - a.x) : a.q;
+    }
+    return line.at(-1).q;
+  };
+  // move the orange line: drag it, or tap / click anywhere on the music; Play then starts there
+  // (not while editing notes or writing on the page)
+  let drag = null, tap = null, dragEnd = 0;
+  const busy = () => !!inkTool || paper.classList.contains('editing');
+  const seekTo = (q) => { if (q == null || !player) return; player.seek(Math.max(0, q)); if (bar && !player.playing) place(Math.max(q, 1e-3)); };
+  paper.addEventListener('pointerdown', (e) => {
+    if (busy() || e.button > 0) return;
+    if (bar && e.target === bar) {
+      e.preventDefault();
+      drag = { id: e.pointerId, was: player?.playing };
+      if (drag.was) player.pause();
+      try { bar.setPointerCapture(e.pointerId); } catch {}
+      bar.classList.add('dragging');
+      return;
+    }
+    tap = { x: e.clientX, y: e.clientY, t: Date.now() };
+  });
+  paper.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    seekTo(qAt(e.clientX, e.clientY));
+  });
+  const endDrag = (e) => {
+    if (drag && e.pointerId === drag.id) {
+      const was = drag.was; drag = null; dragEnd = Date.now();
+      bar?.classList.remove('dragging');
+      if (was) player.play();
+      return;
+    }
+    const t = tap; tap = null;
+    if (!t || e.type !== 'pointerup' || busy() || e.target.closest('a,button,input,textarea,.ink-text')) return;
+    if (Math.abs(e.clientX - t.x) > 8 || Math.abs(e.clientY - t.y) > 8 || Date.now() - t.t > 500) return;
+    seekTo(qAt(e.clientX, e.clientY));
+  };
+  paper.addEventListener('pointerup', endDrag);
+  paper.addEventListener('pointercancel', endDrag);
+  // iPad / iPhone: swipe left / right = a screen down / up; swipe up at the end = back to the library
+  const scroller = () => root.closest('.scroll-host');
+  const offSwipe = perform ? () => {} : attachSwipe(root, { scroller, upAtEnd: true,
+    canStart: () => !busy() && !drag && Date.now() - dragEnd > 300,
+    onLeft: () => flipBy(scroller(), 1), onRight: () => flipBy(scroller(), -1) });
+
   let selBox = null;
   const showBar = (i) => {
     selBox?.remove(); selBox = null;
@@ -196,12 +257,13 @@ export function scoreBody(root, it, { perform = false } = {}) {
     zoomReset() { this.setZoom(zDef()); },
     setZoom(z) { zoom = Math.max(0.6, Math.min(2, Math.round(z * 100) / 100)); if (zLocal) { try { localStorage.setItem(zKey, zoom); } catch {} } else store.update(it.id, { zoom }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zoom; osmd.render(); tagNotes(); measureStops(); place(player.now()); ink?.fit(); },
     get zoom() { return zoom; },
-    setTool(t) { ink?.setTool(t); },
+    setTool(t) { inkTool = t; ink?.setTool(t); },
     undo() { ink?.undo(); }, clear() { ink?.clear(); },
     xml() { return real ? xmlText : musicXml({ ...tune, title: it.title }, version); },
     get real() { return real; },
     get totalQ() { return real ? Math.ceil(info.totalQ) : tune.measures.reduce((s, m) => s + barBeats(tune, m), 0); },
-    destroy() { player.pause(); ro.disconnect(); ink?.destroy(); },
+    seekAt: qAt, seek: seekTo,
+    destroy() { player.pause(); ro.disconnect(); offSwipe(); ink?.destroy(); },
   };
 }
 

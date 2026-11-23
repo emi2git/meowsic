@@ -3,6 +3,7 @@
 import { store } from '../store.js';
 import { $, esc, icon, iconOn } from '../ui.js';
 import { keyInfo, keyAt, STEPS, linesHtml, diagramsHtml } from '../chordchart.js';
+import { attachSwipe, flipBy } from '../swipe.js';
 
 let size = 18;
 try { size = +localStorage.getItem('meowsic-chord-size') || 18; } catch {}
@@ -32,13 +33,16 @@ export function chordsBody(root, it, { perform = false } = {}) {
     raf = requestAnimationFrame(tick);
   };
   const off = store.on(draw);
+  // iPad / iPhone: swipe left / right = a screen down / up; swipe up at the end = back to the library
+  const offSwipe = perform ? () => {} : attachSwipe(root, { scroller, upAtEnd: true,
+    onLeft: () => flipBy(scroller(), 1), onRight: () => flipBy(scroller(), -1) });
   return {
     draw,
     setSize(px) { size = Math.max(12, Math.min(40, px)); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); try { localStorage.setItem('meowsic-chord-size', size); } catch {} $('#chart', root).style.setProperty('--chart-size', (perform ? size + 6 : size) + 'px'); },
     get size() { return size; },
     setSpeed(s) { speed = s; cancelAnimationFrame(raf); last = 0; if (s) raf = requestAnimationFrame(tick); },
     get speed() { return speed; },
-    destroy() { off(); cancelAnimationFrame(raf); },
+    destroy() { off(); offSwipe(); cancelAnimationFrame(raf); },
   };
 }
 

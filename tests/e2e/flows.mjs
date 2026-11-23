@@ -1,6 +1,7 @@
 // End-to-end: drive every feature of the UI preview and check the result.
 import puppeteer from 'puppeteer-core';
-const BASE = 'http://localhost:5181/?preview=1';
+const ORIGIN = process.env.PREVIEW || 'http://localhost:5181';
+const BASE = ORIGIN + '/?preview=1';
 const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', args: ['--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage();
 await page.setViewport({ width: 1366, height: 1024 });
@@ -406,7 +407,7 @@ check('stats: fun facts', (await count('.fun li')) === 5);
 await page.select('#st-period', '0'); await sleep(200);
 check('stats: all time option', (await page.$eval('#st-period', (e) => e.value)) === '0' && /per (week|month|day)/.test(await text('#main')));
 await page.select('#st-period', '30');
-{ const p2 = await browser.newPage(); await p2.goto('http://localhost:5181/#/library', { waitUntil: 'networkidle0' }); await p2.evaluate(() => localStorage.clear()); await p2.reload({ waitUntil: 'networkidle0' });
+{ const p2 = await browser.newPage(); await p2.goto(ORIGIN + '/#/library', { waitUntil: 'networkidle0' }); await p2.evaluate(() => localStorage.clear()); await p2.reload({ waitUntil: 'networkidle0' });
   const t = await p2.$eval('#main', (e) => e.textContent);
   check('without the test switch there are no sample songs', !t.includes('Twinkle') && t.includes('can’t reach the Mac'));
   check('sidebar shows the real status', (await p2.$eval('#side', (e) => e.textContent)).includes('Can’t reach the Mac'));

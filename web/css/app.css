@@ -275,6 +275,11 @@ body[data-view="item"] #main, body[data-view="perform"] #main { overflow: hidden
 .score-paper { background: #fff; color: #000; border-radius: 6px; box-shadow: 0 2px 14px rgba(0, 0, 0, .14); max-width: 1100px; margin: 0 auto; position: relative; padding: 8px 4px 40px; min-height: 300px; }
 .score-wrap.perform { background: #111113; padding: 8px; }
 .playbar { position: absolute; left: 0; top: 0; width: 3px; margin-left: -1.5px; border-radius: 2px; background: rgba(240, 96, 36, .9); pointer-events: none; display: none; z-index: 5; will-change: transform; }
+/* the orange line can be dragged (wide invisible grip, no page scroll while dragging) */
+.playbar { pointer-events: auto; cursor: ew-resize; touch-action: none; }
+.playbar::before { content: ''; position: absolute; top: -8px; bottom: -8px; left: -16px; right: -16px; }
+.playbar.dragging { background: rgba(240, 96, 36, 1); box-shadow: 0 0 0 3px rgba(240, 96, 36, .25); }
+.editing .playbar { pointer-events: none; }
 .transport { display: inline-flex; align-items: center; gap: 8px; flex: 1; min-width: 220px; }
 .transport .play { min-width: 84px; height: 42px; padding: 0 16px; background: var(--acc); border-color: var(--acc); color: var(--acc-ink); flex: none; }
 .transport input { flex: 1; }
