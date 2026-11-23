@@ -115,7 +115,17 @@ def migrate_cleanup_json(cfg: Config, c):
 
 YOUTUBE = {'youtube.com', 'youtu.be', 'm.youtube.com', 'music.youtube.com', 'youtube-nocookie.com'}
 FACEBOOK = {'facebook.com', 'fb.watch', 'm.facebook.com', 'fb.com', 'web.facebook.com'}
-AI_SOURCE = 'Meowsic AI'
+AI_SOURCE = 'Meowsic'            # every score Meowsic makes is credited "Meowsic" (composer, source, AI pieces' artist)
+OLD_CREDITS = ('Meowsic AI',)    # earlier names for it: read and shown as "Meowsic"
+
+
+def credit_xml(x: str) -> str:
+    """The MusicXML with one composer credit, "Meowsic" (other creators go; the song's artist stays in the item's Artist)."""
+    x = re.sub(r'<creator\b[^>]*>[\s\S]*?</creator>|<creator\b[^>]*/>', '', x)
+    c = f'<creator type="composer">{AI_SOURCE}</creator>'
+    if '<identification>' in x: return x.replace('<identification>', '<identification>' + c, 1)
+    if re.search(r'<identification\s*/>', x): return re.sub(r'<identification\s*/>', '<identification>' + c + '</identification>', x, count=1)
+    return re.sub(r'(<part-list\b)', '<identification>' + c + r'</identification>\1', x, count=1)
 
 
 def platform_of(url: str) -> str:
@@ -133,7 +143,7 @@ OLD_LINK_SOURCE = re.compile(r'^(YouTube|Facebook) · (\S+)$')
 def migrate_sources(c):
     """Old score sources -> the new shape (runs every start, does nothing once done):
     'YouTube · youtu.be/x' -> source 'YouTube' + source_url (the job's original link when there is one);
-    versions made from a score get their group's link; AI pieces: 'Composed by Claude' -> 'Meowsic AI', no 'AI Studio' tag."""
+    versions made from a score get their group's link; AI pieces: 'Composed by Claude' -> 'Meowsic', no 'AI Studio' tag."""
     fixed = 0
     rows = c.execute("SELECT item_id, source FROM score WHERE source LIKE 'YouTube · %' OR source LIKE 'Facebook · %'").fetchall()
     if rows:
@@ -156,7 +166,7 @@ def migrate_sources(c):
     tagged = c.execute("DELETE FROM item_tag WHERE tag='AI Studio'").rowcount
     c.execute("DELETE FROM tag WHERE name='AI Studio'")
     if fixed or ai or tagged:
-        log_event(c, 'migrate', 'Score sources', f'{fixed} link source(s) → platform + original link; {ai} AI piece(s) → Meowsic AI; '
+        log_event(c, 'migrate', 'Score sources', f'{fixed} link source(s) → platform + original link; {ai} AI piece(s) → Meowsic; '
                   f'AI Studio tag removed from {tagged} item(s)')
 
 

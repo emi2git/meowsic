@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 from .sheetversion import refresh_staves
 from .undolog import edit_detail, edit_title, fields_step, record_undo
-from .db import AI_SOURCE, BOOKS, KIND_COLS, SCORE_VERSIONS, SHEET_VERSIONS, book_folder, ensure_tags, folder_base, folder_path, get_item, item_json, log_event, now_ms, folder_name, rebase, uid, write_item
+from .db import AI_SOURCE, OLD_CREDITS, credit_xml, BOOKS, KIND_COLS, SCORE_VERSIONS, SHEET_VERSIONS, book_folder, ensure_tags, folder_base, folder_path, get_item, item_json, log_event, now_ms, folder_name, rebase, uid, write_item
 
 router = APIRouter(prefix='/api')
 
@@ -91,6 +91,9 @@ def create_item(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
     if kind == 'score':
         body['ai'] = 1 if body.get('ai') else 0  # AI music: a score Claude composed (set once, here)
         if body['ai'] and body.get('source', '') in ('', 'Composed by Claude'): body['source'] = AI_SOURCE
+        if body.get('source') in OLD_CREDITS: body['source'] = AI_SOURCE  # 'Meowsic AI' -> 'Meowsic'
+        if body.get('artist') in OLD_CREDITS or (body['ai'] and not str(body.get('artist') or '').strip()): body['artist'] = AI_SOURCE
+        if text is not None: text = credit_xml(text)  # composer: Meowsic
     else: body.pop('ai', None)
     if kind != 'chords' and 'version' in body: body['version'] = check_version(kind, body['version'])
     it = {'tags': [], 'createdAt': t, 'updatedAt': t, **{k: v for k, v in body.items() if k not in ('folder', 'musicxmlText')},

@@ -1,6 +1,6 @@
 // Note names (server on $BASE with an AI piece that has chord symbols, e.g. a lead sheet added by
 // meowsic-add-ai-score.py): every score, AI ones included, opens in OSMD's classic look
-// (title, composer "Meowsic AI", tempo as OSMD draws them); the A B C button / ⋯ toggle adds a letter in
+// (title, composer "Meowsic", tempo as OSMD draws them); the A B C button / ⋯ toggle adds a letter in
 // every (normal-size) notehead and keyboard chord diagrams under the title — nothing else changes;
 // transpose updates both; remembered per item; playback still works.
 import puppeteer from 'puppeteer-core';
@@ -13,7 +13,7 @@ let pass = 0, fail = 0; const check = (n, c, x = '') => { c ? pass++ : fail++; c
 const api = (p) => fetch(BASE + 'api' + p).then((r) => r.json());
 
 const items = await api('/items');
-const ais = items.filter((x) => (x.ai || /^meowsic ai$/i.test(String(x.source || '').trim())) && !x.deleted);
+const ais = items.filter((x) => (x.ai || /^meowsic( ai)?$/i.test(String(x.source || '').trim())) && !x.deleted);
 let ai = ais.find((x) => /sunshine/i.test(x.title));
 for (const x of ais) { if (ai) break; if (/<harmony[\s>]/.test(await fetch(`${BASE}api/items/${x.id}/musicxml`).then((r) => r.text()))) ai = x; }
 check('server has an AI Studio piece', !!ai, JSON.stringify(items.map((x) => [x.title, x.ai])));
@@ -62,7 +62,7 @@ await page.evaluate((id) => { localStorage.removeItem(`meowsic-easy-${id}`); }, 
 await page.goto(`${BASE}#/item/${ai.id}`, { waitUntil: 'networkidle0' }); await sleep(2500);
 let s = await state();
 check('AI piece: classic look by default (no letters, no diagrams, A B C off)', s.letters.length === 0 && s.kbds.length === 0 && s.btn === false, JSON.stringify({ l: s.letters.length, k: s.kbds.length, b: s.btn }));
-check('classic: OSMD draws the title and "Meowsic AI" as composer, serif text', s.texts.some((t) => t.t === ai.title) && s.texts.some((t) => t.t === 'Meowsic AI') && !s.texts.some((t) => /Helvetica/.test(t.f)), JSON.stringify(s.texts.slice(0, 4)));
+check('classic: OSMD draws the title and "Meowsic" as composer, serif text', s.texts.some((t) => t.t === ai.title) && s.texts.some((t) => t.t === 'Meowsic') && !s.texts.some((t) => /Helvetica/.test(t.f)), JSON.stringify(s.texts.slice(0, 4)));
 check('classic: default zoom 100%', (await page.$eval('#sc-zreset', (e) => e.textContent)) === '100%');
 const classicTexts = s.texts.map((t) => t.t + '|' + t.f).join();
 await page.click('#sc-names'); await sleep(2500);
@@ -129,9 +129,9 @@ await page.screenshot({ path: 'easyscore.png' });
 
 // print: the same look on the A4 page
 await page.goto(`${BASE}#/print?item=${ai.id}`, { waitUntil: 'networkidle0' }); await sleep(5000);
-const pr = await page.evaluate(() => ({ letters: [...document.querySelectorAll('#print-root text.nl')].map((t) => t.textContent).join(''), kbds: [...document.querySelectorAll('#print-root g.kbd')].map((k) => k.dataset.chord), credit: [...document.querySelectorAll('#print-root svg text')].some((t) => t.textContent === 'Meowsic AI'), sans: [...document.querySelectorAll('#print-root svg text:not(.nl)')].some((t) => /Helvetica/.test(t.getAttribute('font-family') || '') && !t.closest('g.kbd')) }));
+const pr = await page.evaluate(() => ({ letters: [...document.querySelectorAll('#print-root text.nl')].map((t) => t.textContent).join(''), kbds: [...document.querySelectorAll('#print-root g.kbd')].map((k) => k.dataset.chord), credit: [...document.querySelectorAll('#print-root svg text')].some((t) => t.textContent === 'Meowsic'), sans: [...document.querySelectorAll('#print-root svg text:not(.nl)')].some((t) => /Helvetica/.test(t.getAttribute('font-family') || '') && !t.closest('g.kbd')) }));
 check('print: letters in every notehead', pr.letters === want.steps.join(''), pr.letters);
-check('print: keyboard diagrams + OSMD composer "Meowsic AI", classic fonts', pr.kbds.map(norm).join(',') === want.chords.join(',') && pr.credit && !pr.sans, JSON.stringify(pr));
+check('print: keyboard diagrams + OSMD composer "Meowsic", classic fonts', pr.kbds.map(norm).join(',') === want.chords.join(',') && pr.credit && !pr.sans, JSON.stringify(pr));
 
 // another (non-AI) score: off by default, the toggle turns it on
 if (plain) {
@@ -146,7 +146,7 @@ if (plain) {
   await page.evaluate((id) => localStorage.removeItem(`meowsic-easy-${id}`), plain.id);
 }
 
-const def = await page.evaluate(async () => { const m = await import('/js/easyscore.js'); return [m.easyOn({ id: 'x-src', source: 'Meowsic AI' }), m.easyOn({ id: 'x-ai', ai: 1 }), m.easyOn({ id: 'x-no', source: 'Transcribed' })]; });
+const def = await page.evaluate(async () => { const m = await import('/js/easyscore.js'); return [m.easyOn({ id: 'x-src', source: 'Meowsic' }), m.easyOn({ id: 'x-ai', ai: 1 }), m.easyOn({ id: 'x-no', source: 'Transcribed' })]; });
 check('off by default for every score (AI ones too)', def.join() === 'false,false,false', def.join());
 check('no page errors', !errs.length, errs.join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);

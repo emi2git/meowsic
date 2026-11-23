@@ -219,10 +219,11 @@ def add_score(client, title, xml: bytes, **kw):
 
 def test_tidy_dry_run_then_real_run_keeps_history(client, data):
     one = add_score(client, 'Walk', walking_score(), source='YouTube')
-    ai = add_score(client, 'AI song', walking_score(), source='Meowsic AI', ai=1)
+    ai = add_score(client, 'AI song', walking_score(), source='Meowsic', ai=1)
     omr = add_score(client, 'Read', walking_score(), source='From the sheet “Read” (photo → score, beta)')
     f = data / 'items' / one['folder'] / one['musicxml']
     before = f.read_bytes()
+    ai_before = (data / 'items' / ai['folder'] / ai['musicxml']).read_bytes()
     db_before = (data / 'meowsic.db').read_bytes()
 
     res = {r.id: r for r in chordtidy.tidy(data, dry_run=True, pdf=False)}
@@ -242,7 +243,7 @@ def test_tidy_dry_run_then_real_run_keeps_history(client, data):
     assert len(lines) == 1 and lines[0]['id'] == one['id'] and lines[0]['title'] == 'Walk' and lines[0]['file'] == one['musicxml']
     assert lines[0]['before_chords'] == ['1:A', '1:Amaj7/G#', '2:F#m7', '2:F#m7/E'] and lines[0]['after_chords'] == ['1:A', '2:F#m'] and lines[0]['at']
     # the AI score is untouched, and a second run has nothing left to do
-    assert (data / 'items' / ai['folder'] / ai['musicxml']).read_bytes() == walking_score()
+    assert (data / 'items' / ai['folder'] / ai['musicxml']).read_bytes() == ai_before
     assert chordtidy.tidy(data, dry_run=False, only=[one['id']], pdf=False)[0].status == 'unchanged'
     assert client.get(f'/api/items/{one["id"]}').json()['title'] == 'Walk'
     with sqlite3.connect(data / 'meowsic.db') as c:

@@ -106,7 +106,7 @@ def refresh_staves(c, cfg, item_id: str) -> int:
 
 
 def migrate_staves(cfg, c) -> dict:
-    """Fill score.staves where it is not read yet; Meowsic AI scores (ai=1) with one staff are lead sheets:
+    """Fill score.staves where it is not read yet; AI scores (ai=1) with one staff are lead sheets:
     their version becomes 'lead'. Each version change goes to <data>/history/score-versions-<ts>.jsonl
     (kept). Running it again changes nothing."""
     filled = 0
@@ -128,5 +128,5 @@ def migrate_staves(cfg, c) -> dict:
                 c.execute('UPDATE item SET updated_at=? WHERE id=?', (t, iid))
                 f.write(json.dumps({'at': t, 'id': iid, 'title': title, 'staves': st, 'before': before, 'after': 'lead',
                                     'via': 'score_staves_migration'}, ensure_ascii=False) + '\n')
-        log_event(c, 'migrate', 'Score versions', f'{len(rows)} Meowsic AI score(s) with one staff → Lead (log: history/{log.name})')
+        log_event(c, 'migrate', 'Score versions', f'{len(rows)} AI score(s) with one staff → Lead (log: history/{log.name})')
     return {'filled': filled, 'lead': len(rows), 'log': str(log) if log else None}

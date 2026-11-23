@@ -24,7 +24,7 @@ from pathlib import Path
 from . import arrange
 from .arrange import VERSION_TAGS
 from .sheetversion import refresh_staves
-from .db import connect, folder_path, get_item, now_ms, platform_of, uid, write_item
+from .db import AI_SOURCE, OLD_CREDITS, connect, credit_xml, folder_path, get_item, now_ms, platform_of, uid, write_item
 from .jobs import Cancelled, JobContext
 
 log = logging.getLogger('meowsic')
@@ -53,28 +53,25 @@ def dispatch(ctx: JobContext):
 # ---------- saving results as items ----------
 
 def credit_meowsic(path):
-    """Every score Meowsic makes is credited to "Meowsic AI" (the song's artist stays in the item's Artist)."""
-    import re
+    """Every score Meowsic makes is credited to "Meowsic" (the song's artist stays in the item's Artist)."""
     try:
         x = Path(path).read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError):
         return
-    x = re.sub(r'<creator\b[^>]*>[\s\S]*?</creator>|<creator\b[^>]*/>', '', x)
-    c = '<creator type="composer">Meowsic AI</creator>'
-    x = x.replace('<identification>', '<identification>' + c, 1) if '<identification>' in x else x.replace('<part-list>', '<identification>' + c + '</identification><part-list>', 1)
-    Path(path).write_text(x, encoding='utf-8')
+    Path(path).write_text(credit_xml(x), encoding='utf-8')
 
 
 def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), group_id=None, key='', bpm=None, ai=0, source_url=''):
     """outs: [(version, musicxml, mid|None, pdf|None, {key, bpm})] -> one score item each, in one transaction.
     Files: items/<id> <title>/<id> <title>.musicxml|.mid|.pdf. Returns the new item ids."""
     cfg, t, made = ctx.cfg, now_ms(), []
+    source = AI_SOURCE if source in OLD_CREDITS else source
     gid = group_id or uid('g')
     c = connect(cfg)
     try:
         if ctx.cancelled(): raise Cancelled()
         for v, xml, mid, pdf, extra in outs:
-            it = {'id': uid('m'), 'kind': 'score', 'title': title, 'artist': artist or '',
+            it = {'id': uid('m'), 'kind': 'score', 'title': title, 'artist': AI_SOURCE if (artist or '').strip() in ('', *OLD_CREDITS) else artist,
                   'tags': [VERSION_TAGS[v], *[x for x in tags if x not in VERSION_TAGS.values()]],
                   'createdAt': t, 'updatedAt': t, 'originAt': t, 'version': v, 'source': source, 'groupId': gid,
                   'key': extra.get('key') or key or '', 'bpm': extra.get('bpm') or bpm, 'ai': 1 if ai else 0, 'sourceUrl': source_url or ''}

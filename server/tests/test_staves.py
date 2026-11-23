@@ -58,7 +58,7 @@ def test_migration_fills_staves_and_ai_lead_idempotent(data):
             got = {i['id']: i for i in c.get('/api/items').json()}
     assert got[ai['id']]['staves'] == 1 and got[ai['id']]['version'] == 'lead'
     assert got[ai2['id']]['staves'] == 2 and got[ai2['id']]['version'] == 'original'
-    assert got[human['id']]['staves'] == 1 and got[human['id']]['version'] == 'original'  # only Meowsic AI ones change
+    assert got[human['id']]['staves'] == 1 and got[human['id']]['version'] == 'original'  # only AI ones change
     logs = list((data / 'history').glob('score-versions-*.jsonl'))
     assert len(logs) == 1  # the second start changed nothing
     rows = [json.loads(x) for x in logs[0].read_text().splitlines()]

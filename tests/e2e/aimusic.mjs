@@ -1,6 +1,6 @@
 // AI pieces through the UI (server on $BASE, default :5195, temp data with one AI piece added by
 // ~/git/scripts/meowsic-add-ai-score.py): plain scores (no AI Studio section), listed + counted under Scores,
-// Info says "Source: Meowsic AI"; a YouTube score's Info shows "YouTube" + the original link (clickable, Copy link)
+// Info says "Source: Meowsic"; a YouTube score's Info shows "YouTube" + the original link (clickable, Copy link)
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5195/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', args: ['--autoplay-policy=no-user-gesture-required'] });
@@ -13,7 +13,7 @@ const rows = () => page.$$eval('.lib-table tbody tr', (e) => e.map((x) => x.text
 
 const items = await api('/items');
 const ai = items.find((x) => x.ai);
-check('server has one AI piece, a plain score with source Meowsic AI and no AI Studio tag', items.filter((x) => x.ai).length === 1 && ai.kind === 'score' && ai.source === 'Meowsic AI' && !ai.tags.includes('AI Studio'), JSON.stringify(items.filter((x) => x.ai)));
+check('server has one AI piece, a plain score with source Meowsic and no AI Studio tag', items.filter((x) => x.ai).length === 1 && ai.kind === 'score' && ai.source === 'Meowsic' && !ai.tags.includes('AI Studio'), JSON.stringify(items.filter((x) => x.ai)));
 check('no AI Studio tag left', !(await api('/tags')).some((t) => t.name === 'AI Studio'));
 
 await page.goto(`${BASE}#/library`, { waitUntil: 'networkidle0' }); await sleep(600);
@@ -45,7 +45,7 @@ await page.screenshot({ path: 'aimusic.png' });
 const info = async () => { await page.click('#it-more'); await sleep(150); await page.$$eval('.menu button', (e) => e.find((x) => x.textContent.trim() === 'Info').click()); await sleep(300);
   return page.$eval('#it-details', (d) => { const dt = [...d.querySelectorAll('dt')].find((x) => x.textContent === 'Source'); return dt ? dt.nextElementSibling.textContent.replace(/\s+/g, ' ').trim() : null; }); };
 const aiSrc = await info();
-check('AI piece Info: Source is Meowsic AI', /^Meowsic AI/.test(aiSrc || '') && !(await page.$('#dt-copy')), aiSrc);
+check('AI piece Info: Source is Meowsic', /^Meowsic(?! AI)/.test(aiSrc || '') && !(await page.$('#dt-copy')), aiSrc);
 const yt = items.find((x) => x.kind === 'score' && !x.deleted && x.sourceUrl && x.source === 'YouTube');
 if (!yt) check('a YouTube score to look at (migrated from the old source)', false);
 else {

@@ -86,9 +86,9 @@ export function platformOf(url) {
 export function scoreSource(it) {
   const m = /^(YouTube|Facebook) · (\S+)$/.exec(it.source || '');
   const url = it.sourceUrl || (m ? (/^https?:/.test(m[2]) ? '' : 'https://') + m[2] : '');
-  return { name: m ? platformOf(url) || m[1] : it.source || (it.ai ? 'Meowsic AI' : ''), url };
+  return { name: m ? platformOf(url) || m[1] : (it.source === 'Meowsic AI' ? 'Meowsic' : it.source) || (it.ai ? 'Meowsic' : ''), url };
 }
-// AI pieces (score.ai = 1, source 'Meowsic AI') are plain scores
+// AI pieces (score.ai = 1, source 'Meowsic') are plain scores
 export const kindOf = (it) => (it.kind === 'sheet' && it.book ? 'book' : it.kind);
 export const badge = (x) => { const kind = typeof x === 'string' ? x : kindOf(x); return `<span class="badge k-${kind}">${icon(KIND[kind].icon)}${KIND[kind].label}</span>`; };
 

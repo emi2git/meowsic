@@ -1,4 +1,4 @@
-"""Score sources: the platform ('YouTube' / 'Facebook' / 'Meowsic AI' …) + the full original link (score.source_url)."""
+"""Score sources: the platform ('YouTube' / 'Facebook' / 'Meowsic' …) + the full original link (score.source_url)."""
 import json
 import sqlite3
 
@@ -45,8 +45,8 @@ def test_upload_job_has_no_link(client, fake_pipeline, no_pdf):
 
 def test_ai_piece_source(client):
     it = client.post('/api/items', json={'kind': 'score', 'title': 'T', 'ai': True, 'source': 'Composed by Claude'}).json()
-    assert it['source'] == 'Meowsic AI'
-    assert client.post('/api/items', json={'kind': 'score', 'title': 'U', 'ai': True}).json()['source'] == 'Meowsic AI'
+    assert it['source'] == 'Meowsic'
+    assert client.post('/api/items', json={'kind': 'score', 'title': 'U', 'ai': True}).json()['source'] == 'Meowsic'
     assert client.post('/api/items', json={'kind': 'score', 'title': 'V', 'source': 'Composed by Claude'}).json()['source'] == 'Composed by Claude'
 
 
@@ -79,7 +79,7 @@ def test_migration(tmp_path):
         assert (g(fb)['source'], g(fb)['sourceUrl']) == ('Facebook', 'https://facebook.com/watch/?v=1')
         assert (g(ver)['source'], g(ver)['sourceUrl']) == ('From the score “S”', 'https://youtu.be/abc?si=XYZ')
         assert (g(aud)['source'], g(aud)['sourceUrl']) == ('Audio file · a.mp3', '')
-        assert g(ai)['source'] == 'Meowsic AI' and g(ai)['tags'] == ['Calm'] and g(ai)['kind'] == 'score' and g(ai)['ai'] == 1
+        assert g(ai)['source'] == 'Meowsic' and g(ai)['tags'] == ['Calm'] and g(ai)['kind'] == 'score' and g(ai)['ai'] == 1
         assert g(other)['source'] == 'Composed by Claude' and g(other)['tags'] == []
         assert 'AI Studio' not in {t['name'] for t in c.get('/api/tags').json()}
     db = sqlite3.connect(d / 'meowsic.db')

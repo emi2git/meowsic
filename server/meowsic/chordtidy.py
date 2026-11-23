@@ -5,7 +5,7 @@ For each score item: the chord symbols are worked out again from the score's own
 changes it is copied to items/<folder>/.history/chords-<timestamp>-<file>, and one JSON line per
 file goes to <data>/history/chords-retidy.jsonl. The database is only read, never written.
 
-Skipped (and reported): AI-composed lead sheets (ai=1 / source 'Meowsic AI': their chords were
+Skipped (and reported): AI-composed lead sheets (ai=1 / source 'Meowsic': their chords were
 written on purpose), scores read from a sheet ('From the sheet …': the chords were printed on the
 sheet), and items in the Trash.
 """
@@ -32,7 +32,7 @@ class Result:
 def skip_reason(row) -> str:
     src = row['source'] or ''
     if row['deleted_at']: return 'in the Trash'
-    if row['ai'] or src.startswith('Meowsic AI'): return 'AI-composed lead sheet (chords written on purpose)'
+    if row['ai'] or src in ('Meowsic', 'Meowsic AI'): return 'AI-composed lead sheet (chords written on purpose)'
     if src.startswith('From the sheet'): return 'read from a sheet (chords printed on it)'
     if not row['musicxml'] or not row['folder']: return 'no MusicXML file'
     return ''

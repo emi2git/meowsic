@@ -25,11 +25,11 @@ export function creditOf(xmlText) {
   const cs = [...doc.querySelectorAll('identification > creator')];
   const c = cs.find((x) => x.getAttribute('type') === 'composer') || cs[0];
   const t = (c?.textContent || '').trim();
-  return /^music21$/i.test(t) ? '' : t; // music21's default stamp is not a credit
+  return /^music21$/i.test(t) ? '' : t === 'Meowsic AI' ? 'Meowsic' : t; // music21's default stamp is not a credit; the old name reads "Meowsic"
 }
 
 // the MusicXML as OSMD should draw it: music21's stand-in title ("Music21 Fragment") becomes the
-// item's title, its "Music21" composer stamp goes, and an AI piece's composer reads "Meowsic AI"
+// item's title, its "Music21" composer stamp goes, and an AI piece's composer reads "Meowsic" (an old "Meowsic AI" too)
 export function classicXml(xml, it) {
   if (!xml) return xml;
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
@@ -45,10 +45,10 @@ export function classicXml(xml, it) {
     changed = true;
   }
   let ident = root.querySelector(':scope > identification');
-  root.querySelectorAll(':scope > identification > creator').forEach((c) => { if (/^music21$/i.test(c.textContent.trim())) { c.remove(); changed = true; } });
+  root.querySelectorAll(':scope > identification > creator').forEach((c) => { const t = c.textContent.trim(); if (/^music21$/i.test(t)) { c.remove(); changed = true; } else if (t === 'Meowsic AI') { c.textContent = 'Meowsic'; changed = true; } });
   if (it && isAiScore(it) && ![...root.querySelectorAll(':scope > identification > creator')].some((c) => c.getAttribute('type') === 'composer')) {
     if (!ident) { ident = doc.createElement('identification'); const after = root.querySelector(':scope > movement-title') || root.querySelector(':scope > work'); root.insertBefore(ident, after ? after.nextElementSibling : root.firstElementChild); }
-    const c = mk('creator', 'Meowsic AI'); c.setAttribute('type', 'composer');
+    const c = mk('creator', 'Meowsic'); c.setAttribute('type', 'composer');
     ident.insertBefore(c, ident.firstElementChild);
     changed = true;
   }

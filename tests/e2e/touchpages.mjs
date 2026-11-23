@@ -1,7 +1,7 @@
 // iPad / iPhone: scores and chord charts never scroll; they are pages like a sheet (swipe / edge tap
 // turns, "Page n of N", swipe up / down = back), recomputed on rotation; playback turns the page.
 // Note-names toggle (A B C) is off by default and remembered; default zoom 100%. Mac still scrolls.
-// Needs a server with a long score ("One Day More"), a Meowsic AI score and a chord chart long
+// Needs a server with a long score ("One Day More"), a Meowsic score and a chord chart long
 // enough for several pages: BASE=http://localhost:5224/ OUT=<dir for screenshots>
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5224/';
@@ -14,7 +14,7 @@ const p0 = await b.newPage(); await p0.goto(BASE + '#/library', { waitUntil: 'ne
 const all = await p0.evaluate(() => fetch('/api/items').then((r) => r.json()).then((d) => (Array.isArray(d) ? d : d.items)));
 await p0.close();
 const long = all.find((x) => x.kind === 'score' && /^One Day More/.test(x.title));
-const ai = all.find((x) => x.kind === 'score' && (x.ai || x.source === 'Meowsic AI'));
+const ai = all.find((x) => x.kind === 'score' && (x.ai || x.source === 'Meowsic'));
 const chords = all.filter((x) => x.kind === 'chords').sort((a, c) => (c.text || '').length - (a.text || '').length)[0];
 if (!long || !ai || !chords) { console.log('missing test items', !!long, !!ai, !!chords); process.exit(1); }
 
@@ -144,7 +144,7 @@ for (const [name, w, h] of [['ipad-port', 1032, 1376], ['ipad-land', 1376, 1032]
   let s = await st();
   check('AI score: default zoom 100%', s.zoom === '100%', s.zoom);
   check('AI score: note names off by default (classic look)', s.on === false && s.letters === 0 && s.kbds === 0, JSON.stringify(s));
-  check('AI score: OSMD draws the title and "Meowsic AI" as composer', s.title.includes(ai.title) && s.title.includes('Meowsic AI'), s.title.slice(0, 5).join(' | '));
+  check('AI score: OSMD draws the title and "Meowsic" as composer', s.title.includes(ai.title) && s.title.includes('Meowsic') && !s.title.join(' ').includes('Meowsic AI'), s.title.slice(0, 5).join(' | '));
   await p.screenshot({ path: `${OUT}/pages-mac-ai-classic.png` });
   await p.click('#sc-names'); await sleep(1500);
   s = await st();

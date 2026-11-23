@@ -113,8 +113,11 @@ function load() {
   if (!db || db.version !== 6) db = buildMock();
   hydrate();
 }
+// the old credit name reads "Meowsic" everywhere (the Mac's data is moved over too)
+const OLD_CREDIT = 'Meowsic AI';
+function credited(it) { if (it.artist === OLD_CREDIT) it.artist = 'Meowsic'; if (it.source === OLD_CREDIT) it.source = 'Meowsic'; return it; }
 function hydrate() {
-  for (const it of db.items) if (it.kind === 'chords') it.lines = parseChordPro(it.text);
+  for (const it of db.items) { credited(it); if (it.kind === 'chords') it.lines = parseChordPro(it.text); }
 }
 let saveTimer;
 function save() {
@@ -276,7 +279,7 @@ export const store = {
   // after an upload / server-side change: put the server's copy of an item into the library
   // items the Mac already removed for good (no request, no activity): just forget them here
   drop(ids) { const s = new Set([].concat(ids)); db.items = db.items.filter((x) => !s.has(x.id)); changed(); },
-  putItem(it) { const i = db.items.findIndex((x) => x.id === it.id); if (it.kind === 'chords') it.lines = parseChordPro(it.text); if (i >= 0) db.items[i] = it; else db.items.unshift(it); for (const t of it.tags) if (!db.tags.includes(t)) db.tags.push(t); changed(); },
+  putItem(it) { credited(it); const i = db.items.findIndex((x) => x.id === it.id); if (it.kind === 'chords') it.lines = parseChordPro(it.text); if (i >= 0) db.items[i] = it; else db.items.unshift(it); for (const t of it.tags) if (!db.tags.includes(t)) db.tags.push(t); changed(); },
   // the Mac's list wins: items deleted or merged there (e.g. a split undone) disappear here too
   async resync() {
     if (mode !== 'server') return;
