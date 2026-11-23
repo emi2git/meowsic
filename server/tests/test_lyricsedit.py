@@ -39,7 +39,9 @@ WORDS = [('Twin', 'begin'), ('kle', 'end'), ('twin', 'begin'), ('kle', 'end'), (
 
 @pytest.fixture
 def score(client):
-    return client.post('/api/items', json={'kind': 'score', 'title': 'Twinkle Twinkle', 'artist': 'Traditional', 'musicxmlText': score_xml(), 'tags': ['Kids']}).json()
+    it = client.post('/api/items', json={'kind': 'score', 'title': 'Twinkle Twinkle', 'artist': 'Traditional', 'musicxmlText': score_xml(), 'tags': ['Kids']}).json()
+    it['_xml'] = client.get(f'/api/items/{it["id"]}/musicxml').text  # as stored (the server adds the Meowsic credit)
+    return it
 
 
 def lyrics_of(xml, verse='1'):
@@ -89,7 +91,7 @@ def test_save_this_score(client, score, data):
     assert all(e.find('lyric') is None for e in root.iter('note') if e.findtext('staff') == '2' or e.find('chord') is not None)
     # the file before is kept; the very first change also keeps the untouched original
     d = data / 'items' / score['folder']
-    assert (d / j['history']).read_text() == score_xml() and (d / f'{score["folder"]} (original).musicxml').is_file()
+    assert (d / j['history']).read_text() == score['_xml'] and (d / f'{score["folder"]} (original).musicxml').is_file()
     # music21 reads it, the words are there and every bar is still full
     import music21
     s = music21.converter.parse(xml, format='musicxml')
@@ -149,7 +151,7 @@ def test_activity_undo_restores(client, score, data):
     assert row['type'] == 'lyrics-fit' and row['action'] == 'undo' and 'back to the score before' in row['undoText'][0]
     u = client.post(f'/api/activity/{j["activity"]}/undo', json={})
     assert u.status_code == 200, u.text
-    assert client.get(f'/api/items/{score["id"]}/musicxml').text == score_xml()
+    assert client.get(f'/api/items/{score["id"]}/musicxml').text == score['_xml']
     hist = sorted(p.name for p in (data / 'items' / score['folder'] / '.history').iterdir())
     assert len(hist) == 2  # the score before the fit, and the fitted one that the undo replaced: nothing is lost
     assert client.post(f'/api/activity/{j["activity"]}/undo', json={}).status_code == 409
@@ -172,7 +174,7 @@ def test_save_as_new_score(client, score):
     assert new['id'] != score['id'] and new['title'] == 'Twinkle Twinkle' and 'Lyrics added' in new['tags'] and 'Kids' in new['tags']
     assert new['groupId'] and new['groupId'] == client.get(f'/api/items/{score["id"]}').json()['groupId']
     assert len(lyrics_of(client.get(f'/api/items/{new["id"]}/musicxml').text)) == 14
-    assert client.get(f'/api/items/{score["id"]}/musicxml').text == score_xml()  # the score itself is untouched
+    assert client.get(f'/api/items/{score["id"]}/musicxml').text == score['_xml']  # the score itself is untouched
     assert client.post(f'/api/activity/{j["activity"]}/undo', json={}).status_code == 200
     assert client.get(f'/api/items/{new["id"]}').json()['deleted']
 
@@ -205,7 +207,7 @@ def test_preview_saves_nothing(client, score):
     m = client.get(f'/api/items/{score["id"]}/lyrics').json()
     r = client.post(f'/api/items/{score["id"]}/lyrics/preview', json={'notes': [{'ref': m['notes'][0]['ref'], 'text': 'Twin', 'syllabic': 'begin'}]})
     assert r.status_code == 200 and '<text>Twin</text>' in r.text
-    assert client.get(f'/api/items/{score["id"]}/musicxml').text == score_xml()
+    assert client.get(f'/api/items/{score["id"]}/musicxml').text == score['_xml']
     assert not [a for a in client.get('/api/activity').json() if a['type'] == 'lyrics-fit']
 
 
