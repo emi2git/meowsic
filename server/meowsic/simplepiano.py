@@ -3,7 +3,6 @@
 Settings (all optional; defaults() gives what a score starts with):
   level      0–100  smooth rests + rhythm (smoothrhythm.py; when it lengthens a note its staccato goes)
   main       bool   main note only: chords → the main note per hand, extra voices go (arrange.clear, music21)
-  right/left bool   that hand on (off = its bars are rests: hidden from the page and silent)
   staccato   bool   remove staccato (transcriptions mark many plain notes staccato) — on for audio / video scores
   grace      bool   remove grace notes & trills: <grace/>, trill-mark / turn / mordent / shake / wavy-line / tremolo,
                     and the transcription's own grace notes — a note of a 32nd or less (not tied) right before
@@ -11,7 +10,8 @@ Settings (all optional; defaults() gives what a score starts with):
   marks      bool   remove dynamics & pedal marks (dynamics, wedges, pedal; tempo and words stay)
 
 GET  /api/items/{id}/simplepiano                       -> {allowed, defaults}
-POST /api/items/{id}/simplepiano/preview  {settings}   -> {xml, before, after, found, changed, sha}  (nothing saved)
+POST /api/items/{id}/simplepiano/preview  {settings}   -> {xml, before, after, found, changed, sha, spans}  (nothing saved;
+     spans = what changed (changes()): the menu highlights them in the preview)
 POST /api/items/{id}/simplepiano  {settings, mode: 'this'|'new', sha?}
      'this': the file before goes to items/<folder>/.history/simple-<ms>-<name> + an Activities 'musicxml' step;
      'new': a new score in the same group, version "Simple piano" (clear), tagged "Simple piano" (Undo → Trash).
@@ -30,14 +30,14 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 
 from . import smoothrhythm as sr
 from .db import folder_path, get_item, now_ms, uid, write_item
-from .easerests import Ev, _beat, _head, _no_staccato
+from .easerests import _beat, _head, _no_staccato
 from .items import cfg, conn, item_dir, must_item
 from .sheetversion import refresh_staves
 from .undolog import _q, record_undo
 
 router = APIRouter(prefix='/api')
 TAG = 'Simple piano'
-KEYS = ('level', 'main', 'right', 'left', 'staccato', 'grace', 'marks')
+KEYS = ('level', 'main', 'staccato', 'grace', 'marks')
 ORNAMENTS = ('trill-mark', 'turn', 'delayed-turn', 'inverted-turn', 'delayed-inverted-turn', 'vertical-turn', 'shake',
              'mordent', 'inverted-mordent', 'wavy-line', 'schleifer', 'tremolo', 'haydn')
 GRACE_MAX = Fr(1, 8)  # a 32nd (in quarters)
@@ -67,7 +67,7 @@ def transcribed(c, it, _seen=None) -> bool:
 def defaults(c=None, it=None, heard=None) -> dict:
     """What the menu starts with: a transcription gets rhythm smoothing, staccato and grace notes removed."""
     if heard is None: heard = bool(c and it and transcribed(c, it))
-    return {'level': 60 if heard else 0, 'main': True, 'right': True, 'left': True,
+    return {'level': 60 if heard else 0, 'main': True,
             'staccato': heard, 'grace': heard, 'marks': False}
 
 
@@ -81,7 +81,6 @@ def settings(body: dict, base: dict | None = None) -> dict:
             if not 0 <= v <= 100: raise HTTPException(400, 'level: 0 to 100')
             s[k] = v
         else: s[k] = bool(body[k])
-    if not s['right'] and not s['left']: raise HTTPException(400, 'Keep at least one hand')
     return s
 
 
@@ -177,37 +176,6 @@ def remove_grace(root) -> dict:
     return found
 
 
-def hand_off(root, staff: str) -> int:
-    """That hand's notes become rests (one per bar and voice: bars stay full, it is silent and nearly empty)."""
-    k = 0
-    for part in root.findall('part'):
-        div, tsig = Fr(1), (4, 4)
-        for meas in part.findall('measure'):
-            div, tsig = sr._attrs(meas, div, tsig)
-            items = sr._runs(meas, div)
-            changed = False
-            for r in items:
-                if not isinstance(r, dict) or r['voice'][1] != staff: continue
-                if all(e.rest for e in r['evs']): continue
-                total = sum((e.q for e in r['evs']), Fr(0))
-                first = r['evs'][0].notes[0]
-                rest = ET.Element('note'); ET.SubElement(rest, 'rest')
-                ET.SubElement(rest, 'duration').text = str(int(total * div))
-                ET.SubElement(rest, 'voice').text = first.findtext('voice') or '1'
-                ET.SubElement(rest, 'type').text = 'quarter'
-                ET.SubElement(rest, 'staff').text = staff
-                ev = Ev([rest], total, [x for e in r['evs'] for x in e.extra if x.tag != 'note'])
-                ev.touched = True; ev.tup = False
-                k += sum(1 for e in r['evs'] if not e.rest)
-                r['evs'] = [ev]; r['changed'] = True; changed = True
-            if changed: sr._rebuild(meas, items, div, _beat(tsig))
-    return k
-
-
-def staves(root) -> int:
-    return max([int(s.text) for s in root.iter('staves') if (s.text or '').isdecimal()] or [1])
-
-
 def make(text: str, s: dict):
     """(new MusicXML text, stats before, stats after, found). Nothing changed → the text as it was."""
     out, before, after, found = _make(text, s)
@@ -234,14 +202,78 @@ def _make(text: str, s: dict):
     ET.indent(root, space='  ')
     text = _head(text) + ET.tostring(root, encoding='unicode') + '\n'
     if s.get('level'): text, _, _ = sr.smooth(text, s['level'])
-    if not s.get('right', True) or not s.get('left', True):
-        root = ET.fromstring(text.encode('utf-8'))
-        two = staves(root) >= 2
-        if not s.get('right', True): found['right'] = hand_off(root, '1')
-        if not s.get('left', True) and two: found['left'] = hand_off(root, '2')
-        ET.indent(root, space='  ')
-        text = _head(text) + ET.tostring(root, encoding='unicode') + '\n'
     return text, before, sr.stats(text), found
+
+
+# ---------- what changed (the preview's highlights) ----------
+
+MARK_TAGS = ('dynamics', 'wedge', 'pedal')
+NOTE_FLAGS = ('staccato', 'staccatissimo', 'spiccato', 'dynamics', *ORNAMENTS)
+
+
+def _events(text: str) -> dict:
+    """{(measure index, staff index in the score): Counter of events}. An event: (onset, length, what, grace, flags)
+    in quarters — what = the pitch or 'R' — or a dynamics / pedal mark: (onset, 0, ('mark', kinds…))."""
+    from collections import Counter
+    root = ET.fromstring(text[text.find('<score-partwise'):].encode('utf-8'))
+    out, base = {}, 0
+    for part in root.findall('part'):
+        div, most = Fr(1), 1
+        for mi, meas in enumerate(part.findall('measure')):
+            pos = last = Fr(0)
+            for el in meas:
+                if el.tag == 'attributes':
+                    if el.findtext('divisions'): div = Fr(el.findtext('divisions'))
+                    if (el.findtext('staves') or '').isdecimal(): most = max(most, int(el.findtext('staves')))
+                elif el.tag in ('backup', 'forward'):
+                    d = Fr(el.findtext('duration') or 0) / div
+                    pos += -d if el.tag == 'backup' else d
+                elif el.tag == 'direction':
+                    kinds = sorted({e.tag for dt in el.findall('direction-type') for e in dt if e.tag in MARK_TAGS})
+                    if kinds:
+                        at = pos + Fr(el.findtext('offset') or 0) / div
+                        key = (mi, base + int(el.findtext('staff') or 1) - 1)
+                        out.setdefault(key, Counter())[(at, Fr(0), ('mark', *kinds))] += 1
+                elif el.tag == 'note':
+                    grace = el.find('grace') is not None
+                    d = Fr(0) if grace else Fr(el.findtext('duration') or 0) / div
+                    if el.find('chord') is not None: at = last
+                    else: at = last = pos; pos += d
+                    p = el.find('pitch')
+                    what = 'R' if p is None else f"{p.findtext('step')}{p.findtext('alter') or ''}{p.findtext('octave')}"
+                    nt = el.find('notations')
+                    flags = tuple(sorted({e.tag for e in nt.iter() if e.tag in NOTE_FLAGS})) if nt is not None else ()
+                    key = (mi, base + int(el.findtext('staff') or 1) - 1)
+                    out.setdefault(key, Counter())[(at, d, what, grace, flags)] += 1
+        base += most
+    return out
+
+
+def changes(before: str, after: str) -> list[dict]:
+    """What differs: [{m, s, a, b}] = measure index, staff (0 = the score's top staff), from / to in quarters into the
+    bar. An event in only one version marks its time (a mark: the note it sits on); overlapping / touching spans merge."""
+    try: x, y = _events(before), _events(after)
+    except ET.ParseError: return []
+    res = []
+    for key in sorted(set(x) | set(y)):
+        a, b = x.get(key, {}), y.get(key, {})
+        diff = [e for e in set(a) | set(b) if a.get(e, 0) != b.get(e, 0)]
+        if not diff: continue
+        notes = [e for e in [*a, *b] if e[1]]
+        spans = []
+        for e in diff:
+            lo, hi = e[0], e[0] + e[1]
+            if hi == lo:  # a mark / grace note: the note it sits on, else up to the next one
+                hi = max((n[0] + n[1] for n in notes if n[0] == lo), default=None) \
+                    or min((n[0] for n in notes if n[0] > lo), default=lo + Fr(1, 2))
+            spans.append([lo, hi])
+        spans.sort()
+        merged = [spans[0]]
+        for lo, hi in spans[1:]:
+            if lo <= merged[-1][1]: merged[-1][1] = max(merged[-1][1], hi)
+            else: merged.append([lo, hi])
+        res += [{'m': key[0], 's': key[1], 'a': float(lo), 'b': float(hi)} for lo, hi in merged]
+    return res
 
 
 def write_midi(xml: Path, mid: Path):
@@ -275,7 +307,8 @@ def preview(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cf
     text = _xml_path(cf, it).read_text(encoding='utf-8')
     s = settings(body, defaults(c, it))
     out, a, b, found = make(text, s)
-    return {'xml': out, 'before': a, 'after': b, 'found': found, 'settings': s, 'changed': out != text, 'sha': sha(text)}
+    return {'xml': out, 'before': a, 'after': b, 'found': found, 'settings': s, 'changed': out != text, 'sha': sha(text),
+            'spans': changes(text, out) if out != text else []}
 
 
 def keep(d, name):

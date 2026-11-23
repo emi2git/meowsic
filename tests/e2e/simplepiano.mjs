@@ -1,8 +1,9 @@
 // Simple piano (score toolbar → Simple piano button) against a test server (BASE, default :5361, a scratchpad data
 // folder — never the real library). ID = a score transcribed from YouTube (Home NDP), SHEET = a score read from a sheet.
 // Per device: the button opens the menu (iPad / iPhone: a bottom sheet) with the source's defaults; the slider and
-// the toggles redraw the preview live (fewer rests as the slider goes up, every bar full, a hand off = its notes gone);
-// Play works on the preview; Mac saves into this score (history + Activities undo puts it back), iPad saves as a new
+// the toggles redraw the preview live (fewer rests as the slider goes up, every bar full);
+// what changed is highlighted (soft yellow behind the notes: some with the slider up, none at 0 with nothing on,
+// gone once saved / closed; screenshots simplepiano-hl-<device>.png); Play works on the preview; Mac saves into this score (history + Activities undo puts it back), iPad saves as a new
 // "Simple piano" version (then trashed), iPhone closes with × (score unchanged).
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5361/';
@@ -39,6 +40,11 @@ const settle = async (page, t = 15000) => { const end = Date.now() + t; await sl
 const settings = (page) => page.evaluate(() => Object.fromEntries([['level', +document.querySelector('#sp-level').value],
   ...[...document.querySelectorAll('.sp-panel [data-k]')].map((i) => [i.dataset.k, i.checked])]));
 const setLevel = (page, v) => page.evaluate((v) => { const r = document.querySelector('#sp-level'); r.value = v; r.dispatchEvent(new Event('input', { bubbles: true })); }, v);
+const hls = (page) => page.evaluate(() => {
+  const r = [...document.querySelectorAll('#osmd svg rect.sp-hl')];
+  return { n: r.length, behind: r.every((x) => !x.previousElementSibling || x.previousElementSibling.classList.contains('sp-hl')),
+    sized: r.every((x) => x.getBBox().width > 0 && x.getBBox().height > 0), bars: [...new Set(r.map((x) => +x.dataset.bar))] };
+});
 const toggle = (page, k) => page.evaluate((k) => document.querySelector(`.sp-panel [data-k="${k}"]`).click(), k);
 
 async function run(name, vp, how) {
@@ -61,7 +67,7 @@ async function run(name, vp, how) {
   await page.click('#sc-simple'); await sleep(300); await settle(page, 30000);
   const first = Date.now() - t0;
   const s = await settings(page);
-  check('transcription defaults: level 60, remove staccato + grace on', s.level === 60 && s.staccato && s.grace && s.main && s.left && s.right, JSON.stringify(s));
+  check('transcription defaults: level 60, remove staccato + grace on', s.level === 60 && s.staccato && s.grace && s.main && !('left' in s) && !('right' in s), JSON.stringify(s));
   let p = await api(`/items/${ID}/simplepiano/preview`, s);
   let c = await count(page);
   check('menu shows the preview counts', c.startsWith(`Rests ${p.before.rests} → ${p.after.rests}`) && p.after.rests < p.before.rests, c);
@@ -72,17 +78,22 @@ async function run(name, vp, how) {
   c = await count(page);
   check('slider 100: fewer rests still, live', c.startsWith(`Rests ${p.before.rests} → ${p100.after.rests}`) && p100.after.rests < p.after.rests, c);
   check('slider 100: every bar full', barsFull(p100.xml));
+  let h = await hls(page);
+  check('slider 100: what changed is highlighted, behind the notes', h.n > 0 && h.n === p100.spans.length && h.behind && h.sized, JSON.stringify({ ...h, spans: p100.spans.length }));
+  await page.screenshot({ path: `${SHOTS}/simplepiano-hl-${name}.png` });
   await setLevel(page, 0); await settle(page);
   const p0 = await api(`/items/${ID}/simplepiano/preview`, await settings(page));
   check('slider 0: rests as they were (only main note / staccato / grace)', p0.after.rests >= p.after.rests, `${p0.after.rests}`);
+  for (const k of ['main', 'staccato', 'grace']) await toggle(page, k);
+  await settle(page);
+  h = await hls(page);
+  check('slider 0, nothing on: no highlights', h.n === 0 && (await count(page)) === 'No change with these settings', JSON.stringify(h));
+  await setLevel(page, 60); await settle(page);
+  const pr = await api(`/items/${ID}/simplepiano/preview`, await settings(page));
+  h = await hls(page);
+  check('slider up (rhythm only): highlights come back, in the bars that changed', h.n > 0 && h.n === pr.spans.length && h.bars.every((b) => pr.spans.some((x) => x.m === b)), JSON.stringify(h));
+  for (const k of ['main', 'staccato', 'grace']) await toggle(page, k);
   await setLevel(page, 80); await settle(page);
-  await toggle(page, 'left'); await settle(page);
-  const pl = await api(`/items/${ID}/simplepiano/preview`, await settings(page));
-  check('Left hand off: its notes go, the right hand stays', pitched(pl.xml, '2') === 0 && pitched(pl.xml, '1') > 0 && barsFull(pl.xml));
-  await toggle(page, 'right'); await sleep(200);
-  const both = await settings(page);
-  check('turning off both hands is refused (the other comes back)', both.left && !both.right, JSON.stringify(both));
-  await toggle(page, 'right'); await settle(page);
   await page.click('.sp-panel .sp-play'); await sleep(1800);
   check('Play (in the menu) works on the preview', +(await page.$eval('#sc-pos', (e) => e.value)) > 0.2);
   await page.click('.sp-panel .sp-play'); await sleep(300);
@@ -93,6 +104,7 @@ async function run(name, vp, how) {
     await page.evaluate(() => document.querySelector('.sp-panel [data-a="this"]').click()); await sleep(3500);
     const x1 = await xmlOf(ID);
     check('saved into this score: the file is the preview', x1 === want.xml && barsFull(x1) && !(await page.$('.sp-panel')));
+    check('no highlights after saving', (await hls(page)).n === 0 && (await page.evaluate(() => document.querySelectorAll('#osmd .vf-stavenote').length)) > 0);
     const row = (await api('/activity')).find((a) => a.type === 'simple-piano' && !a.undoneAt);
     check('Activities row, undoable', row && row.action === 'undo', JSON.stringify(row));
     const u = await fetch(`${BASE}api/activity/${row.id}/undo`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
@@ -107,6 +119,7 @@ async function run(name, vp, how) {
   } else {
     await page.evaluate(() => document.querySelector('.sp-panel [data-a="cancel"]').click()); await sleep(2500);
     check('× closes, the score is unchanged', !(await page.$('.sp-panel')) && (await xmlOf(ID)) === x0);
+    check('no highlights after closing', (await hls(page)).n === 0);
   }
   console.log(`  (first preview with main note: ${first} ms)`);
   await page.close();

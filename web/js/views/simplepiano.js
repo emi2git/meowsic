@@ -1,8 +1,9 @@
 // Simple piano (score toolbar → the Simple piano button; on iPhone a bottom sheet): one menu with live preview.
 // The slider smooths rests + rhythm (0 = as is … 100 = smoothest: rests absorbed when nothing else sounds, odd
-// values snapped to a simple grid, rests in a row merged, the left hand held); toggles: Main note only, Right hand,
-// Left hand, Remove staccato, Remove grace notes & trills, Remove dynamics & pedal. Every change asks the Mac for a
-// preview (server/meowsic/simplepiano.py, ~200 ms after the last move) and draws it in the score (play it too).
+// values snapped to a simple grid, rests in a row merged, the left hand held); toggles: Main note only,
+// Remove staccato, Remove grace notes & trills, Remove dynamics & pedal. Every change asks the Mac for a
+// preview (server/meowsic/simplepiano.py, ~200 ms after the last move) and draws it in the score (play it too),
+// with what changed highlighted (soft yellow behind the notes; only in the preview, gone once saved or closed).
 // Save into this score (the file before stays in .history, Activities can undo it) or as a new "Simple piano" version.
 import { $, toast } from '../ui.js';
 import { go } from '../app.js';
@@ -12,13 +13,51 @@ const api = (path, body) => fetch('/api' + path, body ? { method: 'POST', header
 
 const TOGGLES = [
   ['main', 'Main note only', 'Chords become the main note of each hand'],
-  ['right', 'Right hand', 'Off: the right hand is hidden and silent'],
-  ['left', 'Left hand', 'Off: the left hand is hidden and silent'],
   ['staccato', 'Remove staccato', 'Recordings mark many plain notes staccato'],
   ['grace', 'Remove grace notes & trills', 'Also the very short notes a recording puts before a note'],
   ['marks', 'Remove dynamics & pedal', 'p, f, hairpins and pedal marks'],
 ];
-const LEVEL_HELP = (v) => v === 0 ? 'As is' : v < 25 ? 'Tiny gaps filled' : v < 50 ? 'Short rests filled, odd values snapped' : v < 75 ? 'Simple rhythm, fewer rests' : v < 90 ? 'Plain rhythm, held notes' : 'Smoothest';
+// what the settings changed (the preview's spans: {m bar, s staff, a..b quarters into the bar}): a soft highlighter
+// rectangle behind those notes, drawn into OSMD's SVG as its first children (so behind everything)
+const SVGNS = 'http://www.w3.org/2000/svg';
+export function highlight(osmd, host, spans) {
+  host.querySelectorAll('.sp-hl').forEach((r) => r.remove());
+  if (!osmd || !spans?.length) return 0;
+  const pages = osmd.GraphicSheet.MusicPages, svgs = [...host.querySelectorAll('#osmd svg')];
+  let k = 0;
+  for (const { m, s, a, b } of spans) {
+    const gm = osmd.GraphicSheet.MeasureList[m]?.[s];
+    if (!gm?.PositionAndShape) continue;
+    const svg = svgs[Math.max(0, pages.indexOf(gm.ParentMusicSystem?.Parent))];
+    if (!svg) continue;
+    const ps = gm.PositionAndShape, x0 = ps.AbsolutePosition.x, y0 = (gm.ParentStaffLine?.PositionAndShape || ps).AbsolutePosition.y; // the top staff line
+    const len = (gm.parentSourceMeasure?.Duration?.RealValue || 1) * 4;
+    // time → x: the notes' left edges, the bar's end at its right edge
+    const pts = (gm.staffEntries || []).map((se) => [se.relInMeasureTimestamp.RealValue * 4, se.PositionAndShape.AbsolutePosition.x + se.PositionAndShape.BorderLeft - 0.6])
+      .sort((p, q) => p[0] - q[0]);
+    pts.push([len, x0 + ps.BorderRight]);
+    if (pts[0][0] > 0) pts.unshift([0, Math.min(pts[0][1], x0 + ps.BorderLeft + 1)]);
+    const at = (t) => {
+      const i = pts.findIndex((p) => p[0] >= t);
+      if (i < 0) return pts[pts.length - 1][1];
+      if (i === 0 || pts[i][0] === t) return pts[i][1];
+      const [ta, xa] = pts[i - 1], [tb, xb] = pts[i];
+      return xa + ((xb - xa) * (t - ta)) / (tb - ta);
+    };
+    const xa = at(a), xb = Math.max(at(b), xa + 1.2);
+    const r = document.createElementNS(SVGNS, 'rect');
+    r.setAttribute('class', 'sp-hl');
+    r.setAttribute('x', xa * 10); r.setAttribute('y', (y0 - 1.5) * 10);
+    r.setAttribute('width', (xb - xa) * 10); r.setAttribute('height', 7 * 10);
+    r.setAttribute('rx', 6);
+    r.dataset.bar = m; r.dataset.staff = s;
+    svg.insertBefore(r, svg.firstChild);
+    k++;
+  }
+  return k;
+}
+
+const LEVEL_HELP =(v) => v === 0 ? 'As is' : v < 25 ? 'Tiny gaps filled' : v < 50 ? 'Short rests filled, odd values snapped' : v < 75 ? 'Simple rhythm, fewer rests' : v < 90 ? 'Plain rhythm, held notes' : 'Smoothest';
 
 export async function simplePiano(view, it, host) {
   if (!host) return;
@@ -67,14 +106,17 @@ export async function simplePiano(view, it, host) {
       const p = await api(`/items/${encodeURIComponent(it.id)}/simplepiano/preview`, s);
       if (my !== seq || !panel.isConnected) return;   // a newer move is on its way
       prev = p;
-      if (p.changed) { await view.showXml(p.xml); shown = true; }
+      if (p.changed) { await view.showXml(p.xml); shown = true; marks(); }
       else if (shown) { await view.reload(); shown = false; }
     } catch (e) { if (my === seq) { toast(e.message); count.textContent = e.message; } return; }
     if (my === seq) draw();
   };
+  const marks = () => { if (panel.isConnected) highlight(view.osmd, host, shown && prev?.changed ? prev.spans : null); };
+  host.addEventListener('scoredrawn', marks);   // a zoom / resize lays the score out again
   const later = () => { clearTimeout(timer); timer = setTimeout(load, 200); };
   const close = async (keep) => {
     clearTimeout(timer); seq++;
+    host.removeEventListener('scoredrawn', marks); highlight(null, host);
     view.player?.pause(); panel.remove(); host.classList.remove('simplifying');
     if (shown && !keep) await view.reload();
   };
@@ -88,10 +130,6 @@ export async function simplePiano(view, it, host) {
     const k = e.target.dataset?.k;
     if (!k) return;
     s[k] = e.target.checked;
-    if (!s.left && !s.right) { // keep one hand
-      const other = k === 'left' ? 'right' : 'left';
-      s[other] = true; panel.querySelector(`[data-k="${other}"]`).checked = true;
-    }
     later();
   });
   const save = async (mode) => {
