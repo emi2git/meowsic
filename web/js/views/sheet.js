@@ -5,7 +5,7 @@ import { sheetUrl } from '../sheet-art.js';
 import { InkLayer, inkToolbar } from './annotate.js';
 import { go } from '../app.js';
 import { bookToggle } from './actions.js';
-import { attachSwipe } from '../swipe.js';
+import { attachSwipe, backToLibrary } from '../swipe.js';
 import { isTouch, isDesktop } from '../device.js';
 
 // real sheets: the page files on the Mac; the UI preview draws mock pages
@@ -120,8 +120,8 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
       if (hit === shown[shown.length - 1] && !leftHalf) next();
     }
   });
-  // iPad / iPhone, view mode: swipe up = back to the library (left / right turn pages, above)
-  const offSwipe = attachSwipe(pages, { canStart: () => !tool && !pages.classList.contains('zoomed') });
+  // iPad / iPhone, view mode: swipe up or down = back to the library (left / right turn pages, above)
+  const offSwipe = attachSwipe(pages, { onDown: backToLibrary, canStart: () => !tool && !pages.classList.contains('zoomed') });
   // arrows, page keys and space — Bluetooth page-turn pedals send these
   const onKey = (e) => {
     if (e.target.closest('input,textarea,select')) return;

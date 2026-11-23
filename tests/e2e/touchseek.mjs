@@ -1,6 +1,6 @@
 // Score: drag / tap the orange line, Play starts there. iPad / iPhone: swipe left / right flips a
 // screen on chords and scores, swipe up at the end goes back, swipe up mid-scroll does not; sheets:
-// swipe up = back, swipe down stays. Runs on the preview (mock data): PREVIEW=http://localhost:5181
+// swipe up or down = back. Runs on the preview (mock data): PREVIEW=http://localhost:5181
 import puppeteer from 'puppeteer-core';
 const ORIGIN = process.env.PREVIEW || 'http://localhost:5181';
 const BASE = ORIGIN + '/?preview=1';
@@ -87,7 +87,8 @@ check('score: still on the score', (await hash(t)).startsWith('#/item/'));
 await open(t, sheet.id);
 const pg = await t.$eval('.pages', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
 await swipe(t, pg.x, pg.y - 150, pg.x, pg.y + 150);
-check('sheet: swipe down stays', (await hash(t)).startsWith('#/item/'));
+check('sheet: swipe down = back to the library', (await hash(t)).startsWith('#/library'), await hash(t));
+await open(t, sheet.id);
 await swipe(t, pg.x, pg.y + 150, pg.x, pg.y - 150);
 check('sheet: swipe up = back to the library', (await hash(t)) === '#/library', await hash(t));
 

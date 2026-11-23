@@ -1,4 +1,4 @@
-// iPad / iPhone item views: no sidebar; on a sheet swipe up goes back to the library, swipe down stays.
+// iPad / iPhone item views: no sidebar; on a sheet swipe up or down goes back to the library.
 // TOUCH_BASE=http://localhost:5190/ for a test server (default: the real one, :5180; opening items logs plays there)
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.TOUCH_BASE || 'https://localhost:5180/';
@@ -31,7 +31,8 @@ for (const [name, w, h] of devices) {
       await p.touchscreen.touchStart(box.x, box.y - 150);
       for (let i = 1; i <= 5; i++) await p.touchscreen.touchMove(box.x + 3, box.y - 150 + i * 60);
       await p.touchscreen.touchEnd(); await sleep(700);
-      check(`${name}: swipe down stays on the sheet`, (await p.evaluate(() => location.hash)).startsWith('#/item/'), await p.evaluate(() => location.hash));
+      check(`${name}: swipe down → library`, (await p.evaluate(() => location.hash)).startsWith('#/library'), await p.evaluate(() => location.hash));
+      await p.evaluate((id) => { location.hash = '#/item/' + id; }, it.id); await sleep(1500);
       await p.touchscreen.touchStart(box.x, box.y + 150);
       for (let i = 1; i <= 5; i++) await p.touchscreen.touchMove(box.x, box.y + 150 - i * 60);
       await p.touchscreen.touchEnd(); await sleep(700);

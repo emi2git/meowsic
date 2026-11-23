@@ -1,5 +1,6 @@
 // iPad / iPhone swipes for the item views (touch events: the browser claims vertical pans, so
-// pointerup never arrives for them). Left = forward, right = back, up = back to the library.
+// pointerup never arrives for them). Left = forward, right = back, up = back to the library,
+// down = `onDown` (sheets and books: back to the library too; nothing by default).
 // `canStart()` says whether a swipe may begin (not zoomed, not inking, not editing, …).
 // `upAtEnd`: a scrolling view only goes back on a swipe up when it was already at the bottom
 // (or does not scroll) when the finger went down, so ordinary scrolling still works.
@@ -9,7 +10,7 @@ export function backToLibrary() {
   if (history.length > 1) history.back(); else location.hash = '#/library';
 }
 
-export function attachSwipe(el, { onLeft, onRight, onUp = backToLibrary, canStart = () => true, scroller = null, upAtEnd = false }) {
+export function attachSwipe(el, { onLeft, onRight, onUp = backToLibrary, onDown, canStart = () => true, scroller = null, upAtEnd = false }) {
   if (!isTouch()) return () => {};
   let ts = null;
   const atEnd = () => { const s = scroller?.(); return !s || s.scrollHeight - s.clientHeight - s.scrollTop < 4; };
@@ -26,7 +27,8 @@ export function attachSwipe(el, { onLeft, onRight, onUp = backToLibrary, canStar
     const t = e.changedTouches[0], dx = t.clientX - s.x, dy = t.clientY - s.y;
     if (Date.now() - s.t > 800) return;
     if (Math.abs(dx) > 60 && Math.abs(dx) > 1.5 * Math.abs(dy) && !wide()) return dx < 0 ? onLeft?.() : onRight?.();
-    if (dy < -90 && Math.abs(dy) > 2 * Math.abs(dx) && (!upAtEnd || s.end)) onUp?.();
+    if (dy < -90 && Math.abs(dy) > 2 * Math.abs(dx) && (!upAtEnd || s.end)) return onUp?.();
+    if (dy > 90 && Math.abs(dy) > 2 * Math.abs(dx)) onDown?.();
   };
   el.addEventListener('touchstart', start, { passive: true });
   el.addEventListener('touchmove', move, { passive: true });
