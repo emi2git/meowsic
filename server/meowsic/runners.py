@@ -230,6 +230,14 @@ def omr_runner(ctx: JobContext):
     ids = save_outputs(ctx, [('original', str(out / 'score.musicxml'), None, None, {})], title=job['title'],
                        source=f'From the sheet “{src["title"]}” (photo → score, beta)', artist=src.get('artist', ''),
                        tags=[*src.get('tags', []), 'From a sheet'])
+    try:  # bars to check: why, where on the page, the other reading (GET /api/items/{id}/check)
+        from .barcheck import keep_check
+        c = connect(ctx.cfg)
+        try: it = get_item(c, ids[0])
+        finally: c.close()
+        keep_check(folder_path(ctx.cfg, it['folder']), it['folder'], out, src['id'])
+    except Exception as e:
+        logging.getLogger(__name__).warning('bars to check not kept: %s', e)
     where = ', '.join(f"p{x['page']} bar {x['bar']}" for x in checks[:12])
     ctx.update(progress=1, status='done', result=ids,
                msg=f"Done — {report.get('bars', '?')} bars" + (f'; please check {len(checks)}: {where}' if checks else '; no bars to check'))

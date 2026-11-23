@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 
 import music21 as m21
+import pytest
 
 spec = importlib.util.spec_from_file_location('omr_main', Path(__file__).resolve().parents[2] / 'omr' / 'omr.py')
 omr = importlib.util.module_from_spec(spec)
@@ -122,3 +123,73 @@ def test_empty_bars_found_in_homr_file(tmp_path):
                  '<measure number="2"><barline location="right"><ending type="stop" number="1"/></barline></measure>'
                  '<measure number="3"><note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration></note></measure></part></score-partwise>')
     assert omr.empty_bars(f) == {1}
+
+
+# ---------- ties and slurs (connection arcs) ----------
+
+def test_tie_and_slur_helpers():
+    s = score([('G4', 4, None)], [('G4', 4, None)], [('A4', 2, None), ('B4', 2, None)])
+    part = s.parts[0]
+    seq = omr._sequence(part)
+    g1, g2, a, b = (q[3] for q in seq)
+    assert omr.tie(g1, g2) and g1.tie.type == 'start' and g2.tie.type == 'stop' and omr.tied(g1, g2)
+    assert not omr.tie(g2, a)  # different pitches: no tie
+    assert omr.slur(part, a, b) and not omr.slur(part, a, b)  # once
+    # a "slur" over two notes in a row with one pitch is a tie
+    s2 = score([('E4', 2, None), ('E4', 2, None)])
+    n1, n2 = list(s2.recurse().notes)
+    s2.parts[0].insert(0, m21.spanner.Slur(n1, n2))
+    assert omr.slurs_to_ties(s2.parts[0]) == 1 and n1.tie.type == 'start' and not s2.parts[0].spanners.getElementsByClass(m21.spanner.Slur)
+
+
+def test_join_keeps_slurs_of_later_pages():
+    a = score([('C4', 4, None)])
+    b = score([('D4', 2, None), ('E4', 2, None)])
+    d, e = list(b.recurse().notes)
+    b.parts[0].insert(0, m21.spanner.Slur(d, e))
+    s = omr.join([a, b], 'x')
+    x = m21.musicxml.m21ToXml.GeneralObjectExporter(s).parse().decode()
+    assert x.count('<slur ') == 2
+
+
+def test_arcs_seen_on_the_page(tmp_path):
+    pytest.importorskip('cv2')
+    from PIL import Image, ImageDraw
+    # a staff (gap 20) with G4 half, G4 half under a tie, then A4 B4 under a slur
+    im = Image.new('L', (900, 300), 255); d = ImageDraw.Draw(im)
+    top = 100
+    for k in range(5): d.line([(40, top + 20 * k), (860, top + 20 * k)], fill=0, width=2)
+    y_g, y_a, y_b = top + 70, top + 60, top + 50
+    heads = [(200, y_g), (330, y_g), (520, y_a), (680, y_b)]
+    for x, y in heads: d.ellipse([x - 12, y - 9, x + 12, y + 9], fill=0); d.line([(x + 11, y), (x + 11, y - 70)], fill=0, width=2)
+    d.arc([212, y_g - 4, 318, y_g + 26], 20, 160, fill=0, width=3)  # the tie, under the heads
+    d.arc([530, y_b - 70, 670, y_b - 10], 200, 340, fill=0, width=3)  # the slur, over the stems
+    png = tmp_path / 'page1.png'; im.save(png)
+    xml = ('<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>V</part-name></score-part></part-list><part id="P1">'
+           '<measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>'
+           f'<note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><type>half</type><!-- imgpos: 210, {y_g - 30} --></note>'
+           f'<note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration><type>half</type><!-- imgpos: 340, {y_g - 30} --></note></measure>'
+           f'<measure number="2"><note><pitch><step>A</step><octave>4</octave></pitch><duration>2</duration><type>half</type><!-- imgpos: 525, {y_a - 30} --></note>'
+           f'<note><pitch><step>B</step><octave>4</octave></pitch><duration>2</duration><type>half</type><!-- imgpos: 690, {y_b - 30} --></note></measure></part></score-partwise>')
+    (tmp_path / 'page1.musicxml').write_text(xml)
+    arcs = omr.page_arcs(png)
+    assert len(arcs) == 2 and arcs[0]['under'] and not arcs[1]['under']
+    h = m21.converter.parse(str(tmp_path / 'page1.musicxml'))
+    rep = {'notes': []}
+    omr.place_arcs(h, png, tmp_path / 'page1.musicxml', 1, rep)
+    g1, g2, a, b = [q[3] for q in omr._sequence(h.parts[0])]
+    assert g1.tie.type == 'start' and g2.tie.type == 'stop' and a.tie is None
+    sl = list(h.parts[0].spanners.getElementsByClass(m21.spanner.Slur))
+    assert len(sl) == 1 and sl[0].isFirst(a) and sl[0].isLast(b)
+    assert rep['arcs'] == [{'page': 1, 'ties': 1, 'slurs': 1}]
+    boxes = omr.bar_boxes(png, tmp_path / 'page1.musicxml', 2)
+    assert boxes[0][0] < 200 < boxes[0][2] <= boxes[1][0] + 20 and boxes[1][0] < 520 < 680 < boxes[1][2]
+
+
+def test_other_reading_for_a_bar_and_plain_reasons():
+    s = score([('C4', 2, 'hi'), ('D4', 1, None)])  # 3 beats in 4/4
+    m = s.parts[0].getElementsByClass(m21.stream.Measure)[0]
+    x = omr.alt_xml(m, 5, 4.0)
+    assert x.startswith('<measure number="5"') and 'lyric' not in x and '<clef' not in x and '<rest' in x  # filled up
+    assert omr.plain_reason('three notes made a triplet (1-beat notes)') == 'triplet added to make the bar add up'
+    assert omr.plain_reason('1 beats too long: split into voices') == 'bar was too long — split into 2 voices'
