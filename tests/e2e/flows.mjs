@@ -365,14 +365,15 @@ await page.click('#pr-cover'); await sleep(200);
 check('cover page with song list', (await count('#print-root .coverpage .toc li')) === 5 && (await text('#print-root .coverpage')).includes('Ukulele club'));
 await page.click('#pr-cover'); await sleep(100);
 
-console.log('Activity');
+console.log('Activities');
 await go('#/activity'); await sleep(300);
+check('Activities: page title and left bar (no Logs)', (await text('h1')).includes('Activities') && /Activities/.test(await text('#side')) && !/\bLogs\b/.test(await text('#side')));
 const act = await text('#ac');
 check('activity lists adds, jobs, bin', act.includes('Add sheets') && act.includes('Add chords') && act.includes('Score from recording') && act.includes('Make another version') && act.includes('Moved to Trash'));
 check('failed job shows', act.includes('Failed'));
 await page.click('.ac-row.has-log'); await sleep(150);
 check('tap a job to see its log', (await count('.ac-log')) === 1 && (await text('.ac-log')).includes('Started'));
-await page.select('#ac-f', 'jobs'); await sleep(150);
+await page.click('#ac-f [data-f="jobs"]'); await sleep(150);
 check('filter to jobs only', !(await text('#ac')).includes('Moved to Trash'));
 await go('#/settings'); await sleep(200);
 check('Settings has no old-app import or mock reset', !/Bring in the old apps|Reset mock data/.test(await text('#main')));
@@ -404,7 +405,7 @@ await page.$eval(`${fcard} .rv-title`, (e) => { e.value = 'Frozen songs'; e.disp
 await page.click('#mt-apply'); await sleep(400);
 d = await db();
 check('apply saves renamed tag to the library', d.tags.includes('Frozen songs') && d.items.filter((x) => x.tags.includes('Frozen songs')).length === n0);
-check('make tags is in Logs', (await db()).activity.some((a) => a.type === 'make-tags'));
+check('make tags is in Activities', (await db()).activity.some((a) => a.type === 'make-tags'));
 await go('#/stats'); await sleep(200);
 check('stats: no table view', !(await page.$('.table-view')));
 check('stats: fun facts', (await count('.fun li')) === 5);

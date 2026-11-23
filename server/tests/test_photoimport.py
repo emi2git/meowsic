@@ -206,3 +206,18 @@ def test_layout_of_staves(tmp_path):
     im.save(tmp_path / 'p.png')
     lay = grouping.layout(tmp_path / 'p.png')
     assert abs(lay['l'] - 0.1) < 0.02 and abs(lay['r'] - 0.9) < 0.02 and abs(lay['top'] - 300 / 1400) < 0.02
+
+
+def test_import_undo_from_activities(client, album):
+    """Activities: one row per import (its crops included); Undo there = this import's undo; refused once undone."""
+    s = wait(client, client.post('/api/photos/sessions', json={'name': 'SHEET'}).json()['id'])
+    ids = [p['id'] for p in s['pages']]
+    body = {'songs': [{'title': 'Act import', 'pages': [{'id': ids[0], 'crop': {'top': 0.1, 'bottom': 0.9, 'left': 0, 'right': 1}}]}]}
+    it = client.post(f'/api/photos/sessions/{s["id"]}/import', json=body).json()['items'][0]
+    acts = client.get('/api/activity').json()
+    row = next(a for a in acts if a['type'] == 'photo-import')
+    assert row['action'] == 'undo' and not [a for a in acts if a['type'] == 'trim']
+    r = client.post(f'/api/activity/{row["id"]}/undo', json={}).json()
+    assert r['changed'] == 1 and client.get(f'/api/items/{it["id"]}').status_code == 404
+    assert client.get('/api/photos/imports').json()[0]['undoneAt']
+    assert client.post(f'/api/activity/{row["id"]}/undo', json={}).status_code == 409

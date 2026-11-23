@@ -106,12 +106,16 @@ CREATE TABLE IF NOT EXISTS job (              -- transcriptions, "make another v
   params      TEXT NOT NULL DEFAULT '{}'      -- JSON: url, upload, fromItemId, artist, tags (what the runner needs)
 );
 
-CREATE TABLE IF NOT EXISTS activity (         -- the Logs page (jobs are listed from `job`)
-  id      TEXT PRIMARY KEY,
-  type    TEXT NOT NULL,                      -- add-sheet | add-chords | bin | restore | delete | print | make-tags | import
-  title   TEXT NOT NULL,
-  detail  TEXT NOT NULL DEFAULT '',
-  at      INTEGER NOT NULL
+CREATE TABLE IF NOT EXISTS activity (         -- the Activities page (jobs are listed from `job`)
+  id         TEXT PRIMARY KEY,
+  type       TEXT NOT NULL,                   -- add-sheet | add-chords | bin | restore | delete | print | make-tags | import | edit | rollback …
+  title      TEXT NOT NULL,
+  detail     TEXT NOT NULL DEFAULT '',
+  at         INTEGER NOT NULL,
+  undo       TEXT,                            -- JSON {steps: [{op, …}]} = how to roll it back (undo.py), or {none: why}; NULL = not recorded
+  undone_at  INTEGER,                         -- rolled back at (the row is kept)
+  undone_by  TEXT,                            -- the 'rollback' activity row that did it
+  undo_of    TEXT                             -- on a 'rollback' row: the activity (or job) id it rolled back
 );
 
 CREATE TABLE IF NOT EXISTS setting (

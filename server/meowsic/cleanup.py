@@ -19,6 +19,25 @@ from . import cleanstate as cs
 from . import trim
 from .db import folder_path, get_item, now_ms
 from .items import cfg, conn, must_item, update_item
+from .db import quiet
+from .undolog import record_undo
+
+TEN_MIN = 10 * 60 * 1000  # trims / marks made within 10 minutes of each other share one Activities row
+
+
+def _crop_rec(c, item_id, page, before, after, title):
+    n = lambda steps: len(steps)
+    record_undo(c, 'trim', {'op': 'crop', 'id': item_id, 'page': page, 'before': before, 'after': after, 'title': title},
+                lambda st: f'Trimmed {n(st)} page{"s" if n(st) != 1 else ""}',
+                lambda st: ', '.join(dict.fromkeys(f'“{x["title"]}”' for x in st))[:300], group='crop', window=TEN_MIN)
+
+
+def _mark_rec(c, op, key, before, after, later=False):
+    def title(st):
+        k = sum(1 for x in st if x['op'] == 'mark' and x['after']); l = sum(1 for x in st if x['op'] == 'later' and x['after'])
+        return 'Clean up: ' + ', '.join(p for p in (f'{k} marked fine' if k else '', f'{l} left for later' if l else '') if p) if k or l else 'Clean up: marks taken off'
+    record_undo(c, 'cleanup-marks', {'op': op, 'key': key, 'before': before, 'after': after, **({'later': True} if later else {})},
+                title, lambda st: ', '.join(x['key'] for x in st[-6:]), group='marks', window=TEN_MIN)
 
 router = APIRouter(prefix='/api')
 _lock = threading.Lock()
@@ -210,8 +229,10 @@ def cleanup_ok(body: dict = Body(...), c=Depends(conn)):
     key = body.get('key') or ''
     p = cs.parse_key(key)
     if not p: raise HTTPException(400, "key must be '<id>:<page>', 'title:<id>' or 'song:<id>'")
+    was, was_later = key in cs.marks(c), key in cs.later_keys(c)
     if not cs.mark(c, key, not body.get('undo')): raise HTTPException(404, 'No such item')
     if not body.get('undo') and p[0] == 'page': cs.unlater(c, p[1], p[2], 'kept')
+    if was != (not body.get('undo')): _mark_rec(c, 'mark', key, was, not body.get('undo'), was_later and not body.get('undo'))
     return {'ok': True}
 
 
@@ -221,7 +242,10 @@ def cleanup_later(body: dict = Body(...), c=Depends(conn)):
     p = cs.parse_key(body.get('key') or '')
     if not p or p[0] != 'page': raise HTTPException(400, 'key must be <id>:<page>')
     if not body.get('undo'): must_item(c, p[1])
-    return {'ok': True, 'later': cs.later(c, p[1], p[2], not body.get('undo'))}
+    was = f'{p[1]}:{p[2]}' in cs.later_keys(c)
+    now = cs.later(c, p[1], p[2], not body.get('undo'))
+    if was != now: _mark_rec(c, 'later', f'{p[1]}:{p[2]}', was, now)
+    return {'ok': True, 'later': now}
 
 
 @router.get('/cleanup/frames')
@@ -340,8 +364,10 @@ def suggest_done(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depen
         new = {k: v for k, v in new.items() if v != (it.get(k) or '')}
         old = {k: it.get(k) or '' for k in new}
         if new:
-            update_item(item_id, dict(new), c, cf)
+            with quiet(): update_item(item_id, dict(new), c, cf)  # one Activities row: the suggestion, undone through it
             _history(cf, {'at': t, 'id': item_id, 'old': old, 'new': new, 'why': ent.get('why', ''), 'via': 'suggest'})
+            record_undo(c, 'suggest', {'op': 'suggest', 'id': item_id, 'old': old, 'new': new, 'title': new.get('title') or it['title']},
+                        new.get('title') or it['title'], 'Suggested name accepted: ' + ', '.join(f'was “{v}”' for v in old.values()))
         ent.update(status='accepted', doneAt=t, old=old, new=new)
         cs.suggest_update(c, item_id, ent)
     elif act == 'dismiss':
@@ -350,7 +376,7 @@ def suggest_done(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depen
         cs.suggest_update(c, item_id, ent)
     else:
         if ent.get('status') == 'accepted' and ent.get('old'):
-            update_item(item_id, dict(ent['old']), c, cf)
+            with quiet(): update_item(item_id, dict(ent['old']), c, cf)
             _history(cf, {'at': t, 'id': item_id, 'old': ent.get('new', {}), 'new': ent['old'], 'why': 'undo', 'via': 'suggest'})
         for k in ('doneAt', 'old', 'new'): ent.pop(k, None)
         ent['status'] = 'open'
@@ -482,6 +508,7 @@ def trim_page(item_id: str, page: int, body: dict = Body(...), c=Depends(conn), 
         shutil.copy2(src, orig)
     trim.crop(orig, src, top, bottom, left, right)
     _restroke(c, item_id, page, before, box)
+    _crop_rec(c, item_id, page, before, {k: round(v, 4) for k, v in box.items()}, it['title'])
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), item_id))
     _forget(c, item_id, page, src, cropped=True)
     return get_item(c, item_id)
@@ -500,6 +527,7 @@ def untrim_page(item_id: str, page: int, body: dict = Body(default={}), c=Depend
     steps = _steps(d, page)
     _render(d, file, steps)
     _restroke(c, item_id, page, before, _crop_of(steps))
+    _crop_rec(c, item_id, page, before, _crop_of(steps), it['title'])
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), item_id))
     _forget(c, item_id, page, d / file)
     return get_item(c, item_id)

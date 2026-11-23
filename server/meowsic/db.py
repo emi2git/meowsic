@@ -1,4 +1,5 @@
 """Paths, SQLite connection and row <-> JSON helpers."""
+import contextvars
 import json
 import os
 import re
@@ -8,6 +9,7 @@ import string
 import time
 import unicodedata
 from urllib.parse import urlparse
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -72,6 +74,10 @@ def init_db(cfg: Config):
         c.execute("ALTER TABLE score ADD COLUMN source_url TEXT NOT NULL DEFAULT ''")
     if mcols and 'staves' not in mcols:  # staves in the MusicXML (1 = lead sheet, 2 = piano grand staff); NULL = not read yet
         c.execute('ALTER TABLE score ADD COLUMN staves INTEGER')
+    acols = [r[1] for r in c.execute('PRAGMA table_info(activity)')]
+    for col, typ in (('undo', 'TEXT'), ('undone_at', 'INTEGER'), ('undone_by', 'TEXT'), ('undo_of', 'TEXT')):  # Activities: rollback info (undo.py)
+        if acols and col not in acols:
+            c.execute(f'ALTER TABLE activity ADD COLUMN {col} {typ}')
     jcols = [r[1] for r in c.execute('PRAGMA table_info(job)')]
     if jcols and 'params' not in jcols:
         c.execute("ALTER TABLE job ADD COLUMN params TEXT NOT NULL DEFAULT '{}'")
@@ -285,9 +291,28 @@ def write_item(c, it: dict, *, new: bool):
         c.executemany('INSERT INTO item_tag(item_id, tag) VALUES (?,?)', [(it['id'], t) for t in tags])
 
 
-def log_event(c, type_, title, detail=''):
-    c.execute('INSERT INTO activity(id, type, title, detail, at) VALUES (?,?,?,?,?)',
-              (uid('act'), type_, title or '', detail or '', now_ms()))
+# While a rollback runs (undo.py), the normal code paths it calls log nothing: the rollback writes one row itself.
+_quiet = contextvars.ContextVar('meowsic_quiet', default=False)
+
+
+def quiet_now() -> bool:
+    return _quiet.get()
+
+
+@contextmanager
+def quiet():
+    tok = _quiet.set(True)
+    try: yield
+    finally: _quiet.reset(tok)
+
+
+def log_event(c, type_, title, detail='', undo=None):
+    """One Activities row; returns its id (None while quiet). `undo`: rollback info (see undo.record_undo)."""
+    if _quiet.get(): return None
+    aid = uid('act')
+    c.execute('INSERT INTO activity(id, type, title, detail, at, undo) VALUES (?,?,?,?,?,?)',
+              (aid, type_, title or '', detail or '', now_ms(), json.dumps(undo, ensure_ascii=False) if undo is not None else None))
+    return aid
 
 
 def job_json(row) -> dict:

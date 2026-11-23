@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import Body, Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from . import ai, backup, booksplit, chords, cleanup, items, jobs, pages, photoimport, runners, titles, versions
+from . import ai, backup, booksplit, chords, cleanup, items, jobs, pages, photoimport, runners, titles, undo, versions
 from .db import WEB_DIR, Config, connect, init_db, log_event
 from .items import conn
 
@@ -36,7 +36,7 @@ def create_app(data=None, background=True) -> FastAPI:
         if 'cache-control' not in resp.headers: resp.headers['Cache-Control'] = 'no-store'  # page images set their own (no-cache + ETag)
         return resp
 
-    for r in (items.router, jobs.router, backup.router, chords.router, ai.router, cleanup.router, pages.router, booksplit.router, titles.router, versions.router, photoimport.router):
+    for r in (items.router, jobs.router, backup.router, chords.router, ai.router, cleanup.router, pages.router, booksplit.router, titles.router, versions.router, photoimport.router, undo.router):
         app.include_router(r)
 
     @app.get('/api/health')
@@ -56,13 +56,7 @@ def create_app(data=None, background=True) -> FastAPI:
             else: c.execute('INSERT OR REPLACE INTO setting VALUES (?,?)', (k, json.dumps(v)))
         return get_settings(c)
 
-    # ---- activity: change events plus jobs, newest first (like the UI's store.activity()) ----
-    @app.get('/api/activity')
-    def activity(limit: int = 500, c=Depends(conn)):
-        acts = [{**dict(r), 'status': 'done'} for r in c.execute('SELECT * FROM activity ORDER BY at DESC LIMIT ?', (limit,))]
-        js = [{**j, 'type': j['kind'], 'at': j['startedAt']} for j in jobs.list_jobs(c)]
-        return sorted(acts + js, key=lambda a: -a['at'])[:limit]
-
+    # ---- activity: GET /api/activity and POST /api/activity/{id}/undo are in undo.py ----
     @app.post('/api/activity', status_code=201)
     def add_activity(body: dict = Body(...), c=Depends(conn)):
         log_event(c, body['type'], body.get('title', ''), body.get('detail', ''))

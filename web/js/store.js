@@ -155,12 +155,14 @@ export const store = {
     changed();
     return it;
   },
-  bin(ids) { const t = []; for (const id of [].concat(ids)) { const it = this.get(id); if (it) { Object.assign(it, { deleted: true, deletedAt: Date.now() }); t.push(it.title); } } send('POST', '/items/trash', { ids: [].concat(ids) }); this.logEvent('bin', t.length > 1 ? `${t.length} items` : t[0], t.join(', ')); changed(); },
-  restore(ids) { const t = []; for (const id of [].concat(ids)) { const it = this.get(id); if (it) { it.deleted = false; t.push(it.title); } } send('POST', '/items/restore', { ids: [].concat(ids) }); this.logEvent('restore', t.length > 1 ? `${t.length} items` : t[0], t.join(', ')); changed(); },
+  // Trash changes: the Mac writes the Activities row itself (with what Undo needs), so it is only kept here.
+  // act = {type, title, detail} names that row (Clean up: "Deleted 3 sheets").
+  bin(ids, act) { const t = []; for (const id of [].concat(ids)) { const it = this.get(id); if (it) { Object.assign(it, { deleted: true, deletedAt: Date.now() }); t.push(it.title); } } send('POST', '/items/trash', { ids: [].concat(ids), ...(act ? { act } : {}) }); this.logEvent(act?.type || 'bin', act?.title || (t.length > 1 ? `${t.length} items` : t[0]), act?.detail || t.join(', '), { local: true }); changed(); },
+  restore(ids) { const t = []; for (const id of [].concat(ids)) { const it = this.get(id); if (it) { it.deleted = false; t.push(it.title); } } send('POST', '/items/restore', { ids: [].concat(ids) }); this.logEvent('restore', t.length > 1 ? `${t.length} items` : t[0], t.join(', '), { local: true }); changed(); },
   purge(ids) {
     const s = new Set([].concat(ids));
     const gone = db.items.filter((x) => s.has(x.id)).map((x) => x.title);
-    if (gone.length) this.logEvent('delete', gone.length > 1 ? `${gone.length} items` : gone[0], gone.join(', '));
+    if (gone.length) this.logEvent('delete', gone.length > 1 ? `${gone.length} items` : gone[0], gone.join(', '), { local: true });
     db.items = db.items.filter((x) => !s.has(x.id));
     send('POST', '/items/purge', { ids: [...s] });
     changed();
@@ -190,13 +192,14 @@ export const store = {
     changed();
   },
   deleteTag(name) { db.tags = db.tags.filter((t) => t !== name); for (const it of db.items) it.tags = it.tags.filter((t) => t !== name); send('DELETE', `/tags/${encodeURIComponent(name)}`); changed(); },
-  setTags(ids, add = [], remove = []) {
+  // act = {id, type, title, detail}: several calls with the same act id make one Activities row (one Undo)
+  setTags(ids, add = [], remove = [], act) {
     for (const id of [].concat(ids)) {
       const it = this.get(id);
       if (it) it.tags = [...new Set([...it.tags.filter((t) => !remove.includes(t)), ...add])];
     }
     for (const t of add) if (!db.tags.includes(t)) db.tags.push(t);
-    send('POST', '/tags/set', { ids: [].concat(ids), add, remove });
+    send('POST', '/tags/set', { ids: [].concat(ids), add, remove, ...(act ? { act } : {}) });
     changed();
   },
 
@@ -217,7 +220,8 @@ export const store = {
   // activity: one entry per job or change, newest first. Jobs keep a log of lines.
   activity() { return [...(db.activity || []), ...db.jobs.map((j) => ({ ...j, type: j.gen ? 'version' : 'transcribe', at: j.startedAt }))].sort((a, b) => b.at - a.at); },
   markPrinted(ids) { db.printed ||= {}; for (const id of ids) db.printed[id] = Date.now(); send('POST', '/printed', { ids }); save(); },
-  logEvent(type, title, detail = '') { (db.activity ||= []).unshift({ id: uid('act'), type, title, detail, status: 'done', at: Date.now() }); db.activity.length > 500 && (db.activity.length = 500); send('POST', '/activity', { type, title, detail }); save(); },
+  // { local: true }: the Mac logs this change itself (with its undo info): keep it here only
+  logEvent(type, title, detail = '', { local = false, id = uid('act') } = {}) { (db.activity ||= []).unshift({ id, type, title, detail, status: 'done', at: Date.now() }); db.activity.length > 500 && (db.activity.length = 500); if (!local) send('POST', '/activity', { type, title, detail }); save(); },
 
   // jobs (transcriptions)
   jobs() { return db.jobs; },

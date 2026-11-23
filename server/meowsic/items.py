@@ -15,6 +15,7 @@ from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 from .sheetversion import refresh_staves
+from .undolog import edit_detail, edit_title, fields_step, record_undo
 from .db import AI_SOURCE, BOOKS, KIND_COLS, SCORE_VERSIONS, SHEET_VERSIONS, book_folder, ensure_tags, folder_base, folder_path, get_item, item_json, log_event, now_ms, folder_name, rebase, uid, write_item
 
 router = APIRouter(prefix='/api')
@@ -49,6 +50,13 @@ def must_item(c, item_id):
 def ids_of(body):
     ids = body.get('ids', [])
     return [ids] if isinstance(ids, str) else list(ids)
+
+
+def _act(c, body, type_, step, titles):
+    """Log a Trash change with its undo; the UI may name the row: {act: {id?, type?, title?, detail?}} (Clean up deletes)."""
+    a = body.get('act') if isinstance(body.get('act'), dict) else {}
+    t, d = summary(titles)
+    record_undo(c, a.get('id') or a.get('type') or type_, step, a.get('title') or t, a.get('detail') or d, type_=a.get('type') or type_)
 
 
 def summary(titles):  # "Memory" or "3 items", like the UI
@@ -94,6 +102,8 @@ def create_item(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
         (d / f'{it["folder"]}.musicxml').write_text(text)
         c.execute('UPDATE score SET musicxml=? WHERE item_id=?', (f'{it["folder"]}.musicxml', it['id']))
     if kind == 'score': refresh_staves(c, cf, it['id'])
+    if kind == 'score' and it.get('ai'):  # Activities: undo = move it to the Trash
+        record_undo(c, 'ai-score', {'op': 'created', 'ids': [it['id']], 'titles': [it['title']]}, it['title'], 'AI music added')
     return get_item(c, it['id'])
 
 
@@ -110,12 +120,14 @@ def check_version(kind, v):
 def set_versions(body: dict = Body(...), c=Depends(conn)):
     """Many sheets at once: {ids, version}. Scores and chord charts are skipped (a score's version is its arrangement)."""
     v = check_version('sheet', body.get('version'))
-    done, skipped = [], 0
+    done, skipped, steps = [], 0, []
     for item_id in body.get('ids') or []:
         it = get_item(c, item_id)
         if not it or it['kind'] != 'sheet': skipped += 1; continue
+        if (st := fields_step(it, {'version': v})): steps.append(st)
         write_item(c, {'id': item_id, 'kind': 'sheet', 'version': v, 'updatedAt': now_ms()}, new=False)
         done.append(get_item(c, item_id))
+    if steps: record_undo(c, 'version', steps, edit_title, f'version → {v.title() or "none"}')
     return {'count': len(done), 'skipped': skipped, 'items': done}
 
 
@@ -126,6 +138,8 @@ def update_item(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depend
     if 'version' in patch:
         patch['version'] = check_version(it['kind'], patch['version'])
     if 'key' in patch: patch['key'] = str(patch['key'] or '').strip()
+    if (st := fields_step(it, patch)):  # Activities: rename / tags / key / version edits (quick edits in a row make one row)
+        record_undo(c, 'edit', st, edit_title, edit_detail, group='edit', window=3000)
     write_item(c, {**patch, 'id': item_id, 'kind': it['kind'], 'updatedAt': now_ms()}, new=False)
     if it['folder'] and 'title' in patch and patch['title'] != it['title']:
         rename_folder(c, cf, it, patch['title'])
@@ -178,21 +192,21 @@ def move_folder(c, cf, it, new):
 
 @router.post('/items/trash')
 def trash(body: dict = Body(...), c=Depends(conn)):
-    titles = []
+    titles, done = [], []
     for i in ids_of(body):
         r = c.execute('UPDATE item SET deleted_at=? WHERE id=? AND deleted_at IS NULL RETURNING title', (now_ms(), i)).fetchone()
-        if r: titles.append(r[0])
-    if titles: log_event(c, 'bin', *summary(titles))
+        if r: titles.append(r[0]); done.append(i)
+    if titles: _act(c, body, 'bin', {'op': 'trash', 'ids': done, 'titles': titles}, titles)
     return {'ok': True, 'count': len(titles)}
 
 
 @router.post('/items/restore')
 def restore(body: dict = Body(...), c=Depends(conn)):
-    titles = []
+    titles, done = [], []
     for i in ids_of(body):
         r = c.execute('UPDATE item SET deleted_at=NULL WHERE id=? AND deleted_at IS NOT NULL RETURNING title', (i,)).fetchone()
-        if r: titles.append(r[0])
-    if titles: log_event(c, 'restore', *summary(titles))
+        if r: titles.append(r[0]); done.append(i)
+    if titles: _act(c, body, 'restore', {'op': 'restore', 'ids': done, 'titles': titles}, titles)
     return {'ok': True, 'count': len(titles)}
 
 
@@ -208,7 +222,7 @@ def purge(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
         d = folder_path(cf, r[1])
         if d.is_dir() and d.resolve().parent in (cf.items_dir.resolve(), (cf.items_dir / BOOKS).resolve()):
             shutil.rmtree(d)
-    if titles: log_event(c, 'delete', *summary(titles))
+    if titles: _act(c, body, 'delete', {'none': 'Deleted for good — the files are gone, there is nothing to bring back.'}, titles)
     return {'ok': True, 'count': len(titles)}
 
 
@@ -243,18 +257,22 @@ def rename_tag(name: str, body: dict = Body(...), c=Depends(conn)):
     if not to: raise HTTPException(400, 'to is required')
     if to == name: return {'name': to}
     if not c.execute('SELECT 1 FROM tag WHERE name=?', (name,)).fetchone(): raise HTTPException(404, 'No such tag')
+    before = _tags_now(c, [r[0] for r in c.execute('SELECT item_id FROM item_tag WHERE tag=?', (name,))])
     if c.execute('SELECT 1 FROM tag WHERE name=?', (to,)).fetchone():
         # merge into the existing tag
         c.execute('INSERT OR IGNORE INTO item_tag(item_id, tag) SELECT item_id, ? FROM item_tag WHERE tag=?', (to, name))
         c.execute('DELETE FROM tag WHERE name=?', (name,))
     else:
         c.execute('UPDATE tag SET name=? WHERE name=?', (to, name))  # item_tag follows (ON UPDATE CASCADE)
+    _log_tags(c, before, 'tag-rename', f'Tag “{name}” → “{to}”', body)
     return {'name': to}
 
 
 @router.delete('/tags/{name:path}')
 def delete_tag(name: str, c=Depends(conn)):
+    before = _tags_now(c, [r[0] for r in c.execute('SELECT item_id FROM item_tag WHERE tag=?', (name,))])
     c.execute('DELETE FROM tag WHERE name=?', (name,))
+    _log_tags(c, before, 'tag-delete', f'Tag “{name}” deleted', {})
     return {'ok': True}
 
 
@@ -264,10 +282,26 @@ def set_tags(body: dict = Body(...), c=Depends(conn)):
     add = [t.strip() for t in body.get('add', []) if t.strip()]
     remove = body.get('remove', [])
     ensure_tags(c, add)
+    before = _tags_now(c, ids_of(body))
     for i in ids_of(body):
         c.executemany('DELETE FROM item_tag WHERE item_id=? AND tag=?', [(i, t) for t in remove])
         c.executemany('INSERT OR IGNORE INTO item_tag(item_id, tag) SELECT id, ? FROM item WHERE id=?', [(t, i) for t in add])
+    _log_tags(c, before, 'tags', ' '.join([*(f'+{t}' for t in add), *(f'−{t}' for t in remove)]) or 'Tags', body)
     return {'ok': True}
+
+
+def _tags_now(c, ids):
+    return {i: get_item(c, i) for i in ids if c.execute('SELECT 1 FROM item WHERE id=?', (i,)).fetchone()}
+
+
+def _log_tags(c, before, type_, title, body):
+    """Activities: one row with each item's old tags (undo puts them back). {act: {id, type, title, detail}} in the
+    body names the row — several requests with the same act id (Make tags: one per tag) land in one row."""
+    steps = [st for i, it in before.items() if (st := fields_step(it, {'tags': get_item(c, i)['tags']}))]
+    if not steps: return
+    a = body.get('act') if isinstance(body.get('act'), dict) else {}
+    if a.get('id'): record_undo(c, a['id'], steps, a.get('title') or title, a.get('detail') or edit_detail, type_=a.get('type') or type_)
+    else: record_undo(c, type_, steps, (lambda s: f'{title} · {edit_title(s)}') if type_ == 'tags' else title, edit_detail)
 
 
 # ---------- plays ----------

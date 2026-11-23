@@ -339,7 +339,7 @@ function jobsList(host) {
   const draw = () => {
     const jobs = store.jobs().filter((j) => !j.dismissed && j.kind !== 'tags'); // auto-tag jobs show in their own review window
     host.hidden = !jobs.length;
-    host.innerHTML = `<h2 class="sub-h">In progress and done <a class="link small" href="#/activity">All logs ›</a></h2>` + jobs.map((j) => `
+    host.innerHTML = `<h2 class="sub-h">In progress and done <a class="link small" href="#/activity">All activities ›</a></h2>` + jobs.map((j) => `
       <section class="job ${j.status}">
         <div class="job-head"><div><b>${esc(j.title)}</b><small>${esc(j.source)} · ${esc(j.output)}</small></div>
           ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : j.status === 'done' ? `${(j.items || (Array.isArray(j.result) ? j.result : []).map((id) => ({ id, version: store.get(id)?.version }))).map((x) => `<a class="btn primary" href="#/item/${x.id}">Open ${VERSIONS[x.version] || 'score'}</a>`).join('')}<button data-dismiss="${j.id}">Dismiss</button>` : `<button data-dismiss="${j.id}">Dismiss</button>`}</div>

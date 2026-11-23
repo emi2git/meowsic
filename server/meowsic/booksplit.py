@@ -16,6 +16,7 @@ from . import grouping, titles
 from .db import folder_path, get_item, log_event, now_ms, uid, write_item
 from .items import cfg, conn, must_item
 from .pages import _forget_items, _relayout, _rows
+from .undolog import record_undo
 
 router = APIRouter(prefix='/api')
 
@@ -123,9 +124,10 @@ def make_sheets(book_id: str, body: dict = Body(default={}), c=None, cf=None, bo
     cs.split_put(c, book_id, {})
     _forget_items(c, book_id, *[m['id'] for m in made])
     what = 'book' if books else 'sheet'
-    log_event(c, 'booksplit' if books else 'songsplit', it['title'], f'{len(made)} {"sheet" if books else "new sheet"}{"s" if len(made) != 1 else ""}: ' + ', '.join(f'“{m["title"]}” p{m["start"]}–{m["end"]}' for m in made)
+    aid = log_event(c, 'booksplit' if books else 'songsplit', it['title'], f'{len(made)} {"sheet" if books else "new sheet"}{"s" if len(made) != 1 else ""}: ' + ', '.join(f'“{m["title"]}” p{m["start"]}–{m["end"]}' for m in made)
               + (f' · {what} now empty → Trash' if trashed else f' · {lead} page{"s" if lead != 1 else ""} left in the {what}')
               + (f' · renamed “{keep_title}”' if keep_title else ''))
+    record_undo(c, aid, {'op': 'booksplit', 'book': book_id, 'at': t, 'title': it['title'], 'n': len(made), 'books': books})
     return {'book': get_item(c, book_id), 'sheets': [get_item(c, m['id']) for m in made], 'undo': rec}
 
 

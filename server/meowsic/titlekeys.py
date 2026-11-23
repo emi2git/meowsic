@@ -12,7 +12,7 @@ import re
 import time
 from pathlib import Path
 
-from .db import Config, connect, get_item, init_db, log_event, now_ms
+from .db import Config, connect, get_item, init_db, log_event, now_ms, quiet
 
 KEY = r'[A-G](?:#|b|♯|♭)?(?:\s?(?:minor|major|min|maj|m))?'
 TRAILING = re.compile(rf'^(?P<title>.*?)\s*(?:\(\s*(?P<k1>{KEY})\s*\)|\[\s*(?P<k2>{KEY})\s*\]|\s[-–—]\s*(?P<k3>{KEY}))\s*$')
@@ -45,7 +45,7 @@ def plan(c):
 
 def _rename(c, cf, item_id, title, key):
     from .items import update_item  # the normal rename path
-    update_item(item_id, {'title': title, 'key': key}, c, cf)
+    with quiet(): update_item(item_id, {'title': title, 'key': key}, c, cf)  # one Activities row for the whole run (below)
 
 
 def run(data, *, dry_run=False) -> dict:
@@ -70,7 +70,8 @@ def run(data, *, dry_run=False) -> dict:
                 _rename(c, cf, ch['id'], ch['after']['title'], ch['after']['key'])
                 c.commit()
                 f.write(json.dumps({'at': t, **ch, 'via': 'move_title_keys'}, ensure_ascii=False) + '\n')
-        log_event(c, 'migrate', 'Keys out of sheet titles', f'{len(changes)} sheet(s) (log: history/{log.name})')
+        log_event(c, 'migrate', 'Keys out of sheet titles', f'{len(changes)} sheet(s) (log: history/{log.name})',
+                  undo={'steps': [{'op': 'script', 'log': f'history/{log.name}'}]})  # Activities: Undo replays the log
         c.commit()
     c.close()
     return {'changes': changes, 'skipped': skipped, 'log': str(log) if log else None}
