@@ -149,8 +149,8 @@ async function run(name, vp) {
   check('chords button cycles piano → ukulele → off', seq.join() === 'piano,uke,off', seq.join());
   // ⋯ menu has both (when there is one: another agent turns ⋯ into Info)
   if (await page.$('#it-more')) {
-    await page.click('#it-more'); await sleep(400);
-    const items = await page.$$eval('.menu button, .sheet button', (bs) => bs.map((x) => x.textContent.trim()));
+    await page.click('#it-more'); await sleep(400); await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Info')?.click()); await sleep(400);
+    const items = await page.$$eval('.info-actions button', (bs) => bs.map((x) => x.textContent.trim()));
     check('⋯ menu: Kids note names and Chords', items.some((t) => t.startsWith('Kids note names')) && items.some((t) => t.startsWith('Chords:')), items.join(' | '));
   }
   await page.close();

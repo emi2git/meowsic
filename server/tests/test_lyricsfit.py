@@ -228,6 +228,6 @@ def test_lyrics_job_makes_a_new_score(client, data, tmp_path, monkeypatch):
     assert it['tags'] == ['Original', 'Folk', lf.TAG] and it['artist'] == 'Nobody' and it['bpm'] == 90
     assert it['source'] == 'From the score “Made Up Song” + lyrics from the sheet'
     x = client.get(f'/api/items/{it["id"]}/musicxml').text
-    assert x.count('<lyric') >= 0.9 * sum(1 for w in words if w) and '<creator type="composer">Meowsic</creator>' in x
+    assert x.count('<lyric') >= 0.9 * sum(1 for w in words if w) and '<creator type="composer">Nobody</creator><creator type="arranger">Arranged by Meowsic</creator>' in x
     assert client.get(f'/api/items/{src["id"]}/musicxml').text == before  # the score itself is untouched
     assert any('of the words placed' in l['msg'] for l in j['log']) and j['stage'] == 3

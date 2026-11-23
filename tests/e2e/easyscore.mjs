@@ -1,6 +1,6 @@
 // Note names (server on $BASE with an AI piece that has chord symbols, e.g. a lead sheet added by
 // meowsic-add-ai-score.py): every score, AI ones included, opens in OSMD's classic look
-// (title, composer "Meowsic", tempo as OSMD draws them); the kids button (baby icon) / ⋯ toggle draws big
+// (title, the real composer + "… by Meowsic", tempo as OSMD draws them); the kids button (baby icon) / ⋯ toggle draws big
 // noteheads with the note's letter inside — no chord diagrams (those are the chords button's); the text
 // stays the same; transpose updates the letters; remembered on this device; playback still works.
 import puppeteer from 'puppeteer-core';
@@ -62,7 +62,7 @@ await page.evaluate(() => { localStorage.removeItem('meowsic-kids'); localStorag
 await page.goto(`${BASE}#/item/${ai.id}`, { waitUntil: 'networkidle0' }); await sleep(2500);
 let s = await state();
 check('AI piece: classic look by default (no letters, no diagrams, kids off)', s.letters.length === 0 && s.kbds.length === 0 && s.btn === false, JSON.stringify({ l: s.letters.length, k: s.kbds.length, b: s.btn }));
-check('classic: OSMD draws the title and "Meowsic" as composer, serif text', s.texts.some((t) => t.t === ai.title) && s.texts.some((t) => t.t === 'Meowsic') && !s.texts.some((t) => /Helvetica/.test(t.f)), JSON.stringify(s.texts.slice(0, 4)));
+check('classic: OSMD draws the title and "… by Meowsic", serif text', s.texts.some((t) => t.t === ai.title) && s.texts.some((t) => /^(Made|Arranged|Transcribed|Read) by Meowsic$/.test(t.t)) && !s.texts.some((t) => /Helvetica/.test(t.f)), JSON.stringify(s.texts.slice(0, 4)));
 check('classic: default zoom 100%', (await page.$eval('#sc-zreset', (e) => e.textContent)) === '100%');
 const classicTexts = s.texts.map((t) => t.t + '|' + t.f).join();
 await page.click('#sc-names'); await sleep(2500);
@@ -102,10 +102,10 @@ check('Play moves the playhead', pos > 0.3, String(pos));
 await page.click('#sc-play'); await sleep(300);
 
 // ⋯ menu toggle
-const menuItem = async () => { await page.click('#it-more'); await sleep(300); return page.$$eval('.menu button', (bs) => bs.map((x) => ({ t: x.textContent, c: x.getAttribute('aria-checked') }))).then((l) => l.find((x) => x.t.startsWith('Kids note names'))); };
+const menuItem = async () => { await page.click('#it-more'); await sleep(300); await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Info').click()); await sleep(300); return page.$$eval('.info-actions button', (bs) => bs.map((x) => ({ t: x.textContent, c: x.getAttribute('aria-checked') }))).then((l) => l.find((x) => x.t.startsWith('Kids note names'))); };
 let mi = await menuItem();
 check('⋯ menu has "Kids note names", checked', mi && mi.c === 'true', JSON.stringify(mi));
-await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.startsWith('Kids note names')).click()); await sleep(2000);
+await page.evaluate(() => [...document.querySelectorAll('.info-actions button')].find((x) => x.textContent.startsWith('Kids note names')).click()); await sleep(2000);
 s = await state();
 check('toggle off: no letters, button off', s.letters.length === 0 && s.kbds.length === 0 && s.btn === false);
 await page.reload({ waitUntil: 'networkidle0' }); await sleep(2500);
@@ -113,16 +113,16 @@ s = await state();
 check('off is remembered on this device', s.letters.length === 0);
 mi = await menuItem();
 check('menu shows it unchecked', mi && mi.c === 'false', JSON.stringify(mi));
-await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.startsWith('Kids note names')).click()); await sleep(2000);
+await page.evaluate(() => [...document.querySelectorAll('.info-actions button')].find((x) => x.textContent.startsWith('Kids note names')).click()); await sleep(2000);
 s = await state();
 check('toggle on again: letters back', s.letters.length === want.steps.length);
 await page.screenshot({ path: 'easyscore.png' });
 
 // print: the same look on the A4 page
 await page.goto(`${BASE}#/print?item=${ai.id}`, { waitUntil: 'networkidle0' }); await sleep(5000);
-const pr = await page.evaluate(() => ({ letters: [...document.querySelectorAll('#print-root text.nl')].map((t) => t.textContent).join(''), kbds: [...document.querySelectorAll('#print-root g.kbd')].map((k) => k.dataset.chord), credit: [...document.querySelectorAll('#print-root svg text')].some((t) => t.textContent === 'Meowsic'), sans: [...document.querySelectorAll('#print-root svg text:not(.nl)')].some((t) => /Helvetica/.test(t.getAttribute('font-family') || '') && !t.closest('g.kbd')) }));
+const pr = await page.evaluate(() => ({ letters: [...document.querySelectorAll('#print-root text.nl')].map((t) => t.textContent).join(''), kbds: [...document.querySelectorAll('#print-root g.kbd')].map((k) => k.dataset.chord), credit: [...document.querySelectorAll('#print-root svg text')].some((t) => /^(Made|Arranged|Transcribed|Read) by Meowsic$/.test(t.textContent)), sans: [...document.querySelectorAll('#print-root svg text:not(.nl)')].some((t) => /Helvetica/.test(t.getAttribute('font-family') || '') && !t.closest('g.kbd')) }));
 check('print: letters in every notehead', pr.letters === want.steps.join(''), pr.letters);
-check('print: no keyboard diagrams; OSMD composer "Meowsic", classic fonts', pr.kbds.length === 0 && pr.credit && !pr.sans, JSON.stringify(pr));
+check('print: no keyboard diagrams; OSMD "… by Meowsic", classic fonts', pr.kbds.length === 0 && pr.credit && !pr.sans, JSON.stringify(pr));
 
 // another (non-AI) score: off by default, the toggle turns it on
 if (plain) {

@@ -584,8 +584,6 @@ html:-webkit-full-screen .side { display: none; }
 .lib-table .c-pick { width: 34px; padding-right: 0; }
 .lib-table td.c-title { font-weight: 650; font-size: 15px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lib-table .c-artist { color: var(--ink2); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lib-table .c-tags { max-width: 280px; white-space: nowrap; overflow: hidden; }
-.lib-table .c-tags .tagchip { margin-right: 4px; }
 .lib-table .c-meta, .lib-table .c-when { color: var(--mute); white-space: nowrap; font-size: 13px; }
 .lib-table .c-more { width: 44px; text-align: right; }
 .lib-table .pick { margin: 0; }
@@ -636,7 +634,7 @@ p.count-row { text-align: center; }
 
 /* library column widths (narrower windows hide some: see the device sections at the end) */
 .lib-table .c-pick { width: 34px; } .lib-table .c-title { width: 30%; } .lib-table .c-artist { width: 20%; } .lib-table .c-type { width: 90px; }
-.lib-table .c-tag { width: 18%; } .lib-table .c-pages, .lib-table .c-key { width: 90px; color: var(--ink2); } .lib-table .c-when { width: 104px; } .lib-table .c-more { width: 44px; }
+.lib-table .c-album { width: 16%; color: var(--ink2); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .lib-table .c-pages, .lib-table .c-key { width: 90px; color: var(--ink2); } .lib-table .c-when { width: 104px; } .lib-table .c-more { width: 44px; }
 
 /* score editor */
 .barsel { position: absolute; border: 2px solid var(--acc); background: color-mix(in srgb, var(--acc) 10%, transparent); border-radius: 6px; pointer-events: none; z-index: 4; }
@@ -861,7 +859,7 @@ kbd { font: 11px ui-monospace, monospace; opacity: .7; margin-left: 6px; border:
 }
 /* library columns hide as space runs out (Title > Type > Artist > Added > Tag > Key / Pages) */
 @media (max-width: 1100px) { .lib-table .c-key { display: none; } }
-@media (max-width: 900px) { .lib-table .c-tag { display: none; } }
+@media (max-width: 900px) { .lib-table .c-album { display: none; } }
 @media (max-width: 640px) { .lib-table .c-when { display: none; } .lib-table .c-artist { width: 34%; } .lib-table .c-title { width: auto; } }
 @media (max-width: 480px) { .lib-table .c-artist { display: none; } }
 /* Clean up: no song list beside the pages */
@@ -956,11 +954,11 @@ kbd { font: 11px ui-monospace, monospace; opacity: .7; margin-left: 6px; border:
 :root:is([data-device="phone"], [data-device="tablet"]) .touch-only { display: inline-flex !important; }
 :root:is([data-device="phone"], [data-device="tablet"]) .rows:not(.selecting) .pick,
 :root:is([data-device="phone"], [data-device="tablet"]) .lib-table:not(.selecting) .c-pick { display: none; }
-/* no room for Artist and Added (still sortable from the sort menu) */
+/* no room for Artist, Album and Added (still sortable from the sort menu; Album is in Info) */
 :root:is([data-device="phone"], [data-device="tablet"]) .lib-table .c-artist,
+:root:is([data-device="phone"], [data-device="tablet"]) .lib-table .c-album,
 :root:is([data-device="phone"], [data-device="tablet"]) .lib-table .c-when { display: none; }
 :root:is([data-device="phone"], [data-device="tablet"]) .lib-table .c-title { width: auto; }
-:root:is([data-device="phone"], [data-device="tablet"]) .lib-table .c-tag { width: 160px; }
 /* a sheet, chord chart or score, and Clean up, get the whole screen (‹ Back returns to the library) */
 :root:is([data-device="phone"], [data-device="tablet"]) :is(body[data-view="item"], body[data-view="perform"], body[data-view="cleanup"]) .app { grid-template-columns: 1fr; }
 :root:is([data-device="phone"], [data-device="tablet"]) :is(body[data-view="item"], body[data-view="perform"], body[data-view="cleanup"]) .side { display: none; }
@@ -1005,6 +1003,30 @@ kbd { font: 11px ui-monospace, monospace; opacity: .7; margin-left: 6px; border:
 #it-body .chart.paged .lyrics-clip { overflow: hidden; }
 #it-body .chart.paged .lyrics { display: flow-root; } /* first heading's margin stays inside (page maths) */
 #it-body .chart.paged .lyrics > :last-child { margin-bottom: 0; }
+
+/* Info popup (views/info.js): fields, facts, Actions (the item's old ⋯ list) */
+.info-modal { width: min(680px, 100%); gap: 10px; }
+.info-head { display: flex; align-items: center; gap: 8px; position: sticky; top: -22px; margin: -22px -22px 0; padding: 14px 22px 10px; background: var(--card); z-index: 2; border-bottom: 1px solid var(--line); }
+.info-head h2 { margin: 0; } .info-head .grow { flex: 1; }
+.if-fields { display: flex; flex-direction: column; gap: 8px; }
+.if-row { display: grid; grid-template-columns: 84px 1fr; align-items: center; gap: 10px; }
+.if-row > span { font-size: 13px; font-weight: 700; color: var(--mute); }
+.if-row input { width: 100%; }
+.if-tags { align-items: start; } .if-tags > span { padding-top: 8px; }
+.if-facts { display: grid; grid-template-columns: 110px 1fr; gap: 6px 10px; margin: 6px 0 0; font-size: 14px; }
+.if-facts dt { color: var(--mute); font-weight: 700; font-size: 13px; } .if-facts dd { margin: 0; overflow-wrap: anywhere; }
+.if-act-head { margin: 10px 0 0; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--mute); }
+.info-actions { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 2px 8px; }
+.info-actions hr { grid-column: 1 / -1; border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
+.info-actions button { display: flex; align-items: center; gap: 8px; justify-content: flex-start; border: 0; background: none; min-height: 42px; border-radius: 9px; font-weight: 550; text-align: left; }
+.info-actions button:hover, .info-actions button:focus-visible { background: var(--bg2); }
+.info-actions button.danger { color: var(--danger); }
+.info-actions .mcheck { margin-left: auto; color: var(--acc); font-weight: 800; }
+/* iPhone: a full-screen sheet */
+:root[data-device="phone"] .modal-wrap:has(.info-modal) { padding: 0; }
+:root[data-device="phone"] .modal.info-modal { width: 100%; height: 100dvh; max-height: none; border-radius: 0; padding: 22px max(16px, env(safe-area-inset-right)) calc(22px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+:root[data-device="phone"] .info-head { top: -22px; padding-top: calc(10px + env(safe-area-inset-top)); }
+:root[data-device="phone"] .if-facts { grid-template-columns: 96px 1fr; }
 
 /* ===== Desktop (Mac) ===== */
 /* The base rules above are the Mac layout: left bar everywhere, ‹ › page strips, tick boxes on

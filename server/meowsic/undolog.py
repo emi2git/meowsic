@@ -10,7 +10,7 @@ import re
 
 from .db import now_ms, quiet_now, uid
 
-FIELDS = ('title', 'artist', 'key', 'version', 'tags')
+FIELDS = ('title', 'artist', 'album', 'key', 'version', 'tags')
 
 
 def _steps_of(payload):

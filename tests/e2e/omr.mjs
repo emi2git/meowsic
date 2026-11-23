@@ -11,10 +11,10 @@ const sh = (await api('/items')).find((x) => x.title === 'Kiss The Girl p2' && x
 const before = (await api('/items?kind=score')).length;
 await page.goto(`${BASE}#/item/${sh.id}`, { waitUntil: 'networkidle0' }); await sleep(800);
 await page.screenshot({ path: 'omr-sheet.png' }); console.log('   sheet page:', (await page.$eval('#main', (e) => e.textContent.replace(/\s+/g, ' ').slice(0, 120))));
-await page.click('#it-more'); await sleep(200);
-const items = await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
+await page.click('#it-more'); await sleep(200); await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Info').click()); await sleep(300);
+const items = await page.$$eval('.info-actions button', (e) => e.map((x) => x.textContent.trim()));
 check('sheet ⋯ has Make a score (beta)', items.some((t) => /Make a score/.test(t)), items.join('|'));
-await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => /Make a score/.test(x.textContent)).click()); await sleep(300);
+await page.evaluate(() => [...document.querySelectorAll('.info-actions button')].find((x) => /Make a score/.test(x.textContent)).click()); await sleep(300);
 await page.click('.modal [data-ok]'); await sleep(1000);
 let job;
 for (let i = 0; i < 180; i++) { await sleep(2000); job = (await api('/jobs')).find((j) => j.kind === 'omr' && j.title === 'Kiss The Girl p2'); if (job && ['done', 'failed'].includes(job.status)) break; }

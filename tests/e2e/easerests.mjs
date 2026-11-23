@@ -36,14 +36,14 @@ const barsFull = (x) => {
 };
 
 const menuItems = async (page) => {
-  await page.click('#it-more'); await sleep(400);
-  const t = await page.$$eval('.menu button, .sheet button', (bs) => bs.map((x) => x.textContent.trim()));
+  await page.click('#it-more'); await sleep(400); await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Info')?.click()); await sleep(400);
+  const t = await page.$$eval('.info-actions button', (bs) => bs.map((x) => x.textContent.trim()));
   await page.keyboard.press('Escape'); await page.mouse.click(5, 5); await sleep(300);
   return t;
 };
 const openEase = async (page) => {
-  await page.click('#it-more'); await sleep(400);
-  await page.evaluate(() => [...document.querySelectorAll('.menu button, .sheet button')].find((x) => x.textContent.trim().startsWith('Ease rests'))?.click());
+  await page.click('#it-more'); await sleep(400); await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Info')?.click()); await sleep(400);
+  await page.evaluate(() => [...document.querySelectorAll('.info-actions button')].find((x) => x.textContent.trim().startsWith('Ease rests'))?.click());
   await sleep(2500);
 };
 const count = (page) => page.$eval('#er-count', (e) => e.textContent).catch(() => '');

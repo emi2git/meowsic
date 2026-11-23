@@ -43,7 +43,7 @@ await page.screenshot({ path: 'aimusic.png' });
 
 // Info: source
 const info = async () => { await page.click('#it-more'); await sleep(150); await page.$$eval('.menu button', (e) => e.find((x) => x.textContent.trim() === 'Info').click()); await sleep(300);
-  return page.$eval('#it-details', (d) => { const dt = [...d.querySelectorAll('dt')].find((x) => x.textContent === 'Source'); return dt ? dt.nextElementSibling.textContent.replace(/\s+/g, ' ').trim() : null; }); };
+  return page.$eval('#it-info', (d) => { const dt = [...d.querySelectorAll('dt')].find((x) => x.textContent === 'Source'); return dt ? dt.nextElementSibling.textContent.replace(/\s+/g, ' ').trim() : null; }); };
 const aiSrc = await info();
 check('AI piece Info: Source is Meowsic', /^Meowsic(?! AI)/.test(aiSrc || '') && !(await page.$('#dt-copy')), aiSrc);
 const yt = items.find((x) => x.kind === 'score' && !x.deleted && x.sourceUrl && x.source === 'YouTube');

@@ -28,7 +28,7 @@ export function metaText(it) {
 //   Voice + piano ('vocal') shows as Piano ("Piano · vocals" under Info).
 export const SHEET_VERSIONS = { lead: 'Lead', piano: 'Piano', duet: 'Duet' };
 export function verLabel(it) {
-  if (it.kind === 'sheet') return SHEET_VERSIONS[it.version] || '';
+  if (it.kind === 'sheet' || it.kind === 'chords') return SHEET_VERSIONS[it.version] || '';
   if (it.kind === 'score') return it.version === 'duet' ? 'Duet' : it.version === 'lead' || it.staves === 1 ? 'Lead' : 'Piano';
   return '';
 }
@@ -36,18 +36,18 @@ const DETAIL = { original: 'original', vocal: 'vocals', accomp: 'accompaniment',
 // the score's own version under the word: "Piano · clear" (sheets and lead sheets: just the word)
 export const verDetail = (it) => (it.kind === 'score' && verLabel(it) === 'Piano' && DETAIL[it.version] ? `Piano · ${DETAIL[it.version]}` : verLabel(it));
 
-// pick Lead / Piano / Duet / Not set for one sheet or many (scores and chord charts are skipped)
+// pick Lead / Piano / Duet / Not set for one sheet / chord chart or many (scores are skipped)
 export function versionMenu(anchor, ids) {
   ids = [].concat(ids);
-  const sheets = ids.map((id) => store.get(id)).filter((it) => it?.kind === 'sheet');
+  const sheets = ids.map((id) => store.get(id)).filter((it) => it?.kind === 'sheet' || it?.kind === 'chords');
   const cur = sheets.length && sheets.every((it) => (it.version || '') === (sheets[0].version || '')) ? sheets[0].version || '' : null;
   menu(anchor, [...Object.entries(SHEET_VERSIONS), ['', 'Not set']].map(([v, l]) => ({
     label: l, checked: cur === v,
     run: () => {
-      if (!sheets.length) return toast('Only sheets and books get a version here — a score’s version is its arrangement');
+      if (!sheets.length) return toast('Only sheets, books and chord charts get a version here — a score’s version is its arrangement');
       store.setVersion(sheets.map((it) => it.id), v);
       const skip = ids.length - sheets.length;
-      toast((ids.length > 1 ? `${sheets.length} set to ${l}` : `Version: ${l}`) + (skip ? ` · ${skip} score${skip > 1 ? 's' : ''} / chord chart${skip > 1 ? 's' : ''} kept` : ''));
+      toast((ids.length > 1 ? `${sheets.length} set to ${l}` : `Version: ${l}`) + (skip ? ` · ${skip} score${skip > 1 ? 's' : ''} kept` : ''));
     },
   })));
 }
@@ -96,29 +96,20 @@ export function binItems(ids) {
   toast(ids.length > 1 ? `${ids.length} items moved to Trash` : 'Moved to Trash', { label: 'Undo', run: () => store.restore(ids) });
 }
 
-// ⋯ menu. In the library: Open, edit, Print, bin. In a viewer, grouped as
-// Info · Rename / Edit tags · what this kind can do · Print / Export · Move to Trash.
-// sheet <-> book (server moves the files into / out of items/Books/)
-export async function setBook(ids, on) {
-  ids = [].concat(ids);
-  const res = await fetch('/api/items/book', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, book: on }) });
-  const d = await res.json().catch(() => ({}));
-  if (!res.ok) return toast(d.detail || 'Could not move it');
-  d.items.forEach((x) => x && store.putItem(x));
-  toast(ids.length > 1 ? `${d.count} ${on ? 'books' : 'sheets'}` : on ? 'Now a book — it lives under Books' : 'Now a sheet');
-}
-export const bookToggle = (it) => (store.mode === 'server' && it.kind === 'sheet'
-  ? [it.book ? { label: 'Not a book — make it a sheet', icon: 'sheet', run: () => setBook(it.id, false) } : { label: 'Make it a book', icon: 'book', run: () => setBook(it.id, true) }] : []);
-
-export function itemMenu(anchor, id, { viewer = false, info, tools = [], exports = [] } = {}) {
+// An item's actions, grouped ('-' = a line). The library ⋯ menu shows them; in a viewer the ⋯ holds only Info and
+// these are the Actions section of the Info popup (info.js), so whatever a view adds to tools / exports shows there too.
+export function itemActions(anchor, id, { viewer = false, info, tools = [], exports = [] } = {}) {
   const group = (...g) => g.filter((x) => x.length).flatMap((x, i) => (i ? ['-', ...x] : x));
-  menu(anchor, group(
-    viewer ? [{ label: 'Info', icon: 'info', run: info }] : [{ label: 'Open', icon: 'right', run: () => go(`#/item/${id}`) }],
+  return group(
+    viewer ? (info ? [{ label: 'Info', icon: 'info', run: info }] : []) : [{ label: 'Open', icon: 'right', run: () => go(`#/item/${id}`) }],
     [{ label: 'Rename…', icon: 'edit', run: () => rename(id) }, { label: 'Edit tags…', icon: 'tag', run: () => editTags(id) },
-      ...(store.get(id)?.kind === 'sheet' ? [{ label: `Version: ${verLabel(store.get(id)) || 'Lead / Piano / Duet'}…`, icon: 'score', run: () => versionMenu(anchor, id) },
+      ...(['sheet', 'chords'].includes(store.get(id)?.kind) ? [{ label: `Version: ${verLabel(store.get(id)) || 'Lead / Piano / Duet'}…`, icon: 'score', run: () => versionMenu(anchor, id) },
         { label: `Key: ${store.get(id).key || 'not set'}…`, icon: 'edit', run: () => editKey(id) }] : [])],
-    [...tools, ...(viewer ? [] : bookToggle(store.get(id)))],
+    tools,
     [{ label: 'Print…', icon: 'print', run: () => go(`#/print?item=${id}`) }, ...exports],
     [{ label: 'Move to Trash', icon: 'bin', danger: true, run: () => binItems(id) }],
-  ));
+  );
+}
+export function itemMenu(anchor, id, opts = {}) {
+  menu(anchor, itemActions(anchor, id, opts));
 }

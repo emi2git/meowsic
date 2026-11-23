@@ -24,7 +24,7 @@ from pathlib import Path
 from . import arrange
 from .arrange import VERSION_TAGS
 from .sheetversion import refresh_staves
-from .db import AI_SOURCE, OLD_CREDITS, connect, credit_xml, folder_path, get_item, now_ms, platform_of, uid, write_item
+from .db import AI_SOURCE, NOT_ARTIST, OLD_CREDITS, connect, credit_xml, score_byline, folder_path, get_item, now_ms, platform_of, uid, write_item
 from .jobs import Cancelled, JobContext
 
 log = logging.getLogger('meowsic')
@@ -55,13 +55,13 @@ def dispatch(ctx: JobContext):
 from .scoretitle import set_file_title  # noqa: E402
 
 
-def credit_meowsic(path):
-    """Every score Meowsic makes is credited to "Meowsic" (the song's artist stays in the item's Artist)."""
+def credit_meowsic(path, artist=None, by='Made by Meowsic'):
+    """The score's credits: composer = the song's real artist, plus what Meowsic did ("Transcribed by Meowsic"…)."""
     try:
         x = Path(path).read_text(encoding='utf-8')
     except (OSError, UnicodeDecodeError):
         return
-    Path(path).write_text(credit_xml(x), encoding='utf-8')
+    Path(path).write_text(credit_xml(x, artist, by), encoding='utf-8')
 
 
 def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), group_id=None, key='', bpm=None, ai=0, source_url=''):
@@ -74,7 +74,7 @@ def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), gr
     try:
         if ctx.cancelled(): raise Cancelled()
         for v, xml, mid, pdf, extra in outs:
-            it = {'id': uid('m'), 'kind': 'score', 'title': title, 'artist': AI_SOURCE if (artist or '').strip() in ('', *OLD_CREDITS) else artist,
+            it = {'id': uid('m'), 'kind': 'score', 'title': title, 'artist': '' if (artist or '').strip() in NOT_ARTIST else artist.strip(),
                   'tags': [VERSION_TAGS[v], *[x for x in tags if x not in VERSION_TAGS.values()]],
                   'createdAt': t, 'updatedAt': t, 'originAt': t, 'version': v, 'source': source, 'groupId': gid,
                   'key': extra.get('key') or key or '', 'bpm': extra.get('bpm') or bpm, 'ai': 1 if ai else 0, 'sourceUrl': source_url or ''}
@@ -88,7 +88,7 @@ def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), gr
                     names[col] = it['folder'] + ext
                     shutil.copyfile(src, d / names[col])
                     if col == 'musicxml':
-                        credit_meowsic(d / names[col])
+                        credit_meowsic(d / names[col], it['artist'], score_byline(source, ai))
                         set_file_title(d / names[col], title)  # the drawn title = the item's title, not the video's name
             c.execute(f'UPDATE score SET {",".join(f"{k}=?" for k in names)} WHERE item_id=?', [*names.values(), it['id']])
             refresh_staves(c, cfg, it['id'])

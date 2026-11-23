@@ -57,7 +57,7 @@ def init_db(cfg: Config):
     cfg.items_dir.mkdir(exist_ok=True)
     c = connect(cfg)
     cols = [r[1] for r in c.execute('PRAGMA table_info(item)')]
-    for col, typ in (('folder', 'TEXT'), ('origin_at', 'INTEGER')):  # columns added after the first schema
+    for col, typ in (('folder', 'TEXT'), ('origin_at', 'INTEGER'), ('album', "TEXT NOT NULL DEFAULT ''")):  # columns added after the first schema (album: the show / movie / collection)
         if cols and col not in cols:
             c.execute(f'ALTER TABLE item ADD COLUMN {col} {typ}')
     scols = [r[1] for r in c.execute('PRAGMA table_info(sheet)')]
@@ -67,6 +67,9 @@ def init_db(cfg: Config):
         c.execute("ALTER TABLE sheet ADD COLUMN version TEXT NOT NULL DEFAULT ''")
     if scols and 'key' not in scols:  # the key ('F', 'Am'); scripts/move_title_keys.py moves '(F)' out of titles
         c.execute("ALTER TABLE sheet ADD COLUMN key TEXT NOT NULL DEFAULT ''")
+    ccols = [r[1] for r in c.execute('PRAGMA table_info(chord_chart)')]
+    if ccols and 'version' not in ccols:  # chord charts get Lead / Piano / Duet like sheets
+        c.execute("ALTER TABLE chord_chart ADD COLUMN version TEXT NOT NULL DEFAULT ''")
     mcols = [r[1] for r in c.execute('PRAGMA table_info(score)')]
     if mcols and 'ai' not in mcols:  # AI music (scores Claude composed) are scores with ai=1
         c.execute('ALTER TABLE score ADD COLUMN ai INTEGER NOT NULL DEFAULT 0')
@@ -115,14 +118,37 @@ def migrate_cleanup_json(cfg: Config, c):
 
 YOUTUBE = {'youtube.com', 'youtu.be', 'm.youtube.com', 'music.youtube.com', 'youtube-nocookie.com'}
 FACEBOOK = {'facebook.com', 'fb.watch', 'm.facebook.com', 'fb.com', 'web.facebook.com'}
-AI_SOURCE = 'Meowsic'            # every score Meowsic makes is credited "Meowsic" (composer, source, AI pieces' artist)
+AI_SOURCE = 'Meowsic'            # the source of every score Meowsic writes itself (the artist is the song's real artist)
 OLD_CREDITS = ('Meowsic AI',)    # earlier names for it: read and shown as "Meowsic"
+NOT_ARTIST = (AI_SOURCE, *OLD_CREDITS)  # an earlier one-off put these in scores' Artist: not a real artist
 
 
-def credit_xml(x: str) -> str:
-    """The MusicXML with one composer credit, "Meowsic" (other creators go; the song's artist stays in the item's Artist)."""
+def score_byline(source: str = '', ai=0) -> str:
+    """The small credit drawn on a score: what Meowsic did. Versions made from another score: arranged; photo → score:
+    read; pieces Meowsic wrote itself: made; recordings / videos / audio files: transcribed."""
+    s = source or ''
+    if s.startswith('From the score'): return 'Arranged by Meowsic'
+    if s.startswith('From the sheet'): return 'Read by Meowsic'
+    if ai or s in NOT_ARTIST: return 'Made by Meowsic'
+    return 'Transcribed by Meowsic'
+
+
+def _xesc(s: str) -> str:
+    return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
+def credit_xml(x: str, artist: str | None = None, by: str = 'Made by Meowsic') -> str:
+    """The MusicXML's credits: composer = the song's real artist (artist=None keeps the composer it has, unless that
+    is Meowsic), plus an arranger credit `by` ("Transcribed by Meowsic"…). Other creators go."""
+    if artist is None:
+        m = re.search(r'<creator\b[^>]*type="composer"[^>]*>([\s\S]*?)</creator>', x)
+        artist = m[1].strip() if m else ''
+        artist = artist.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
+    artist = (artist or '').strip()
+    if artist in NOT_ARTIST or re.fullmatch(r'(?:made|transcribed|arranged|read) by meowsic', artist, re.I): artist = ''
     x = re.sub(r'<creator\b[^>]*>[\s\S]*?</creator>|<creator\b[^>]*/>', '', x)
-    c = f'<creator type="composer">{AI_SOURCE}</creator>'
+    c = (f'<creator type="composer">{_xesc(artist)}</creator>' if artist else '') + (f'<creator type="arranger">{_xesc(by)}</creator>' if by else '')
+    if not c: return x
     if '<identification>' in x: return x.replace('<identification>', '<identification>' + c, 1)
     if re.search(r'<identification\s*/>', x): return re.sub(r'<identification\s*/>', '<identification>' + c + '</identification>', x, count=1)
     return re.sub(r'(<part-list\b)', '<identification>' + c + r'</identification>\1', x, count=1)
@@ -216,22 +242,22 @@ def rebase(name: str, old: str, new: str):
 # ---------- items ----------
 
 ITEM_COLS = {  # JSON name -> item column
-    'title': 'title', 'artist': 'artist', 'createdAt': 'created_at', 'updatedAt': 'updated_at',
+    'title': 'title', 'artist': 'artist', 'album': 'album', 'createdAt': 'created_at', 'updatedAt': 'updated_at',
     'deletedAt': 'deleted_at', 'zoom': 'zoom', 'rate': 'rate', 'transpose': 'transpose',
     'printedAt': 'printed_at', 'legacyRef': 'legacy_ref', 'folder': 'folder', 'originAt': 'origin_at',
 }
 KIND_COLS = {  # kind -> (table, {JSON name -> column})
     'sheet': ('sheet', {'source': 'source', 'pages': 'pages', 'book': 'book', 'version': 'version', 'key': 'key'}),
-    'chords': ('chord_chart', {'source': 'source', 'url': 'url', 'key': 'key', 'capo': 'capo', 'text': 'text'}),
+    'chords': ('chord_chart', {'source': 'source', 'url': 'url', 'key': 'key', 'capo': 'capo', 'version': 'version', 'text': 'text'}),
     'score': ('score', {'version': 'version', 'musicxml': 'musicxml', 'musicxmlOriginal': 'musicxml_original',
                         'midi': 'midi', 'pdf': 'pdf', 'key': 'key', 'bpm': 'bpm', 'source': 'source', 'groupId': 'group_id', 'ai': 'ai',
                         'sourceUrl': 'source_url', 'staves': 'staves', 'vocalAudio': 'vocal_audio', 'vocalBpm': 'vocal_bpm'}),
 }
-SHEET_VERSIONS = ('', 'lead', 'piano', 'duet')  # shown as Lead / Piano / Duet
+SHEET_VERSIONS = ('', 'lead', 'piano', 'duet')  # shown as Lead / Piano / Duet (chord charts too)
 SCORE_VERSIONS = ('original', 'vocal', 'lead', 'duet', 'accomp', 'clear', 'pro', 'easy')
 KIND_DEFAULTS = {
     'sheet': {'source': 'photos', 'pages': 0, 'book': 0, 'version': '', 'key': ''},
-    'chords': {'source': 'pasted', 'url': '', 'key': '', 'capo': 0, 'text': ''},
+    'chords': {'source': 'pasted', 'url': '', 'key': '', 'capo': 0, 'version': '', 'text': ''},
     'score': {'version': 'original', 'musicxml': '', 'key': '', 'source': '', 'ai': 0, 'sourceUrl': '', 'staves': None},
 }
 

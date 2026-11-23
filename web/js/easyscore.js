@@ -28,17 +28,26 @@ export function kidsRules(r) {
 }
 
 // the credit line ("Words and Music by …"): the MusicXML creator, composer first, shown as given
+// (Meowsic's own "Transcribed by Meowsic" / "Made by Meowsic" line is not the song's credit)
 export function creditOf(xmlText) {
   if (!xmlText) return '';
   const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  const cs = [...doc.querySelectorAll('identification > creator')];
+  const cs = [...doc.querySelectorAll('identification > creator')].filter((x) => !/^(made|transcribed|arranged|read) by meowsic$/i.test(x.textContent.trim()));
   const c = cs.find((x) => x.getAttribute('type') === 'composer') || cs[0];
   const t = (c?.textContent || '').trim();
   return /^music21$/i.test(t) ? '' : t === 'Meowsic AI' ? 'Meowsic' : t; // music21's default stamp is not a credit; the old name reads "Meowsic"
 }
 
-// the MusicXML as OSMD should draw it: music21's stand-in title ("Music21 Fragment") becomes the
-// item's title, its "Music21" composer stamp goes, and an AI piece's composer reads "Meowsic" (an old "Meowsic AI" too)
+// what Meowsic did, drawn small on a score: Arranged (a version made from another score), Read (photo → score),
+// Made (a piece Meowsic wrote), Transcribed (a recording / video / audio file) — the server writes the same (db.score_byline)
+export function byline(it) {
+  const src = it.source || '';
+  return src.startsWith('From the score') ? 'Arranged by Meowsic' : src.startsWith('From the sheet') ? 'Read by Meowsic'
+    : it.ai || /^Meowsic( AI)?$/.test(src) ? 'Made by Meowsic' : 'Transcribed by Meowsic';
+}
+
+// the MusicXML as OSMD should draw it: music21's stand-in title ("Music21 Fragment") becomes the item's title, its
+// "Music21" stamp goes; the credits are the item's real Artist (composer) + what Meowsic did (byline)
 export function classicXml(xml, it) {
   if (!xml) return xml;
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
@@ -58,11 +67,13 @@ export function classicXml(xml, it) {
   }
   if (snapHarmonies(doc)) changed = true;
   let ident = root.querySelector(':scope > identification');
-  root.querySelectorAll(':scope > identification > creator').forEach((c) => { const t = c.textContent.trim(); if (/^music21$/i.test(t)) { c.remove(); changed = true; } else if (t === 'Meowsic AI') { c.textContent = 'Meowsic'; changed = true; } });
-  if (it && isAiScore(it) && ![...root.querySelectorAll(':scope > identification > creator')].some((c) => c.getAttribute('type') === 'composer')) {
+  root.querySelectorAll(':scope > identification > creator').forEach((c) => { const t = c.textContent.trim(); if (/^music21$/i.test(t)) { c.remove(); changed = true; } });
+  if (it) {  // the credits drawn: composer = the item's real Artist; on the left, what Meowsic did (OSMD's lyricist place)
+    root.querySelectorAll(':scope > identification > creator').forEach((c) => c.remove());
     if (!ident) { ident = doc.createElement('identification'); const after = root.querySelector(':scope > movement-title') || root.querySelector(':scope > work'); root.insertBefore(ident, after ? after.nextElementSibling : root.firstElementChild); }
-    const c = mk('creator', 'Meowsic'); c.setAttribute('type', 'composer');
-    ident.insertBefore(c, ident.firstElementChild);
+    const a = (it.artist || '').trim();
+    if (a && !/^Meowsic( AI)?$/.test(a)) { const c = mk('creator', a); c.setAttribute('type', 'composer'); ident.insertBefore(c, ident.firstElementChild); }
+    const by = mk('creator', byline(it)); by.setAttribute('type', 'lyricist'); ident.append(by);
     changed = true;
   }
   return changed ? new XMLSerializer().serializeToString(doc) : xml;

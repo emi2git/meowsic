@@ -171,10 +171,10 @@ export const store = {
     changed();
   },
 
-  // sheet versions: 'lead' | 'piano' | 'duet' | '' for many sheets at once
+  // sheet / chord chart versions: 'lead' | 'piano' | 'duet' | '' for many at once
   setVersion(ids, version) {
     ids = [].concat(ids);
-    for (const id of ids) { const it = this.get(id); if (it?.kind === 'sheet') Object.assign(it, { version, updatedAt: Date.now() }); }
+    for (const id of ids) { const it = this.get(id); if (it?.kind === 'sheet' || it?.kind === 'chords') Object.assign(it, { version, updatedAt: Date.now() }); }
     send('POST', '/items/version', { ids, version });
     changed();
   },
