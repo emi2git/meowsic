@@ -75,7 +75,7 @@ def init_db(cfg: Config):
     if mcols and 'staves' not in mcols:  # staves in the MusicXML (1 = lead sheet, 2 = piano grand staff); NULL = not read yet
         c.execute('ALTER TABLE score ADD COLUMN staves INTEGER')
     acols = [r[1] for r in c.execute('PRAGMA table_info(activity)')]
-    for col, typ in (('undo', 'TEXT'), ('undone_at', 'INTEGER'), ('undone_by', 'TEXT'), ('undo_of', 'TEXT')):  # Activities: rollback info (undo.py)
+    for col, typ in (('undo', 'TEXT'), ('undone_at', 'INTEGER'), ('undone_by', 'TEXT'), ('undo_of', 'TEXT'), ('final_at', 'INTEGER')):  # Activities: rollback info (undo.py)
         if acols and col not in acols:
             c.execute(f'ALTER TABLE activity ADD COLUMN {col} {typ}')
     for col, typ in (('vocal_audio', 'TEXT'), ('vocal_bpm', 'REAL')):  # "Make it sing (beta)"

@@ -117,7 +117,8 @@ CREATE TABLE IF NOT EXISTS activity (         -- the Activities page (jobs are l
   undo       TEXT,                            -- JSON {steps: [{op, …}]} = how to roll it back (undo.py), or {none: why}; NULL = not recorded
   undone_at  INTEGER,                         -- rolled back at (the row is kept)
   undone_by  TEXT,                            -- the 'rollback' activity row that did it
-  undo_of    TEXT                             -- on a 'rollback' row: the activity (or job) id it rolled back
+  undo_of    TEXT,                            -- on a 'rollback' row: the activity (or job) id it rolled back
+  final_at   INTEGER                          -- Final (24 h after `at`, set by the daily clean-up): no Undo, its old copies deleted
 );
 
 CREATE TABLE IF NOT EXISTS setting (
@@ -127,7 +128,8 @@ CREATE TABLE IF NOT EXISTS setting (
 
 -- ---------- Clean up state (was work/cleanup.json; init_db imports that file once and keeps it renamed) ----------
 -- State tables follow their item (ON DELETE CASCADE). History tables (logs, undo records, suggestions) have no
--- foreign key and rows are never deleted ("keep all history"): they only change state (undone_at, status).
+-- foreign key and rows are never deleted: they only change state (undone_at, status). The old FILES kept for undo
+-- are deleted by the daily clean-up 24 h later (dailycleanup.py).
 
 CREATE TABLE IF NOT EXISTS page_scan (        -- cache of the trim / page-dot scan (rebuildable)
   item_id  TEXT NOT NULL REFERENCES item(id) ON DELETE CASCADE,

@@ -568,6 +568,8 @@ html:-webkit-full-screen .side { display: none; }
 .activity .ac-btn { min-height: 38px; padding: 0 14px; border-radius: 10px; font-weight: 700; }
 .activity tr.undone .ac-what, .activity tr.undone .ac-title, .activity tr.undone .ac-detail { text-decoration: line-through; color: var(--mute); }
 .st-undone { color: var(--mute); font-weight: 600; }
+.st-final { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 700; color: var(--mute); border: 1px solid currentColor; vertical-align: 1px; }
+.activity .ac-until { display: block; color: var(--mute); font-size: 12px; margin-top: 2px; }
 .ac-will { margin: 6px 0 12px; padding-left: 20px; line-height: 1.6; max-height: 50vh; overflow: auto; overflow-wrap: anywhere; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 

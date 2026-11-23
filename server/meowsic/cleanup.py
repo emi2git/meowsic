@@ -2,7 +2,7 @@
 
 Scan results are cached in the page_scan table (by file and its modified time), so only new or changed
 pages are looked at again; marks, later, frames, decisions, notes and suggestions are tables too (cleanstate.py). Every trim keeps the page as it was in items/<folder>/.history/, so undo
-can put it back, all the way to the original.
+can put it back, all the way to the original — for 24 hours: then the daily clean-up (dailycleanup.py) deletes it.
 """
 import json
 import re
@@ -413,7 +413,8 @@ def _steps(d: Path, page) -> list[dict]:
 
 def _stack(steps) -> list[dict]:
     """Replay the append-only history: the active crops of the original, oldest first. Undo and
-    'Original photo' are entries too ({op: 'undo'} / {op: 'reset'}): nothing in .history is ever removed."""
+    'Original photo' are entries too ({op: 'undo'} / {op: 'reset'}). The daily clean-up deletes a page's whole history
+    once its newest entry is 24 hours old: the page file is then its own original."""
     st = []
     for e in steps:
         if e['op'] == 'undo':
@@ -521,7 +522,7 @@ def untrim_page(item_id: str, page: int, body: dict = Body(default={}), c=Depend
     d = folder_path(cf, it['folder'])
     file = _page_row(c, item_id, page)
     steps = _steps(d, page)
-    if not _stack(steps): raise HTTPException(404, 'Nothing to undo')
+    if not _stack(steps): raise HTTPException(404, 'Nothing to undo: no earlier crop is kept for this page (the original photo is kept for 24 hours after a trim, then the trim is final)')
     before = _crop_of(steps)
     _add(d, page, steps, {'op': 'reset' if body.get('all') else 'undo'})  # history only grows
     steps = _steps(d, page)
