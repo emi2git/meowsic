@@ -1,0 +1,22 @@
+// The app drops items the Mac no longer has (e.g. a split undone elsewhere) when it comes back to the foreground
+import puppeteer from 'puppeteer-core';
+import fs from 'fs';
+const BASE = process.env.BASE || 'http://localhost:5190/';
+const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });
+const page = await b.newPage(); await page.setViewport({ width: 1032, height: 1376, hasTouch: true, isMobile: true });
+const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let pass = 0, fail = 0; const check = (n, c, x = '') => { c ? pass++ : fail++; console.log(c ? '  ok  ' : '  FAIL', n, c ? '' : x); };
+const post = (p, body) => fetch(BASE + 'api' + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+const png = fs.readFileSync(new URL('./node_modules/../../../web/icon-512.png', import.meta.url));
+const fd = new FormData(); fd.append('title', 'Resync gone ' + Date.now()); fd.append('files', new Blob([png, Buffer.from(String(Date.now()))], { type: 'image/png' }), 'x.png');
+const it = (await (await fetch(BASE + 'api/sheets', { method: 'POST', body: fd })).json()).item;
+await page.goto(BASE + '#/item/' + it.id, { waitUntil: 'networkidle0' }); await sleep(800);
+check('the sheet opens', (await page.evaluate(() => location.hash)).startsWith('#/item/'));
+await post('/items/trash', { ids: [it.id] }); await post('/items/purge', { ids: [it.id] });
+await page.evaluate(() => { Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true }); document.dispatchEvent(new Event('visibilitychange')); dispatchEvent(new Event('visibilitychange')); });
+await sleep(1500);
+check('coming back: a sheet the Mac deleted closes, back to the library', (await page.evaluate(() => location.hash)) === '#/library', await page.evaluate(() => location.hash));
+check('…and it is gone from the list', !(await page.evaluate((id) => !!document.querySelector(`[data-id="${id}"]`), it.id)));
+console.log(`\n${pass} passed, ${fail} failed`); console.log(errs.length ? 'errors:\n' + errs.join('\n') : 'no page errors');
+await b.close();

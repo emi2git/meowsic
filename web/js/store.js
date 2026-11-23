@@ -58,6 +58,9 @@ async function boot() {
   db.items ||= []; db.tags ||= []; db.plays ||= []; db.jobs ||= []; db.activity ||= []; db.annotations ||= {}; db.printed ||= {};
   hydrate();
 }
+// coming back to the app (iPad wakes, tab shown) and every few minutes: pull the Mac's list again
+addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') store.resync().catch(() => {}); });
+setInterval(() => { if (document.visibilityState === 'visible') store.resync().catch(() => {}); }, 3 * 60 * 1000);
 addEventListener('online', () => { if (mode === 'offline') boot().then(() => subs.forEach((f) => f())); });
 
 function load() {
@@ -211,6 +214,16 @@ export const store = {
   // items the Mac already removed for good (no request, no activity): just forget them here
   drop(ids) { const s = new Set([].concat(ids)); db.items = db.items.filter((x) => !s.has(x.id)); changed(); },
   putItem(it) { const i = db.items.findIndex((x) => x.id === it.id); if (it.kind === 'chords') it.lines = parseChordPro(it.text); if (i >= 0) db.items[i] = it; else db.items.unshift(it); for (const t of it.tags) if (!db.tags.includes(t)) db.tags.push(t); changed(); },
+  // the Mac's list wins: items deleted or merged there (e.g. a split undone) disappear here too
+  async resync() {
+    if (mode !== 'server') return;
+    await flushOutbox();
+    const items = await api('GET', '/items', undefined, { queue: false });
+    if (!Array.isArray(items)) return;
+    const before = JSON.stringify(db.items.map((x) => [x.id, x.updatedAt, x.deleted]));
+    db.items = items; hydrate();
+    if (JSON.stringify(db.items.map((x) => [x.id, x.updatedAt, x.deleted])) !== before) changed();
+  },
   async refreshJobs() {
     if (mode !== 'server') return;
     const j = await api('GET', '/jobs', undefined, { queue: false });
