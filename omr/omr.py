@@ -487,7 +487,7 @@ def take_bar(dst, src):
             dst.insert(float(e.offset), x)
 
 
-def merge_page(h, a, page_no, report, chords=None, words=None):
+def merge_page(h, a, page_no, report, chords=None, words=None, empty=None):
     """Copy lyrics + chord names from Audiveris (a) onto homr (h); mark bars that disagree."""
     hp = top_part(h)
     hm = list(hp.getElementsByClass(m21.stream.Measure)) if hp else []
@@ -565,21 +565,36 @@ def merge_page(h, a, page_no, report, chords=None, words=None):
                 hm[mi].insert(off, cs)
             except Exception:
                 report['notes'].append(f'page {page_no}: chord name “{tok}” not understood')
-    drop_empty_bars(h, page_no, report)
+    drop_empty_bars(h, page_no, report, empty or set())
     return h
 
 
-def drop_empty_bars(h, page_no, report):
+def empty_bars(xml_path):
+    """Indices of the bars homr wrote with no note or rest at all (music21 fills those with a whole rest)."""
+    import xml.etree.ElementTree as ET
+    try: root = ET.parse(xml_path).getroot()
+    except Exception: return set()
+    by = {}
+    for part in root.iter('part'):
+        for i, m in enumerate(part.iter('measure')):
+            by[i] = by.get(i, True) and m.find('note') is None
+    return {i for i, e in by.items() if e}
+
+
+def drop_empty_bars(h, page_no, report, empty):
     """homr writes an empty bar where a first ending stops at a repeat sign: it is not on the page (it would
-    play as a bar of silence). A printed whole-bar rest is a rest, so it stays."""
+    play as a bar of silence). `empty`: those bars (empty_bars). A printed whole-bar rest is a rest, so it stays."""
     parts = list(h.parts)
-    if not parts: return
+    if not parts or not empty: return
     bars = [list(p.getElementsByClass(m21.stream.Measure)) for p in parts]
-    gone = [i for i in range(min(len(b) for b in bars))
-            if i > 0 and all(not b[i].recurse().notesAndRests for b in bars)]
+    gone = [i for i in sorted(empty) if 0 < i < min(len(b) for b in bars)]
     for i in reversed(gone):
         for p, b in zip(parts, bars):
             prev, m = b[i - 1], b[i]
+            nxt = b[i + 1] if i + 1 < len(b) else None
+            for cs in list(m.recurse().getElementsByClass(m21.harmony.ChordSymbol)):  # a chord name read there: next bar
+                if nxt is not None and not any(float(x.offset) == 0 for x in nxt.getElementsByClass(m21.harmony.ChordSymbol)):
+                    m.remove(cs, recurse=True); nxt.insert(0, cs)
             for sp in list(h.recurse().getElementsByClass(m21.spanner.Spanner)):
                 if sp.isFirst(m) or sp.isLast(m) or m in sp.getSpannedElements():
                     sp.replaceSpannedElement(m, prev) if prev not in sp.getSpannedElements() else sp.removeSpannedElements(m)
@@ -597,6 +612,42 @@ FIXED = (m21.clef.Clef, m21.key.KeySignature, m21.meter.TimeSignature, m21.instr
 
 def _timed(c):
     return [n for n in c.notesAndRests if not n.duration.isGrace and not isinstance(n, m21.harmony.ChordSymbol)]
+
+
+def _triplet(c, notes, want):
+    """A too-long bar where three notes in a row, read as plain notes, are really a triplet (the "3" bracket was
+    missed): the three become a quarter (or eighth / half) triplet when that makes the bar add up exactly.
+    The window whose notes are closest to the triplet's note value wins."""
+    have = sum(float(n.quarterLength) for n in notes)
+    best = None
+    for j in range(len(notes) - 2):
+        win = notes[j:j + 3]
+        if any(n.duration.tuplets or n.duration.isGrace for n in win): continue
+        rest = have - sum(float(n.quarterLength) for n in win)
+        for q in (1.0, 0.5, 2.0):  # quarter, eighth, half triplets: three of them last 2q
+            if abs(rest + 2 * q - want) < 0.01:
+                cost = sum(abs(float(n.quarterLength) - q) for n in win)
+                if best is None or cost < best[0]: best = (cost, j, q)
+    if best is None: return None
+    _, j, q = best
+    t = None
+    for k, n in enumerate(notes[j:j + 3]):
+        d = m21.duration.Duration(q)
+        d.appendTuplet(m21.duration.Tuplet(3, 2, {1.0: 'quarter', 0.5: 'eighth', 2.0: 'half'}[q]))
+        d.tuplets[0].type = 'start' if k == 0 else 'stop' if k == 2 else None
+        n.duration = d
+    off = 0.0
+    for n in _timed(c):  # close the gaps / overlaps the new lengths leave
+        n.offset = off; off += float(n.quarterLength)
+    return f'three notes made a triplet ({q:g}-beat notes)'
+
+
+def new_voice(meas):
+    """A voice with a number no other voice of the bar has (two voices with one number are written as one)."""
+    used = {str(v.id) for v in meas.voices}
+    k = 1
+    while str(k) in used: k += 1
+    return m21.stream.Voice(id=str(k))
 
 
 def _layers(meas):
@@ -623,6 +674,8 @@ def _fill(c, want, pickup, meas=None):
             last.duration.dots = 1; return 'missing dot on the last note'
         end = max(float(n.offset) + float(n.quarterLength) for n in notes)
         c.insert(end, m21.note.Rest(quarterLength=gap)); return f'{gap:g} beats short: rest added'
+    fix = _triplet(c, notes, want)  # a "3" bracket the reader missed
+    if fix: return fix
     # too long: almost always a second voice the reader put after the first (an under-part, a string line);
     # split it into voices that each fill the bar. No note is dropped.
     if meas is not None and len(list(meas.voices)) < 4:
@@ -631,7 +684,7 @@ def _fill(c, want, pickup, meas=None):
             if acc + float(n.quarterLength) > want + 0.01: break
             acc += float(n.quarterLength); k = j + 1
         if k:
-            v = m21.stream.Voice(id=str(len(list(meas.voices)) + 2))
+            v = new_voice(meas)
             start = float(notes[k].offset)
             for n in notes[k:]:
                 o = float(n.offset) - start
@@ -655,7 +708,7 @@ def one_voice_each(meas):
     """Notes standing in a bar beside voices go into a voice of their own (MusicXML writing garbles the mix)."""
     loose = _timed(meas)
     if not loose or not list(meas.voices): return
-    v = m21.stream.Voice(id='1')
+    v = new_voice(meas)
     for n in loose:
         o = float(n.offset); meas.remove(n); v.insert(o, n)
     meas.insert(0, v)
@@ -755,7 +808,8 @@ def main():
     for p in pngs:
         try: words.append(lyric_words(p, p.with_suffix('.musicxml'), a.first_verse))
         except Exception as e: words.append(None); report['notes'].append(f'words: {e}')
-    merged = [merge_page(h, aud.get(p.stem), k, report, ch, wd) for k, (h, p, ch, wd) in enumerate(zip(homr, pngs, chords, words), 1)]
+    merged = [merge_page(h, aud.get(p.stem), k, report, ch, wd, empty_bars(p.with_suffix('.musicxml')))
+              for k, (h, p, ch, wd) in enumerate(zip(homr, pngs, chords, words), 1)]
     score = join(merged, a.title)
     report['bars'] = len(score.parts[0].getElementsByClass(m21.stream.Measure))
     report['filled'] = fill_bars(score)  # every bar adds up to its time signature (the check marks stay)

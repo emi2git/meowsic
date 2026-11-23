@@ -94,8 +94,31 @@ def test_notes_beside_voices_add_up_too():
 
 def test_empty_bar_after_a_first_ending_is_dropped_printed_rest_kept():
     s = score([('C4', 4, None)], [('D4', 4, None)], [], [('r', 4, None)])  # bar 3: nothing printed; bar 4: a whole rest
+    s.parts[0].getElementsByClass(m21.stream.Measure)[2].insert(0, m21.harmony.ChordSymbol('G7'))  # a chord name read there
     rep = {'check': [{'page': 1, 'bar': 4, 'why': []}], 'notes': []}
-    omr.drop_empty_bars(s, 1, rep)
+    omr.drop_empty_bars(s, 1, rep, {2})  # what empty_bars() finds in homr's file
     ms = list(s.parts[0].getElementsByClass(m21.stream.Measure))
-    assert len(ms) == 3 and ms[2].notesAndRests[0].isRest
+    assert len(ms) == 3 and [n for n in ms[2].notesAndRests if n.isRest]
+    assert ms[2].getElementsByClass(m21.harmony.ChordSymbol)[0].figure == 'G7'
     assert rep['check'][0]['bar'] == 3 and rep['dropped'] == [{'page': 1, 'bars': [3]}]
+
+
+def test_missed_triplet_bracket_is_put_back():
+    # Baby Mine bar 2: A half tied, then a quarter triplet A G F that was read as A quarter, G quarter, F eighth
+    s = score([('A4', 2, 'mine'), ('A4', 1, None), ('G4', 1, 'don'), ('F4', 0.5, 'you')])
+    fixes = omr.fill_bars(s)
+    assert 'triplet' in fixes[0]['fix']
+    ns = list(s.recurse().notes)
+    assert [round(float(n.quarterLength), 4) for n in ns] == [2, 0.6667, 0.6667, 0.6667]
+    assert lyrics(s) == ['mine', 'don', 'you']
+    assert all(n.duration.tuplets for n in ns[1:]) and omr.bars_full(s) == []
+    x = m21.musicxml.m21ToXml.GeneralObjectExporter(s).parse().decode()
+    assert x.count('<time-modification>') == 3 and 'tuplet' in x
+
+
+def test_empty_bars_found_in_homr_file(tmp_path):
+    f = tmp_path / 'p.musicxml'
+    f.write_text('<score-partwise><part id="P1"><measure number="1"><note><rest/><duration>4</duration></note></measure>'
+                 '<measure number="2"><barline location="right"><ending type="stop" number="1"/></barline></measure>'
+                 '<measure number="3"><note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration></note></measure></part></score-partwise>')
+    assert omr.empty_bars(f) == {1}
