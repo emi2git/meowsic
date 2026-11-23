@@ -1,6 +1,7 @@
-// Library: opens on Sheets; sheet keys (⋯, Info, Key column, search); search × clears in one tap (Esc too); the sort button (4 orders, remembered,
-// in sync with the column headings); the Version column (Lead / Piano / Duet) on All, Sheets, Scores, Books:
-// shows, sorts, set from the ⋯ menu, the selection bar and Info; search finds versions.
+// Library: opens on Sheets; sheet keys (⋯, Info, Key column, search); search × clears in one tap (Esc too); no sort button:
+// the Title heading toggles A–Z ⇄ Z–A, the ⌄ beside it opens the 4 orders (remembered, in sync with the headings);
+// the Version column (Lead / Piano / Duet, scores by their staves) on All, Sheets, Scores, Books:
+// shows, sorts, set from the ⋯ menu, the selection bar and Info; search finds versions; Pages column on Sheets / Books.
 // Mac + iPad Pro 13 (portrait, landscape) + iPhone Air. Sheet versions it sets are put back at the end.
 // BASE=http://localhost:5230/ (a test server; never :5180)  OUT=dir for screenshots
 import puppeteer from 'puppeteer-core';
@@ -15,7 +16,7 @@ const patch = (id, body) => api(`/items/${id}`, { method: 'PATCH', headers: { 'C
 const all = (await api('/items')).filter((x) => !x.deleted);
 const before = Object.fromEntries(all.filter((x) => x.kind === 'sheet').map((x) => [x.id, x.version]));
 const sheets = all.filter((x) => x.kind === 'sheet' && !x.book), scores = all.filter((x) => x.kind === 'score');
-const WORD = (it) => (it.kind === 'sheet' ? { lead: 'Lead', piano: 'Piano', duet: 'Duet' }[it.version] || '' : it.kind === 'score' ? (it.version === 'lead' ? 'Lead' : it.version === 'duet' ? 'Duet' : 'Piano') : '');
+const WORD = (it) => (it.kind === 'sheet' ? { lead: 'Lead', piano: 'Piano', duet: 'Duet' }[it.version] || '' : it.kind === 'score' ? (it.version === 'duet' ? 'Duet' : it.version === 'lead' || it.staves === 1 ? 'Lead' : 'Piano') : '');
 
 const hash = (p) => p.evaluate(() => location.hash);
 const fresh = async (p, h = '#/library') => { await p.goto('about:blank'); await p.goto(BASE + h, { waitUntil: 'networkidle0' }); await sleep(500); };
@@ -63,10 +64,13 @@ const xShown = (p) => p.$eval('#lib-q-x', (e) => !e.hidden && e.getBoundingClien
   await p.keyboard.press('Escape'); await sleep(300);
   check('Esc clears too', (await p.$eval('#lib-q', (e) => e.value)) === '' && (await countOf(p)) === n0 && (await p.evaluate(() => document.activeElement?.id)) !== 'lib-q');
 
-  console.log('Sort button');
-  const sortBtn = () => p.$eval('#lib-sort', (e) => ({ text: e.textContent.trim(), vis: e.getBoundingClientRect().width > 0, icon: !!e.querySelector('svg') }));
-  check('visible, icon + short label "Recent" by default', ((s) => s.vis && s.icon && s.text === 'Recent')(await sortBtn()), JSON.stringify(await sortBtn()));
-  await p.click('#lib-sort'); await sleep(250);
+  console.log('Sort: Title heading + ⌄ menu (no sort button)');
+  const ticked = async () => { await p.click('#lib-sort-menu'); await sleep(200); const l = (await menuItems(p)).find((x) => x.checked === 'true')?.label; await p.keyboard.press('Escape'); await p.mouse.click(5, 890); await sleep(150); return l; };
+  const topBar = await p.evaluate(() => ({ btn: !!document.querySelector('#lib-sort, .sort-btn'), text: document.querySelector('#libhead').textContent }));
+  check('no sort button / label above the list', !topBar.btn && !/Recent|A–Z|Z–A|Most played|Sort/.test(topBar.text), JSON.stringify(topBar));
+  const chev = await p.$eval('#lib-sort-menu', (e) => { const r = e.getBoundingClientRect(), t = e.closest('th').querySelector('.th-sort').getBoundingClientRect(); return { w: r.width, h: r.height, gap: r.left - t.right, svg: !!e.querySelector('svg'), th: e.closest('th').className }; });
+  check('tiny ⌄ right next to the Title heading', chev.th.includes('c-title') && chev.svg && chev.w > 0 && chev.w <= 24 && chev.gap >= -1 && chev.gap < 8, JSON.stringify(chev));
+  await p.click('#lib-sort-menu'); await sleep(250);
   const mi = await menuItems(p);
   check('menu: exactly the 4 orders, Recently added ticked', mi.map((x) => x.label).join('|') === 'Title A–Z|Title Z–A|Most played|Recently added' && mi.map((x) => x.checked).join() === 'false,false,false,true', JSON.stringify(mi));
   await p.keyboard.press('Escape'); await p.mouse.click(5, 890); await sleep(200);
@@ -79,24 +83,23 @@ const xShown = (p) => p.$eval('#lib-q-x', (e) => !e.hidden && e.getBoundingClien
     'Most played': (a, z) => (plays[a.id] || 0) >= (plays[z.id] || 0),
     'Recently added': (a, z) => a.createdAt >= z.createdAt,
   };
-  const SHORT = { 'Title A–Z': 'A–Z', 'Title Z–A': 'Z–A', 'Most played': 'Most played', 'Recently added': 'Recent' };
   for (const [label, ok] of Object.entries(orders)) {
-    await p.click('#lib-sort'); await sleep(200); await clickMenu(p, label);
+    await p.click('#lib-sort-menu'); await sleep(200); await clickMenu(p, label);
     const list = (await ids(p)).map((id) => byId[id]);
-    check(`sort: ${label} (rows in order, label "${SHORT[label]}")`, list.length > 2 && list.every((x, i) => !i || ok(list[i - 1], x)) && (await sortBtn()).text === SHORT[label], list.slice(0, 5).map((x) => x.title).join(' | '));
-    await p.click('#lib-sort'); await sleep(200);
-    check(`  …${label} ticked`, (await menuItems(p)).find((x) => x.checked === 'true')?.label === label);
-    await p.mouse.click(5, 890); await sleep(150);
+    check(`sort: ${label} (rows in order)`, list.length > 2 && list.every((x, i) => !i || ok(list[i - 1], x)), list.slice(0, 5).map((x) => x.title).join(' | '));
+    check(`  …${label} ticked`, (await ticked()) === label);
   }
-  await p.click('#lib-sort'); await sleep(200); await clickMenu(p, 'Title Z–A');
+  await p.click('#lib-sort-menu'); await sleep(200); await clickMenu(p, 'Title Z–A');
   await fresh(p, '#/library'); await to(p, '#/library');
-  check('choice remembered after reload (Z–A)', (await sortBtn()).text === 'Z–A');
+  check('choice remembered after reload (Z–A)', (await ticked()) === 'Title Z–A');
   await p.click('[data-sort="title"]'); await sleep(250);
-  check('Title heading → A–Z, button follows', (await sortBtn()).text === 'A–Z');
+  check('Title heading → A–Z, menu follows', (await ticked()) === 'Title A–Z' && (await p.$eval('[data-sort="title"]', (e) => e.textContent)).includes('▲'));
   await p.click('[data-sort="title"]'); await sleep(250);
-  check('Title heading again → Z–A, button follows', (await sortBtn()).text === 'Z–A');
-  await p.click('#lib-sort'); await sleep(200); await clickMenu(p, 'Title A–Z');
+  check('Title heading again → Z–A, menu follows', (await ticked()) === 'Title Z–A' && (await p.$eval('[data-sort="title"]', (e) => e.textContent)).includes('▼'));
+  await p.click('#lib-sort-menu'); await sleep(200); await clickMenu(p, 'Title A–Z');
   check('menu → heading arrow in sync (Title ▲)', (await p.$eval('[data-sort="title"]', (e) => e.textContent)).includes('▲'));
+  await p.click('[data-sort="added"]'); await sleep(250);
+  check('other headings still sort (Added → Recently added)', (await ticked()) === 'Recently added');
 
   console.log('Version column');
   for (const [k, h] of [['', 'All'], ['sheet', 'Sheets'], ['score', 'Scores'], ['book', 'Books']]) {
@@ -109,7 +112,26 @@ const xShown = (p) => p.$eval('#lib-q-x', (e) => !e.hidden && e.getBoundingClien
   await to(p, '#/library');
   check('chords show a blank version', !all.some((x) => x.kind === 'chords') || (await p.$$eval('#lib-rows tr.row', (rows) => rows.filter((r) => r.querySelector('.badge.k-chords')).every((r) => !r.querySelector('.c-ver').textContent.trim()))));
   const tip = await p.$$eval('#lib-rows tr.row td.c-ver span', (e) => e.map((x) => x.title));
-  check('score cells carry the detail as a tooltip ("Piano · clear")', !scores.some((x) => x.version === 'clear') || tip.includes('Piano · clear'), tip.slice(0, 6).join());
+  check('score cells carry the detail as a tooltip ("Piano · clear")', !scores.some((x) => x.version === 'clear' && x.staves !== 1) || tip.includes('Piano · clear'), tip.slice(0, 6).join());
+
+  console.log('Score Version = the notes (staves)');
+  {
+    const HEAD = '<?xml version="1.0" encoding="UTF-8"?><score-partwise version="4.0">';
+    const part = (id, staves) => `<part id="${id}"><measure number="1"><attributes><divisions>1</divisions>${staves ? `<staves>${staves}</staves>` : ''}</attributes><note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration></note></measure></part>`;
+    const mk = (title, xml, extra = {}) => api('/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'score', title, musicxmlText: xml, ...extra }) });
+    const lead = await mk('Zz staves AI lead', HEAD + '<part-list><score-part id="P1"><part-name>Melody</part-name></score-part></part-list>' + part('P1', 0) + '</score-partwise>', { ai: 1 });
+    const two = await mk('Zz staves two hands', HEAD + '<part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>' + part('P1', 2) + '</score-partwise>');
+    check('server counts staves: AI melody 1, two hands 2', lead.staves === 1 && two.staves === 2, `${lead.staves} ${two.staves}`);
+    await fresh(p, '#/library?kind=score');
+    await typeQ(p, 'zz staves');
+    const cells = Object.fromEntries(await p.$$eval('#lib-rows tr.row', (rows) => rows.map((r) => [r.dataset.id, r.querySelector('.c-ver').textContent.trim()])));
+    check('Version column: single-staff AI score → Lead, two-hand score → Piano', cells[lead.id] === 'Lead' && cells[two.id] === 'Piano', JSON.stringify(cells));
+    const aiLead = all.filter((x) => x.kind === 'score' && x.ai && x.staves === 1);
+    await typeQ(p, '');
+    if (aiLead.length) { await typeQ(p, aiLead[0].title); check(`existing AI one-staff score "${aiLead[0].title}" → Lead`, (await col(p, 'c-ver'))[(await ids(p)).indexOf(aiLead[0].id)] === 'Lead'); await typeQ(p, ''); }
+    await api('/items/trash', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [lead.id, two.id] }) });
+    await api('/items/purge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [lead.id, two.id] }) });
+  }
 
   console.log('Version from the ⋯ menu');
   await to(p, '#/library?kind=sheet');
@@ -212,7 +234,7 @@ const xShown = (p) => p.$eval('#lib-q-x', (e) => !e.hidden && e.getBoundingClien
   await to(p, '#/item/' + clear.id); await sleep(800);
   await p.click('#it-more'); await sleep(250); await clickMenu(p, 'Info'); await sleep(300);
   const sv = await p.$eval('#dt-ver', (e) => e.textContent.replace(/\s+/g, ' ').trim());
-  check(`score Info: "${WORD(clear)}" + detail`, sv.startsWith(WORD(clear)) && (clear.version !== 'clear' || sv.includes('Piano · clear')), sv);
+  check(`score Info: "${WORD(clear)}" + detail`, sv.startsWith(WORD(clear)) && (clear.version !== 'clear' || WORD(clear) !== 'Piano' || sv.includes('Piano · clear')), sv);
   await p.close();
 }
 
@@ -231,16 +253,28 @@ for (const [name, w, h] of [['ipad13-port', 1032, 1376], ['ipad13-land', 1376, 1
       return { th, over: t ? t.getBoundingClientRect().right - box.getBoundingClientRect().right : 0, page: document.scrollingElement.scrollWidth - innerWidth };
     });
     if (!vis.th.length) { console.log(`  (${name} ${k || 'all'}: nothing here)`); continue; }
-    check(`${name} ${k || 'all'}: Title + Version${k ? '' : ' + Type'} visible, nothing sticks out`, vis.th[0] === 'Title' && vis.th.includes('Version') && (k || vis.th.includes('Type')) && vis.over <= 1 && vis.page <= 0, JSON.stringify(vis));
+    check(`${name} ${k || 'all'}: Title + Version${k ? '' : ' + Type'}${k === 'sheet' || k === 'book' ? ' + Pages' : ''} visible, nothing sticks out`, vis.th[0] === 'Title' && vis.th.includes('Version') && (k || vis.th.includes('Type'))
+      && (!['sheet', 'book'].includes(k) || vis.th.includes('Pages')) && vis.over <= 1 && vis.page <= 0, JSON.stringify(vis));
+    if (k === 'sheet' || k === 'book') {
+      const pc = await p.$$eval('#lib-rows tr.row td.c-pages', (e) => e.map((x) => ({ t: x.innerText.trim(), clip: x.scrollWidth > x.clientWidth + 1 })));
+      check(`${name} ${k}: page counts shown${w < 760 ? ' ("12 p")' : ''}, not cut off`, pc.length && pc.every((x) => !x.clip && (w < 760 ? /^\d+ p$|^$/ : /^\d+$|^$/).test(x.t)) && pc.some((x) => x.t), JSON.stringify(pc.slice(0, 4)));
+    }
     if (OUT && (k === '' || k === 'sheet')) await p.screenshot({ path: `${OUT}/ver-${name}-${k || 'all'}.png` });
   }
   await to(p, '#/library');
-  const sb = await p.$eval('#lib-sort', (e) => { const r = e.getBoundingClientRect(); return { w: r.width, right: r.right, text: e.textContent.trim() }; });
-  check(`${name}: sort button on screen`, sb.w > 0 && sb.right <= w, JSON.stringify(sb));
-  await p.tap('#lib-sort'); await sleep(250);
-  check(`${name}: sort menu has the 4 orders`, (await menuItems(p)).map((x) => x.label).join('|') === 'Title A–Z|Title Z–A|Most played|Recently added');
+  check(`${name}: no sort button above the list`, !(await p.$('#lib-sort, .sort-btn')));
+  const sb = await p.$eval('#lib-sort-menu', (e) => { const r = e.getBoundingClientRect(); return { w: r.width, right: r.right, vis: getComputedStyle(e).display !== 'none' }; });
+  check(`${name}: ⌄ beside Title on screen`, sb.vis && sb.w > 0 && sb.right <= w, JSON.stringify(sb));
+  await p.tap('#lib-sort-menu'); await sleep(250);
+  check(`${name}: tap ⌄ → the 4 orders`, (await menuItems(p)).map((x) => x.label).join('|') === 'Title A–Z|Title Z–A|Most played|Recently added');
+  await clickMenu(p, 'Title A–Z');
+  await p.tap('.th-sort[data-sort="title"]'); await sleep(350);
+  await p.tap('#lib-sort-menu'); await sleep(250);
+  check(`${name}: tap Title → Z–A ticked`, (await menuItems(p)).find((x) => x.checked === 'true')?.label === 'Title Z–A');
   await clickMenu(p, 'Recently added');
-  check(`${name}: Recently added ticked → "Recent"`, (await p.$eval('#lib-sort', (e) => e.textContent.trim())) === 'Recent');
+  await p.tap('#lib-sort-menu'); await sleep(250);
+  check(`${name}: Recently added ticked`, (await menuItems(p)).find((x) => x.checked === 'true')?.label === 'Recently added');
+  await clickMenu(p, 'Recently added');
   // search ×: a tap clears, keyboard stays down, back to page 1
   await typeQ(p, 'e');
   const nx = await p.$('.pager [data-pg="next"]:not([disabled])');

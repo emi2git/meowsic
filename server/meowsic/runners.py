@@ -21,6 +21,7 @@ from pathlib import Path
 
 from . import arrange
 from .arrange import VERSION_TAGS
+from .sheetversion import refresh_staves
 from .db import connect, folder_path, get_item, now_ms, platform_of, uid, write_item
 from .jobs import Cancelled, JobContext
 
@@ -84,6 +85,7 @@ def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), gr
                     shutil.copyfile(src, d / names[col])
                     if col == 'musicxml': credit_meowsic(d / names[col])
             c.execute(f'UPDATE score SET {",".join(f"{k}=?" for k in names)} WHERE item_id=?', [*names.values(), it['id']])
+            refresh_staves(c, cfg, it['id'])
         c.commit()
     except BaseException:
         c.rollback()
