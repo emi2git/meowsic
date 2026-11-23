@@ -91,7 +91,7 @@ async function run(name, vp) {
   check('kids: letters are pitch names A–G', /^[A-G]{3}$/.test(first), first);
   // playback cursor still moves
   await page.click('#sc-play'); await sleep(2200);
-  const pos = +(await page.$eval('#sc-pos', (e) => e.value));
+  const pos = (await page.evaluate(() => window.__score.player.now()));
   const bar = await page.evaluate(() => { const x = document.querySelector('.playbar'); return x && getComputedStyle(x).display !== 'none'; });
   check('kids: Play moves the playhead and the orange line shows', pos > 0.3 && bar, `${pos} ${bar}`);
   await page.click('#sc-play'); await sleep(300);

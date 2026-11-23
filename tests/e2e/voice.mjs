@@ -1,7 +1,7 @@
 // Make it sing (beta) + the score player's Voice toggle (server on $BASE, default :5244, temp data; the server runs with
 // MEOWSIC_SING_PYTHON = a stand-in that "sings" a 12 s test tone, so no model is needed):
-// ⋯ → Make it sing → job → Voice button appears (on); Play plays the audio with the playhead in sync; slider, tap on
-// the music and dragging the line move the audio; Voice off/on swaps piano ↔ voice at the same spot; a tempo change
+// ⋯ → Make it sing → job → Voice button appears (on); Play plays the audio with the playhead in sync; tap on
+// the music and dragging the line move the audio; Voice off/on swaps piano ↔ voice at the same spot; Stop goes back to the start; a tempo change
 // goes back to the piano; it ends; the choice is remembered; iPhone: a tap on Play starts the audio.
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5244/';
@@ -49,18 +49,18 @@ check('Voice button appears, on, without reloading', shown);
 check('says it sings now', /It sings now/.test(await page.$eval('#toast', (e) => e.textContent)));
 
 const audio = () => page.evaluate(() => { const a = window.__audios.at(-1); return a ? { t: a.currentTime, paused: a.paused, src: a.src, n: window.__audios.length } : null; });
-const pos = () => page.$eval('#sc-pos', (e) => +e.value);
+const pos = () => page.evaluate(() => window.__score.player.now());
 const qps = 72 / 60;
 await page.click('#sc-play'); await sleep(1800);
 let a = await audio(), q = await pos();
 check('Play plays the sung audio', a && !a.paused && /\/api\/items\/.+\/vocal/.test(a.src) && a.t > 1, JSON.stringify(a));
-check('button says Pause', (await page.$eval('#sc-play', (e) => e.textContent)) === 'Pause');
+check('button says Pause', (await page.$eval('#sc-play', (e) => e.getAttribute('aria-label'))) === 'Pause');
 check('playhead follows the audio (q = t × bpm / 60)', Math.abs(q - a.t * qps) < 0.35, `${q} vs ${a.t * qps}`);
 check('tempo shows the voice tempo', (await page.$eval('#sc-rate', (e) => e.textContent)) === '72 bpm');
 
-await page.$eval('#sc-pos', (e) => { e.value = 6; e.dispatchEvent(new Event('input')); }); await sleep(400);
+await page.evaluate(() => window.__score.seek(6)); await sleep(400);
 a = await audio();
-check('slider seek moves the audio (playing)', !a.paused && Math.abs(a.t - 6 / qps) < 0.6, JSON.stringify(a));
+check('seek moves the audio (playing)', !a.paused && Math.abs(a.t - 6 / qps) < 0.6, JSON.stringify(a));
 await page.click('#sc-play'); await sleep(200);
 a = await audio();
 check('Pause pauses the audio', a.paused);
@@ -82,10 +82,17 @@ await page.click('#sc-play'); await sleep(800);
 const qa = await pos();
 await page.click('#sc-voice'); await sleep(700);
 a = await audio(); const qb = await pos();
-check('Voice off: audio stops, piano keeps playing on', a.paused && qb > qa && (await page.$eval('#sc-play', (e) => e.textContent)) === 'Pause' && !(await page.$eval('#sc-voice', (e) => e.classList.contains('on'))), JSON.stringify({ qa, qb, a }));
+check('Voice off: audio stops, piano keeps playing on', a.paused && qb > qa && (await page.$eval('#sc-play', (e) => e.getAttribute('aria-label'))) === 'Pause' && !(await page.$eval('#sc-voice', (e) => e.classList.contains('on'))), JSON.stringify({ qa, qb, a }));
 await page.click('#sc-voice'); await sleep(600);
 a = await audio(); const qc = await pos();
 check('Voice on again: the audio plays from the same spot', !a.paused && qc >= qb && Math.abs(a.t * qps - qc) < 0.35, JSON.stringify({ qb, qc, a }));
+// Stop (the square before Play): the voice stops and goes back to the beginning; Play starts it from there
+await page.click('#sc-stop'); await sleep(300);
+a = await audio();
+check('Stop: voice stops, back to the beginning', a.paused && a.t < 0.05 && (await pos()) === 0 && (await page.$eval('#sc-play', (e) => e.getAttribute('aria-label'))) === 'Play', JSON.stringify(a));
+await page.click('#sc-play'); await sleep(900);
+a = await audio();
+check('Play after Stop: the voice from the start', !a.paused && a.t > 0.3 && a.t < 2, JSON.stringify(a));
 // a tempo change goes back to the piano
 await page.click('#sc-fast'); await sleep(300);
 a = await audio();
@@ -98,10 +105,10 @@ await page.click('#sc-slow'); await sleep(100);
 await page.reload({ waitUntil: 'networkidle0' }); await sleep(1500);
 check('reload: Voice stays off (remembered)', !(await page.$eval('#sc-voice', (e) => e.classList.contains('on') || e.hidden)));
 await page.click('#sc-voice'); await sleep(200);
-await page.$eval('#sc-pos', (e) => { e.value = 11; e.dispatchEvent(new Event('input')); }); await sleep(200);
+await page.evaluate(() => window.__score.seek(11)); await sleep(200);
 await page.click('#sc-play');
 let ended = false;
-for (let i = 0; i < 30 && !ended; i++) { await sleep(250); ended = (await page.$eval('#sc-play', (e) => e.textContent)) === 'Play'; }
+for (let i = 0; i < 30 && !ended; i++) { await sleep(250); ended = (await page.$eval('#sc-play', (e) => e.getAttribute('aria-label'))) === 'Play'; }
 check('the end: button back to Play', ended);
 const r = await fetch(`${BASE}api/items/${it.id}/vocal`, { headers: { Range: 'bytes=0-99' } });
 check('vocal endpoint serves ranges (Safari)', r.status === 206 && r.headers.get('content-type') === 'audio/mp4' && (await r.arrayBuffer()).byteLength === 100, String(r.status));

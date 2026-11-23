@@ -97,7 +97,7 @@ await page.click('#sc-zreset'); await sleep(1200);
 
 // playback still works with the letters on
 await page.click('#sc-play'); await sleep(2500);
-const pos = +(await page.$eval('#sc-pos', (e) => e.value));
+const pos = (await page.evaluate(() => window.__score.player.now()));
 check('Play moves the playhead', pos > 0.3, String(pos));
 await page.click('#sc-play'); await sleep(300);
 

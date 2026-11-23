@@ -110,14 +110,14 @@ for (const [name, w, h] of [['ipad-port', 1032, 1376], ['ipad-land', 1376, 1032]
   // ---- playback follows into the next page ----
   await p.setViewport({ width: 1032, height: 1376, hasTouch: true, isMobile: true });
   await open(p, long.id, 4000);
-  const seek = (q) => p.$eval('#sc-pos', (e, q) => { e.value = q; e.dispatchEvent(new Event('input', { bubbles: true })); }, q);
+  const seek = (q) => p.evaluate((q) => window.__score.seek(q), q);
   let q2 = 0;
   for (let q = 1; q < 400; q++) { await seek(q); if ((await pg(p)).n === 2) { q2 = q; break; } }
   check('seeking past page 1 shows page 2', q2 > 0, q2);
   await seek(q2 - 2); await sleep(200);
   check('seek back: page 1 again', (await pg(p)).n === 1, await label(p));
   await p.click('#sc-play'); await sleep(4500);
-  const played = await p.$eval('#sc-pos', (e) => +e.value);
+  const played = await p.evaluate(() => window.__score.player.now());
   check('playing past the last line turns the page', played >= q2 && (await pg(p)).n === 2, `${played} / ${q2} ${await label(p)}`);
   const vis = await p.evaluate(() => { const b = document.querySelector('.playbar').getBoundingClientRect(), c = document.querySelector('#clip').getBoundingClientRect(); return b.top >= c.top - 2 && b.bottom <= c.bottom + 2 && getComputedStyle(document.querySelector('.playbar')).display === 'block'; });
   check('the orange line is on the page shown', vis);
@@ -129,7 +129,7 @@ for (const [name, w, h] of [['ipad-port', 1032, 1376], ['ipad-land', 1376, 1032]
   const onPage = st.filter((r) => r.w > 100 && r.y > clipR.top + 10 && r.y + r.h < clipR.bottom - 10);
   const tgt = onPage[Math.floor(onPage.length / 2)];
   await p.touchscreen.tap(tgt.x + tgt.w / 2, tgt.y + tgt.h / 2); await sleep(400);
-  const tq = await p.$eval('#sc-pos', (e) => +e.value);
+  const tq = await p.evaluate(() => window.__score.player.now());
   check('tap on page 2 music moves the line to a beat on page 2', tq >= q2 - 1 && (await pg(p)).n === 2, `${tq} (page 2 from ${q2}) ${await label(p)}`);
   await p.close();
 }

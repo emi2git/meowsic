@@ -21,6 +21,7 @@ const P = {
   more: '<circle cx="5" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="19" cy="12" r="1.6" fill="currentColor"/>',
   play: '<path d="M7 4l13 8-13 8z" fill="currentColor"/>',
   pause: '<path d="M7 4h4v16H7zM14 4h4v16h-4z" fill="currentColor"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/>',
   pen: '<path d="M4 20l1-5L16 4l4 4L9 19z"/><path d="M14 6l4 4"/>',
   write: '<path d="M3 17c3-8 5-10 6-8s-3 9-1 9 3-6 5-6-1 5 1 5 2-2 3-2"/><path d="M3 21h18"/>',
   zoomin: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8M10.5 7.5v6M7.5 10.5h6"/>',

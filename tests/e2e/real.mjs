@@ -1,7 +1,7 @@
 // End-to-end against the real server (temp data on :5190)
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
-const BASE = 'http://localhost:5190/';
+const BASE = process.env.BASE || 'http://localhost:5190/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });
 const page = await b.newPage(); await page.setViewport({ width: 1440, height: 900 });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message)); page.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
@@ -53,7 +53,7 @@ await page.goto(BASE + '#/library', { waitUntil: 'networkidle0' }); await page.r
 await page.goto(BASE + '#/item/' + sc.id, { waitUntil: 'networkidle0' }); await sleep(4000);
 check('real score draws', (await page.$$('#osmd svg')).length > 0);
 await page.click('#sc-play'); await sleep(2500);
-check('real score plays', +(await page.$eval('#sc-pos', (e) => e.value)) > 0.5);
+check('real score plays', (await page.evaluate(() => window.__score.player.now())) > 0.5);
 await page.click('#sc-play');
 // trash + purge removes folder
 await page.evaluate(async (id) => { const { store } = await import('/js/store.js'); store.bin([id]); }, mr.id); await sleep(500);
