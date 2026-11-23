@@ -11,7 +11,8 @@ let pass = 0, fail = 0; const check = (n, c, x = '') => { c ? pass++ : fail++; c
 const errs = [];
 const p0 = await b.newPage(); await p0.goto(BASE + '#/library', { waitUntil: 'networkidle0' });
 const all = await p0.evaluate(() => fetch('/api/items').then((r) => r.json()));
-const sheet = all.find((x) => x.kind === 'sheet' && !x.book && x.pages > 1), book = all.find((x) => x.kind === 'sheet' && x.book);
+// FILL_SHEET=<id> picks the sheet (e.g. s-9aaebd3, With One Look: once opened overflowing at "100%")
+const sheet = all.find((x) => x.id === process.env.FILL_SHEET) || all.find((x) => x.kind === 'sheet' && !x.book && x.pages > 1), book = all.find((x) => x.kind === 'sheet' && x.book);
 check('test data: a sheet and a book', sheet && book);
 
 // how much smaller the page picture is than the area under the top bar
@@ -23,7 +24,7 @@ const measure = (p) => p.evaluate(() => {
   return { top: Math.round(top.height), W, H, w: Math.round(img.width), h: Math.round(img.height), dw: Math.round(W - img.width), dh: Math.round(H - img.height),
     x: Math.round(img.left - host.left), y: Math.round(img.top - top.bottom) };
 });
-const devices = [['ipad-1366', 1366, 1024], ['ipad-1180', 1180, 820], ['ipad-port', 820, 1180], ['iphone', 390, 844]];
+const devices = [['ipad-1032', 1032, 1376], ['ipad-1366', 1366, 1024], ['ipad-1180', 1180, 820], ['ipad-port', 820, 1180], ['iphone', 390, 844]];
 for (const [name, w, h] of devices) {
   const p = await b.newPage(); p.on('pageerror', (e) => errs.push(e.message));
   await p.setViewport({ width: w, height: h, hasTouch: true, isMobile: true });
@@ -41,9 +42,15 @@ for (const [name, w, h] of devices) {
     check(`${tag}: ‹ Back, title, ⋯ show`, vis.length === 3 && vis.every(Boolean));
     const strips = await p.$$eval('.turn-strip', (e) => e.map((x) => getComputedStyle(x).display));
     check(`${tag}: no ‹ › turn strips`, strips.length === 2 && strips.every((d) => d === 'none'), strips.join());
+    check(`${tag}: opens at 100% (fit)`, name === 'iphone' || (await p.$eval('#sv-zreset', (e) => e.textContent)) === '100%');
+    check(`${tag}: no "Page n of N" text`, !(await p.$('#pageno')));
+    const dots = await p.evaluate(() => { const d = document.querySelector('#sv-dots'), f = d.closest('.sheet-frame').getBoundingClientRect(), r = [...d.children].map((i) => i.getBoundingClientRect());
+      return { n: r.length, on: d.querySelectorAll('i.on').length, mid: Math.round((r[0].left + r.at(-1).right) / 2 - (f.left + f.width / 2)), bottom: Math.round(f.bottom - r[0].bottom), size: r[0].width }; });
+    check(`${tag}: thin page dots centered at the bottom, current one filled`, dots.n === it.pages && dots.on === 1 && Math.abs(dots.mid) <= 2 && dots.bottom >= 0 && dots.bottom <= 8 && dots.size <= 6, JSON.stringify(dots));
     if (!it.book) continue;
     // swipe left turns, tap on the right edge turns, tap on the left edge goes back
-    const no = () => p.$eval('#pageno', (e) => e.textContent);
+    // the shown page = the filled page dot (no "Page n of N" text in the top bar)
+    const no = () => p.$$eval('#sv-dots i.on', (e) => 'Page ' + e.map((x) => x.dataset.p).join('–'));
     const c = await p.$eval('.pages', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, l: r.left, r: r.right }; });
     await p.touchscreen.touchStart(c.x + 100, c.y); await p.touchscreen.touchMove(c.x, c.y); await p.touchscreen.touchMove(c.x - 100, c.y); await p.touchscreen.touchEnd(); await sleep(400);
     check(`${tag}: swipe left → page 2`, (await no()).startsWith('Page 2'), await no());
@@ -54,7 +61,7 @@ for (const [name, w, h] of devices) {
     // zoom in still scrolls, reset fits again (iPhone has no zoom buttons)
     if (await p.$eval('#sv-zin', (e) => e.getBoundingClientRect().width > 0)) {
       await p.click('#sv-zin'); await sleep(400);
-      check(`${tag}: zoom in`, await p.$eval('.pages', (e) => e.classList.contains('zoomed') && e.scrollHeight > e.clientHeight));
+      check(`${tag}: zoom in → 125%, scrolls`, (await p.$eval('#sv-zreset', (e) => e.textContent)) === '125%' && await p.$eval('.pages', (e) => e.classList.contains('zoomed') && (e.scrollHeight > e.clientHeight || e.scrollWidth > e.clientWidth)));
       await p.click('#sv-zreset'); await sleep(400);
       const z = await measure(p);
       check(`${tag}: reset zoom fits again`, Math.min(z.dw, z.dh) <= 2, JSON.stringify(z));
@@ -121,6 +128,15 @@ console.log('  mac:', JSON.stringify(mac), JSON.stringify(await measure(m)));
 await m.screenshot({ path: `${out}/fill-mac-sheet.png` });
 check('Mac: 40px turn strips', mac.strip === 40, JSON.stringify(mac));
 check('Mac: page padding 4px 48px', mac.pad === '4px 48px', mac.pad);
+// Mac: 100% = the two-page spread fits the frame; both shown pages' dots filled; + zooms relative to that
+const macFit = () => m.$eval('#pages', (e) => { const r = e.getBoundingClientRect(); return [...e.querySelectorAll('.page')].every((p) => { const b = p.getBoundingClientRect(); return b.top >= r.top - 1 && b.bottom <= r.bottom + 1 && b.left >= r.left - 1 && b.right <= r.right + 1; }); });
+check('Mac: opens at 100%, two pages, whole spread visible', (await m.$eval('#sv-zreset', (e) => e.textContent)) === '100%' && (await m.$$eval('.page', (e) => e.length)) === 2 && (await macFit()));
+check('Mac: both shown pages have filled dots', (await m.$$eval('#sv-dots i.on', (e) => e.map((x) => x.dataset.p).join())) === '1,2');
+check('Mac: dots below the pages, not over them', await m.evaluate(() => { const d = document.querySelector('#sv-dots i').getBoundingClientRect(); return [...document.querySelectorAll('.page')].every((p) => p.getBoundingClientRect().bottom <= d.top + 1); }));
+await m.click('#sv-zin'); await sleep(300);
+check('Mac: + → 125%', (await m.$eval('#sv-zreset', (e) => e.textContent)) === '125%');
+await m.click('#sv-zreset'); await sleep(300);
+check('Mac: reset → 100%, fits', (await m.$eval('#sv-zreset', (e) => e.textContent)) === '100%' && (await macFit()));
 
 // Clean up shows sheets only: a book is not in it at all (so it gets no trim suggestions either)
 const cu = await m.evaluate(() => fetch('/api/cleanup').then((r) => r.json()));

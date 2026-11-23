@@ -137,7 +137,7 @@ for (const [name, w, h] of DEVICES) {
       const pg = await p.$eval('.pages', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
       if (dir === 'up') {
         await swipe(p, pg.x + 120, pg.y, pg.x - 120, pg.y);
-        check(`${name} ${what}: sideways swipe turns the page`, (await hash(p)).startsWith('#/item/') && (await p.$eval('#pageno', (e) => e.textContent)).includes('2'), await p.$eval('#pageno', (e) => e.textContent));
+        check(`${name} ${what}: sideways swipe turns the page`, (await hash(p)).startsWith('#/item/') && (await p.$$eval('#sv-dots i.on', (e) => e.map((x) => x.dataset.p).join())) === '2', await p.$$eval('#sv-dots i.on', (e) => e.map((x) => x.dataset.p).join()));
       }
       await swipe(p, pg.x, pg.y + (dir === 'up' ? 150 : -150), pg.x, pg.y + (dir === 'up' ? -150 : 150));
       check(`${name} ${what}: swipe ${dir} → library`, (await hash(p)).startsWith('#/library'), await hash(p));
