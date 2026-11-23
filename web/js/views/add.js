@@ -287,7 +287,8 @@ function pasteChart() {
 export const GEN_STAGES = ['Read the score', 'Arrange', 'Write the score', 'Draw the pages'];
 export const OMR_STAGES = ['Read the notes', 'Read chord names and words', 'Check every bar', 'Write the score'];
 export const LYRICS_STAGES = ['Read the score', 'Read the words on the sheet', 'Fit the words to the tune', 'Write the new score'];
-export const stagesOf = (j) => (j.kind === 'omr' ? OMR_STAGES : j.kind === 'lyrics' ? LYRICS_STAGES : j.gen ? GEN_STAGES : STAGES);
+export const SING_STAGES = ['Read the score', 'Load the voice', 'Sing', 'Piano and mix', 'Check'];
+export const stagesOf = (j) => (j.kind === 'omr' ? OMR_STAGES : j.kind === 'lyrics' ? LYRICS_STAGES : j.kind === 'sing' ? SING_STAGES : j.gen ? GEN_STAGES : STAGES);
 export const STAGES = ['Download audio', 'Separate voice and instruments', 'Find the notes', 'Read the lyrics', 'Find key, beat and chords', 'Write the score', 'Draw the pages'];
 
 export function addScoreView(main) {
@@ -345,7 +346,7 @@ function jobsList(host) {
         <div class="job-head"><div><b>${esc(j.title)}</b><small>${esc(j.source)} · ${esc(j.output)}</small></div>
           ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : j.status === 'done' ? `${(j.items || (Array.isArray(j.result) ? j.result : []).map((id) => ({ id, version: store.get(id)?.version }))).map((x) => `<a class="btn primary" href="#/item/${x.id}">Open ${VERSIONS[x.version] || 'score'}</a>`).join('')}<button data-dismiss="${j.id}">Dismiss</button>` : `<button data-dismiss="${j.id}">Dismiss</button>`}</div>
         <ol class="stages">${stagesOf(j).map((s, i) => `<li class="${i < j.stage || j.status === 'done' ? 'done' : i === j.stage && j.status === 'running' ? 'now' : ''}"><span>${s}</span>${i === j.stage && j.status === 'running' ? `<progress max="1" value="${j.progress}"></progress>` : ''}</li>`).join('')}</ol>
-        ${['omr', 'lyrics'].includes(j.kind) && j.status !== 'running' && j.log?.length ? `<p class="small">${esc(j.log.at(-1).msg)}</p>` : ''}
+        ${['omr', 'lyrics', 'sing'].includes(j.kind) && j.status !== 'running' && j.log?.length ? `<p class="small">${esc(j.log.at(-1).msg)}</p>` : ''}
         <small class="muted">${j.status === 'running' ? `Started ${ago(j.startedAt)}` : j.status === 'done' ? `Finished ${ago(j.doneAt)}` : j.status === 'failed' ? `Failed — ${esc(j.log?.at(-1)?.msg || '')}` : 'Cancelled'}</small>
       </section>`).join('');
   };

@@ -111,3 +111,47 @@ export class ScorePlayer {
   stop() { this.pause(); this.posQ = 0; }
 }
 
+// ---------- voice player: a rendered (sung) audio file in place of the piano, same interface as ScorePlayer ----------
+// The audio was rendered at `bpm` from beat 0, so the playhead is currentTime × bpm / 60. It has its own tempo:
+// rate stays 1 (the toolbar switches back to the piano for tempo / transpose changes).
+// iPad / iPhone: el.play() runs straight from the Play tap (nothing awaited before it), which Safari needs.
+export class VoicePlayer {
+  constructor({ url, bpm, beats, endQ, onTick, onEnd }) {
+    Object.assign(this, { bpm, beats, endQ, onTick, onEnd });
+    this.rate = 1; this.shift = 0; this.loop = null; this.posQ = 0; this.playing = false; this.want = null;
+    const el = (this.el = new Audio());
+    el.preload = 'auto'; el.setAttribute('playsinline', ''); el.src = url;
+    el.addEventListener('loadedmetadata', () => { if (this.want != null) { const q = this.want; this.want = null; this.setTime(q); } });
+    el.addEventListener('ended', () => { if (!this.playing) return; this.stopClock(); this.posQ = 0; this.onEnd?.(); });
+    el.addEventListener('error', () => { this.failed = true; if (this.playing) { this.stopClock(); this.onEnd?.(); } });
+  }
+  get qps() { return this.bpm / 60; }
+  setTime(q) {
+    if (this.el.readyState >= 1) { try { this.el.currentTime = q / this.qps; return; } catch {} }
+    this.want = q; // before the metadata is in (iOS): applied on loadedmetadata
+  }
+  now() { return this.playing ? (this.want != null ? this.want : this.el.currentTime * this.qps) : this.posQ; }
+  play() {
+    if (this.playing) return Promise.resolve();
+    if (this.posQ >= (this.loop ? this.loop[1] : this.endQ)) this.posQ = this.loop ? this.loop[0] : 0;
+    this.setTime(this.posQ);
+    this.playing = true;
+    const p = this.el.play(); // first thing, inside the tap
+    const tick = () => {
+      if (!this.playing) return;
+      const q = this.now();
+      if (this.loop && q >= this.loop[1]) this.setTime(this.loop[0]);
+      this.onTick?.(Math.min(q, this.endQ));
+      this.raf = requestAnimationFrame(tick);
+    };
+    tick();
+    return Promise.resolve(p).catch((e) => { this.stopClock(); throw e; });
+  }
+  stopClock() { this.playing = false; cancelAnimationFrame(this.raf); try { this.el.pause(); } catch {} }
+  pause() { if (!this.playing) return; this.posQ = this.now(); this.stopClock(); }
+  seek(q) { this.posQ = Math.max(0, Math.min(q, this.endQ)); this.setTime(this.posQ); this.onTick?.(this.posQ); }
+  setRate() {} // its own tempo; see the toolbar
+  stop() { this.pause(); this.posQ = 0; this.setTime(0); }
+  destroy() { this.stopClock(); this.el.removeAttribute('src'); try { this.el.load(); } catch {} }
+}
+

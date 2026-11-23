@@ -46,7 +46,8 @@ def pdf_on() -> bool:
 
 def dispatch(ctx: JobContext):
     from .lyricsfit import lyrics_runner
-    {'version': version_runner, 'omr': omr_runner, 'lyrics': lyrics_runner}.get(ctx.job['kind'], transcribe_runner)(ctx)
+    from .voice import sing_runner
+    {'version': version_runner, 'omr': omr_runner, 'lyrics': lyrics_runner, 'sing': sing_runner}.get(ctx.job['kind'], transcribe_runner)(ctx)
 
 
 # ---------- saving results as items ----------

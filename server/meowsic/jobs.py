@@ -139,8 +139,14 @@ def start_job(app, kind, title, source, outputs, params, jid=None, runner=None, 
 def create_job(request: Request, body: dict = Body(...)):
     """{kind: transcribe|version|omr|lyrics, title, source, outputs: [...], url?, fromItemId?, sheetId?, artist?, tags?} -> queued, then runs on a thread."""
     kind = body.get('kind') or ('version' if body.get('gen') else 'transcribe')
+    if kind == 'sing':  # Make it sing (beta): checks the score has lyrics, then queues it
+        from .voice import make_it_sing
+        if not body.get('fromItemId'): raise HTTPException(400, 'fromItemId is required')
+        c = request.app.state.connect()
+        try: return make_it_sing(body['fromItemId'], request, c, request.app.state.cfg)
+        finally: c.close()
     if kind not in ('transcribe', 'version', 'omr', 'lyrics') or not body.get('title'):
-        raise HTTPException(400, 'kind (transcribe|version|omr|lyrics) and title are required')
+        raise HTTPException(400, 'kind (transcribe|version|omr|lyrics|sing) and title are required')
     if kind == 'lyrics' and not (body.get('fromItemId') and body.get('sheetId')):
         raise HTTPException(400, 'fromItemId (the score) and sheetId (the sheet with the words) are required')
     params, source = {k: body[k] for k in PARAMS if body.get(k) not in (None, '')}, body.get('source', '')

@@ -6,7 +6,7 @@ import { pageSrc } from './sheet.js';
 import { go } from '../app.js';
 import { TUNES } from '../mock.js';
 import { musicXml, tuneNotes, VERSIONS, VERSION_HELP, barBeats, xmlInfo } from '../musicxml.js';
-import { ScorePlayer } from '../audio.js';
+import { ScorePlayer, VoicePlayer } from '../audio.js';
 import { scoreEditor } from './scoreeditor.js';
 import { InkLayer } from './annotate.js';
 import { attachSwipe, flipBy } from '../swipe.js';
@@ -236,14 +236,39 @@ export function scoreBody(root, it, { perform = false } = {}) {
     if (!player?.posQ) bar.style.display = 'none';
   };
 
+  // Voice (Make it sing): the sung audio plays in place of the piano; on by default once a score has one
+  // (this device remembers turning it off). midi = the piano player; `player` = whichever is playing.
+  let midi = null, voice = null;
+  const vKey = `meowsic-voice-${it.id}`;
+  const hasVoice = () => real && !!it.vocalAudio;
+  let voiceOn = (() => { try { return localStorage.getItem(vKey) !== '0'; } catch { return true; } })();
+  const onEnded = () => root.dispatchEvent(new CustomEvent('ended', { bubbles: true }));
+  const makeVoice = () => {
+    voice?.destroy();
+    voice = new VoicePlayer({ url: `/api/items/${encodeURIComponent(it.id)}/vocal?v=${encodeURIComponent(it.vocalAudio)}-${it.updatedAt || 0}`,
+      bpm: it.vocalBpm || tune.bpm, beats: tune.beats, endQ: midi.endQ, onTick: place, onEnd: onEnded });
+  };
   const makePlayer = () => {
-    const was = player;
-    was?.pause();
-    player = new ScorePlayer({ notes: real ? info.notes : tuneNotes(tune, version), bpm: tune.bpm, beats: tune.beats, onTick: place,
-      onEnd: () => root.dispatchEvent(new CustomEvent('ended', { bubbles: true })) });
-    if (was) { player.rate = was.rate; player.loop = was.loop; }
-    player.shift = it.transpose || 0;
-    if (!was && it.rate) player.rate = it.rate;
+    const was = midi;
+    player?.pause();
+    midi = new ScorePlayer({ notes: real ? info.notes : tuneNotes(tune, version), bpm: tune.bpm, beats: tune.beats, onTick: place, onEnd: onEnded });
+    if (was) { midi.rate = was.rate; midi.loop = was.loop; }
+    midi.shift = it.transpose || 0;
+    if (!was && it.rate) midi.rate = it.rate;
+    if (hasVoice() && voiceOn) { makeVoice(); voice.posQ = Math.min(player?.posQ || 0, midi.endQ); player = voice; } else player = midi;
+  };
+  // switch between the piano and the voice at the same spot; keeps playing if it was
+  const setVoice = (on) => {
+    on = !!on && hasVoice();
+    try { localStorage.setItem(vKey, on ? '1' : '0'); } catch {}
+    if (on === (player === voice && !!voice)) { voiceOn = on; return Promise.resolve(); }
+    const q = player?.now() || 0, was = !!player?.playing;
+    player?.pause();
+    voiceOn = on;
+    if (on && (!voice || voice.failed)) makeVoice();
+    player = on ? voice : midi;
+    player.seek(q);
+    return was ? player.play().catch(() => {}) : Promise.resolve(); // resolves once the other one is playing
   };
   const ready = (real ? loadReal() : Promise.resolve()).then(() => { makePlayer(); return render(); }).catch((e) => { $('#osmd', root).innerHTML = `<p class="err">${esc(e.message)}</p>`; });
 
@@ -365,7 +390,10 @@ export function scoreBody(root, it, { perform = false } = {}) {
     },
     get player() { return player; },
     get version() { return version; },
-    async setTranspose(n) { store.update(it.id, { transpose: n }); player.shift = n; await render(); },
+    async setTranspose(n) { store.update(it.id, { transpose: n }); it.transpose = n; midi.shift = n; await render(); },
+    // Voice: the sung audio (Make it sing) in place of the piano
+    get hasVoice() { return hasVoice(); }, get voice() { return player === voice && !!voice; }, setVoice,
+    voiceReady(v) { Object.assign(it, v); voice?.destroy(); voice = null; if (voiceOn) setVoice(true); },
     zoomReset() { this.setZoom(zDef()); },
     setZoom(z) { zoom = Math.max(0.6, Math.min(2, Math.round(z * 100) / 100)); if (zLocal) { try { localStorage.setItem(zKey, zoom); } catch {} } else store.update(it.id, { zoom }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zoom; relayout(); },
     get easy() { return easy; },
@@ -380,7 +408,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get real() { return real; },
     get totalQ() { return real ? Math.ceil(info.totalQ) : tune.measures.reduce((s, m) => s + barBeats(tune, m), 0); },
     seekAt: qAt, seek: seekTo,
-    destroy() { player.pause(); ro.disconnect(); offSwipe(); ink?.destroy(); },
+    destroy() { player.pause(); voice?.destroy(); ro.disconnect(); offSwipe(); ink?.destroy(); },
   };
 }
 
@@ -389,6 +417,7 @@ export function scoreTools(it, view) {
   return [{ label: 'Make another version…', icon: 'plus', run: () => generateVersions(it) },
     ...(store.mode === 'server' ? [{ label: 'Add lyrics from a sheet…', icon: 'text', run: () => addLyrics(it) }] : []),
     { label: 'Note names in noteheads', icon: 'text', checked: view.easy, run: () => view.setEasy(!view.easy) },
+    ...(view.real && /<lyric[\s>]/.test(view.xml()) ? [{ label: view.hasVoice ? 'Make it sing again (beta)' : 'Make it sing (beta)', icon: 'wave', run: () => makeItSing(it) }] : []),
     ...(it.measures ? [{ label: 'Revert note edits', icon: 'restore', run: async () => { await view.revert(); document.querySelector('.editbar')?.dispatchEvent(new Event('close')); toast('Back to the original notes'); } }] : [])];
 }
 export function scoreExportMenu(it, view) {
@@ -401,7 +430,8 @@ export function scoreExportMenu(it, view) {
 
 export function scoreToolbar(bar, it, view) {
   const t = view.tune;
-  const secs = (q) => (q / (t.bpm * view.player.rate)) * 60;
+  const secs = (q) => (q / ((view.player.bpm || t.bpm) * view.player.rate)) * 60;
+  const bpmNow = () => Math.round((view.player.bpm || t.bpm) * view.player.rate);
   const total = view.totalQ;
   bar.innerHTML = `${view.pageLabel ? `<span class="pageno" id="pageno">${view.pageLabel}</span>` : ''}
     <div class="transport">
@@ -409,16 +439,21 @@ export function scoreToolbar(bar, it, view) {
       <input type="range" id="sc-pos" min="0" max="${total}" step="0.25" value="0" aria-label="Position">
       <span class="time" id="sc-time">0:00 / ${fmt(secs(total))}</span>
     </div>
-    <div class="stepper" aria-label="Tempo" title="Tempo"><button id="sc-slow" aria-label="Slower">−</button><span id="sc-rate">${Math.round(t.bpm * view.player.rate)} bpm</span><button id="sc-fast" aria-label="Faster">+</button></div>
+    <div class="stepper" aria-label="Tempo" title="Tempo"><button id="sc-slow" aria-label="Slower">−</button><span id="sc-rate">${bpmNow()} bpm</span><button id="sc-fast" aria-label="Faster">+</button></div>
     <div class="stepper" aria-label="Transpose"><button id="sc-tdown" aria-label="Transpose down">♭</button><span id="sc-tval">${it.transpose ? (it.transpose > 0 ? '+' : '') + it.transpose : '0'}</span><button id="sc-tup" aria-label="Transpose up">♯</button></div>
     <div class="stepper zoom" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out" title="Zoom out (−)">${iconOn('zoomout')}</button><button id="sc-zreset" class="zreset" title="Reset zoom (0)">${Math.round(view.zoom * 100)}%</button><button id="sc-zin" aria-label="Zoom in" title="Zoom in (+)">${iconOn('zoomin')}</button></div>
     <button class="icon-btn" id="sc-edit" title="Edit notes" aria-label="Edit notes">${iconOn('edit')}</button>
-    <button class="nn-toggle ${view.easy ? 'on' : ''}" id="sc-names" aria-pressed="${view.easy}" title="Note names in noteheads" aria-label="Note names in noteheads">A B C</button>`;
+    <button class="nn-toggle ${view.easy ? 'on' : ''}" id="sc-names" aria-pressed="${view.easy}" title="Note names in noteheads" aria-label="Note names in noteheads">A B C</button>
+    <button class="nn-toggle ${view.voice ? 'on' : ''}" id="sc-voice" aria-pressed="${view.voice}" title="Voice: hear it sung (Make it sing)" aria-label="Voice"${view.hasVoice ? '' : ' hidden'}>Voice</button>`;
 
   const p = () => view.player;
   const playBtn = $('#sc-play', bar);
   const setPlay = () => { playBtn.textContent = p().playing ? 'Pause' : 'Play'; playBtn.setAttribute('aria-label', p().playing ? 'Pause' : 'Play'); };
-  playBtn.onclick = async () => { p().playing ? p().pause() : await p().play(); setPlay(); };
+  playBtn.onclick = async () => {
+    if (p().playing) p().pause();
+    else { const pr = p().play(); setPlay(); try { await pr; } catch { toast(view.voice ? 'Could not play the voice — tap Play again, or turn Voice off.' : 'Could not start playback.'); } }
+    setPlay();
+  };
   const pos = $('#sc-pos', bar), time = $('#sc-time', bar);
   const host = bar.closest('.viewer') || document;
   const onTick = (e) => { pos.value = e.detail.q; time.textContent = `${fmt(secs(e.detail.q))} / ${fmt(secs(total))}`; };
@@ -427,7 +462,18 @@ export function scoreToolbar(bar, it, view) {
   host.addEventListener('ended', onEnd);
   pos.oninput = () => p().seek(+pos.value);
   // tempo in beats per minute, 5 at a time; the score's own tempo is the starting point
+  // Voice: the sung audio has its own tempo and key — a tempo or key change goes back to the piano
+  const voiceBtn = $('#sc-voice', bar);
+  const vl = () => { voiceBtn.hidden = !view.hasVoice; voiceBtn.classList.toggle('on', view.voice); voiceBtn.setAttribute('aria-pressed', String(view.voice)); $('#sc-rate', bar).textContent = `${bpmNow()} bpm`; time.textContent = `${fmt(secs(+pos.value))} / ${fmt(secs(total))}`; setPlay(); };
+  voiceBtn.onclick = async () => { const pr = view.setVoice(!view.voice); vl(); await pr; vl(); };
+  const toPiano = (why) => { if (!view.voice) return; view.setVoice(false); vl(); toast(`${why} — back to the piano (the voice sings at its own tempo and key)`); };
+  const onSung = (e) => { // "Make it sing" finished for this score: Voice turns on
+    if (!(e.detail || []).includes(it.id)) return;
+    setTimeout(() => { const f = store.get(it.id); if (!f?.vocalAudio) return; view.voiceReady({ vocalAudio: f.vocalAudio, vocalBpm: f.vocalBpm, updatedAt: f.updatedAt }); vl(); toast('It sings now — Voice is on'); }, 800);
+  };
+  addEventListener('meowsic-new-items', onSung);
   const rate = (d) => {
+    toPiano('Tempo changed');
     const bpm = Math.max(30, Math.min(220, Math.round(t.bpm * p().rate / 5) * 5 + d * 5));
     p().setRate(bpm / t.bpm);
     store.update(it.id, { rate: bpm / t.bpm });
@@ -436,7 +482,7 @@ export function scoreToolbar(bar, it, view) {
   };
   $('#sc-slow', bar).onclick = () => rate(-1);
   $('#sc-fast', bar).onclick = () => rate(1);
-  const tr = async (d) => { const n = Math.max(-6, Math.min(6, (it.transpose || 0) + d)); await view.setTranspose(n); $('#sc-tval', bar).textContent = n ? (n > 0 ? '+' : '') + n : '0'; };
+  const tr = async (d) => { toPiano('Key changed'); const n = Math.max(-6, Math.min(6, (it.transpose || 0) + d)); await view.setTranspose(n); $('#sc-tval', bar).textContent = n ? (n > 0 ? '+' : '') + n : '0'; };
   $('#sc-tdown', bar).onclick = () => tr(-1);
   $('#sc-tup', bar).onclick = () => tr(1);
   const zl = () => ($('#sc-zreset', bar).textContent = `${Math.round(view.zoom * 100)}%`);
@@ -451,7 +497,16 @@ export function scoreToolbar(bar, it, view) {
   bar.closest('.viewer')?.addEventListener('zoomchange', zl);
   const onSpace = (e) => { if (e.key === ' ' && !e.target.closest('input,select,textarea,button')) { e.preventDefault(); playBtn.click(); } };
   document.addEventListener('keydown', onSpace);
-  return () => { host.removeEventListener('tick', onTick); host.removeEventListener('ended', onEnd); document.removeEventListener('keydown', onSpace); };
+  return () => { host.removeEventListener('tick', onTick); host.removeEventListener('ended', onEnd); document.removeEventListener('keydown', onSpace); removeEventListener('meowsic-new-items', onSung); };
+}
+
+// Make it sing (beta): the Mac sings the melody with its lyrics (SoulX-Singer, offline) over a soft piano;
+// the audio is saved with this score and the Voice button plays it
+async function makeItSing(it) {
+  const ok = await confirmSheet({ title: `Make “${it.title}” sing?`, body: 'Beta. The Mac sings the melody with its English lyrics over a soft piano (about 2–3 minutes for a short song). When it is done, Play sings it; the Voice button switches back to the piano.', ok: 'Make it sing' });
+  if (!ok) return;
+  store.addJob({ kind: 'sing', title: it.title, source: 'Make it sing (beta)', output: 'Voice', outputs: ['voice'], fromItemId: it.id });
+  toast('Singing… progress is in Add → Score');
 }
 
 function download(name, text, type) {

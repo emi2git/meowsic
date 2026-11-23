@@ -134,7 +134,7 @@ def set_versions(body: dict = Body(...), c=Depends(conn)):
 @router.patch('/items/{item_id}')
 def update_item(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
     it = must_item(c, item_id)
-    patch = {k: v for k, v in body.items() if k not in ('id', 'kind', 'createdAt', 'deleted', 'deletedAt', 'folder', 'book', 'ai', 'staves')}
+    patch = {k: v for k, v in body.items() if k not in ('id', 'kind', 'createdAt', 'deleted', 'deletedAt', 'folder', 'book', 'ai', 'staves', 'vocalAudio', 'vocalBpm')}
     if 'version' in patch:
         patch['version'] = check_version(it['kind'], patch['version'])
     if 'key' in patch: patch['key'] = str(patch['key'] or '').strip()
@@ -146,7 +146,7 @@ def update_item(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depend
     return get_item(c, item_id)
 
 
-FILE_COLS = ('musicxml', 'musicxml_original', 'midi', 'pdf')
+FILE_COLS = ('musicxml', 'musicxml_original', 'midi', 'pdf', 'vocal_audio')
 
 
 def rename_folder(c, cf, it, title):

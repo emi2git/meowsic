@@ -63,7 +63,9 @@ CREATE TABLE IF NOT EXISTS score (            -- kind = 'score'; each version is
   group_id    TEXT,                           -- versions made from the same recording share this
   ai          INTEGER NOT NULL DEFAULT 0,     -- 1 = composed by Claude (source 'Meowsic AI'); added only by ~/git/scripts/meowsic-add-ai-score.py
   source_url  TEXT NOT NULL DEFAULT '',       -- the full original link (YouTube / Facebook); versions keep their parent's
-  staves      INTEGER                         -- staves in the MusicXML (1 = lead sheet, 2 = piano RH + LH); NULL = not read yet
+  staves      INTEGER,                        -- staves in the MusicXML (1 = lead sheet, 2 = piano RH + LH); NULL = not read yet
+  vocal_audio TEXT,                           -- "Make it sing (beta)": '<folder> vocal.m4a' (+ '<folder> vocal.wav') in items/<folder>/
+  vocal_bpm   REAL                            -- the tempo it was sung at (the Voice player maps the playhead with it)
 );
 
 CREATE TABLE IF NOT EXISTS tag (
@@ -89,9 +91,9 @@ CREATE TABLE IF NOT EXISTS play_session (
 );
 CREATE INDEX IF NOT EXISTS play_item ON play_session(item_id, opened_at);
 
-CREATE TABLE IF NOT EXISTS job (              -- transcriptions, "make another version", AI tag suggestions, photo → score, lyrics from a sheet
+CREATE TABLE IF NOT EXISTS job (              -- transcriptions, "make another version", AI tag suggestions, photo → score, lyrics from a sheet, make it sing
   id          TEXT PRIMARY KEY,
-  kind        TEXT NOT NULL CHECK (kind IN ('transcribe','version','tags','omr','lyrics')),
+  kind        TEXT NOT NULL CHECK (kind IN ('transcribe','version','tags','omr','lyrics','sing')),
   title       TEXT NOT NULL,
   source      TEXT NOT NULL DEFAULT '',
   outputs     TEXT NOT NULL,                  -- JSON array of versions

@@ -78,12 +78,15 @@ def init_db(cfg: Config):
     for col, typ in (('undo', 'TEXT'), ('undone_at', 'INTEGER'), ('undone_by', 'TEXT'), ('undo_of', 'TEXT')):  # Activities: rollback info (undo.py)
         if acols and col not in acols:
             c.execute(f'ALTER TABLE activity ADD COLUMN {col} {typ}')
+    for col, typ in (('vocal_audio', 'TEXT'), ('vocal_bpm', 'REAL')):  # "Make it sing (beta)"
+        if mcols and col not in mcols:
+            c.execute(f'ALTER TABLE score ADD COLUMN {col} {typ}')
     jcols = [r[1] for r in c.execute('PRAGMA table_info(job)')]
     if jcols and 'params' not in jcols:
         c.execute("ALTER TABLE job ADD COLUMN params TEXT NOT NULL DEFAULT '{}'")
     c.executescript(SCHEMA.read_text())
     job_sql = (c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='job'").fetchone() or [''])[0]
-    if "'lyrics'" not in job_sql:  # job kinds 'tags' (AI suggestions), 'omr' (photo → score), 'lyrics' (words from a sheet) added later: rebuild the table with the new CHECK, rows kept
+    if "'sing'" not in job_sql:  # job kinds 'tags' (AI suggestions), 'omr' (photo → score), 'lyrics' (words from a sheet), 'sing' (make it sing) added later: rebuild the table with the new CHECK, rows kept
         create = re.search(r'CREATE TABLE IF NOT EXISTS job \(.*?\n\);', SCHEMA.read_text(), re.S).group(0)
         cols = ','.join(r[1] for r in c.execute('PRAGMA table_info(job)'))
         c.executescript(f'BEGIN; ALTER TABLE job RENAME TO job_old; {create} INSERT INTO job({cols}) SELECT {cols} FROM job_old; DROP TABLE job_old; COMMIT;')
@@ -212,7 +215,7 @@ KIND_COLS = {  # kind -> (table, {JSON name -> column})
     'chords': ('chord_chart', {'source': 'source', 'url': 'url', 'key': 'key', 'capo': 'capo', 'text': 'text'}),
     'score': ('score', {'version': 'version', 'musicxml': 'musicxml', 'musicxmlOriginal': 'musicxml_original',
                         'midi': 'midi', 'pdf': 'pdf', 'key': 'key', 'bpm': 'bpm', 'source': 'source', 'groupId': 'group_id', 'ai': 'ai',
-                        'sourceUrl': 'source_url', 'staves': 'staves'}),
+                        'sourceUrl': 'source_url', 'staves': 'staves', 'vocalAudio': 'vocal_audio', 'vocalBpm': 'vocal_bpm'}),
 }
 SHEET_VERSIONS = ('', 'lead', 'piano', 'duet')  # shown as Lead / Piano / Duet
 SCORE_VERSIONS = ('original', 'vocal', 'lead', 'duet', 'accomp', 'clear', 'pro', 'easy')

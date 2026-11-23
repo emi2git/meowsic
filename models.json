@@ -23,6 +23,16 @@
    "size": "123 MB",
    "where": "~/ai/models/homr (symlinked into omr/.venv)",
    "purpose": "photo → score: reading notes (beta)"
+  },
+  {
+   "name": "Soul-AILab/SoulX-Singer (SVS model.pt)",
+   "revision": "sha256 447eaf41f91a6b6659d55e9ec3c9b809221724fb8592aebaec35a23751a5b500",
+   "source": "https://huggingface.co/Soul-AILab/SoulX-Singer (code: https://github.com/Soul-AILab/SoulX-Singer)",
+   "license": "Apache-2.0 (code and weights)",
+   "size": "2.8 GB (model.pt) + 20 MB NLTK data (cmudict, tagger) for g2p_en",
+   "where": "~/ai/models/SoulX-Singer/model.pt, ~/ai/models/nltk_data; code + its .venv in ~/ai/SoulX-Singer",
+   "runtime": "PyTorch MPS (~/ai/SoulX-Singer/.venv), run by sing/sing.py",
+   "purpose": "Make it sing (beta): sings a score's melody with its English lyrics (singer = the project's English example prompt)"
   }
  ]
 }
