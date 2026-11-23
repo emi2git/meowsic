@@ -226,6 +226,67 @@ for (const [name, w, h, colsWant] of [['iPad landscape', 1366, 1024, [3, 5]], ['
   await post('/items/purge', { ids: [tb.id] });
 }
 
+// ---- Manage library → Split songs: the same for any sheet (page 1 stays the first song) ----
+{
+  const T3 = 'Split songs test';
+  const old = (await api('/items?deleted=true')).concat(await api('/items')).filter((x) => x.title.startsWith(T3) || ['Second', 'Third'].includes(x.title) && x.artist === 'E2E');
+  if (old.length) await post('/items/purge', { ids: old.map((x) => x.id) });
+  const sh = await page.evaluate(async (T3, cols) => {
+    const fd = new FormData(); fd.append('title', T3); fd.append('artist', 'E2E');
+    for (let n = 1; n <= 6; n++) {
+      const c = document.createElement('canvas'); c.width = 600; c.height = 800;
+      const g = c.getContext('2d'); g.fillStyle = `rgb(${cols[n - 1].join(',')})`; g.fillRect(0, 0, 600, 800);
+      g.fillStyle = '#000'; g.font = 'bold 300px sans-serif'; g.textAlign = 'center'; g.fillText(String(n), 300, 500);
+      fd.append('files', await new Promise((r) => c.toBlob(r, 'image/png')), `s${n}.png`);
+    }
+    return (await (await fetch('/api/sheets', { method: 'POST', body: fd })).json()).item;
+  }, T3, Array.from({ length: 6 }, (_, k) => colour(k + 1).map((v) => (v + 7) % 256)));
+  const cols6 = Array.from({ length: 6 }, (_, k) => colour(k + 1).map((v) => (v + 7) % 256));
+  const pagesOf6 = (it) => page.evaluate(async (it, cols) => {
+    const out = [];
+    for (const f of it.pageFiles) {
+      const img = new Image(); img.src = `/api/items/${encodeURIComponent(it.id)}/file/${encodeURIComponent(f)}?x=${Math.random()}`; await img.decode();
+      const c = document.createElement('canvas'); c.width = 4; c.height = 4; c.getContext('2d').drawImage(img, 0, 0);
+      const [r, g, bl] = c.getContext('2d').getImageData(1, 1, 1, 1).data;
+      out.push(cols.findIndex((x) => Math.abs(x[0] - r) + Math.abs(x[1] - g) + Math.abs(x[2] - bl) < 12) + 1);
+    }
+    return out;
+  }, it, cols6);
+  await page.evaluate((id) => { localStorage.setItem('meowsic-cu-tab', 'songsplit'); localStorage.setItem('meowsic-cu-songsplit', id); }, sh.id);
+  await page.goto(BASE + '#/manage', { waitUntil: 'networkidle0' }); await page.reload({ waitUntil: 'networkidle0' }); await sleep(900);
+  check('Split songs tab is on', await page.$eval('[data-tab="songsplit"]', (e) => e.classList.contains('on')));
+  if (!(await page.$('#bs-grid figure'))) { await page.evaluate((id) => document.querySelector(`#bs-list li[data-id="${id}"]`)?.click(), sh.id); await sleep(800); }
+  check('the sheet is listed', !!(await page.$(`#bs-list li[data-id="${sh.id}"]`)));
+  check('its 6 pages shown', (await page.$$('#bs-grid figure')).length === 6);
+  check('page 1 always starts song 1', await page.$eval('#bs-grid figure[data-p="1"]', (e) => e.classList.contains('start') && /Song 1/.test(e.textContent)));
+  check('page 1 title box shows the sheet title', await page.$eval('#bs-grid figure[data-p="1"] input', (e) => e.placeholder) === T3);
+  check('Make off until a second song is marked', await page.$eval('#bs-make', (e) => e.disabled));
+  await page.waitForFunction(() => !/Reading/.test(document.querySelector('#bs-sugst')?.textContent || ''), { timeout: 30000 }).catch(() => {});
+  check('the Mac looked for other song starts', /no other song starts/.test(await page.$eval('#bs-sugst', (e) => e.textContent)) || !(await page.$eval('#bs-sug', (e) => e.hidden)));
+  await page.click('#bs-grid figure[data-p="3"] .bs-pg'); await sleep(300);
+  await page.keyboard.type('Second'); await page.keyboard.press('Enter');
+  await page.click('#bs-grid figure[data-p="5"] .bs-pg'); await sleep(300);
+  await page.keyboard.type('Third'); await page.keyboard.press('Enter'); await sleep(900);
+  check('marks saved', JSON.stringify((await api(`/sheets/${sh.id}/split`)).starts) === JSON.stringify({ 3: 'Second', 5: 'Third' }), JSON.stringify((await api(`/sheets/${sh.id}/split`)).starts));
+  check('Make says 2 new sheets', (await page.$eval('#bs-make', (e) => e.textContent)) === 'Make 2 new sheets…');
+  await page.click('#bs-make'); await sleep(400);
+  const c3 = await page.$$eval('.bs-confirm li', (e) => e.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
+  check('confirm: first song stays, two new', c3.join('|') === `${T3} pages 1–2 (2 p) · stays in this sheet|Second pages 3–4 (2 p) · new sheet|Third pages 5–6 (2 p) · new sheet`, c3.join('|'));
+  await page.click('.modal [data-ok]'); await sleep(2000);
+  const all3 = await api('/items');
+  const kept = all3.find((x) => x.id === sh.id), s2 = all3.find((x) => x.title === 'Second' && x.artist === 'E2E'), s3 = all3.find((x) => x.title === 'Third' && x.artist === 'E2E');
+  check('sheet keeps pages 1–2', kept.pages === 2 && (await pagesOf6(kept)).join() === '1,2', `${kept.pages}`);
+  check('Second = pages 3–4, Third = 5–6', s2 && s3 && (await pagesOf6(s2)).join() === '3,4' && (await pagesOf6(s3)).join() === '5,6');
+  check('Undo offers it', /split songs/.test(await page.$eval('#cu-undo', (e) => e.textContent)));
+  await page.keyboard.press('z'); await sleep(2500);
+  const back3 = await api('/items/' + sh.id);
+  check('undo: all 6 pages back in order', back3.pages === 6 && (await pagesOf6(back3)).join() === '1,2,3,4,5,6');
+  check('undo: new sheets removed', (await fetch(`${BASE}api/items/${s2?.id}`)).status === 404 && (await fetch(`${BASE}api/items/${s3?.id}`)).status === 404);
+  await page.screenshot({ path: 'songsplit-mac.png' });
+  await post(`/sheets/${sh.id}/split`, { starts: {} });
+  await post('/items/purge', { ids: [sh.id] });
+}
+
 check('no page errors', !errs.length, errs.join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);
 await b.close();

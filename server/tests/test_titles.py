@@ -84,6 +84,36 @@ def test_pick_rules():
     assert r['title'] == 'Hey Jude'
 
 
+def test_pick_rules_from_the_old_app():
+    # a two-line title whose second line starts lower case ("for Christmas"), a subtitle in brackets stays out
+    r = titles.pick({'w': 1477, 'h': 2126, 'staff': 0.32, 'lines': [
+        L('62', 0.08, 0.016, x=0.1, w=0.03), L('I Want a Hippopotamus', 0.09, 0.032, x=0.24, w=0.51),
+        L('for Christmas', 0.1235, 0.0276, x=0.35, w=0.3), L('(Hippo the Hero)', 0.15, 0.021, x=0.41, w=0.18)]})
+    assert r['title'] == 'I Want a Hippopotamus for Christmas', r
+    # … but not a "from THE FILM" line under an ALL CAPS title
+    r = titles.pick({'w': 1, 'h': 1, 'staff': 0.3, 'lines': [L("HOW FAR I'LL GO", 0.08, 0.03), L('from MOANA', 0.115, 0.026)]})
+    assert r['title'] == "How Far I'll Go"
+    # chord-diagram grids / bar lines Vision reads as letters never join the title, nor win when they are bigger
+    r = titles.pick({'w': 1, 'h': 1, 'staff': 0.3, 'lines': [L('Rudolph the', 0.09, 0.03), L('Red-Nosed Reindeer', 0.12, 0.028),
+                                                         L('HI II', 0.17, 0.04, conf=0.3)]})
+    assert r['title'] == 'Rudolph the Red-Nosed Reindeer'
+    r = titles.pick({'w': 1, 'h': 1, 'staff': 0.35, 'lines': [L('I Dreamed a Dream', 0.06, 0.029), L('WIII', 0.13, 0.033, x=0.74, w=0.09, conf=0.3)]})
+    assert r['title'] == 'I Dreamed a Dream'
+    # a web page screenshot: shop banner out, the credit on the title's line cut off
+    r = titles.pick({'w': 1, 'h': 1, 'staff': None, 'lines': [L('Summer Sale: 90% OFF 11 : 41 :36', 0.10, 0.023),
+                                                          L('We Are Singapore Arranged by: Marvin Khoo', 0.14, 0.043, x=0.34, w=0.59)]})
+    assert r['title'] == 'We Are Singapore' and r['box'][2] < 0.59
+
+
+def test_second_reading_only_fixes_words_the_page_prints():
+    first = {'title': 'Xe dạp oi', 'confidence': 1.0, 'box': [0.3, 0.1, 0.4, 0.04]}
+    page = {'lines': [L('Xe dạp oi', 0.1, 0.04), L('Xe đạp ơi xe đạp ơi', 0.4, 0.012)]}
+    assert titles.better(first, {'text': 'Xe đạp ơi'}, titles._vocab(page, first['box']))['title'] == 'Xe đạp ơi'
+    # a word read differently but printed nowhere else: the first reading stays
+    assert titles.better(first, {'text': 'Xe đẹp ơi'}, {'xe'})['title'] == 'Xe dạp oi'
+    assert titles.better(first, {'error': 'x'}, set()) is first
+
+
 def test_recase():
     assert titles.recase('YOU\'RE THE ONE THAT I WANT') == "You're the One That I Want"
     assert titles.recase('MỘT CÕI ĐI VỀ') == 'Một cõi đi về'

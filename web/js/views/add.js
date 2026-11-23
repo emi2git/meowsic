@@ -20,6 +20,7 @@ export function addSheetsView(main) {
   main.innerHTML = `
     <header class="top"><a class="icon-btn back" href="#/library?kind=sheet" aria-label="Back">‹ Back</a><h1>Add sheet music</h1></header>
     <div class="pad narrow">
+      ${store.mode === 'server' ? `<a class="drop small pi-from" href="#/add-photos">${icon('photo')}<span><b>From Photos</b><br><span class="muted">The new photos in your “SHEET” album in Apple Photos — grouped into songs, ready to check</span></span></a>` : ''}
       <label class="drop" id="drop">
         ${CAT}
         <b>Choose photos or PDFs</b>

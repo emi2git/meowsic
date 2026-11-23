@@ -1,4 +1,4 @@
-// Clean up, three jobs:
+// Manage library (was Clean up; #/manage, #/cleanup still works), these jobs:
 //  · Go through sheets — every sheet one by one, page 1 first (scroll for the rest): Delete or Keep, then the
 //    next one. Decisions are kept on the Mac; at the end a summary, then the deletes really happen.
 //  · Fix pages — what the Mac found per song (screen junk to trim, pages grouped wrongly): trim each page
@@ -43,6 +43,7 @@ const KEYS = {
   titles: [['Enter / R', 'Rename'], ['F', 'Title is fine'], ['↑ ↓', 'Next / previous'], ['U / Z', 'Undo']],
   books: BOOK_KEYS,
   versions: VERSION_KEYS,
+  songsplit: BOOK_KEYS,
 };
 // what the Mac found, in plain words
 const ISSUE = { trim: 'Screen junk to trim', mixed: 'Pages from different songs', incomplete: 'Pages missing', extra: 'Extra pages',
@@ -65,7 +66,7 @@ const full = () => ({ top: 0, bottom: 1, left: 0, right: 1 });
 
 export function cleanupView(main) {
   if (store.mode !== 'server') {
-    main.innerHTML = '<header class="top"><h1>Clean up</h1></header><p class="pad muted">Clean up needs the Mac.</p>';
+    main.innerHTML = '<header class="top"><h1>Manage library</h1></header><p class="pad muted">Manage library needs the Mac.</p>';
     return;
   }
   let tab0 = 'sort'; try { tab0 = localStorage.getItem('meowsic-cu-tab') || 'sort'; } catch {}
@@ -73,21 +74,22 @@ export function cleanupView(main) {
     sort: { dec: {}, id: null, show: 'todo', summary: false }, notes: {}, noteDue: null, frames: { 1: null, 2: null } };
   main.innerHTML = `<header class="top cu-top">
       <a class="icon-btn back cu-back" href="#/library" aria-label="Back to the library">‹ Library</a>
-      <h1>Clean up</h1>
+      <h1>Manage library</h1>
       <div class="cu-tabs" role="tablist">
         <button data-tab="sort">Go through sheets</button>
         <button data-tab="songs">Fix pages <i id="cu-nf"></i></button>
         <button data-tab="titles">Titles <i id="cu-nt"></i></button>
         <button data-tab="books">Books → sheets</button>
-        <button data-tab="versions">Versions</button></div>
+        <button data-tab="versions">Versions</button>        <button data-tab="songsplit">Split songs</button></div>
       <span class="grow"></span>
       <span class="muted small" id="cu-scan"></span>
       <button id="cu-undo" class="cu-undo" disabled title="Undo (U)">↶ Undo</button>
       <button id="cu-more" class="icon-btn" aria-label="More" title="More">⋯</button></header>
     <div class="cu" id="cu"></div>`;
   const body = $('#cu', main);
-  const books = makeBooks({ body, st, busy: (f) => busy(f), undo: () => undo(), help: () => help(), drawHead: () => drawHead(), tab: (t) => { st.tab = t; draw(); } });
-  const versions = makeVersions({ body, st, busy: (f) => busy(f), undo: () => undo(), help: () => help(), drawHead: () => drawHead(), tab: (t) => { st.tab = t; draw(); } });
+  const bctx = { body, st, busy: (f) => busy(f), undo: () => undo(), help: () => help(), drawHead: () => drawHead(), tab: (t) => { st.tab = t; draw(); } };
+  const books = makeBooks(bctx), songsplit = makeBooks(bctx, 'sheets');  // Books → sheets, Split songs (any sheet)
+  const versions = makeVersions(bctx);
 
   // the song you're on stays in the list until you move off it — otherwise finishing its last trim
   // would drop it from "To do" and throw you back to the top of the list (the same song again and again)
@@ -138,6 +140,7 @@ export function cleanupView(main) {
     if (st.tab === 'titles') return drawTitles();
     if (st.tab === 'books') return books.draw();
     if (st.tab === 'versions') return versions.draw();
+    if (st.tab === 'songsplit') return songsplit.draw();
     if (st.tab === 'sort') return drawSort();
     const list = shown();
     const filt = `<div class="cu-filter">${FILTERS.map(([k, l]) => `<button data-f="${k}" class="${st.filter === k ? 'on' : ''}">${l} <i>${{ look: st.songs.filter(isTodo).length, later: st.songs.filter(isLater).length, good: st.songs.filter(isGood).length, all: st.songs.length }[k]}</i></button>`).join('')}</div>`;
@@ -567,7 +570,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     st.undo.push({ label: `delete ${ids.length}`, tab: 'sort', run: async () => { store.restore(ids); for (const id of ids) await api('POST', '/cleanup/sort', { id, decision: 'delete' }); await new Promise((r) => setTimeout(r, 400)); await load(); st.sort.summary = true; } });
     st.songs = st.songs.filter((x) => !ids.includes(x.id));
     st.sort.dec = (await api('GET', '/cleanup/sort')).decisions;
-    store.logEvent('cleanup', `Deleted ${ids.length} sheets`, 'Clean up → Go through sheets');
+    store.logEvent('cleanup', `Deleted ${ids.length} sheets`, 'Manage library → Go through sheets');
     body.innerHTML = `<div class="sv sv-sum"><h2>${ids.length} sheet${ids.length === 1 ? '' : 's'} deleted</h2>
       <p class="muted">They are in the Trash for now. Undo brings them back.</p>
       <div class="sv-act"><button id="sv-again" class="primary big">Go on with the rest</button>
@@ -659,13 +662,14 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
   ]);
 
   const onKey = (e) => {
-    if (!main.isConnected || !location.hash.startsWith('#/cleanup') || !body.isConnected) return removeEventListener('keydown', onKey);
+    if (!main.isConnected || !/^#\/(cleanup|manage)\b/.test(location.hash) || !body.isConnected) return removeEventListener('keydown', onKey);
     if (st.renaming || document.querySelector('.modal') || e.target.matches?.('input:not([readonly]), textarea')) return;
     const k = e.key, songs = st.tab === 'songs';
     const tabKey = { Digit1: 'sort', Digit2: 'songs', Digit3: 'titles', Digit4: 'books', Digit5: 'versions' }[e.code];  // ⌥1…5 switch tabs anywhere
     if (e.altKey && tabKey && !e.metaKey && !e.ctrlKey) { e.preventDefault(); st.tab = tabKey; return draw(); }
     if (st.tab === 'books') return books.onKey(e);
     if (st.tab === 'versions') return versions.onKey(e);
+    if (st.tab === 'songsplit') return songsplit.onKey(e);
     if (st.tab === 'sort') {
       const a = { d: () => decide('delete'), Delete: () => decide('delete'), Backspace: () => decide('delete'), k: () => decide('keep'), Enter: () => decide('keep'),
         ArrowRight: () => sortStep(1), ArrowLeft: () => sortStep(-1), z: undo, u: undo, '?': help,

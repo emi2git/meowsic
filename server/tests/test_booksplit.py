@@ -112,3 +112,63 @@ def test_unmake_refuses_after_changes(client):
     client.post(f'/api/items/{s["id"]}/split', json={'pages': [2], 'title': 'Other'})
     assert client.post(f'/api/books/{b["id"]}/unmake').status_code == 409
     assert client.get(f'/api/items/{b["id"]}').json()['pages'] == 2
+
+
+# ---------- any sheet: Manage library → Split songs ----------
+
+def make_sheet(client, title='Three songs', n=7, off=0):
+    files = [('files', (f'{k}.png', png(COLORS[k + off]), 'image/png')) for k in range(n)]
+    return client.post('/api/sheets', data={'title': title, 'artist': 'Someone', 'tags': json.dumps(['Piano'])}, files=files).json()['item']
+
+
+def test_split_songs_of_a_sheet_and_undo(client):
+    s = make_sheet(client)
+    before = client.get(f'/api/items/{s["id"]}').json()
+    lst = client.get('/api/sheets/split').json()['sheets']
+    assert [x['id'] for x in lst] == [s['id']] and lst[0]['several'] == [] and lst[0]['pages'] == 7
+    client.post(f'/api/sheets/{s["id"]}/split', json={'page': 1, 'title': 'First song'})
+    client.post(f'/api/sheets/{s["id"]}/split', json={'page': 3, 'title': 'Second'})
+    client.post(f'/api/sheets/{s["id"]}/split', json={'page': 6, 'title': ''})
+    assert client.get(f'/api/sheets/{s["id"]}/split').json()['starts'] == {'1': 'First song', '3': 'Second', '6': ''}
+    r = client.post(f'/api/sheets/{s["id"]}/make-sheets', json={}).json()
+    kept, new = r['book'], r['sheets']
+    # the first song stays in the sheet (renamed as marked on page 1); the others are new sheets
+    assert kept['title'] == 'First song' and kept['pages'] == 2 and not kept['deleted'] and colors(client, kept) == COLORS[:2]
+    assert [(x['title'], x['pages']) for x in new] == [('Second', 3), ('Three songs — p6', 2)]
+    assert colors(client, new[0]) == COLORS[2:5] and colors(client, new[1]) == COLORS[5:7]
+    assert all(x['artist'] == 'Someone' and x['tags'] == ['Piano'] for x in new)
+    acts = client.get('/api/activity').json()
+    assert any(a['type'] == 'songsplit' and '2 new sheets' in a['detail'] for a in acts)
+    assert [x for x in client.get('/api/sheets/split').json()['sheets'] if x['id'] == s['id']][0]['canUnmake']
+    back = client.post(f'/api/sheets/{s["id"]}/unmake').json()['book']
+    assert back['title'] == 'Three songs' and back['pages'] == 7 and back['pageFiles'] == before['pageFiles'] and colors(client, back) == COLORS[:7]
+    for x in new: assert client.get(f'/api/items/{x["id"]}').status_code == 404
+    assert client.get(f'/api/sheets/{s["id"]}/split').json()['starts'] == {'1': 'First song', '3': 'Second', '6': ''}
+    assert client.post(f'/api/sheets/{s["id"]}/unmake').status_code == 400
+
+
+def test_split_songs_rules(client):
+    s = make_sheet(client, n=3, off=5)
+    assert client.post(f'/api/sheets/{s["id"]}/make-sheets', json={'starts': {'1': 'Only page 1'}}).status_code == 400
+    b = make_book(client, n=3)
+    assert client.post(f'/api/sheets/{b["id"]}/make-sheets', json={'starts': {'2': ''}}).status_code == 400  # a book: Books → sheets
+    assert client.post(f'/api/books/{s["id"]}/make-sheets', json={'starts': {'2': ''}}).status_code == 400  # a sheet is not a book
+    # no title on page 1: the sheet keeps its title
+    r = client.post(f'/api/sheets/{s["id"]}/make-sheets', json={'starts': {'2': 'B'}}).json()
+    assert r['book']['title'] == 'Three songs' and r['book']['pages'] == 1 and r['sheets'][0]['pages'] == 2
+    # books still work as before (the Books tab)
+    assert client.post(f'/api/books/{b["id"]}/make-sheets', json={'starts': {'2': 'X'}}).json()['book']['pages'] == 1
+
+
+def test_split_songs_hint_and_suggest(client, app, monkeypatch):
+    from meowsic import cleanstate, titles
+    s = make_sheet(client, n=4)
+    c = app.state.connect()  # the page-dot scan saw "page 1 of 2" on page 3
+    for p, dots in ((1, {'count': 2, 'lit': 1}), (2, {'count': 2, 'lit': 2}), (3, {'count': 2, 'lit': 1}), (4, {'count': 2, 'lit': 2})):
+        cleanstate.scan_put(c, s['id'], p, 0, {'trim': None, 'dots': dots, 'box': None}, f'x{p}')
+    c.commit(); c.close()
+    lst = client.get('/api/sheets/split').json()['sheets']
+    assert lst[0]['id'] == s['id'] and lst[0]['several'] == ['page 3 is page 1 of 2 (page dots)']
+    monkeypatch.setattr(titles, 'available', lambda: False)
+    g = client.get(f'/api/sheets/{s["id"]}/split?detect=1').json()
+    assert set(g['suggest']) == {'1', '2', '3', '4'} and g['suggest']['1']['start']

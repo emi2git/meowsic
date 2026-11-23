@@ -46,8 +46,8 @@ def _relayout(c, cf, item_id, pages: list[dict]):
         os.rename(tmp, dst / name)
         for h in hist:
             os.rename(h, dst / '.history' / f'p{k}-{h.name.split("-", 3)[3]}')
-        c.execute('INSERT INTO sheet_page(item_id, page, file, sha256, captured_at, ocr_text) VALUES (?,?,?,?,?,?)',
-                  (item_id, k, name, r.get('sha256'), r.get('captured_at'), r.get('ocr_text')))
+        c.execute('INSERT INTO sheet_page(item_id, page, file, sha256, captured_at, ocr_text, photo_id) VALUES (?,?,?,?,?,?,?)',
+                  (item_id, k, name, r.get('sha256'), r.get('captured_at'), r.get('ocr_text'), r.get('photo_id')))
         if ann: c.execute('INSERT OR REPLACE INTO annotation(item_id, page, strokes) VALUES (?,?,?)', (item_id, str(k), ann))
     c.execute('UPDATE sheet SET pages=? WHERE item_id=?', (len(pages), item_id))
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), item_id))
