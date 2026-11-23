@@ -27,3 +27,4 @@ migrate/.venv/
 *.gguf
 models--*/
 .claude/
+web/takes/
