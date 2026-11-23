@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 from .db import AI_SOURCE, BOOKS, KIND_COLS, book_folder, ensure_tags, folder_base, folder_path, get_item, item_json, log_event, now_ms, folder_name, rebase, uid, write_item
 
@@ -297,6 +297,24 @@ def item_file(item_id: str, rel: str, c=Depends(conn), cf=Depends(cfg)):
     if not p.is_file(): raise HTTPException(404, 'No such file')
     media = {'.musicxml': 'application/vnd.recordare.musicxml+xml', '.mid': 'audio/midi', '.midi': 'audio/midi'}.get(p.suffix.lower())
     return FileResponse(p, media_type=media)
+
+
+@router.get('/items/{item_id}/pages/{page}')
+def item_page(item_id: str, page: int, request: Request, c=Depends(conn), cf=Depends(cfg)):
+    """Page n by number, whatever its file is called now (a rename never breaks a cached URL).
+    no-cache + ETag: the browser / service worker always asks, and gets a 304 when nothing changed."""
+    it = must_item(c, item_id)
+    row = c.execute('SELECT file FROM sheet_page WHERE item_id=? AND page=?', (item_id, page)).fetchone()
+    if not row: raise HTTPException(404, 'No such page')
+    p = safe_file(item_dir(cf, it), row[0])
+    if not p.is_file(): raise HTTPException(404, 'No such file')
+    st = p.stat()
+    etag = '"%s"' % hashlib.md5(f'{row[0]}:{st.st_mtime_ns}:{st.st_size}'.encode()).hexdigest()
+    headers = {'Cache-Control': 'no-cache', 'ETag': etag,
+               'Last-Modified': datetime.datetime.fromtimestamp(st.st_mtime, datetime.timezone.utc).strftime('%a, %d %b %Y %H:%M:%S GMT')}
+    if etag in [t.strip() for t in request.headers.get('if-none-match', '').split(',')]:
+        return Response(status_code=304, headers=headers)
+    return FileResponse(p, headers=headers)
 
 
 @router.get('/items/{item_id}/thumb/{page}')

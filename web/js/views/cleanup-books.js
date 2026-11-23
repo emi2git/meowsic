@@ -245,7 +245,7 @@ export function makeBooks(ctx) {
     m.el.classList.add('bs-modal');
     const show = () => {
       const p = bs.focus, k = segOf(p);
-      $('#bs-big', m.el).src = store.fileUrl(b.id, b.files[p - 1]) + `?v=${b.updatedAt || 0}`;
+      $('#bs-big', m.el).src = store.pageUrl(b.id, p, b.updatedAt);
       $('#bs-lt', m.el).textContent = `Page ${p} of ${b.pages} · ${k < 0 ? 'stays in the book' : `sheet ${k + 1}`}`;
       const lm = $('#bs-lm', m.el); lm.textContent = p in bs.starts ? 'Not a new sheet' : 'A new sheet starts here'; lm.classList.toggle('on', p in bs.starts);
     };

@@ -161,11 +161,11 @@ export function cleanupView(main) {
         </div>
         <div class="cu-issues">${chips(s)}${s.issues.some((i) => ['mixed', 'extra', 'twice', 'order', 'incomplete'].includes(i.kind)) ? '<span class="muted small">To fix grouping: Song ▾ → Split into two songs, or Delete.</span>' : ''}</div>
         <div class="cu-strip">${s.pages.map((x, k) => `<button class="${k === st.pi ? 'on' : ''}" data-p="${k}" title="Page ${x.page}">
-          <img src="${store.fileUrl(s.id, it?.pageFiles?.[x.page - 1] || x.file)}?v=${ver}" alt="" loading="lazy">
+          <img src="${store.pageUrl(s.id, x.page, ver)}" alt="" loading="lazy">
           <span>${x.page}${x.dots ? ` · dot ${x.dots.lit ?? '?'}/${x.dots.count}` : ''}${x.trims ? ' · ✓' : x.kept ? ' · kept' : x.later ? ' · later' : x.trim ? ' · ✂' : ''}</span></button>`).join('')}</div>
         ${!p.page ? '<p class="pad muted">This song has no pages. Delete it?</p>' : ''}
 ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
-          <img id="cu-img" src="${p.trims ? `/api/items/${encodeURIComponent(s.id)}/pages/${p.page}/original` : store.fileUrl(s.id, it?.pageFiles?.[p.page - 1] || p.file)}?v=${ver}" alt="" draggable="false">
+          <img id="cu-img" src="${p.trims ? `/api/items/${encodeURIComponent(s.id)}/pages/${p.page}/original?v=${ver}` : store.pageUrl(s.id, p.page, ver)}" alt="" draggable="false">
           <div class="cu-shade"></div>
           <div class="cu-box"><i data-e="top"></i><i data-e="bottom"></i><i data-e="left"></i><i data-e="right"></i>
             <i data-e="top left"></i><i data-e="top right"></i><i data-e="bottom left"></i><i data-e="bottom right"></i></div>
@@ -385,7 +385,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     const m = modal(`<h2>Split “${esc(s.title)}”</h2>
       <p class="muted small">Tick the pages that belong to another song. They become a new song.</p>
       <div class="cu-pick">${s.pages.map((x) => `<button type="button" data-p="${x.page}" class="${pick.has(x.page) ? 'on' : ''}">
-        <img src="${store.fileUrl(s.id, it?.pageFiles?.[x.page - 1] || x.file)}?v=${ver}" alt=""><span>${x.page}${x.dots ? ` · dot ${x.dots.lit ?? '?'}/${x.dots.count}` : ''}</span></button>`).join('')}</div>
+        <img src="${store.pageUrl(s.id, x.page, ver)}" alt=""><span>${x.page}${x.dots ? ` · dot ${x.dots.lit ?? '?'}/${x.dots.count}` : ''}</span></button>`).join('')}</div>
       <label class="field">New song's title <input id="cu-st" value="${esc(s.title)} (part 2)"><small class="bs-det muted" id="cu-st-det"></small></label>
       <div class="modal-actions"><button data-close>Cancel</button><button class="primary" data-ok>Split</button></div>`, { wide: true });
     // the new song's title: read off the first page that moves (again when that page changes)

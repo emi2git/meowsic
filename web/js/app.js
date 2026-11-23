@@ -11,6 +11,7 @@ import { statsView, settingsView, developerView } from './views/more.js';
 import { activityView } from './views/activity.js';
 import { cleanupView } from './views/cleanup.js';
 import { makeTagsView } from './views/maketags.js';
+import { placeBanner } from './conn.js';
 
 const main = $('#main');
 let cleanup = null;
@@ -40,6 +41,7 @@ function route() {
   main.innerHTML = '';
   cleanup = view(main, { parts, q });
   renderSide();
+  requestAnimationFrame(placeBanner);
   $('#main').focus({ preventScroll: true });
 }
 

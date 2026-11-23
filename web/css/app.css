@@ -1065,3 +1065,14 @@ label .bs-det { display: block; font-weight: 400; margin-top: 2px; }
 .cu-fr [data-fr]:disabled { opacity: .55; }
 .cu-fr .cu-frsave { border-radius: 0 8px 8px 0; padding: 0 9px; min-height: 36px; border-left: 0; }
 @media (max-width: 760px) { .cu-frames { padding: 4px 8px 0; gap: 6px; } .cu-fr { flex: 1 1 0; } .cu-fr [data-fr] { flex: 1; min-width: 0; } .cu-fr [data-fr] small { overflow: hidden; text-overflow: ellipsis; max-width: 100%; } }
+
+/* ---------- connection: the Mac can't be reached ---------- */
+.conn-banner { position: fixed; z-index: 120; top: env(safe-area-inset-top); left: 0; width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px max(14px, env(safe-area-inset-right)) 8px max(14px, env(safe-area-inset-left)); background: color-mix(in srgb, var(--warn) 16%, var(--bg)); color: var(--ink); border-bottom: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); font-size: 14px; font-weight: 600; box-sizing: border-box; }
+.conn-banner[hidden] { display: none; }
+.conn-banner span { flex: 1; min-width: 0; }
+.conn-banner button { flex: none; min-height: 36px; padding: 0 14px; }
+/* a page picture that didn't load: say why instead of a blank box */
+.img-failed { position: relative; min-height: 60px; min-width: 60px; }
+.img-failed img.img-fail { visibility: hidden; }
+.img-failed::after { content: attr(data-fail); position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; background: var(--bg2); color: var(--ink2); font-size: 14px; font-weight: 600; line-height: 1.35; overflow: hidden; border-radius: inherit; z-index: 1; pointer-events: none; }
+.cu-strip .img-failed::after, .cu-pick .img-failed::after { font-size: 10px; padding: 4px; }

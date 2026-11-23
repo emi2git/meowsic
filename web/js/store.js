@@ -18,18 +18,30 @@ let lastSync = 0;
 const CACHE = 'meowsic-cache-v1', OUTBOX = 'meowsic-outbox-v1';
 const ls = { get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
 
-// one call to the Mac; when it fails (offline) the call waits in the outbox and is sent later
+// a fetch that gives up after ms (AbortSignal.timeout is missing on older iOS)
+const timed = (url, ms, opts = {}) => { const c = new AbortController(); const t = setTimeout(() => c.abort(), ms); return fetch(url, { ...opts, signal: c.signal }).finally(() => clearTimeout(t)); };
+// does the Mac answer? (never from the service worker's cache: sw.js leaves /api/health alone)
+async function ping() {
+  try { const h = await timed('/api/health', 4000, { cache: 'no-store' }); return h.ok && !!(await h.json()).ok; } catch { return false; }
+}
+const connSubs = new Set();
+function setMode(m) { if (m === mode) return; mode = m; connSubs.forEach((f) => f(m)); if (m === 'offline') subs.forEach((f) => f()); }
+
+// one call to the Mac; when it fails (offline) the call waits in the outbox and is sent later.
+// One failed request alone doesn't mean the Mac is away: only when /api/health doesn't answer either.
 async function api(method, path, body, { queue = true } = {}) {
   if (mode === 'mock') return null;
   const opts = { method, headers: {} };
   if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
   try {
     const r = await fetch('/api' + path, opts);
+    if (r.headers.get('X-Meowsic-Offline')) throw new Error('offline'); // the service worker: no network and nothing cached
     if (!r.ok) throw Object.assign(new Error((await r.json().catch(() => ({}))).detail || `Request failed (${r.status})`), { status: r.status });
     return r.status === 204 ? null : r.json();
   } catch (e) {
-    if (queue && !e.status) { const box = ls.get(OUTBOX) || []; box.push([method, path, body]); ls.set(OUTBOX, box); mode = 'offline'; }
-    else if (e.status) console.warn('Meowsic:', e.message);
+    if (queue && !e.status) { const box = ls.get(OUTBOX) || []; box.push([method, path, body]); ls.set(OUTBOX, box); }
+    if (e.status) console.warn('Meowsic:', e.message);
+    else if (mode === 'server' && !(await ping())) setMode('offline');
     return null;
   }
 }
@@ -37,31 +49,57 @@ async function flushOutbox() {
   const box = ls.get(OUTBOX) || [];
   if (!box.length) return;
   ls.set(OUTBOX, []);
-  for (const [m, p, b] of box) await api(m, p, b);
+  for (let i = 0; i < box.length; i++) {
+    await api(...box[i]);
+    // the Mac went away again (api queued that one): the rest waits too, in order
+    if (mode !== 'server') { ls.set(OUTBOX, [...(ls.get(OUTBOX) || []), ...box.slice(i + 1)]); return; }
+  }
 }
 const send = (method, path, body) => { api(method, path, body); };
 
 async function boot() {
   try {
-    const h = await fetch('/api/health', { signal: AbortSignal.timeout(3000) });
-    if (h.ok && (await h.json()).ok) {
+    if (await ping()) {
       mode = 'server';
       await flushOutbox();
-      db = await (await fetch('/api/backup')).json();
+      db = await (await fetch('/api/backup', { cache: 'no-store' })).json();
       ls.set(CACHE, db);
       lastSync = Date.now(); ls.set('meowsic-last-sync', lastSync);
     }
-  } catch {}
+  } catch { mode = 'mock'; }
   const preview = new URLSearchParams(location.search).has('preview'); // sample library, only for automated UI tests
   if (mode === 'mock' && preview) return load();
   if (mode === 'mock') { db = ls.get(CACHE) || { items: [], tags: [] }; mode = 'offline'; lastSync = ls.get('meowsic-last-sync') || 0; }
   db.items ||= []; db.tags ||= []; db.plays ||= []; db.jobs ||= []; db.activity ||= []; db.annotations ||= {}; db.printed ||= {};
   hydrate();
 }
-// coming back to the app (iPad wakes, tab shown) and every few minutes: pull the Mac's list again
-addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') store.resync().catch(() => {}); });
+
+// offline: ask the Mac every 10 s, and when the app comes back to the front / the network changes.
+// When it answers: server mode again, send what waited, pull the Mac's list, redraw open views.
+let checking = null;
+function reconnect() {
+  if (mode !== 'offline') return Promise.resolve(mode === 'server');
+  return (checking ||= (async () => {
+    if (!(await ping())) return false;
+    setMode('server');
+    await flushOutbox();
+    if (mode !== 'server') return false;
+    if (!db.items.length) { try { const d = await (await fetch('/api/backup', { cache: 'no-store' })).json(); if (Array.isArray(d.items)) { Object.assign(db, d); hydrate(); } } catch {} }
+    else await store.resync().catch(() => {});
+    lastSync = Date.now(); ls.set('meowsic-last-sync', lastSync);
+    changed();
+    dispatchEvent(new CustomEvent('meowsic-reconnected'));
+    return true;
+  })().finally(() => { checking = null; }));
+}
+setInterval(() => { if (mode === 'offline') reconnect(); }, 10 * 1000);
+// coming back to the app (iPad wakes, tab shown, Home Screen app reopened) and every few minutes: pull the Mac's list again
+const wake = () => { if (mode === 'offline') reconnect(); else if (document.visibilityState === 'visible') store.resync().catch(() => {}); };
+addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') wake(); });
+addEventListener('pageshow', (e) => { if (e.persisted) wake(); });
+addEventListener('focus', () => { if (mode === 'offline') reconnect(); });
+addEventListener('online', () => { if (mode === 'offline') reconnect(); });
 setInterval(() => { if (document.visibilityState === 'visible') store.resync().catch(() => {}); }, 3 * 60 * 1000);
-addEventListener('online', () => { if (mode === 'offline') boot().then(() => subs.forEach((f) => f())); });
 
 function load() {
   try {
@@ -211,6 +249,12 @@ export const store = {
   get lastSync() { return lastSync; },
   get waiting() { return (ls.get(OUTBOX) || []).length; },
   thumbUrl(it, page = 1, w = 240) { return mode === 'server' && it.pageFiles?.length ? `/api/items/${encodeURIComponent(it.id)}/thumb/${page}?w=${w}&v=${it.updatedAt || 0}` : null; },
+  // page n by number (the Mac looks up its current file): stays right after a rename
+  pageUrl(id, n, v = 0) { return `/api/items/${encodeURIComponent(id)}/pages/${n}?v=${v || 0}`; },
+  // connection: check now (true = the Mac answers), try again, listen for server <-> offline
+  async checkConnection() { if (mode === 'mock') return false; if (mode === 'offline') return reconnect(); if (await ping()) return true; setMode('offline'); return false; },
+  retry() { return reconnect(); },
+  onConn(fn) { connSubs.add(fn); return () => connSubs.delete(fn); },
   fileUrl(id, file) { return `/api/items/${encodeURIComponent(id)}/file/${file.split('/').map(encodeURIComponent).join('/')}`; },
   api,
   // after an upload / server-side change: put the server's copy of an item into the library

@@ -31,3 +31,21 @@ def test_split_and_join(client):
     j = client.post(f'/api/items/{a["id"]}/join', json={'other': b['id']}).json()['item']
     assert j['pages'] == 4 and [color_of(client, j, n) for n in (3, 4)] == [(0, 0, 255), (255, 255, 0)]
     assert client.get(f'/api/items/{b["id"]}').json()['deleted']
+
+
+def test_page_by_number_survives_rename(client):
+    it = make(client, 'Stable', ['red', 'green'])
+    url = f'/api/items/{it["id"]}/pages/2'
+    r = client.get(url)
+    assert r.status_code == 200 and r.headers['cache-control'] == 'no-cache' and r.headers['etag'] and r.headers['last-modified']
+    assert Image.open(io.BytesIO(r.content)).convert('RGB').getpixel((1, 1)) == (0, 128, 0)
+    assert client.get(url, headers={'If-None-Match': r.headers['etag']}).status_code == 304
+    renamed = client.patch(f'/api/items/{it["id"]}', json={'title': 'Stable renamed'}).json()
+    assert renamed['pageFiles'] != it['pageFiles']
+    assert client.get(f'/api/items/{it["id"]}/file/{it["pageFiles"][1]}').status_code == 404  # old name gone
+    r2 = client.get(url)
+    assert r2.status_code == 200 and r2.headers['etag'] != r.headers['etag']
+    assert Image.open(io.BytesIO(r2.content)).convert('RGB').getpixel((1, 1)) == (0, 128, 0)
+    assert client.get(f'/api/items/{it["id"]}/file/{renamed["pageFiles"][1]}').status_code == 200  # /file/ still works
+    assert client.get(f'/api/items/{it["id"]}/pages/3').status_code == 404
+    assert client.get('/api/items/nope/pages/1').status_code == 404

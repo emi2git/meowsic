@@ -8,9 +8,10 @@ import { bookToggle } from './actions.js';
 import { titleBox } from '../title-detect.js';
 import { attachSwipe, backToLibrary } from '../swipe.js';
 import { isTouch, isDesktop } from '../device.js';
+import { watchImage, markFailed } from '../conn.js';
 
 // real sheets: the page files on the Mac; the UI preview draws mock pages
-export const pageSrc = (it, p) => (it.pageFiles?.[p - 1] && `${store.fileUrl(it.id, it.pageFiles[p - 1])}?v=${it.updatedAt || 0}`) || (it.upload && store.sessionImage(`${it.id}:${p}`)) || sheetUrl(it.title, p, it.pages, { artist: it.artist });
+export const pageSrc = (it, p) => (it.pageFiles?.[p - 1] && store.pageUrl(it.id, p, it.updatedAt)) || (it.upload && store.sessionImage(`${it.id}:${p}`)) || sheetUrl(it.title, p, it.pages, { artist: it.artist });
 
 export function sheetBody(root, it, { perform = false, onEnd } = {}) {
   let page = 1;
@@ -43,6 +44,7 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
     if (!c) {
       const im = new Image();
       im.draggable = false;
+      watchImage(im);
       im.src = src;
       c = { im, done: false };
       c.ready = im.decode().catch(() => new Promise((r) => (im.complete ? r() : (im.onload = im.onerror = r)))).then(() => { c.done = true; });
@@ -89,6 +91,7 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
       const img = cs[i].im;
       img.alt = `Page ${p} of ${it.title}`;
       w.append(img);
+      if (img.classList.contains('img-fail') || (img.complete && img.src && !img.naturalWidth)) markFailed(img); // failed before it was in the page
       return w;
     }));
     row.querySelectorAll('.page').forEach((w) => {

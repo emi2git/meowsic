@@ -106,7 +106,7 @@ for (const [name, w, h] of devices) {
       const over = fr.filter((x) => x[1] > fw + 1 || x[2] > fh + 1);
       check(`${w}×${h}: turn to page ${n} — page box never bigger than its final ${Math.round(fw)}×${Math.round(fh)}`, fr.length && !over.length, JSON.stringify(over.slice(0, 3)));
     }
-    check(`${w}×${h}: next page (4) preloaded while on page 3`, await p.evaluate((n) => performance.getEntriesByType('resource').some((r) => decodeURIComponent(r.name).includes(n)), big.pageFiles[3]));
+    check(`${w}×${h}: next page (4) preloaded while on page 3`, await p.evaluate((n) => performance.getEntriesByType('resource').some((r) => decodeURIComponent(r.name).includes(n)), big.id + '/pages/4?'));
     await p.close();
   }
   if (big) await up.evaluate((id) => fetch('/api/items/purge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) }), big.id);

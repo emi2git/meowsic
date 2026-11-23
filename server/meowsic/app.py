@@ -32,7 +32,7 @@ def create_app(data=None, background=True) -> FastAPI:
     @app.middleware('http')
     async def no_store(request, call_next):
         resp = await call_next(request)
-        resp.headers['Cache-Control'] = 'no-store'
+        if 'cache-control' not in resp.headers: resp.headers['Cache-Control'] = 'no-store'  # page images set their own (no-cache + ETag)
         return resp
 
     for r in (items.router, jobs.router, backup.router, chords.router, ai.router, cleanup.router, pages.router, booksplit.router, titles.router):
