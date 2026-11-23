@@ -907,3 +907,20 @@ kbd { font: 11px ui-monospace, monospace; opacity: .7; margin-left: 6px; border:
 .sv-grid small { color: var(--mute); }
 @media (max-width: 760px) { .cu.songs { grid-template-columns: 1fr; } .cu-side { display: none; } .cu-tabs button { padding: 6px 10px; font-size: 14px; } }
 .sv-nopage { aspect-ratio: 3 / 4; display: flex; align-items: center; justify-content: center; background: var(--bg2); color: var(--mute); border-radius: 4px; font-size: 13px; }
+
+/* iPad / iPhone sheet + book viewer: the page fills the width or the height, edge to edge. No ‹ ›
+   strips (swipe, or tap the left / right half, turns the page). */
+@media (pointer: coarse) {
+  body[data-view="item"] .k-sheet .item-top { min-height: 40px; padding-top: calc(3px + env(safe-area-inset-top)); padding-bottom: 3px; padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
+  body[data-view="item"] .sheet-frame .pages { padding: 0; }
+  body[data-view="item"] .sheet-frame .page-row { gap: 0; }
+  body[data-view="item"] .sheet-frame .page { border-radius: 0; box-shadow: none; }
+  body[data-view="item"] .turn-strip { display: none; }
+}
+/* iPhone: Back, title, page number, pen, ⋯ on one row */
+@media (pointer: coarse) and (max-width: 760px) {
+  body[data-view="item"] .k-sheet .item-top { flex-wrap: nowrap; gap: 4px; }
+  body[data-view="item"] .k-sheet .item-title { flex: 1 1 auto; }
+  body[data-view="item"] .k-sheet .toolbar.inline { order: 0; flex: none; flex-basis: auto; flex-wrap: nowrap; gap: 4px; }
+  body[data-view="item"] .k-sheet .toolbar.inline .pageno { font-size: 13px; white-space: nowrap; }
+}

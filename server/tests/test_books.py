@@ -47,3 +47,31 @@ def test_sort_decisions(client):
     assert client.get('/api/cleanup/sort').json()['decisions'] == {'s-a': 'delete', 's-b': 'keep'}
     client.post('/api/cleanup/sort', json={'id': 's-b', 'decision': None})
     assert client.post('/api/cleanup/sort', json={'clear': ['s-a']}).json()['decisions'] == {}
+
+
+def test_books_get_no_trim(client, app, monkeypatch):
+    """Books never need trimming: no 'trim' issue, no per-page trim/box, the scan skips their pages.
+    Odd titles still count for books."""
+    from meowsic import cleanup
+    seen = []
+
+    def fake(path, original=None):
+        seen.append(path.name)
+        return {'trim': {'top': 0.1, 'bottom': 0.9, 'reasons': ['status bar']}, 'dots': None, 'box': {'top': 0.1, 'bottom': 0.9}}
+    monkeypatch.setattr(cleanup.trim, 'analyze', fake)
+    make(client, 'Plain Song', ['red', 'green'])
+    book = make(client, 'Big Songbook', ['blue', 'yellow', 'navy'])
+    odd = make(client, 'IMG_1234', ['purple', 'orange'])
+    client.post('/api/items/book', json={'ids': [book['id'], odd['id']], 'book': True})
+    cleanup._scan.update(running=True)
+    cleanup._run_scan(app)
+    assert seen and not any(n.startswith(('Big Songbook', 'IMG')) for n in seen)  # book pages not analysed
+    d = client.get('/api/cleanup').json()
+    assert not d['scan']['running']  # book pages do not count as 'not looked at yet'
+    by = {s['title']: s for s in d['songs']}
+    assert [i['kind'] for i in by['Plain Song']['issues']] == ['trim'] and by['Plain Song']['pages'][0]['trim']
+    b = by['Big Songbook']
+    assert b['book'] and b['issues'] == [] and len(b['pages']) == 3
+    assert all(p['trim'] is None and p['box'] is None and p['scanned'] for p in b['pages'])
+    assert [i['kind'] for i in by['IMG_1234']['issues']] == ['title']  # odd title still flagged on a book
+    assert any(t['title'] == 'IMG_1234' for t in d['titles'])

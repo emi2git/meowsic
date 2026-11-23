@@ -54,8 +54,11 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
         const ratio = img.naturalWidth ? img.naturalWidth / img.naturalHeight : 850 / 1100;
         w.style.aspectRatio = String(ratio);
         if (row.dataset.h) { w.style.height = row.dataset.h + 'px'; w.style.width = ''; return; }
-        const n = show.length, gap = 4;
-        const H = pages.clientHeight - 8, W = (pages.clientWidth - 12 - gap * (n - 1)) / n;
+        // iPad / iPhone: the whole room inside .pages (no padding there: the page goes edge to edge); Mac: as before
+        const n = show.length, touch = matchMedia('(pointer: coarse)').matches, cs = getComputedStyle(pages);
+        const gap = touch ? parseFloat(getComputedStyle(row).columnGap) || 0 : 4;
+        const H = pages.clientHeight - (touch ? parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) : 8);
+        const W = (pages.clientWidth - (touch ? parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) : 12) - gap * (n - 1)) / n;
         const h = Math.min(H, W / ratio);
         w.style.height = h + 'px';
         w.style.width = h * ratio + 'px';

@@ -481,7 +481,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
 
   const rescan = () => busy(async () => { st.scan = await api('POST', '/cleanup/scan'); drawHead(); setTimeout(load, 1500); });
   const trimAll = async () => {
-    const todo = st.songs.filter((s) => !s.reviewed).flatMap((s) => s.pages.filter((p) => p.trim).map((p) => ({ id: s.id, p })));
+    const todo = st.songs.filter((s) => !s.reviewed && !s.book).flatMap((s) => s.pages.filter((p) => p.trim).map((p) => ({ id: s.id, p })));
     if (!(await confirmSheet({ title: `Trim all ${todo.length} pages the Mac suggests?`, body: 'Each page is trimmed as suggested. The original photos are kept — any page can go back with Original photo.', ok: 'Trim all' }))) return;
     const m = modal(`<h2>Trimming…</h2><progress id="cu-p" max="${todo.length}" value="0"></progress><p class="muted small" id="cu-pm"></p>`);
     let n = 0;
@@ -501,7 +501,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
   $('#cu-undo', main).onclick = undo;
   const help = () => modal(`<h2>Keyboard shortcuts</h2><table class="cu-keys">${KEYS[st.tab === 'songs' ? 'fix' : st.tab].map(([k, d]) => `<tr><td><kbd>${k}</kbd></td><td>${d}</td></tr>`).join('')}</table><div class="modal-actions"><button class="primary" data-close>OK</button></div>`);
   $('#cu-more', main).onclick = (e) => menu(e.currentTarget, [
-    ...(st.songs.some((x) => !x.reviewed && x.pages.some((p) => p.trim)) ? [{ label: 'Trim every page the Mac suggests…', icon: 'tools', run: trimAll }] : []),
+    ...(st.songs.some((x) => !x.reviewed && !x.book && x.pages.some((p) => p.trim)) ? [{ label: 'Trim every page the Mac suggests…', icon: 'tools', run: trimAll }] : []),
     { label: 'Check all pages again', icon: 'wave', run: rescan },
     { label: 'Keyboard shortcuts', icon: 'info', run: help },
   ]);
