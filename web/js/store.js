@@ -204,6 +204,7 @@ export const store = {
   get mode() { return mode; },
   get lastSync() { return lastSync; },
   get waiting() { return (ls.get(OUTBOX) || []).length; },
+  thumbUrl(it, page = 1, w = 240) { return mode === 'server' && it.pageFiles?.length ? `/api/items/${encodeURIComponent(it.id)}/thumb/${page}?w=${w}&v=${it.updatedAt || 0}` : null; },
   fileUrl(id, file) { return `/api/items/${encodeURIComponent(id)}/file/${file.split('/').map(encodeURIComponent).join('/')}`; },
   api,
   // after an upload / server-side change: put the server's copy of an item into the library

@@ -21,16 +21,17 @@ for (const k of [`song:${sh.id}`, ...Array.from({ length: 8 }, (_, i) => `${sh.i
 await page.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' });
 for (let i = 0; i < 40; i++) { await sleep(1000); if (!(await page.$eval('#cu-scan', (e) => e.textContent))) break; }
 await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
+await page.keyboard.press('2'); await sleep(600);
 check('songs list with status', (await page.$$('#cu-list li')).length >= 1);
 await page.evaluate((id) => document.querySelector(`#cu-list li[data-id="${id}"]`)?.click(), sh.id); await sleep(500);
 const issues = await page.$$eval('.cu-issue', (e) => e.map((x) => x.textContent));
-check('dots warning: different songs mixed', issues.some((t) => /disagree|mixed/.test(t)), issues.join(' | '));
-check('trim issue shown', issues.some((t) => /to trim/.test(t)), issues.join(' | '));
+check('dots warning: different songs mixed', issues.some((t) => /different songs/.test(t)), issues.join(' | '));
+check('trim issue shown', issues.some((t) => /junk to trim/.test(t)), issues.join(' | '));
 const strip = await page.$$eval('.cu-strip button span', (e) => e.map((x) => x.textContent));
 check('page strip shows dot numbers', strip.some((t) => /dot \d\/\d/.test(t)), strip.join(' | '));
 await page.screenshot({ path: 'cleanup-1.png' });
 const counts = await page.$$eval('[data-f] i', (e) => e.map((x) => +x.textContent));
-check('filters: needs a look + good = all', counts[0] + counts[1] === counts[2], counts.join(','));
+check('filters: to do + done = all', counts[0] + counts[1] === counts[2], counts.join(','));
 // page 2: suggested crop, Enter trims, left/right unchanged
 await page.click('.cu-strip button[data-p="1"]'); await sleep(300);
 const [w0, h0] = await imgSize(sh.id, 2);
@@ -119,7 +120,7 @@ check('U restores it', (await api('/items/' + sp.id)).deleted === false);
 // put the test song back together for the next run
 await post(`/items/${sh.id}/join`, { other: sp.id });
 await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
-await page.keyboard.press('2'); await sleep(400);
+await page.keyboard.press('3'); await sleep(400);
 const odd = await page.$$eval('.cu-trow input', (e) => e.map((x) => x.value));
 check('odd titles listed (IMG_4821)', odd.includes('IMG_4821'), odd.join(' | '));
 await page.screenshot({ path: 'cleanup-2.png' });
@@ -130,16 +131,74 @@ await page.keyboard.type('Moon River'); await page.keyboard.press('Enter'); awai
 check('rename an odd title', (await api('/items')).some((x) => x.title === 'Moon River'));
 check('renamed title leaves the list', !(await page.$$eval('.cu-trow input', (e) => e.map((x) => x.value))).includes('Moon River'));
 await page.keyboard.press('?'); await sleep(300);
-check('? shows the shortcuts', (await page.$$('.modal .cu-keys tr')).length >= 10);
+check('? shows the shortcuts', (await page.$$('.modal .cu-keys tr')).length >= 4);
 await page.keyboard.press('Escape'); await sleep(200);
 for (let i = 0; i < 40; i++) { await sleep(1000); if (!(await api('/cleanup')).scan.running) break; }
 await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
-await page.click('#cu-all'); await sleep(300);
+await page.keyboard.press('2'); await sleep(500);
+await page.click('#cu-more'); await sleep(250);
+await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => /Trim every page/.test(x.textContent)).click()); await sleep(300);
 await page.click('.modal [data-ok]'); await sleep(12000);
 const left = (await api('/cleanup')).songs.filter((s) => !s.reviewed).flatMap((s) => s.pages.filter((p) => p.trim)).length;
 check('Trim all leaves nothing to trim', left === 0, left);
 await page.evaluate((id) => document.querySelector(`#cu-list li[data-id="${id}"]`)?.click(), sh.id); await sleep(800);
 await page.screenshot({ path: 'cleanup-3.png' });
+// ---------- Go through sheets ----------
+{
+  const png = (await import('fs')).readFileSync('/private/tmp/claude-501/-Users-emi2mac/4133b106-9ccb-4a6c-97de-aed86ecf9500/scratchpad/out/cover.png');
+  const fd = new FormData(); fd.append('title', 'Throwaway ' + Date.now()); fd.append('files', new Blob([png, Buffer.from(String(Date.now()))], { type: 'image/png' }), 'x.png');
+  const tw = (await (await fetch(BASE + 'api/sheets', { method: 'POST', body: fd })).json()).item;
+  for (const x of await api('/items')) await post('/cleanup/sort', { id: x.id, decision: null });
+  await page.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await page.reload({ waitUntil: 'networkidle0' }); await sleep(1000);
+  await page.keyboard.press('1'); await sleep(800);
+  check('sheets: page 1 shows first', await page.$eval('#sv-pages img', (e) => e.complete && e.naturalWidth > 0));
+  check('sheets: status chips shown', (await page.$$('.sv-title .cu-issue')).length > 0);
+  check('sheets: undo is empty at first', await page.$eval('#cu-undo', (e) => e.disabled));
+  const t1 = await page.$eval('.sv-title b', (e) => e.textContent);
+  await page.keyboard.press('d'); await sleep(900);
+  const t2 = await page.$eval('.sv-title b', (e) => e.textContent);
+  check('D marks delete and goes to the next sheet', t1 !== t2 && Object.values((await api('/cleanup/sort')).decisions).includes('delete'), `${t1} → ${t2}`);
+  check('Undo button says what it undoes', /Undo delete mark/.test(await page.$eval('#cu-undo', (e) => e.textContent)));
+  await page.click('#cu-undo'); await sleep(900);
+  check('Undo takes the mark back and returns to that sheet', (await page.$eval('.sv-title b', (e) => e.textContent)) === t1 && !Object.keys((await api('/cleanup/sort')).decisions).length);
+  await page.keyboard.press('k'); await sleep(900);
+  check('K keeps and moves on', Object.values((await api('/cleanup/sort')).decisions).includes('keep'));
+  await page.keyboard.press('ArrowLeft'); await sleep(500);
+  check('← goes back even to a decided sheet', (await page.$eval('.sv-title b', (e) => e.textContent)) === t1 && /kept/.test(await page.$eval('.sv-title small', (e) => e.textContent)));
+  await page.click('[data-show="all"]'); await sleep(400);
+  for (let i = 0; i < 60 && (await page.$eval('.sv-title b', (e) => e.textContent)) !== tw.title; i++) { await page.click('#sv-next'); await sleep(250); }
+  check('Next/Previous buttons walk the sheets', (await page.$eval('.sv-title b', (e) => e.textContent)) === tw.title);
+  if ((await page.$eval('.sv-title b', (e) => e.textContent)) !== tw.title) throw new Error('not on the throwaway sheet — stop before deleting anything else');
+  await page.click('#sv-del'); await sleep(900);
+  await page.click('#sv-finish'); await sleep(600);
+  const sum = await page.$$eval('.sv-grid button', (e) => e.map((x) => x.dataset.id));
+  check('summary lists the sheets to delete', sum.length === 1 && sum[0] === tw.id, sum.join());
+  await page.screenshot({ path: 'cleanup-sort-sum.png' });
+  await page.click('#sv-go'); await sleep(400); await page.click('.modal [data-ok]'); await sleep(1500);
+  check('Delete really deletes (to the Trash)', (await api('/items/' + tw.id)).deleted === true);
+  await page.click('#cu-undo'); await sleep(2500);
+  check('Undo brings the deleted sheets back', (await api('/items/' + tw.id)).deleted === false);
+  await page.click('#sv-go'); await sleep(400); await page.click('.modal [data-ok]'); await sleep(1500);
+  await page.click('#sv-purge'); await sleep(400); await page.click('.modal [data-ok]'); await sleep(1500);
+  const gone = await fetch(BASE + 'api/items/' + tw.id).then((r) => r.status);
+  check('…and can then be deleted for good', gone === 404, gone);
+  for (const x of await api('/items')) await post('/cleanup/sort', { id: x.id, decision: null });
+}
+// iPad Pro: everything fits the screen (no page scroll; the action buttons are on screen)
+for (const [w, h] of [[1366, 1024], [1024, 1366]]) {
+  const q = await b.newPage(); await q.setViewport({ width: w, height: h, hasTouch: true, isMobile: true });
+  await q.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(1200);
+  for (const t of ['1', '2']) {
+    await q.keyboard.press(t); await sleep(900);
+    const fit = await q.evaluate(() => {
+      const m = document.querySelector('#main'), btns = [...document.querySelectorAll('#sv-del, #sv-keep, #cu-trim, #cu-fine')];
+      return { scroll: m.scrollHeight <= m.clientHeight + 1, side: getComputedStyle(document.querySelector('.side')).display, onScreen: btns.length > 0 && btns.every((x) => { const r = x.getBoundingClientRect(); return r.bottom <= innerHeight && r.top >= 0 && r.width > 0; }) };
+    });
+    check(`iPad ${w}×${h} tab ${t}: fits, buttons on screen, no left bar`, fit.scroll && fit.onScreen && fit.side === 'none', JSON.stringify(fit));
+    await q.screenshot({ path: `cleanup-ipad-${w}-${t}.png` });
+  }
+  await q.close();
+}
 // shortcuts stop when you leave Clean up
 await page.goto(BASE + '#/library', { waitUntil: 'networkidle0' }); await sleep(300);
 await page.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(800);

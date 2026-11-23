@@ -1,29 +1,41 @@
-// Clean up: every sheet song with what the Mac found — screen junk to trim (✕, status bar, player bar,
-// page dots), page dots that don't match the song's pages (photos grouped wrongly), odd titles.
-// Review any song: trim each page (suggested box, or draw your own), rename, mark it good. Everything
-// can be undone (Z) and the original photo is always kept.
+// Clean up, three jobs:
+//  · Go through sheets — every sheet one by one, page 1 first (scroll for the rest): Delete or Keep, then the
+//    next one. Decisions are kept on the Mac; at the end a summary, then the deletes really happen.
+//  · Fix pages — what the Mac found per song (screen junk to trim, pages grouped wrongly): trim each page
+//    (suggested box or your own), split, rename, delete.
+//  · Titles — titles that look like file names or typos.
+// Every action can be undone (Undo button, U or Z); the original photo of a trimmed page is always kept.
 import { store } from '../store.js';
 import { go } from '../app.js';
-import { $, esc, toast, sheet as modal, confirmSheet } from '../ui.js';
+import { $, esc, toast, menu, sheet as modal, confirmSheet } from '../ui.js';
 
-const KEYS = [
-  ['Enter / T', 'Trim this page as shown, go on'],
-  ['F', 'This page is fine — no trim'],
-  ['G', 'Whole song is good, next song'],
-  ['→ / J', 'Next page'], ['← / K', 'Previous page'],
-  ['] / N', 'Next song'], ['[ / P', 'Previous song'],
-  ['↑ ↓', 'Move the top edge'], ['Shift ↑ ↓', 'Move the bottom edge'],
-  ['⌥ ← →', 'Move the left edge'], ['⌥ Shift ← →', 'Move the right edge'],
-  ['Drag on the page', 'Draw your own crop box'],
-  ['X', 'Back to the suggested box'], ['C', 'Whole page (clear the box)'],
-  ['R', 'Rename the song'],
-  ['U / Z / ⌘Z', 'Undo the last thing (a trim comes back with its box to adjust)'],
-  ['S', 'Split the song…'], ['Delete', 'Move the song to the Trash'],
-  ['O', 'Back to the original photo'],
-  ['1 / 2', 'Songs / Odd titles'],
-  ['?', 'These shortcuts'],
-];
-const FILTERS = [['look', 'Needs a look'], ['good', 'Good'], ['all', 'All']];
+const KEYS = {
+  sort: [
+    ['D / Delete', 'Delete this sheet (marks it; nothing is deleted until you finish)'],
+    ['K / Enter', 'Keep this sheet'],
+    ['→ / ←', 'Next / previous sheet'],
+    ['↑ ↓ / Space', 'Scroll the pages'],
+    ['U / Z', 'Undo'],
+  ],
+  fix: [
+    ['Enter / T', 'Trim as shown and go on'],
+    ['F', 'Keep this page as it is'],
+    ['G', 'Song done'],
+    ['→ ←', 'Next / previous page'],
+    ['] [', 'Next / previous song'],
+    ['↑ ↓', 'Move the top edge (Shift: bottom edge)'],
+    ['⌥ ← →', 'Move the left edge (Shift: right edge)'],
+    ['X / C', 'Suggested box / whole page'],
+    ['O', 'Back to the original photo'],
+    ['R', 'Rename'], ['S', 'Split into two songs…'], ['Delete', 'Delete the song'],
+    ['U / Z', 'Undo'],
+  ],
+  titles: [['Enter / R', 'Rename'], ['F', 'Title is fine'], ['↑ ↓', 'Next / previous'], ['U / Z', 'Undo']],
+};
+// what the Mac found, in plain words
+const ISSUE = { trim: 'Screen junk to trim', mixed: 'Pages from different songs', incomplete: 'Pages missing', extra: 'Extra pages',
+  twice: 'Same page twice', order: 'Pages out of order', empty: 'No pages', title: 'Odd title' };
+const FILTERS = [['look', 'To do'], ['good', 'Done'], ['all', 'All']];
 
 const api = async (method, path, body) => {
   const r = await fetch('/api' + path, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -39,12 +51,20 @@ export function cleanupView(main) {
     main.innerHTML = '<header class="top"><h1>Clean up</h1></header><p class="pad muted">Clean up needs the Mac.</p>';
     return;
   }
-  const st = { tab: 'songs', filter: 'look', songs: [], titles: [], sid: null, pi: 0, ti: 0, scan: null, crop: null, undo: [], busy: false, renaming: false };
-  main.innerHTML = `<header class="top"><h1>Clean up</h1>
-      <div class="cu-tabs" role="tablist"><button data-tab="songs">Songs</button><button data-tab="titles">Odd titles <i id="cu-nt"></i></button></div>
-      <div class="cu-tabs cu-filter" id="cu-filter">${FILTERS.map(([k, l]) => `<button data-f="${k}">${l} <i></i></button>`).join('')}</div>
+  let tab0 = 'sort'; try { tab0 = localStorage.getItem('meowsic-cu-tab') || 'sort'; } catch {}
+  const st = { tab: tab0, filter: 'look', songs: [], titles: [], sid: null, pi: 0, ti: 0, scan: null, crop: null, undo: [], busy: false, renaming: false,
+    sort: { dec: {}, id: null, show: 'todo', summary: false } };
+  main.innerHTML = `<header class="top cu-top">
+      <a class="icon-btn back cu-back" href="#/library" aria-label="Back to the library">‹ Library</a>
+      <h1>Clean up</h1>
+      <div class="cu-tabs" role="tablist">
+        <button data-tab="sort">Go through sheets</button>
+        <button data-tab="songs">Fix pages <i id="cu-nf"></i></button>
+        <button data-tab="titles">Titles <i id="cu-nt"></i></button></div>
+      <span class="grow"></span>
       <span class="muted small" id="cu-scan"></span>
-      <div class="top-actions"><button id="cu-all" class="ghost">Trim all…</button><button id="cu-rescan" class="ghost">Scan again</button><button id="cu-keys" class="ghost" title="Keyboard shortcuts (?)">⌨︎ Keys</button></div></header>
+      <button id="cu-undo" class="cu-undo" disabled title="Undo (U)">↶ Undo</button>
+      <button id="cu-more" class="icon-btn" aria-label="More" title="More">⋯</button></header>
     <div class="cu" id="cu"></div>`;
   const body = $('#cu', main);
 
@@ -53,11 +73,11 @@ export function cleanupView(main) {
   const pg = () => song()?.pages[st.pi];
 
   const load = async () => {
-    const d = await api('GET', '/cleanup');
-    st.scan = d.scan; st.songs = d.songs; st.titles = d.titles;
+    const [d, so] = await Promise.all([api('GET', '/cleanup'), api('GET', '/cleanup/sort')]);
+    st.scan = d.scan; st.songs = d.songs; st.titles = d.titles; st.sort.dec = so.decisions;
     if (!song()) { st.sid = shown()[0]?.id || null; st.pi = 0; }
     st.ti = Math.min(st.ti, Math.max(0, st.titles.length - 1));
-    draw();
+    if (st.tab === 'sort' && !st.sort.summary && body.dataset.sid && body.dataset.sid === st.sort.id) { drawHead(); drawSort(false); } else draw();
     if (d.scan.running) setTimeout(() => body.isConnected && !st.busy && load(), 6000);
   };
   // refresh one song after a change (the Mac looks at the page again)
@@ -70,24 +90,29 @@ export function cleanupView(main) {
 
   const drawHead = () => {
     $('#cu-nt', main).textContent = st.titles.length || '';
+    $('#cu-nf', main).textContent = st.songs.filter((s) => !isGood(s)).length || '';
     main.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === st.tab));
-    const n = { look: st.songs.filter((s) => !isGood(s)).length, good: st.songs.filter(isGood).length, all: st.songs.length };
-    main.querySelectorAll('[data-f]').forEach((b) => { b.classList.toggle('on', b.dataset.f === st.filter); b.querySelector('i').textContent = n[b.dataset.f]; });
-    $('#cu-filter', main).hidden = st.tab !== 'songs';
     const s = st.scan;
-    $('#cu-scan', main).textContent = s?.running ? `Looking at pages… ${s.done} / ${s.total}` : '';
-    $('#cu-all', main).hidden = st.tab !== 'songs' || !st.songs.some((x) => !x.reviewed && x.pages.some((p) => p.trim));
+    $('#cu-scan', main).textContent = s?.running ? `Checking pages… ${s.done} / ${s.total}` : '';
+    const u = st.undo.at(-1), ub = $('#cu-undo', main);
+    ub.disabled = !u || st.busy;
+    ub.textContent = u ? `↶ Undo ${u.label}` : '↶ Undo';
   };
 
-  const songLine = (s) => (s.reviewed ? 'marked good' : s.issues.length ? s.issues.map((i) => i.text).join(' · ') : 'looks good') + (s.trimmed ? ` · ${s.trimmed} trimmed` : '');
+  const songLine = (s) => (s.reviewed ? 'done' : s.issues.length ? s.issues.map((i) => i.text).join(' · ') : 'nothing found') + (s.trimmed ? ` · ${s.trimmed} trimmed` : '');
+  const chips = (s) => (s.issues.length ? s.issues.map((i) => `<span class="cu-issue ${i.kind}" title="${esc(i.text)}">${esc(ISSUE[i.kind] || i.kind)}${i.kind === 'trim' ? ` · ${esc(i.text.split(' ')[0])}` : ''}</span>`).join('')
+    : `<span class="cu-issue ok">${s.reviewed ? 'Done' : 'Nothing found'}</span>`);
 
   const draw = () => {
     drawHead();
-    body.classList.toggle('titles', st.tab === 'titles');
+    try { localStorage.setItem('meowsic-cu-tab', st.tab); } catch {}
+    body.className = 'cu ' + st.tab;
     if (st.tab === 'titles') return drawTitles();
+    if (st.tab === 'sort') return drawSort();
     const list = shown();
+    const filt = `<div class="cu-filter">${FILTERS.map(([k, l]) => `<button data-f="${k}" class="${st.filter === k ? 'on' : ''}">${l} <i>${{ look: st.songs.filter((s) => !isGood(s)).length, good: st.songs.filter(isGood).length, all: st.songs.length }[k]}</i></button>`).join('')}</div>`;
     if (!list.length) {
-      body.innerHTML = `<p class="pad muted">${st.scan?.running ? 'Looking at pages…' : st.filter === 'look' ? 'Nothing needs a look. 🎉' : 'No songs here.'}</p>`;
+      body.innerHTML = `<div class="cu-side">${filt}</div><p class="pad muted">${st.scan?.running ? 'Checking pages…' : st.filter === 'look' ? 'Nothing left to fix. 🎉' : 'No songs here.'}</p>`;
       return;
     }
     if (!list.some((s) => s.id === st.sid)) { st.sid = list[0].id; st.pi = 0; }
@@ -97,21 +122,16 @@ export function cleanupView(main) {
     const key = `${s.id}:${p.page}`;
     if (st.crop?.key !== key) { const pre = p.trim || p.box; st.crop = { key, ...full(), ...(pre ? { top: pre.top, bottom: pre.bottom } : {}) }; }
     const ver = it?.updatedAt || 0;
-    body.innerHTML = `
+    body.innerHTML = `<div class="cu-side">${filt}
       <ol class="cu-list" id="cu-list">${list.map((x) => `<li class="${x.id === st.sid ? 'on' : ''} ${isGood(x) ? 'good' : x.issues.some((i) => i.kind !== 'trim' && i.kind !== 'title') ? 'bad' : 'look'}" data-id="${x.id}">
-        <b>${esc(store.get(x.id)?.title || x.title)}</b><small>${x.pages.length} p · ${esc(songLine(x))}</small></li>`).join('')}</ol>
+        <b>${esc(store.get(x.id)?.title || x.title)}</b><small>${x.pages.length} p · ${esc(songLine(x))}</small></li>`).join('')}</ol></div>
       <section class="cu-main">
         <div class="cu-bar">
-          <input id="cu-title" value="${esc(it?.title || s.title)}" aria-label="Title" readonly title="R to rename">
+          <input id="cu-title" value="${esc(it?.title || s.title)}" aria-label="Title — tap to rename" readonly title="Tap to rename (R)">
           <span class="grow"></span>
-          ${p.trims ? '<button id="cu-orig" class="ghost">Original (O)</button>' : ''}
-          <button id="cu-split" class="ghost" title="S">Split…</button>
-          <button id="cu-del" class="ghost danger" title="Delete">Delete</button>
-          <button id="cu-fine" class="ghost" title="F">Page is fine</button>
-          <button id="cu-good" class="ghost" title="G">${s.reviewed ? 'Needs a look' : 'Song is good'}</button>
-          <button id="cu-trim" class="primary" title="Enter">Trim</button>
+          <button id="cu-songmore" class="ghost">Song ▾</button>
         </div>
-        ${s.issues.length ? `<div class="cu-issues">${s.issues.map((i) => `<span class="cu-issue ${i.kind}">${esc(i.text)}</span>`).join('')}${s.issues.some((i) => ['mixed', 'extra', 'twice', 'order', 'incomplete'].includes(i.kind)) ? '<span class="muted small">Fix: Split… (S), Delete, or join in the song’s ⋯ menu</span>' : ''}</div>` : ''}
+        <div class="cu-issues">${chips(s)}${s.issues.some((i) => ['mixed', 'extra', 'twice', 'order', 'incomplete'].includes(i.kind)) ? '<span class="muted small">To fix grouping: Song ▾ → Split into two songs, or Delete.</span>' : ''}</div>
         <div class="cu-strip">${s.pages.map((x, k) => `<button class="${k === st.pi ? 'on' : ''}" data-p="${k}" title="Page ${x.page}">
           <img src="${store.fileUrl(s.id, it?.pageFiles?.[x.page - 1] || x.file)}?v=${ver}" alt="" loading="lazy">
           <span>${x.page}${x.dots ? ` · dot ${x.dots.lit ?? '?'}/${x.dots.count}` : ''}${x.trims ? ' · ✓' : x.trim ? ' · ✂' : ''}</span></button>`).join('')}</div>
@@ -122,19 +142,31 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
           <div class="cu-box"><i data-e="top"></i><i data-e="bottom"></i><i data-e="left"></i><i data-e="right"></i>
             <i data-e="top left"></i><i data-e="top right"></i><i data-e="bottom left"></i><i data-e="bottom right"></i></div>
         </div></div>` : ''}
-        <p class="cu-hint muted small">${p.trim ? `Junk found: ${esc(p.trim.reasons.join(', '))}. ` : p.box ? 'Preset: even white space above and below. ' : ''}Drag the edges, or drag on the page to draw your own box. ? = keys</p>
+        <div class="cu-act">
+          <span class="muted small cu-hint">Page ${st.pi + 1} of ${s.pages.length}${p.trim ? ` · found: ${esc(p.trim.reasons.join(', '))}` : ''} · drag the red edges, or draw a new box</span>
+          <span class="grow"></span>
+          ${p.trims ? '<button id="cu-orig" class="ghost">Original photo</button>' : ''}
+          <button id="cu-fine" class="big">Keep page as is</button>
+          <button id="cu-trim" class="primary big">Trim &amp; next</button>
+        </div>
       </section>`;
     placeBox();
     body.querySelector('.cu-list li.on')?.scrollIntoView({ block: 'nearest' });
     $('#cu-list', body).onclick = (e) => { const li = e.target.closest('[data-id]'); if (li) { st.sid = li.dataset.id; st.pi = 0; st.crop = null; draw(); } };
     body.querySelector('.cu-strip').onclick = (e) => { const b = e.target.closest('[data-p]'); if (b) { st.pi = +b.dataset.p; draw(); } };
     $('#cu-trim', body).onclick = doTrim;
-    if (!p.page) for (const id of ['cu-trim', 'cu-fine', 'cu-split']) $('#' + id, body).disabled = true;
+    if (!p.page) for (const id of ['cu-trim', 'cu-fine']) $('#' + id, body).disabled = true;
     $('#cu-fine', body).onclick = fine;
-    $('#cu-good', body).onclick = songGood;
-    $('#cu-split', body).onclick = splitSong;
-    $('#cu-del', body).onclick = delSong;
     $('#cu-orig', body)?.addEventListener('click', original);
+    body.querySelector('.cu-filter').onclick = (e) => { const b = e.target.closest('[data-f]'); if (b) { st.filter = b.dataset.f; st.crop = null; draw(); } };
+    $('#cu-songmore', body).onclick = (e) => menu(e.currentTarget, [
+      { label: s.reviewed ? 'Not done yet' : 'Song done — next song', icon: 'check', run: songGood },
+      { label: 'Rename…', icon: 'edit', run: () => rename() },
+      { label: 'Split into two songs…', icon: 'split', run: splitSong },
+      { label: 'Open in the library', icon: 'right', run: () => go(`#/item/${s.id}`) },
+      '-',
+      { label: 'Delete this song', icon: 'bin', danger: true, run: delSong },
+    ]);
     $('#cu-title', body).onclick = () => rename();
     const ci = $('.cu-img', body); if (ci) ci.onpointerdown = drag;
   };
@@ -202,7 +234,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     goSong(1);
   };
 
-  const busy = async (fn) => { if (st.busy) return; st.busy = true; try { await fn(); } catch (e) { toast(e.message); } finally { st.busy = false; } };
+  const busy = async (fn) => { if (st.busy) return; st.busy = true; try { await fn(); } catch (e) { toast(e.message); } finally { st.busy = false; drawHead(); } };
 
   const doTrim = () => {
     const c = st.crop;
@@ -247,21 +279,22 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     if (!u) return toast('Nothing to undo');
     await u.run();
     toast(`Undone: ${u.label}`);
+    if (u.tab) { st.tab = u.tab; if (u.sortId) { st.sort.id = u.sortId; st.sort.summary = false; } }
     if (u.at) { await reloadSong(u.at[0]); if (st.tab === 'songs') { st.sid = u.at[0]; st.pi = u.at[1]; if (!shown().some((x) => x.id === st.sid)) st.filter = 'all'; } }
-    else await load();
+    else if (!u.sortId) await load();
     st.crop = u.box ? { ...u.box } : null; draw();
   });
 
   const delSong = () => busy(async () => {
     const s = song();
-    if (!(await confirmSheet({ title: `Move “${s.title}” to the Trash?`, body: 'You can get it back from the Trash (or press U).', ok: 'Move to Trash', danger: true }))) return;
+    if (!(await confirmSheet({ title: `Delete “${s.title}”?`, body: 'It goes to the Trash. Undo brings it back.', ok: 'Delete', danger: true }))) return;
     const k = shown().findIndex((x) => x.id === s.id);
     store.bin([s.id]);
     st.undo.push({ label: 'delete', run: async () => { store.restore([s.id]); await new Promise((r) => setTimeout(r, 400)); await load(); }, at: [s.id, 0] });
     st.songs = st.songs.filter((x) => x.id !== s.id);
     const nx = shown()[Math.min(k, shown().length - 1)];
     st.sid = nx?.id || null; st.pi = 0; st.crop = null;
-    toast('Moved to the Trash'); draw();
+    toast('Deleted — Undo brings it back'); draw();
   });
   // split: tick the pages that belong to another song; they become a new song
   const splitSong = () => {
@@ -311,6 +344,115 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     inp.onblur = () => done(true);
   };
 
+  // ---------- Go through sheets: Delete / Keep, one sheet at a time ----------
+  const sheets = () => st.songs; // every sheet and book, A–Z (the Mac's order)
+  const sortList = () => sheets().filter((x) => st.sort.show === 'all' || (st.sort.show === 'todo' ? !st.sort.dec[x.id] : st.sort.dec[x.id] === st.sort.show));
+  const counts = () => { const v = Object.values(st.sort.dec); return { del: v.filter((x) => x === 'delete').length, keep: v.filter((x) => x === 'keep').length }; };
+  const drawSort = (force = true) => {
+    if (st.sort.summary) return drawSummary();
+    const all = sheets(), list = sortList();
+    if (!st.sort.id || !all.some((x) => x.id === st.sort.id)) st.sort.id = list[0]?.id || all[0]?.id || null;
+    const s = all.find((x) => x.id === st.sort.id), it = s && store.get(s.id), n = counts();
+    const pos = all.findIndex((x) => x.id === st.sort.id);
+    const showBtns = [['todo', 'Not decided', all.length - n.del - n.keep], ['delete', 'To delete', n.del], ['keep', 'Kept', n.keep], ['all', 'All', all.length]]
+      .map(([k, l, c]) => `<button data-show="${k}" class="${st.sort.show === k ? 'on' : ''}">${l} <i>${c}</i></button>`).join('');
+    if (!force && body.dataset.sid === st.sort.id) { const f = body.querySelector('.sv-show'); if (f) f.innerHTML = showBtns; return; }
+    body.dataset.sid = st.sort.id || '';
+    if (!s) { body.innerHTML = `<div class="sv"><div class="sv-top"><div class="cu-filter sv-show">${showBtns}</div></div><p class="pad muted">${st.scan?.running ? 'Checking pages…' : 'No sheets here.'}</p></div>`; return wireSort(); }
+    const dec = st.sort.dec[s.id];
+    const kind = it?.book ? 'Book' : 'Sheet';
+    body.innerHTML = `<div class="sv">
+      <div class="sv-top">
+        <div class="cu-filter sv-show">${showBtns}</div>
+        <span class="grow"></span>
+        <button id="sv-finish" class="ghost" ${n.del ? '' : 'disabled'}>Finish — delete ${n.del} ›</button>
+      </div>
+      <div class="sv-head">
+        <button id="sv-prev" class="ghost big" aria-label="Previous sheet">‹</button>
+        <div class="sv-title"><b>${esc(it?.title || s.title)}</b>
+          <small>${kind} · ${s.pages.length} page${s.pages.length === 1 ? '' : 's'} · ${pos + 1} of ${all.length}${dec ? ` · <span class="sv-dec ${dec}">${dec === 'delete' ? 'marked to delete' : 'kept'}</span>` : ''}</small>
+          <div class="cu-issues">${chips(s)}</div></div>
+        <button id="sv-next" class="ghost big" aria-label="Next sheet">›</button>
+      </div>
+      <div class="sv-pages" id="sv-pages">${s.pages.length ? s.pages.map((p, k) => `<figure><img src="/api/items/${encodeURIComponent(s.id)}/thumb/${p.page}?w=1000&v=${it?.updatedAt || 0}" alt="Page ${p.page}" ${k ? 'loading="lazy"' : 'fetchpriority="high"'}><figcaption>${p.page} / ${s.pages.length}</figcaption></figure>`).join('') : '<p class="pad muted">No pages.</p>'}</div>
+      <div class="sv-act">
+        <button id="sv-del" class="danger-btn big ${dec === 'delete' ? 'on' : ''}">Delete <kbd>D</kbd></button>
+        <button id="sv-keep" class="primary big ${dec === 'keep' ? 'on' : ''}">Keep <kbd>K</kbd></button>
+      </div></div>`;
+    wireSort();
+  };
+  const wireSort = () => {
+    body.querySelector('.sv-show').onclick = (e) => { const b = e.target.closest('[data-show]'); if (b) { st.sort.show = b.dataset.show; st.sort.id = sortList()[0]?.id || null; drawSort(); } };
+    $('#sv-finish', body)?.addEventListener('click', () => { st.sort.summary = true; drawSort(); });
+    $('#sv-prev', body)?.addEventListener('click', () => sortStep(-1));
+    $('#sv-next', body)?.addEventListener('click', () => sortStep(1));
+    $('#sv-del', body)?.addEventListener('click', () => decide('delete'));
+    $('#sv-keep', body)?.addEventListener('click', () => decide('keep'));
+  };
+  // previous / next in the list being shown (the current one stays reachable even once decided)
+  const sortStep = (d) => {
+    if (st.sort.summary) return;
+    const all = sheets(), list = sortList();
+    const cur = all.findIndex((x) => x.id === st.sort.id);
+    let nx;
+    if (d > 0) nx = list.find((x) => all.indexOf(x) > cur);
+    else nx = all[cur - 1]; // back = the one just before, decided or not (to change your mind)
+    if (!nx) return toast(d > 0 ? 'That was the last one' : 'That is the first one');
+    st.sort.id = nx.id; drawSort();
+  };
+  const decide = (what) => busy(async () => {
+    const s = sheets().find((x) => x.id === st.sort.id);
+    if (!s || st.sort.summary) return;
+    const was = st.sort.dec[s.id] || null;
+    const next = was === what ? null : what; // pressing it again takes it back
+    st.sort.dec = (await api('POST', '/cleanup/sort', { id: s.id, decision: next })).decisions;
+    st.undo.push({ label: next ? (next === 'delete' ? 'delete mark' : 'keep') : 'unmark', tab: 'sort', sortId: s.id,
+      run: async () => { st.sort.dec = (await api('POST', '/cleanup/sort', { id: s.id, decision: was })).decisions; } });
+    if (!next) return drawSort();
+    const all = sheets(), cur = all.findIndex((x) => x.id === s.id);
+    const nx = sortList().find((x) => all.indexOf(x) > cur) || sortList()[0];
+    if (!nx) { st.sort.summary = true; return drawSort(); }
+    st.sort.id = nx.id; drawSort();
+  });
+  const drawSummary = () => {
+    const n = counts(), del = sheets().filter((x) => st.sort.dec[x.id] === 'delete');
+    const left = sheets().length - n.del - n.keep;
+    body.dataset.sid = '';
+    body.innerHTML = `<div class="sv sv-sum">
+      <div class="sv-top"><button id="sv-back" class="ghost">‹ Back to the sheets</button></div>
+      <h2>${n.del ? `${n.del} sheet${n.del === 1 ? '' : 's'} to delete` : 'Nothing marked to delete'}</h2>
+      <p class="muted">${n.keep} kept · ${left} not looked at yet. Tap a sheet to keep it after all.</p>
+      <div class="sv-grid">${del.map((x) => { const it = store.get(x.id); return `<button data-id="${x.id}" class="on">${x.pages.length ? `<img src="/api/items/${encodeURIComponent(x.id)}/thumb/1?w=240&v=${it?.updatedAt || 0}" alt="" loading="lazy">` : '<div class="sv-nopage">No pages</div>'}<span>${esc(it?.title || x.title)}</span><small>${x.pages.length} p</small></button>`; }).join('')}</div>
+      ${n.del ? `<div class="sv-act"><button id="sv-go" class="danger-btn big">Delete ${n.del} sheet${n.del === 1 ? '' : 's'}</button></div>` : ''}</div>`;
+    $('#sv-back', body).onclick = () => { st.sort.summary = false; drawSort(); };
+    body.querySelector('.sv-grid').onclick = (e) => { const b = e.target.closest('[data-id]'); if (!b) return;
+      busy(async () => { const id = b.dataset.id; st.sort.dec = (await api('POST', '/cleanup/sort', { id, decision: 'keep' })).decisions;
+        st.undo.push({ label: 'keep', tab: 'sort', run: async () => { st.sort.dec = (await api('POST', '/cleanup/sort', { id, decision: 'delete' })).decisions; st.sort.summary = true; } }); drawSummary(); }); };
+    $('#sv-go', body)?.addEventListener('click', () => reallyDelete(del.map((x) => x.id)));
+  };
+  // the deletes really happen: to the Trash first (Undo brings them back), then, if wanted, for good
+  const reallyDelete = (ids) => busy(async () => {
+    if (!(await confirmSheet({ title: `Delete ${ids.length} sheet${ids.length === 1 ? '' : 's'}?`, body: 'They go to the Trash now. Undo brings them back.', ok: 'Delete', danger: true }))) return;
+    store.bin(ids);
+    await api('POST', '/cleanup/sort', { clear: ids });
+    st.undo.push({ label: `delete ${ids.length}`, tab: 'sort', run: async () => { store.restore(ids); for (const id of ids) await api('POST', '/cleanup/sort', { id, decision: 'delete' }); await new Promise((r) => setTimeout(r, 400)); await load(); st.sort.summary = true; } });
+    st.songs = st.songs.filter((x) => !ids.includes(x.id));
+    st.sort.dec = (await api('GET', '/cleanup/sort')).decisions;
+    store.logEvent('cleanup', `Deleted ${ids.length} sheets`, 'Clean up → Go through sheets');
+    body.innerHTML = `<div class="sv sv-sum"><h2>${ids.length} sheet${ids.length === 1 ? '' : 's'} deleted</h2>
+      <p class="muted">They are in the Trash for now. Undo brings them back.</p>
+      <div class="sv-act"><button id="sv-again" class="primary big">Go on with the rest</button>
+      <button id="sv-purge" class="danger-btn">Also remove them from the Trash for good…</button></div></div>`;
+    $('#sv-again', body).onclick = () => { st.sort.summary = false; st.sort.show = 'todo'; st.sort.id = null; drawSort(); };
+    $('#sv-purge', body).onclick = async () => {
+      if (!(await confirmSheet({ title: `Delete ${ids.length} sheet${ids.length === 1 ? '' : 's'} for good?`, body: 'Their photos are removed from the Mac. This cannot be undone.', ok: 'Delete for good', danger: true }))) return;
+      store.purge(ids);
+      st.undo = st.undo.filter((u) => !u.label.startsWith('delete ')); drawHead();
+      toast(`${ids.length} sheets deleted for good`);
+      st.sort.summary = false; st.sort.id = null; drawSort();
+    };
+  });
+
   const drawTitles = () => {
     if (!st.titles.length) { body.innerHTML = '<p class="pad muted">No odd titles. 🎉</p>'; return; }
     body.innerHTML = `<p class="pad small muted">Titles that look like file names, page numbers or typos. R or click to rename · F if it's fine · Z to undo.</p>
@@ -340,7 +482,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
   const rescan = () => busy(async () => { st.scan = await api('POST', '/cleanup/scan'); drawHead(); setTimeout(load, 1500); });
   const trimAll = async () => {
     const todo = st.songs.filter((s) => !s.reviewed).flatMap((s) => s.pages.filter((p) => p.trim).map((p) => ({ id: s.id, p })));
-    if (!(await confirmSheet({ title: `Trim all ${todo.length} pages?`, body: 'Each page is trimmed as suggested. The original photos are kept — each can go back with Original (O).', ok: 'Trim all' }))) return;
+    if (!(await confirmSheet({ title: `Trim all ${todo.length} pages the Mac suggests?`, body: 'Each page is trimmed as suggested. The original photos are kept — any page can go back with Original photo.', ok: 'Trim all' }))) return;
     const m = modal(`<h2>Trimming…</h2><progress id="cu-p" max="${todo.length}" value="0"></progress><p class="muted small" id="cu-pm"></p>`);
     let n = 0;
     st.busy = true;
@@ -355,20 +497,28 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     toast(`Trimmed ${n} pages`); await load();
   };
 
-  main.querySelectorAll('.cu-tabs').forEach((t) => (t.onclick = (e) => {
-    const b = e.target.closest('[data-tab], [data-f]'); if (!b) return;
-    if (b.dataset.tab) st.tab = b.dataset.tab; else { st.filter = b.dataset.f; st.crop = null; }
-    draw();
-  }));
-  $('#cu-rescan', main).onclick = rescan;
-  $('#cu-all', main).onclick = trimAll;
-  const help = () => modal(`<h2>Keyboard shortcuts</h2><table class="cu-keys">${KEYS.map(([k, d]) => `<tr><td><kbd>${k}</kbd></td><td>${d}</td></tr>`).join('')}</table><div class="modal-actions"><button class="primary" data-close>OK</button></div>`);
-  $('#cu-keys', main).onclick = help;
+  $('.cu-tabs', main).onclick = (e) => { const b = e.target.closest('[data-tab]'); if (b) { st.tab = b.dataset.tab; draw(); } };
+  $('#cu-undo', main).onclick = undo;
+  const help = () => modal(`<h2>Keyboard shortcuts</h2><table class="cu-keys">${KEYS[st.tab === 'songs' ? 'fix' : st.tab].map(([k, d]) => `<tr><td><kbd>${k}</kbd></td><td>${d}</td></tr>`).join('')}</table><div class="modal-actions"><button class="primary" data-close>OK</button></div>`);
+  $('#cu-more', main).onclick = (e) => menu(e.currentTarget, [
+    ...(st.songs.some((x) => !x.reviewed && x.pages.some((p) => p.trim)) ? [{ label: 'Trim every page the Mac suggests…', icon: 'tools', run: trimAll }] : []),
+    { label: 'Check all pages again', icon: 'wave', run: rescan },
+    { label: 'Keyboard shortcuts', icon: 'info', run: help },
+  ]);
 
   const onKey = (e) => {
     if (!main.isConnected || !location.hash.startsWith('#/cleanup') || !body.isConnected) return removeEventListener('keydown', onKey);
     if (st.renaming || document.querySelector('.modal') || e.target.matches?.('input:not([readonly]), textarea')) return;
     const k = e.key, songs = st.tab === 'songs';
+    if (st.tab === 'sort') {
+      const a = { d: () => decide('delete'), Delete: () => decide('delete'), Backspace: () => decide('delete'), k: () => decide('keep'), Enter: () => decide('keep'),
+        ArrowRight: () => sortStep(1), ArrowLeft: () => sortStep(-1), z: undo, u: undo, '?': help,
+        ArrowDown: () => $('#sv-pages', body)?.scrollBy({ top: 300, behavior: 'smooth' }), ArrowUp: () => $('#sv-pages', body)?.scrollBy({ top: -300, behavior: 'smooth' }),
+        ' ': () => $('#sv-pages', body)?.scrollBy({ top: (e.shiftKey ? -1 : 1) * $('#sv-pages', body).clientHeight * 0.85, behavior: 'smooth' }),
+        1: () => { st.tab = 'sort'; draw(); }, 2: () => { st.tab = 'songs'; draw(); }, 3: () => { st.tab = 'titles'; draw(); } }[k.length === 1 ? k.toLowerCase() : k];
+      if (!a || (e.metaKey && k.toLowerCase() !== 'z') || e.ctrlKey || e.altKey) return;
+      e.preventDefault(); return a();
+    }
     if (songs && e.altKey && (k === 'ArrowLeft' || k === 'ArrowRight')) { e.preventDefault(); return nudge(e.shiftKey ? 'right' : 'left', k === 'ArrowLeft' ? -0.005 : 0.005); }
     const act = {
       Enter: () => (songs ? doTrim() : rename()), t: () => songs && doTrim(),
@@ -382,7 +532,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
       c: () => { if (songs && st.crop) { Object.assign(st.crop, full()); placeBox(); } },
       r: () => rename(), z: () => undo(), u: () => undo(), o: () => songs && original(),
       s: () => songs && splitSong(), Delete: () => songs && delSong(), Backspace: () => songs && delSong(),
-      1: () => { st.tab = 'songs'; draw(); }, 2: () => { st.tab = 'titles'; draw(); }, '?': help,
+      1: () => { st.tab = 'sort'; draw(); }, 2: () => { st.tab = 'songs'; draw(); }, 3: () => { st.tab = 'titles'; draw(); }, '?': help,
     }[k.length === 1 ? k.toLowerCase() : k];
     if (!act || (e.metaKey && k.toLowerCase() !== 'z') || e.ctrlKey || e.altKey) return;
     e.preventDefault(); act();

@@ -22,6 +22,9 @@ def test_book_roundtrip(client, tmp_path):
     from test_pages import png
     b = client.post('/api/sheets', data={'item_id': b['id']}, files=[('files', ('x.png', png('orange'), 'image/png'))]).json()['item']
     assert b['pages'] == 4 and b['pageFiles'][3] == 'Jumbo Book 4.png' and color_of(client, b, 4) == (255, 165, 0)
+    t = client.get(f'/api/items/{b["id"]}/thumb/1?w=120')
+    assert t.status_code == 200 and t.headers['content-type'] == 'image/jpeg'
+    assert client.get(f'/api/items/{b["id"]}/thumb/99').status_code == 404
     # PATCH cannot flip the flag (files would not move)
     assert client.patch(f'/api/items/{b["id"]}', json={'book': 0}).json()['book'] == 1
     # split a song out of a book: the new one is a plain sheet
@@ -35,3 +38,12 @@ def test_book_roundtrip(client, tmp_path):
     # delete for good works inside Books/ too
     client.post('/api/items/trash', json={'ids': [b2['id']]})
     assert client.post('/api/items/purge', json={'ids': [b2['id']]}).json()['count'] == 1
+
+
+def test_sort_decisions(client):
+    assert client.get('/api/cleanup/sort').json() == {'decisions': {}}
+    client.post('/api/cleanup/sort', json={'id': 's-a', 'decision': 'delete'})
+    client.post('/api/cleanup/sort', json={'id': 's-b', 'decision': 'keep'})
+    assert client.get('/api/cleanup/sort').json()['decisions'] == {'s-a': 'delete', 's-b': 'keep'}
+    client.post('/api/cleanup/sort', json={'id': 's-b', 'decision': None})
+    assert client.post('/api/cleanup/sort', json={'clear': ['s-a']}).json()['decisions'] == {}

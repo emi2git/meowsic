@@ -54,7 +54,7 @@ export function libraryView(main, { q }) {
     <header class="top lib-top selband" id="selband" hidden></header>
     <header class="top lib-top" id="libhead">
       <h1>${kind ? KIND[kind].plural : 'All music'}</h1>
-      <div class="seg phone-only" role="tablist">${[['', 'All'], ['sheet', 'Sheets'], ['book', 'Books'], ['chords', 'Chords'], ['score', 'Scores']].map(([k, l]) =>
+      <div class="seg phone-only" role="tablist">${[['', 'All'], ['sheet', 'Sheets'], ['chords', 'Chords'], ['book', 'Books'], ['score', 'Scores']].map(([k, l]) =>
         `<button role="tab" class="${kind === k ? 'on' : ''}" data-kind="${k}">${k ? icon(KIND[k].icon) : ''}${l}</button>`).join('')}</div>
       ${tags.map((t) => `<span class="tag-on">${esc(t)}<button class="x" data-untag="${esc(t)}" aria-label="Remove tag ${esc(t)}" title="Remove">×</button></span>`).join('')}
       ${tags.length > 1 ? `<button class="link clear-tags" id="lib-tags-clear">Clear all</button>` : ''}
@@ -92,7 +92,7 @@ export function libraryView(main, { q }) {
         const arrow = (k) => (state.sort !== k ? '' : (k === 'added') === (state.dir > 0) ? ' ▼' : ' ▲');
         const cols = COLS_BY[kind] || COLS_BY[''];
         const cell = {
-          'c-title': (it) => esc(it.title), 'c-artist': (it) => esc(it.artist || ''), 'c-type': (it) => badge(it), 'c-ver': (it) => esc(VERSIONS[it.version] || ''),
+          'c-title': (it) => (kind === 'book' ? `<span class="cover">${store.thumbUrl(it, 1, 160) ? `<img src="${store.thumbUrl(it, 1, 160)}" alt="" loading="lazy">` : ''}</span>` : '') + esc(it.title), 'c-artist': (it) => esc(it.artist || ''), 'c-type': (it) => badge(it), 'c-ver': (it) => esc(VERSIONS[it.version] || ''),
           'c-tag': (it) => (mainTag(it) ? `<span class="tagchip">${esc(mainTag(it))}</span>` : ''), 'c-pages': (it) => it.pages || '', 'c-key': (it) => esc(keyShort(it.key)), 'c-when': (it) => ago(it.createdAt),
         };
         rows.innerHTML = `<table class="lib-table ${kind ? 'one-kind' : ''} ${selecting() ? 'selecting' : ''}"><thead><tr><th class="c-pick"></th>${cols.map(([k, l, c]) =>

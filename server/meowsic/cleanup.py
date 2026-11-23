@@ -211,6 +211,26 @@ def _shift_strokes(c, item_id, page, f):
     c.execute('UPDATE annotation SET strokes=? WHERE item_id=? AND page=?', (json.dumps(strokes), item_id, str(page)))
 
 
+@router.get('/cleanup/sort')
+def sort_get(cf=Depends(cfg)):
+    """'Go through sheets': {id: 'keep' | 'delete'} decided so far."""
+    with _lock: return {'decisions': _load(cf).get('sort', {})}
+
+
+@router.post('/cleanup/sort')
+def sort_set(body: dict = Body(...), cf=Depends(cfg)):
+    """{id, decision: 'keep' | 'delete' | null} (null = not decided); or {clear: [ids]} after deleting."""
+    with _lock:
+        data = _load(cf)
+        d = data.setdefault('sort', {})
+        for i in body.get('clear') or []: d.pop(i, None)
+        if body.get('id'):
+            if body.get('decision') in ('keep', 'delete'): d[body['id']] = body['decision']
+            else: d.pop(body['id'], None)
+        _save(cf, data)
+        return {'decisions': d}
+
+
 @router.post('/items/{item_id}/pages/{page}/trim')
 def trim_page(item_id: str, page: int, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
     it = must_item(c, item_id)

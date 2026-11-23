@@ -295,6 +295,29 @@ def item_file(item_id: str, rel: str, c=Depends(conn), cf=Depends(cfg)):
     return FileResponse(p, media_type=media)
 
 
+@router.get('/items/{item_id}/thumb/{page}')
+def item_thumb(item_id: str, page: int, w: int = 240, c=Depends(conn), cf=Depends(cfg)):
+    """A small JPEG of one sheet page (book covers, Clean up strips), cached in work/thumbs."""
+    from PIL import Image, ImageOps
+    it = must_item(c, item_id)
+    files = it.get('pageFiles') or []
+    if not 1 <= page <= len(files): raise HTTPException(404, 'No such page')
+    src = safe_file(item_dir(cf, it), files[page - 1])
+    if not src.is_file(): raise HTTPException(404, 'No such file')
+    w = max(60, min(int(w), 800))
+    st = src.stat()
+    out = cf.work_dir / 'thumbs' / f'{item_id}-{page}-{w}-{int(st.st_mtime)}-{st.st_size}.jpg'
+    if not out.is_file():
+        out.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            im = ImageOps.exif_transpose(Image.open(src)).convert('RGB')
+        except Exception:
+            raise HTTPException(415, 'Not an image')
+        im.thumbnail((w, w * 2))
+        im.save(out, 'JPEG', quality=80)
+    return FileResponse(out, media_type='image/jpeg', headers={'Cache-Control': 'max-age=86400'})
+
+
 # ---------- sheet upload ----------
 # Files are named after the folder: "s-7k2p9qa Memory 1.jpg", "… Memory 2.png", "… Memory.pdf", "… Memory (2).pdf"
 
