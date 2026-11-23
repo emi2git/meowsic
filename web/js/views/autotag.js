@@ -1,6 +1,6 @@
 // Auto-tag (offline AI on the Mac): ask for tag suggestions, show them for review, save only what is
 // ticked. Used from the selection bar, an item's ⋯ menu, and right after new music is added.
-import { store } from '../store.js';
+import { store, uid } from '../store.js';
 import { $, esc, toast, sheet as modal } from '../ui.js';
 
 // the Mac may answer at once, or start a job and finish later; this waits either way
@@ -52,8 +52,10 @@ function review(sug) {
   };
   s.el.querySelector('[data-ok]').onclick = () => {
     let n = 0;
-    for (const [id, set] of on) if (set.size) { store.setTags([id], [...set]); n += set.size; }
-    store.logEvent('make-tags', `Auto-tag: ${n} tag${n === 1 ? '' : 's'}`, sug.map((x) => store.get(x.id)?.title).join(', '));
+    for (const [, set] of on) n += set.size;
+    const act = { id: uid('act'), type: 'make-tags', title: `Auto-tag: ${n} tag${n === 1 ? '' : 's'}`, detail: sug.map((x) => store.get(x.id)?.title).join(', ') };
+    for (const [id, set] of on) if (set.size) store.setTags([id], [...set], [], act);
+    store.logEvent(act.type, act.title, act.detail, { local: true, id: act.id });
     s.close();
     toast(`Saved ${n} tag${n === 1 ? '' : 's'}`);
   };

@@ -89,6 +89,9 @@ def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), gr
                     if col == 'musicxml': credit_meowsic(d / names[col])
             c.execute(f'UPDATE score SET {",".join(f"{k}=?" for k in names)} WHERE item_id=?', [*names.values(), it['id']])
             refresh_staves(c, cfg, it['id'])
+        # the job keeps what it made from now on (Activities: Stop / Undo moves these to the Trash, even if the job is cancelled before it finishes)
+        prev = json.loads((c.execute('SELECT result FROM job WHERE id=?', (ctx.id,)).fetchone() or ['null'])[0] or 'null')
+        c.execute('UPDATE job SET result=? WHERE id=?', (json.dumps((prev if isinstance(prev, list) else []) + [i for _, i in made]), ctx.id))
         c.commit()
     except BaseException:
         c.rollback()

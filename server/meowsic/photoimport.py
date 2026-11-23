@@ -32,7 +32,8 @@ from fastapi.responses import FileResponse
 
 from . import cleanstate as cs
 from . import grouping, titles, trim
-from .db import folder_path, get_item, log_event, now_ms, uid, write_item
+from .db import folder_path, get_item, log_event, now_ms, quiet, uid, write_item
+from .undolog import record_undo
 from .items import IMAGE_EXT, cfg, conn
 
 router = APIRouter(prefix='/api')
@@ -373,14 +374,17 @@ def do_import(sid: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)
         cropped = 0
         for n, pg in enumerate(s['pages'], 1):
             b = _box(pg.get('crop'))
-            if b: trim_page(it['id'], n, b, c=c, cf=cf); cropped += 1  # the photo stays in .history, crop undoable
+            if b:  # the photo stays in .history, crop undoable (part of this import's Activities row, not a row of its own)
+                with quiet(): trim_page(it['id'], n, b, c=c, cf=cf)
+                cropped += 1
         made.append({'id': it['id'], 'title': title, 'pages': len(pages), 'photos': [p['id'] for p in pages], 'cropped': cropped})
     iid = uid('imp')
     rec = {'id': iid, 'album': st['album'], 'session': sid, 'at': t, 'sheets': made}
     c.execute('INSERT INTO photo_import(id, album, at, record) VALUES (?,?,?,?)', (iid, st['album'], t, json.dumps(rec, ensure_ascii=False)))
     n = len(made)
-    log_event(c, 'photo-import', made[0]['title'] if n == 1 else f'{n} sheets', f'From Photos (album “{st["album"]}”): '
-              + ', '.join(f'“{m["title"]}” ({m["pages"]} p)' for m in made))
+    aid = log_event(c, 'photo-import', made[0]['title'] if n == 1 else f'{n} sheets', f'From Photos (album “{st["album"]}”): '
+                    + ', '.join(f'“{m["title"]}” ({m["pages"]} p)' for m in made))
+    record_undo(c, aid, {'op': 'photoimport', 'import': iid, 'titles': [m['title'] for m in made]})  # Activities: Undo = this file's undo()
     st['imports'].append(iid)
     _save(cf, st)
     return {'import': rec, 'items': [get_item(c, m['id']) for m in made]}

@@ -1,7 +1,7 @@
 // Make tags: pick what to look for, let the (offline) AI detect groups, review every proposed tag and
 // its songs (rename, add, remove, skip), then apply. In this UI preview the detection is simulated
 // from a small built-in song list; phase 2 runs the local LLM on the Mac.
-import { store } from '../store.js';
+import { store, uid } from '../store.js';
 import { $, esc, toast, sheet as modal, badge } from '../ui.js';
 import { go } from '../app.js';
 import { aiCall } from './autotag.js';
@@ -117,8 +117,10 @@ function review(host, groups) {
   };
   const apply = () => {
     const on = groups.filter((g) => g.on && g.ids.length && g.name.trim());
-    for (const g of on) store.setTags(g.ids, [g.name.trim()]);
-    store.logEvent('make-tags', `${on.length} tag${on.length === 1 ? '' : 's'}`, on.map((g) => `${g.name.trim()} (${g.ids.length})`).join(', '));
+    // one Activities row for the whole batch (the Mac adds each tag's undo info to it): one Undo takes all of it back
+    const act = { id: uid('act'), type: 'make-tags', title: `${on.length} tag${on.length === 1 ? '' : 's'}`, detail: on.map((g) => `${g.name.trim()} (${g.ids.length})`).join(', ') };
+    for (const g of on) store.setTags(g.ids, [g.name.trim()], [], act);
+    store.logEvent(act.type, act.title, act.detail, { local: true, id: act.id });
     toast(`Applied ${on.length} tag${on.length === 1 ? '' : 's'}`);
     go('#/tags');
   };

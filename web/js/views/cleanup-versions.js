@@ -274,7 +274,7 @@ export function makeVersions(ctx) {
 
   const reallyDelete = (ids) => ctx.busy(async () => {
     if (!(await confirmSheet({ title: `Delete ${plural(ids.length, 'item')}?`, body: 'They go to the Trash now. Undo brings them back.', ok: 'Delete', danger: true }))) return;
-    store.bin(ids);
+    store.bin(ids, { type: 'cleanup', title: `Deleted ${ids.length} versions`, detail: 'Clean up → Versions' });
     await api('POST', '/items/trash', { ids }); // (store.bin already asked; this waits until it is done)
     await api('POST', '/versions/decide', { clear: ids });
     const marks = Object.fromEntries(ids.map((i) => [i, 'delete']));
@@ -284,7 +284,6 @@ export function makeVersions(ctx) {
       await api('POST', '/versions/decide', { set: marks });
       await load(); vs.done = null; vs.summary = true;
     } });
-    store.logEvent('cleanup', `Deleted ${ids.length} versions`, 'Clean up → Versions');
     await load();
     vs.summary = false; vs.done = ids;
     ctx.drawHead(); draw();

@@ -85,7 +85,7 @@ def import_(c, d: dict):
             j.get('startedAt') or t0, j.get('doneAt'), int(bool(j.get('dismissed')))))
     for a in d.get('activity', []):
         if a.get('type') in ('transcribe', 'version'): continue  # old mock kept failed jobs here; skip
-        c.execute('INSERT OR REPLACE INTO activity VALUES (?,?,?,?,?)', (a['id'], a['type'], a.get('title', ''), a.get('detail', ''), a.get('at') or t0))
+        c.execute('INSERT OR REPLACE INTO activity(id, type, title, detail, at, undo, undone_at, undone_by, undo_of) VALUES (?,?,?,?,?,?,?,?,?)', (a['id'], a['type'], a.get('title', ''), a.get('detail', ''), a.get('at') or t0, a.get('undo') if isinstance(a.get('undo'), str) or a.get('undo') is None else json.dumps(a['undo']), a.get('undone_at'), a.get('undone_by'), a.get('undo_of')))
     if 'settings' in d:
         c.execute('DELETE FROM setting')
         c.executemany('INSERT INTO setting VALUES (?,?)', [(k, json.dumps(v)) for k, v in d['settings'].items()])

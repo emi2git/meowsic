@@ -9,6 +9,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 
 from .db import book_folder, folder_base, folder_name, folder_path, get_item, log_event, now_ms, uid, write_item
 from .items import cfg, conn, ids_of, move_folder, must_item
+from .undolog import record_undo
 
 router = APIRouter(prefix='/api')
 
@@ -80,7 +81,8 @@ def split(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)
     write_item(c, new, new=True)
     _relayout(c, cf, new['id'], [r for r in rows if r['page'] in take])
     _relayout(c, cf, item_id, [r for r in _rows(c, item_id)])
-    log_event(c, 'split', it['title'], f'pages {", ".join(map(str, take))} → “{title}”')
+    aid = log_event(c, 'split', it['title'], f'pages {", ".join(map(str, take))} → “{title}”')
+    record_undo(c, aid, {'op': 'split', 'id': item_id, 'new': new['id'], 'take': take, 'n': len(rows), 'title': it['title'], 'newTitle': title})
     _forget_items(c, item_id, new['id'])
     return {'item': get_item(c, item_id), 'new': get_item(c, new['id'])}
 
@@ -90,12 +92,15 @@ def join(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg))
     """{other: id} → the other sheet's pages are added after this one's; the other goes to the Trash (empty)."""
     it, other = _sheet(c, item_id), _sheet(c, str(body.get('other')))
     if other['id'] == item_id: raise HTTPException(400, 'Pick another sheet')
+    n, m, had = len(_rows(c, item_id)), len(_rows(c, other['id'])), set(it['tags'])  # for the undo
     _relayout(c, cf, item_id, _rows(c, item_id) + _rows(c, other['id']))
     c.execute('UPDATE sheet SET pages=0 WHERE item_id=?', (other['id'],))
     for (tag,) in c.execute('SELECT tag FROM item_tag WHERE item_id=?', (other['id'],)).fetchall():
         c.execute('INSERT OR IGNORE INTO item_tag(item_id, tag) VALUES (?,?)', (item_id, tag))
     c.execute('UPDATE item SET deleted_at=? WHERE id=?', (now_ms(), other['id']))
-    log_event(c, 'join', it['title'], f'+ “{other["title"]}”')
+    aid = log_event(c, 'join', it['title'], f'+ “{other["title"]}”')
+    record_undo(c, aid, {'op': 'join', 'id': item_id, 'other': other['id'], 'n': n, 'm': m, 'title': it['title'], 'otherTitle': other['title'],
+                         'tags': [t for t in other['tags'] if t not in had]})
     _forget_items(c, item_id, other['id'])
     return {'item': get_item(c, item_id)}
 
@@ -103,7 +108,7 @@ def join(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg))
 @router.post('/items/book')
 def set_book(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
     """{ids, book: true|false} → sheets become books (folder items/Books/<title>/) or back to sheets."""
-    on, done = bool(body.get('book', True)), []
+    on, done, ids = bool(body.get('book', True)), [], []
     for i in ids_of(body):
         it = get_item(c, i)
         if not it or it['kind'] != 'sheet' or not it.get('folder') or bool(it.get('book')) == on: continue
@@ -112,6 +117,8 @@ def set_book(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
         if get_item(c, i)['folder'] != new: raise HTTPException(500, f'Could not move the files of “{it["title"]}”')
         c.execute('UPDATE sheet SET book=? WHERE item_id=?', (int(on), i))
         c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), i))
-        done.append(it['title'])
-    if done: log_event(c, 'book' if on else 'unbook', done[0] if len(done) == 1 else f'{len(done)} sheets', 'now a book' if on else 'now a sheet')
+        done.append(it['title']); ids.append(i)
+    if done:
+        aid = log_event(c, 'book' if on else 'unbook', done[0] if len(done) == 1 else f'{len(done)} sheets', 'now a book' if on else 'now a sheet')
+        record_undo(c, aid, {'op': 'book', 'ids': ids, 'titles': done, 'on': on})
     return {'ok': True, 'count': len(done), 'items': [get_item(c, i) for i in ids_of(body)]}

@@ -565,12 +565,11 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
   // the deletes really happen: to the Trash first (Undo brings them back), then, if wanted, for good
   const reallyDelete = (ids) => busy(async () => {
     if (!(await confirmSheet({ title: `Delete ${ids.length} sheet${ids.length === 1 ? '' : 's'}?`, body: 'They go to the Trash now. Undo brings them back.', ok: 'Delete', danger: true }))) return;
-    store.bin(ids);
+    store.bin(ids, { type: 'cleanup', title: `Deleted ${ids.length} sheets`, detail: 'Clean up → Go through sheets' });
     await api('POST', '/cleanup/sort', { clear: ids });
     st.undo.push({ label: `delete ${ids.length}`, tab: 'sort', run: async () => { store.restore(ids); for (const id of ids) await api('POST', '/cleanup/sort', { id, decision: 'delete' }); await new Promise((r) => setTimeout(r, 400)); await load(); st.sort.summary = true; } });
     st.songs = st.songs.filter((x) => !ids.includes(x.id));
     st.sort.dec = (await api('GET', '/cleanup/sort')).decisions;
-    store.logEvent('cleanup', `Deleted ${ids.length} sheets`, 'Manage library → Go through sheets');
     body.innerHTML = `<div class="sv sv-sum"><h2>${ids.length} sheet${ids.length === 1 ? '' : 's'} deleted</h2>
       <p class="muted">They are in the Trash for now. Undo brings them back.</p>
       <div class="sv-act"><button id="sv-again" class="primary big">Go on with the rest</button>
@@ -648,7 +647,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     }
     st.busy = false;
     m.close();
-    store.logEvent('cleanup', `Trimmed ${n} pages`);
+    store.logEvent('cleanup', `Trimmed ${n} pages`, '', { local: true }); // the Mac logs the trims (one Undo)
     toast(`Trimmed ${n} pages`); await load();
   };
 
