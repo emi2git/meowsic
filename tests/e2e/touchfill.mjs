@@ -124,7 +124,7 @@ check('Mac: page padding 4px 48px', mac.pad === '4px 48px', mac.pad);
 
 // Clean up shows sheets only: a book is not in it at all (so it gets no trim suggestions either)
 const cu = await m.evaluate(() => fetch('/api/cleanup').then((r) => r.json()));
-check('Clean up: book not listed', !cu.songs.some((s) => s.id === book.id));
-check('Clean up: book not among odd titles', !cu.titles.some((t) => t.id === book.id));
+check('Manage library: book not listed', !cu.songs.some((s) => s.id === book.id));
+check('Manage library: book not among odd titles', !cu.titles.some((t) => t.id === book.id));
 console.log(`\n${pass} passed, ${fail} failed`); console.log(errs.length ? 'errors:\n' + errs.join('\n') : 'no page errors');
 await b.close();

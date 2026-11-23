@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS sheet_page (
   sha256       TEXT,                          -- blocks duplicate imports
   captured_at  INTEGER,
   ocr_text     TEXT,
+  photo_id     TEXT,                          -- Apple Photos id when it came from Add music → From Photos (blocks importing it twice)
   PRIMARY KEY (item_id, page)
 );
 
@@ -200,3 +201,11 @@ CREATE TABLE IF NOT EXISTS book_split_undo (  -- every make-sheets; unmake sets 
   undone_at  INTEGER
 );
 CREATE INDEX IF NOT EXISTS book_split_undo_book ON book_split_undo(book_id, seq);
+
+CREATE TABLE IF NOT EXISTS photo_import (    -- every Add music → From Photos; undo sets undone_at (rows stay)
+  id         TEXT PRIMARY KEY,
+  album      TEXT NOT NULL,
+  at         INTEGER NOT NULL,
+  record     TEXT NOT NULL,                   -- JSON {id, album, session, at, sheets: [{id, title, pages, photos, cropped}]}
+  undone_at  INTEGER
+);

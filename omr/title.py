@@ -2,6 +2,8 @@
 """Sheet page photo(s) → the text lines on the top part of each page, with their boxes (Apple Vision).
 
   title.py [--top 0.45] page1.png [page2.jpg ...]
+  title.py --refine < {"items": [{"path", "box": [x, y, w, h]}], "words": [...]}
+
 
 Prints one JSON object: {path: {"w": px, "h": px, "lines": [{text, x, y, w, h, conf}]}} — boxes as
 fractions of the page, y from the TOP. Only lines starting in the top part are kept. The server
@@ -39,6 +41,55 @@ def read(path, top, langs=('vi-VT', 'en-US')):
     return {'w': w, 'h': h, 'lines': lines, 'staff': first_staff(path)}
 
 
+def refine(path, box, words=(), langs=('vi-VT', 'en-US')):
+    """Read one region again, zoomed in, with language correction (and the library's titles as custom
+    words): the title found on the whole page, re-read with all of Vision's attention on its letters.
+    The old Meowsic app did this (SheetTextRecognizer.refineTitle). -> {text, conf, cands} (cands: Vision's
+    top 3 readings of each line, best first)."""
+    import Vision
+    from PIL import Image
+    from Quartz import CGImageSourceCreateWithData, CGImageSourceCreateImageAtIndex
+    from Foundation import NSData
+    import io
+    with Image.open(path) as im:
+        im = im.convert('RGB')
+        W, H = im.size
+        x, y, w, h = box
+        px, py = 0.02, 0.015  # a little room around the title, not the next line
+        l, t = max(0, int((x - px) * W)), max(0, int((y - py) * H))
+        r, b = min(W, int((x + w + px) * W)), min(H, int((y + h + py) * H))
+        crop = im.crop((l, t, r, b))
+        if crop.height < 240:  # small letters get more pixels (at most 4x)
+            k = min(4.0, 240 / max(1, crop.height))
+            crop = crop.resize((round(crop.width * k), round(crop.height * k)), Image.LANCZOS)
+        buf = io.BytesIO(); crop.save(buf, 'PNG')
+    data = NSData.dataWithBytes_length_(buf.getvalue(), len(buf.getvalue()))
+    cg = CGImageSourceCreateImageAtIndex(CGImageSourceCreateWithData(data, None), 0, None)
+    req = Vision.VNRecognizeTextRequest.alloc().init()
+    req.setRecognitionLevel_(0)
+    req.setUsesLanguageCorrection_(True)
+    req.setRecognitionLanguages_(list(langs))
+    try: req.setAutomaticallyDetectsLanguage_(False)
+    except AttributeError: pass
+    if words:
+        try: req.setCustomWords_(list(words)[:2000])
+        except AttributeError: pass
+    hd = Vision.VNImageRequestHandler.alloc().initWithCGImage_options_(cg, None)
+    ok, err = hd.performRequests_error_([req], None)
+    if not ok: raise RuntimeError(str(err))
+    rows = []
+    for o in req.results() or []:
+        cs = o.topCandidates_(3)
+        bb = o.boundingBox()
+        rows.append({'y': 1 - bb.origin.y - bb.size.height, 'x': bb.origin.x, 'h': bb.size.height,
+                     'cands': [str(c.string()) for c in cs], 'conf': float(cs[0].confidence()) if len(cs) else 0.0})
+    big = max((r['h'] for r in rows), default=0)
+    rows = [r for r in rows if r['h'] >= 0.6 * big]  # only the title's own lines (not a credit that crept in)
+    rows.sort(key=lambda r: (round(r['y'], 2), r['x']))
+    return {'text': ' '.join(r['cands'][0] for r in rows if r['cands']), 'conf': round(min((r['conf'] for r in rows), default=0.0), 3),
+            'cands': [r['cands'] for r in rows]}
+
+
 def first_staff(path):
     """Top of the first five-line staff, as a fraction of the page height from the top (None = none found).
     A song's title is printed above it; on a page that goes on with a song the staff starts near the top."""
@@ -70,9 +121,17 @@ def first_staff(path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--top', type=float, default=0.45)
-    ap.add_argument('pages', nargs='+')
+    ap.add_argument('--refine', action='store_true')
+    ap.add_argument('pages', nargs='*')
     a = ap.parse_args()
     out = {}
+    if a.refine:
+        job = json.load(sys.stdin)
+        for k, it in enumerate(job.get('items', [])):
+            try: out[str(k)] = refine(it['path'], it['box'], job.get('words') or ())
+            except Exception as e: out[str(k)] = {'error': str(e)[:300]}
+        json.dump(out, sys.stdout, ensure_ascii=False)
+        return
     for p in a.pages:
         try:
             out[p] = read(p, a.top)

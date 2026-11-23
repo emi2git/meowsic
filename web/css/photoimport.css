@@ -1,0 +1,57 @@
+/* Add music → From Photos (views/photoimport.js). Reuses Manage library's page grid (.bs-*) and crop stage (.cu-*). */
+body[data-view="add-photos"] #main { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+body[data-view="add-photos"] .pi-top { flex: none; }
+.pi-top .grow { flex: 1; }
+.pi { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.pi.album, .pi.done, .pi.reading { overflow-y: auto; }
+.pi-album { display: flex; flex-direction: column; gap: 14px; padding-top: 18px; padding-bottom: 28px; }
+.pi-name { display: flex; flex-direction: column; gap: 6px; font-weight: 600; color: var(--ink2); }
+.pi-name small { font-weight: 400; }
+.pi-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.pi-row input { flex: 1 1 200px; min-width: 0; font: inherit; font-size: 16px; min-height: 40px; padding: 0 10px; border: 1px solid var(--line2); border-radius: 8px; background: var(--bg); color: var(--ink); }
+.pi-err { border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent); background: color-mix(in srgb, var(--danger) 9%, var(--bg)); border-radius: 12px; padding: 12px 14px; }
+.pi-err p { margin: 6px 0 0; }
+.pi-count { margin: 0; font-size: 16px; }
+.pi-album .primary.big { align-self: flex-start; min-width: 240px; padding: 0 24px; }
+.pi-have summary { cursor: pointer; color: var(--ink2); }
+.pi-have ul { margin: 8px 0 0; padding-left: 20px; font-size: 14px; } .pi-have li { margin: 3px 0; overflow-wrap: anywhere; }
+.pi-last { margin: 0; }
+.pi.reading .pad { padding-top: 40px; } .pi.reading progress { width: min(420px, 100%); }
+.pi-bar { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.pi-bar .grow { flex: 1; }
+.pi-sum { display: flex; flex-direction: column; min-width: 0; }
+.pi-sum b { font-size: 16px; } .pi-sum small { font-size: 12px; }
+.pi-bar button.big { width: auto; min-width: 150px; padding: 0 20px; }
+.pi-grid figure.out { --c: transparent; opacity: .45; }
+.pi-grid figure.out .bs-pg img { filter: grayscale(1); }
+.pi-grid figure[draggable="true"] { cursor: grab; }
+.pi-grid figure.dragging { opacity: .4; }
+.pi-grid figure.drop-before { box-shadow: -4px 0 0 var(--acc); } .pi-grid figure.drop-after { box-shadow: 4px 0 0 var(--acc); }
+.pi-grid figcaption { align-items: center; }
+.pi-grid figcaption .grow { flex: 1; }
+.pi-mini { min-height: 30px; min-width: 32px; padding: 0 6px; border-radius: 8px; font-size: 16px; line-height: 1; }
+.pi-unsure { position: absolute; right: 6px; bottom: 6px; width: 24px; height: 24px; border-radius: 50%; background: var(--warn); color: #222; font-weight: 800; display: grid; place-items: center; font-size: 14px; }
+.pi-cropped { position: absolute; left: 12px; bottom: 54px; background: rgba(0, 0, 0, .6); color: #fff; border-radius: 6px; padding: 0 6px; font-size: 13px; }
+.pi-nofile { aspect-ratio: 3 / 4; display: grid; place-items: center; background: var(--bg2); color: var(--mute); }
+.pi.crop .cu-stage { flex: 1; }
+.pi-strip { flex: none; }
+.pi-done { padding-top: 24px; } .pi-made { padding-left: 20px; } .pi-made li { margin: 6px 0; font-size: 16px; }
+/* Manage library → Split songs (cleanup-books.js in 'sheets' mode): laid out like Books → sheets, plus the Mac's suggested starts */
+.cu.songsplit { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.bs-bar .grow { flex: 1; }
+.bs-grid figure.suggested .bs-pg { border: 3px dashed var(--acc); }
+.bs-grid figure.suggested .bs-flag { background: var(--acc); }
+.bs-list li .bs-sev { color: var(--ink2); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bs-list li.several { border-left: 4px solid var(--warn); }
+.pi-from { margin-bottom: 14px; text-decoration: none; color: inherit; text-align: left; gap: 14px; }
+.pi-from b { font-size: 18px; }
+@media (max-width: 760px) {
+  body[data-view="add-photos"] #main { height: calc(100dvh - 64px - env(safe-area-inset-bottom)); } /* above the tab bar */
+  .pi-bar { padding: 6px 8px; gap: 6px; flex-wrap: wrap; }
+  .pi-bar button, .pi-bar button.big { min-width: 0; flex: 1 1 0; padding: 0 8px; min-height: 40px; }
+  .pi-bar .grow, .pi.preview .pi-sum small { display: none; }
+  .pi-sum { flex: 1 1 100%; flex-direction: row; gap: 8px; align-items: baseline; }
+  .pi-sum b { font-size: 15px; }
+  .pi.crop .cu-act button.big { min-width: 0; flex: 1; padding: 0 8px; }
+  .pi-mini { min-width: 30px; }
+}

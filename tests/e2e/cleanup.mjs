@@ -448,7 +448,24 @@ await page.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(
 await page.evaluate(() => { location.hash = '#/library'; }); await sleep(500);
 const t0 = (await api('/items/' + sh.id)).updatedAt;
 await page.keyboard.press('Enter'); await page.keyboard.press('g'); await sleep(1000);
-check('keys do nothing after leaving Clean up', (await api('/items/' + sh.id)).updatedAt === t0 && (await page.evaluate(() => location.hash)) === '#/library');
+check('keys do nothing after leaving Manage library', (await api('/items/' + sh.id)).updatedAt === t0 && (await page.evaluate(() => location.hash)) === '#/library');
+// Clean up is called Manage library now: left bar, header, #/manage (and #/cleanup still works), iPhone menu
+{
+  const nav = await page.$$eval('#side a.nav', (e) => e.map((x) => [x.textContent.trim(), x.getAttribute('href')]));
+  check('left bar: “Manage library” → #/manage', nav.some(([t, h]) => t === 'Manage library' && h === '#/manage') && !nav.some(([t]) => /Clean up/.test(t)), JSON.stringify(nav));
+  await page.goto(BASE + '#/manage', { waitUntil: 'networkidle0' }); await sleep(800);
+  check('#/manage opens Manage library', (await page.$eval('#main h1', (e) => e.textContent)) === 'Manage library' && (await page.evaluate(() => document.body.dataset.view)) === 'cleanup');
+  check('… and its left-bar link is on', await page.$eval('#side a.nav[href="#/manage"]', (e) => e.classList.contains('on')));
+  check('the tabs include Split songs', !!(await page.$('[data-tab="songsplit"]')));
+  await page.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(600);
+  check('#/cleanup still opens it', (await page.$eval('#main h1', (e) => e.textContent)) === 'Manage library');
+  const q = await b.newPage(); await q.setViewport({ width: 420, height: 912, hasTouch: true, isMobile: true });
+  await q.goto(BASE + '#/library', { waitUntil: 'networkidle0' }); await sleep(400);
+  await q.tap('#tab-more'); await sleep(300);
+  const menu = await q.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
+  check('iPhone Utilities menu: Manage library', menu.includes('Manage library') && !menu.some((t) => /Clean up/.test(t)), menu.join('|'));
+  await q.close();
+}
 for (const x of await api('/cleanup/notes')) await post('/cleanup/notes', { id: x.id, text: '' });
 console.log(`\n${pass} passed, ${fail} failed`); console.log(errs.length ? 'errors:\n' + errs.join('\n') : 'no page errors');
 await b.close();
