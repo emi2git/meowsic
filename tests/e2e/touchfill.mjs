@@ -67,6 +67,52 @@ for (const [name, w, h] of devices) {
   }
   await p.close();
 }
+// a page turn on a sheet of big photos (2000×2800 JPEGs, other shapes than the 850×1100 default):
+// the new page shows straight at its final size — no frame where the page box is bigger first
+{
+  const up = await b.newPage(); await up.goto(BASE + '#/library', { waitUntil: 'networkidle0' });
+  const big = await up.evaluate(async () => {
+    const fd = new FormData();
+    for (let i = 1; i <= 4; i++) {
+      const c = document.createElement('canvas'); c.width = i === 3 ? 2100 : 2000; c.height = i === 3 ? 2700 : 2800;
+      const x = c.getContext('2d'), d = x.createImageData(c.width, c.height);
+      for (let k = 0; k < d.data.length; k++) d.data[k] = (k & 3) === 3 ? 255 : (Math.random() * 255) | 0;
+      x.putImageData(d, 0, 0);
+      fd.append('files', await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.92)), `big ${i}.jpg`);
+    }
+    fd.append('title', 'Touchfill big photos');
+    const r = await fetch('/api/sheets', { method: 'POST', body: fd });
+    return r.ok ? (await r.json()).item : null;
+  });
+  check('big photo sheet uploaded', big && big.pages === 4, JSON.stringify(big)?.slice(0, 200));
+  for (const [w, h] of big ? [[1032, 1376], [1376, 1032]] : []) {
+    const p = await b.newPage(); p.on('pageerror', (e) => errs.push(e.message));
+    await p.setViewport({ width: w, height: h, hasTouch: true, isMobile: true });
+    await p.goto(BASE + '#/library', { waitUntil: 'networkidle0' });
+    await p.evaluate((id) => { location.hash = '#/item/' + id; }, big.id); await sleep(2500);
+    await p.evaluate(() => {
+      window.__f = [];
+      const tick = () => { const pg = document.querySelector('.page'); if (pg) { const r = pg.getBoundingClientRect(); window.__f.push([pg.dataset.p, r.width, r.height]); } requestAnimationFrame(tick); };
+      tick();
+    });
+    const c = await p.$eval('.pages', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, r: r.right }; });
+    await p.touchscreen.touchStart(c.x + 100, c.y); await p.touchscreen.touchMove(c.x, c.y); await p.touchscreen.touchMove(c.x - 100, c.y); await p.touchscreen.touchEnd();
+    for (let i = 0; i < 6; i++) { await p.screenshot({ path: `${out}/fill-turn-${w}-${i}.png` }); await sleep(30); }
+    await sleep(1500);
+    await p.touchscreen.tap(c.r - 6, c.y); await sleep(2500);
+    const f = await p.evaluate(() => window.__f);
+    for (const n of ['2', '3']) {
+      const fr = f.filter((x) => x[0] === n), [, fw, fh] = fr.at(-1) || [];
+      const over = fr.filter((x) => x[1] > fw + 1 || x[2] > fh + 1);
+      check(`${w}×${h}: turn to page ${n} — page box never bigger than its final ${Math.round(fw)}×${Math.round(fh)}`, fr.length && !over.length, JSON.stringify(over.slice(0, 3)));
+    }
+    check(`${w}×${h}: next page (4) preloaded while on page 3`, await p.evaluate((n) => performance.getEntriesByType('resource').some((r) => decodeURIComponent(r.name).includes(n)), big.pageFiles[3]));
+    await p.close();
+  }
+  if (big) await up.evaluate((id) => fetch('/api/items/purge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [id] }) }), big.id);
+  await up.close();
+}
+
 // Mac: |‹| page |›| strips and padding unchanged
 const m = await b.newPage(); m.on('pageerror', (e) => errs.push(e.message)); await m.setViewport({ width: 1440, height: 900 });
 await m.goto(BASE + '#/item/' + sheet.id, { waitUntil: 'networkidle0' }); await sleep(800);

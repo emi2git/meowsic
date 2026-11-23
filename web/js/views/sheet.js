@@ -34,21 +34,63 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
   if (!levels().includes(zoom)) zoom = levels()[0];
   const twoUp = () => zoom === 'two' && canTwo();
 
+  // page pictures, loaded and decoded ahead (the pages next to the shown ones too), so a turn swaps
+  // in a ready picture whose shape is known: the new page never shows at a wrong (bigger) size first
+  const imgs = new Map(); // src -> { im, ready: Promise, done }
+  const load = (p) => {
+    const src = pageSrc(it, p);
+    let c = imgs.get(src);
+    if (!c) {
+      const im = new Image();
+      im.draggable = false;
+      im.src = src;
+      c = { im, done: false };
+      c.ready = im.decode().catch(() => new Promise((r) => (im.complete ? r() : (im.onload = im.onerror = r)))).then(() => { c.done = true; });
+      imgs.set(src, c);
+    }
+    return c;
+  };
+  const preload = (show) => {
+    const near = [];
+    for (let d = 1; d <= 2; d++) near.push(show[0] - d, show.at(-1) + d);
+    const keep = new Set([...show, ...near].filter((p) => p >= 1 && p <= it.pages).map((p) => pageSrc(it, p)));
+    for (const k of imgs.keys()) if (!keep.has(k)) imgs.delete(k);
+    near.filter((p) => p >= 1 && p <= it.pages).forEach(load);
+  };
+  let gen = 0;
   const draw = () => {
     if (twoUp() && page % 2 === 0) page--;
-    layers.forEach((l) => l.destroy());
-    layers = [];
     const show = twoUp() ? [page, page + 1].filter((p) => p <= it.pages) : [page];
     const row = $('#page-row', root);
     const big = typeof zoom === 'number' && zoom > 1;
-    pages.classList.toggle('zoomed', big);
     root.querySelector('.turn-strip.prev').disabled = page <= 1;
     root.querySelector('.turn-strip.next').disabled = page + (twoUp() ? 2 : 1) > it.pages;
+    root.querySelectorAll('#strip button').forEach((b) => b.classList.toggle('on', show.includes(+b.dataset.p)));
+    root.dispatchEvent(new CustomEvent('pagechange', { detail: { page, show, pages: it.pages }, bubbles: true }));
+    const cs = show.map(load);
+    const g = ++gen;
+    const swap = () => { if (g === gen) put(row, show, cs, big); };
+    // the old page stays until the new picture is decoded (a slow one shows anyway after 3 s)
+    if (cs.every((c) => c.done)) swap();
+    else Promise.race([Promise.all(cs.map((c) => c.ready)), new Promise((r) => setTimeout(r, 3000))]).then(swap);
+    preload(show);
+  };
+  const put = (row, show, cs, big) => {
+    layers.forEach((l) => l.destroy());
+    layers = [];
+    pages.classList.toggle('zoomed', big);
     // zoomed: the page keeps its shape and grows in both directions (height = zoom × screen height)
     const fitH = pages.clientHeight - 16;
     row.style.height = '';
     row.dataset.h = big ? Math.round(fitH * zoom) : '';
-    row.innerHTML = show.map((p) => `<div class="page" data-p="${p}"><img src="${pageSrc(it, p)}" alt="Page ${p} of ${esc(it.title)}" draggable="false"></div>`).join('');
+    row.replaceChildren(...show.map((p, i) => {
+      const w = document.createElement('div');
+      w.className = 'page'; w.dataset.p = p;
+      const img = cs[i].im;
+      img.alt = `Page ${p} of ${it.title}`;
+      w.append(img);
+      return w;
+    }));
     row.querySelectorAll('.page').forEach((w) => {
       const img = w.querySelector('img');
       // size the page box to the page's own shape, so the picture fills it with no empty band
@@ -66,11 +108,9 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
         w.style.width = h * ratio + 'px';
       };
       size();
-      const mk = () => { size(); const l = new InkLayer(w, it.id, +w.dataset.p); l.setTool(tool); layers.push(l); };
+      const mk = () => { if (!w.isConnected) return; size(); const l = new InkLayer(w, it.id, +w.dataset.p); l.setTool(tool); layers.push(l); };
       img.complete ? mk() : img.addEventListener('load', mk, { once: true });
     });
-    root.querySelectorAll('#strip button').forEach((b) => b.classList.toggle('on', show.includes(+b.dataset.p)));
-    root.dispatchEvent(new CustomEvent('pagechange', { detail: { page, show, pages: it.pages }, bubbles: true }));
   };
   const step = () => (twoUp() ? 2 : 1);
   const next = () => { if (page + step() <= it.pages) { page += step(); draw(); } else onEnd?.(); };
