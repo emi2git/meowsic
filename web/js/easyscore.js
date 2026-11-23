@@ -24,7 +24,8 @@ export function creditOf(xmlText) {
   const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
   const cs = [...doc.querySelectorAll('identification > creator')];
   const c = cs.find((x) => x.getAttribute('type') === 'composer') || cs[0];
-  return (c?.textContent || '').trim();
+  const t = (c?.textContent || '').trim();
+  return /^music21$/i.test(t) ? '' : t; // music21's default stamp is not a credit
 }
 
 // every graphical note of the drawn score, staff by staff (tab staves left out)

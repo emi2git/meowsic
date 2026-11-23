@@ -30,7 +30,7 @@ async function scorePages(it) {
     await osmd.load(xml);
     if (it.transpose) { osmd.TransposeCalculator = new window.opensheetmusicdisplay.TransposeCalculator(); osmd.Sheet.Transpose = it.transpose; osmd.updateGraphic(); }
     osmd.render();
-    if (easy) { const first = box.querySelector('svg'); if (first) decoratePrintPage(osmd, first, { title: osmd.Sheet.TitleString || it.title, credit: creditOf(xml) || (it.tune ? it.artist || '' : '') }); }
+    if (easy) { const first = box.querySelector('svg'); if (first) decoratePrintPage(osmd, first, { title: osmd.Sheet.TitleString || it.title, credit: creditOf(xml) || (it.source === 'Meowsic AI' || it.ai ? 'Meowsic AI' : it.tune ? it.artist || '' : '') }); }
     const pages = [...box.querySelectorAll('svg')].map((svg) => { svg.setAttribute('preserveAspectRatio', 'xMidYMin meet'); svg.removeAttribute('height'); svg.setAttribute('width', '100%'); return svg.outerHTML; });
     scorePagesCache.set(ck(it), pages);
     return pages;

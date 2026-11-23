@@ -112,7 +112,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     paper.classList.toggle('easy', easy);
     if (!easy) { head.innerHTML = ''; return; }
     drawNoteLetters(osmd);
-    head.innerHTML = easyHeaderHtml({ title: it.title, credit: real ? creditOf(xmlText) : it.artist || '', chords: chordsOf(osmd), scale: isNarrow() ? 0.8 : Math.max(1, (zoom / 1.5) * 1.25) });
+    head.innerHTML = easyHeaderHtml({ title: it.title, credit: (real ? creditOf(xmlText) : '') || (it.source === 'Meowsic AI' || it.ai ? 'Meowsic AI' : it.artist || ''), chords: chordsOf(osmd), scale: isNarrow() ? 0.8 : Math.max(1, (zoom / 1.5) * 1.25) });
   };
   const relayout = () => { osmd.render(); decorate(); tagNotes(); measureStops(); place(player.now()); ink?.fit(); };
 
