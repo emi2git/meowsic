@@ -32,7 +32,10 @@ for (const [dev, vp] of DEVICES) {
   const labels = await p.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
   check(`${dev}: Add music = Sheet | Chords | Score`, labels.join('|') === 'Sheet|Chords|Score', labels.join('|'));
   const h = await p.$eval('.menu.add-menu button', (e) => e.getBoundingClientRect().height);
-  check(`${dev}: big choices (≥ 52px)`, h >= 52, h);
+  check(`${dev}: choices easy to tap (≥ 44px)`, h >= 44, h);
+  // text size matches the other menus and buttons (no oversized Add music text)
+  const fs = (sel) => p.$eval(sel, (e) => parseFloat(getComputedStyle(e).fontSize));
+  check(`${dev}: Add menu text = standard menu text`, (await fs('.menu.add-menu button')) <= 15, await fs('.menu.add-menu button'));
   await p.screenshot({ path: `${SHOTS}/${dev}-1-menu.png` });
   await p.keyboard.press('Escape'); await p.mouse.click(vp.width - 5, vp.height / 2); await sleep(200);
 
@@ -41,6 +44,8 @@ for (const [dev, vp] of DEVICES) {
   check(`${dev}: Sheet has the file chooser`, !!(await p.$('#files')));
   const src = await p.$$eval('.src-btn', (e) => e.map((x) => x.textContent.trim()));
   check(`${dev}: sheet sources are one or two words`, src.length >= 2 && src.every((t) => words(t) <= 2), src.join('|'));
+  const sb = await p.$$eval('.src-btn', (e) => e.map((x) => [Math.round(x.getBoundingClientRect().height), parseFloat(getComputedStyle(x.querySelector('b') || x).fontSize)]));
+  check(`${dev}: source buttons: standard text, 44px, same height`, sb.every(([h, f]) => h >= 44 && h <= 46 && f <= 15), JSON.stringify(sb));
   check(`${dev}: Camera only on touch`, src.includes('Camera') === (dev !== 'mac'), src.join('|'));
   check(`${dev}: no long explanations on Add sheet`, !(await p.$('.how')) && (await p.$eval('#main', (e) => e.innerText.length)) < 160, await p.$eval('#main', (e) => e.innerText));
   check(`${dev}: Add sheet fits (no sideways scroll)`, await noHScroll());
