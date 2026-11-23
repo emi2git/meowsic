@@ -1,10 +1,10 @@
-// iPad / iPhone item views: no sidebar; swipe up/down on a sheet goes back to the library (real server :5180)
+// iPad / iPhone item views: no sidebar; on a sheet swipe up goes back to the library, swipe down stays.
+// TOUCH_BASE=http://localhost:5190/ for a test server (default: the real one, :5180; opening items logs plays there)
 import puppeteer from 'puppeteer-core';
-const BASE = 'https://localhost:5180/';
+const BASE = process.env.TOUCH_BASE || 'https://localhost:5180/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', args: ['--ignore-certificate-errors'] });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0; const check = (n, c, x = '') => { c ? pass++ : fail++; console.log(c ? '  ok  ' : '  FAIL', n, c ? '' : x); };
-const items = await (await fetch(BASE + 'api/items', { dispatcher: undefined }).catch(() => null))?.json?.() ?? null;
 const out = process.env.OUT || '.';
 const devices = [['ipad-land', 1180, 820], ['ipad-port', 820, 1180], ['iphone', 390, 844]];
 const p0 = await b.newPage(); await p0.goto(BASE + '#/library', { waitUntil: 'networkidle0' });
@@ -31,8 +31,7 @@ for (const [name, w, h] of devices) {
       await p.touchscreen.touchStart(box.x, box.y - 150);
       for (let i = 1; i <= 5; i++) await p.touchscreen.touchMove(box.x + 3, box.y - 150 + i * 60);
       await p.touchscreen.touchEnd(); await sleep(700);
-      check(`${name}: swipe down → library`, (await p.evaluate(() => location.hash)) === '#/library', await p.evaluate(() => location.hash));
-      await p.goForward(); await sleep(1200); check(`${name}: back on the sheet`, (await p.evaluate(() => location.hash)).startsWith("#/item/"));
+      check(`${name}: swipe down stays on the sheet`, (await p.evaluate(() => location.hash)).startsWith('#/item/'), await p.evaluate(() => location.hash));
       await p.touchscreen.touchStart(box.x, box.y + 150);
       for (let i = 1; i <= 5; i++) await p.touchscreen.touchMove(box.x, box.y + 150 - i * 60);
       await p.touchscreen.touchEnd(); await sleep(700);
