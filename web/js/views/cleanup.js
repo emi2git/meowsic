@@ -74,7 +74,9 @@ export function cleanupView(main) {
   const body = $('#cu', main);
   const books = makeBooks({ body, st, busy: (f) => busy(f), undo: () => undo(), help: () => help(), drawHead: () => drawHead(), tab: (t) => { st.tab = t; draw(); } });
 
-  const shown = () => st.songs.filter((s) => (st.filter === 'all' ? true : st.filter === 'good' ? isGood(s) : !isGood(s)));
+  // the song you're on stays in the list until you move off it — otherwise finishing its last trim
+  // would drop it from "To do" and throw you back to the top of the list (the same song again and again)
+  const shown = () => st.songs.filter((s) => s.id === st.sid || (st.filter === 'all' ? true : st.filter === 'good' ? isGood(s) : !isGood(s)));
   const song = () => st.songs.find((s) => s.id === st.sid);
   const pg = () => song()?.pages[st.pi];
 
