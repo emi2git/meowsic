@@ -2,10 +2,14 @@
 """Make a lead sheet sing (beta), fully offline: MusicXML melody + English lyrics -> a sung vocal with a soft piano.
 
   sing.py --xml song.musicxml --out DIR --name "m-abc vocal" [--bpm 72] [--steps 32] [--device mps] [--check]
+          [--voice en_target] [--tune 0.85]
 
 Voice: SoulX-Singer (Soul-AILab, Apache-2.0) — zero-shot singing voice synthesis, score-controlled (MIDI notes +
 phonemes). Code in ~/ai/SoulX-Singer (its own .venv runs this script), weights in ~/ai/models/SoulX-Singer/model.pt.
-The singer is the project's own English example prompt (example/audio/en_prompt.mp3).
+The singer is one of the project's annotated example clips (--voice; default en_target, an English pop voice); the
+clip is cut at its metadata start time so its audio lines up with its notes / phonemes.
+Pitch correction (--tune, default 0.85, 0 = off; sing/tune.py): WORLD (pyworld) tracks the sung f0, each note's
+slow drift is pulled to the score, vibrato and note-to-note glides are kept, then the voice is resynthesized.
 Piano: the app's Salamander samples (web/vendor/piano), block chords from the score's chord symbols
 (the melody itself, softly, when there are none).
 
@@ -25,11 +29,15 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 sys.path.insert(0, str(REPO / 'server'))
 from meowsic import singscore  # noqa: E402  (stdlib only)
+import tune  # noqa: E402  (sing/tune.py: pitch correction, WORLD via pyworld)
 
 SOULX = Path(os.environ.get('MEOWSIC_SOULX', Path.home() / 'ai' / 'SoulX-Singer'))
 MODEL = Path(os.environ.get('MEOWSIC_SOULX_MODEL', Path.home() / 'ai' / 'models' / 'SoulX-Singer' / 'model.pt'))
 NLTK = Path(os.environ.get('NLTK_DATA', Path.home() / 'ai' / 'models' / 'nltk_data'))
 PIANO = REPO / 'web' / 'vendor' / 'piano'
+# annotated prompt clips in SoulX-Singer's example/audio (<name>.mp3 + <name>.json); VOICE is the default singer
+VOICES = ('en_target', 'en_prompt', 'zh_prompt', 'zh_target', 'yue_target')
+VOICE = 'en_target'  # English pop singer: best words + pitch over the five (Amazing Grace tests, 2026-11)
 SR_OUT = 44100
 TAIL_Q = 1.0  # the last note rings on for a beat after the score ends
 
@@ -72,14 +80,32 @@ def make_g2p():
     return lambda w: [p for p in g(w) if re.fullmatch(r'[A-Z]+[0-2]?', p)]
 
 
-def sing(segs, bpm, device, steps, cfg_scale, on_seg, mode='syllable'):
+def load_prompt(proc, voice):
+    """The singer: one of SoulX-Singer's annotated example clips. Its notes / phonemes / f0 start at meta['time'][0]
+    inside the mp3 (e.g. en_prompt.mp3 at 5.22 s), so the audio is cut there to line up with them."""
+    import librosa
+    import soundfile as sf
+    import tempfile
+    aud = SOULX / 'example' / 'audio'
+    meta = json.loads((aud / f'{voice}.json').read_text())[0]
+    t = meta['time']
+    t0 = (json.loads(t) if isinstance(t, str) else t)[0] / 1000
+    y, sr = librosa.load(str(aud / f'{voice}.mp3'), sr=proc.sample_rate, mono=True)
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f: tmp = f.name
+    try:
+        sf.write(tmp, y[int(round(t0 * sr)):], sr)
+        return proc.process(dict(meta), tmp), meta
+    finally:
+        os.unlink(tmp)
+
+
+def sing(segs, bpm, device, steps, cfg_scale, on_seg, mode='syllable', voice=VOICE):
     import numpy as np
     import torch
     model, proc, cfg = load_voice(device)
     g2p = make_g2p()
     phones = set(proc.phone2idx)
-    prompt_meta = json.loads((SOULX / 'example' / 'audio' / 'en_prompt.json').read_text())[0]
-    prompt = proc.process(dict(prompt_meta), str(SOULX / 'example' / 'audio' / 'en_prompt.mp3'))
+    prompt, prompt_meta = load_prompt(proc, voice)
     pt_med = float(np.median([int(x) for x in prompt_meta['note_pitch'].split() if int(x) > 0]))
     sr = cfg.audio.sample_rate
     metas = [singscore.soulx_meta(s, bpm, g2p, i, TAIL_Q if i == len(segs) - 1 else 0, mode=mode) for i, s in enumerate(segs)]
@@ -225,6 +251,9 @@ def main():
     ap.add_argument('--check', action='store_true')
     ap.add_argument('--mode', choices=('syllable', 'word'), default='syllable', help='phonemes per syllable (default) or per word')
     ap.add_argument('--seed', type=int, default=0, help='same seed + same score = the same take')
+    ap.add_argument('--voice', choices=VOICES, default=VOICE, help='the singer: one of SoulX-Singer\'s annotated example clips')
+    ap.add_argument('--tune', type=float, default=0.85,
+                    help='pitch correction: how far each note\'s pitch is pulled to the score, 0 (off) .. 1 (vibrato kept)')
     a = ap.parse_args()
     os.environ.setdefault('PYTORCH_ENABLE_MPS_FALLBACK', '1')
     import numpy as np
@@ -243,7 +272,11 @@ def main():
 
     def on_seg(i, n, ws):
         say(2, i / n, f'Phrase {i} of {n}: ' + ' '.join(dict.fromkeys(ws)))
-    dry, vsr, shift, _ = sing(segs, bpm, device, a.steps, a.cfg, on_seg, a.mode)
+    dry, vsr, shift, _ = sing(segs, bpm, device, a.steps, a.cfg, on_seg, a.mode, a.voice)
+    tuned = None
+    if a.tune > 0:
+        say(2, 1, 'Tuning the voice to the score')
+        dry, tuned = tune.retune(dry, vsr, info['notes'], bpm, shift, strength=min(1.0, a.tune))
     end_s = (info['endQ'] + TAIL_Q) * 60 / bpm
     dry = np.pad(dry, (0, max(0, int(end_s * vsr) - len(dry))))[:int(end_s * vsr)]
 
@@ -260,6 +293,7 @@ def main():
     if a.check:
         say(4, 0, 'Checking pitch and timing')
         rep = check(dry, vsr, info, bpm, shift, len(m))
+        rep.update(voice=a.voice, tune=a.tune, tuning=tuned)
     print(json.dumps({'done': True, 'm4a': str(m4a), 'wav': str(wav), 'dry': str(dry_p), 'bpm': bpm, 'report': rep}), flush=True)
 
 
