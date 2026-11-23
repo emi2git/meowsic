@@ -1,7 +1,7 @@
 // note editing on a real (transcribed) score, against the temp server on :5190
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
-const BASE = 'http://localhost:5190/';
+const BASE = process.env.BASE || 'http://localhost:5190/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });
 const page = await b.newPage(); await page.setViewport({ width: 1440, height: 900 });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
@@ -34,7 +34,7 @@ const bar3 = (t) => t.match(/<measure[^>]*number="3"[^>]*>[\s\S]*?<\/measure>/)[
 console.log('   after add, bar3:', bar3(x1).replace(/\s+/g,' ').slice(0,140), '| notes', (bar3(x1).match(/<note/g)||[]).length);
 check('adding a note gives bar 3 its own time signature', /<time>/.test(bar3(x1)), bar3(x1).slice(0, 200));
 check('score still draws after edits', (await page.$$('#osmd svg')).length > 0);
-await page.click('#sc-play'); await sleep(2000); check('edited score plays', +(await page.$eval('#sc-pos', (e) => e.value)) > 0.3); await page.click('#sc-play');
+await page.click('#sc-play'); await sleep(2000); check('edited score plays', (await page.evaluate(() => window.__score.player.now())) > 0.3); await page.click('#sc-play');
 await page.click('.editbar [data-a="undo"]'); await sleep(2500);
 { const u = bar3(await xmlOf(sc.id)); check('undo removes the added note', !/<time>/.test(u), (u.match(/<note/g) || []).length + ' notes; ' + u.slice(0, 300)); }
 await page.click('.editbar [data-a="reset"]'); await sleep(3000);

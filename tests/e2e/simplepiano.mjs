@@ -95,7 +95,7 @@ async function run(name, vp, how) {
   for (const k of ['main', 'staccato', 'grace']) await toggle(page, k);
   await setLevel(page, 80); await settle(page);
   await page.click('.sp-panel .sp-play'); await sleep(1800);
-  check('Play (in the menu) works on the preview', +(await page.$eval('#sc-pos', (e) => e.value)) > 0.2);
+  check('Play (in the menu) works on the preview', (await page.evaluate(() => window.__score.player.now())) > 0.2);
   await page.click('.sp-panel .sp-play'); await sleep(300);
   await page.screenshot({ path: `${SHOTS}/simplepiano-${name}.png` });
   const fin = await settings(page);

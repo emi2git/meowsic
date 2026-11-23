@@ -11,7 +11,7 @@ const errs = [];
 const items = async (p) => p.evaluate(async () => (await import('/js/store.js')).store.items().map((x) => ({ id: x.id, kind: x.kind, title: x.title, pages: x.pages, len: (x.text || '').length })));
 const open = async (p, id, wait = 1200) => { await p.goto(BASE + '#/library', { waitUntil: 'networkidle0' }); await p.evaluate((i) => { location.hash = '#/item/' + i; }, id); await sleep(wait); };
 const hash = (p) => p.evaluate(() => location.hash);
-const pos = (p) => p.$eval('#sc-pos', (e) => +e.value);
+const pos = (p) => p.evaluate(() => window.__score.player.now());
 const swipe = async (p, x0, y0, x1, y1, steps = 6) => {
   await p.touchscreen.touchStart(x0, y0);
   for (let i = 1; i <= steps; i++) await p.touchscreen.touchMove(x0 + ((x1 - x0) * i) / steps, y0 + ((y1 - y0) * i) / steps);

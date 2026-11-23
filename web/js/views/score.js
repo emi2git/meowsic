@@ -9,6 +9,8 @@ import { musicXml, tuneNotes, VERSIONS, VERSION_HELP, barBeats, xmlInfo } from '
 import { ScorePlayer, VoicePlayer } from '../audio.js';
 import { scoreEditor } from './scoreeditor.js';
 import { fitLyrics } from './fitlyrics.js';
+import { editNotes } from './editnotes.js';
+import { checkBadge } from './checkbars.js';
 import { InkLayer } from './annotate.js';
 import { attachSwipe, flipBy } from '../swipe.js';
 import { isTouch, isNarrow } from '../device.js';
@@ -28,8 +30,6 @@ export function loadOsmd() {
     document.head.append(s);
   }));
 }
-
-const fmt = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
 
 export function scoreBody(root, it, { perform = false } = {}) {
   // an edited score keeps its own bars on the entry (it.measures); otherwise the original tune
@@ -424,6 +424,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get real() { return real; },
     get totalQ() { return real ? Math.ceil(info.totalQ) : tune.measures.reduce((s, m) => s + barBeats(tune, m), 0); },
     seekAt: qAt, seek: seekTo,
+    stop() { player?.stop(); place(0); }, // Stop: back to the beginning (the orange line goes)
     destroy() { player.pause(); voice?.destroy(); ro.disconnect(); offSwipe(); ink?.destroy(); },
   };
 }
@@ -433,6 +434,7 @@ export function scoreTools(it, view) {
   return [{ label: 'Make another version…', icon: 'plus', run: () => generateVersions(it) },
     ...(store.mode === 'server' ? [{ label: 'Add lyrics from a sheet…', icon: 'text', run: () => addLyrics(it) }] : []),
     ...(store.mode === 'server' && view.real ? [{ label: 'Fit lyrics…', icon: 'text', run: () => fitLyrics(view, it, document.querySelector('.viewer')) }] : []),
+    ...(store.mode === 'server' && view.real ? [{ label: 'Edit notes…', icon: 'edit', run: () => editNotes(view, it, document.querySelector('.viewer')) }] : []),
     { label: 'Kids note names', icon: 'baby', checked: view.easy, run: () => view.setEasy(!view.easy) },
     { label: `Chords: ${MODE_LABEL[chordsMode()]} (tap for ${MODE_LABEL[nextMode(chordsMode())].toLowerCase()})`, icon: CHORD_ICON[chordsMode()], run: () => document.querySelector('.viewer')?.dispatchEvent(new CustomEvent('uketoggle')) },
     ...(view.real && /<lyric[\s>]/.test(view.xml()) ? [{ label: view.hasVoice ? 'Make it sing again (beta)' : 'Make it sing (beta)', icon: 'wave', run: () => makeItSing(it) }] : []),
@@ -448,15 +450,14 @@ export function scoreExportMenu(it, view) {
 
 export function scoreToolbar(bar, it, view) {
   const t = view.tune;
-  const secs = (q) => (q / ((view.player.bpm || t.bpm) * view.player.rate)) * 60;
   const bpmNow = () => Math.round((view.player.bpm || t.bpm) * view.player.rate);
-  const total = view.totalQ;
+  window.__score = view; // for automated tests (the orange line shows where it is; there is no position bar)
   bar.innerHTML = `${view.pageLabel ? `<span class="pageno" id="pageno">${view.pageLabel}</span>` : ''}
     <div class="transport">
-      <button class="play" id="sc-play" aria-label="Play">Play</button>
-      <input type="range" id="sc-pos" min="0" max="${total}" step="0.25" value="0" aria-label="Position">
-      <span class="time" id="sc-time">0:00 / ${fmt(secs(total))}</span>
+      <button class="icon-btn stop" id="sc-stop" aria-label="Stop" title="Stop: back to the beginning">${iconOn('stop')}</button>
+      <button class="play" id="sc-play" aria-label="Play" title="Play (space)">${iconOn('play')}</button>
     </div>
+    <button class="check-badge" id="sc-check" hidden></button>
     <div class="stepper" aria-label="Tempo" title="Tempo"><button id="sc-slow" aria-label="Slower">−</button><span id="sc-rate">${bpmNow()} bpm</span><button id="sc-fast" aria-label="Faster">+</button></div>
     <div class="stepper" aria-label="Transpose"><button id="sc-tdown" aria-label="Transpose down">♭</button><span id="sc-tval">${it.transpose ? (it.transpose > 0 ? '+' : '') + it.transpose : '0'}</span><button id="sc-tup" aria-label="Transpose up">♯</button></div>
     <div class="stepper zoom" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out" title="Zoom out (−)">${iconOn('zoomout')}</button><button id="sc-zreset" class="zreset" title="Reset zoom (0)">${Math.round(view.zoom * 100)}%</button><button id="sc-zin" aria-label="Zoom in" title="Zoom in (+)">${iconOn('zoomin')}</button></div>
@@ -470,23 +471,20 @@ export function scoreToolbar(bar, it, view) {
 
   const p = () => view.player;
   const playBtn = $('#sc-play', bar);
-  const setPlay = () => { playBtn.textContent = p().playing ? 'Pause' : 'Play'; playBtn.setAttribute('aria-label', p().playing ? 'Pause' : 'Play'); };
+  const setPlay = () => { const on = p().playing; playBtn.innerHTML = iconOn(on ? 'pause' : 'play'); playBtn.setAttribute('aria-label', on ? 'Pause' : 'Play'); playBtn.title = on ? 'Pause (space)' : 'Play (space)'; };
   playBtn.onclick = async () => {
     if (p().playing) p().pause();
     else { const pr = p().play(); setPlay(); try { await pr; } catch { toast(view.voice ? 'Could not play the voice — tap Play again, or turn Voice off.' : 'Could not start playback.'); } }
     setPlay();
   };
-  const pos = $('#sc-pos', bar), time = $('#sc-time', bar);
+  $('#sc-stop', bar).onclick = () => { view.stop(); setPlay(); };
   const host = bar.closest('.viewer') || document;
-  const onTick = (e) => { pos.value = e.detail.q; time.textContent = `${fmt(secs(e.detail.q))} / ${fmt(secs(total))}`; };
   const onEnd = () => setPlay();
-  host.addEventListener('tick', onTick);
   host.addEventListener('ended', onEnd);
-  pos.oninput = () => p().seek(+pos.value);
   // tempo in beats per minute, 5 at a time; the score's own tempo is the starting point
   // Voice: the sung audio has its own tempo and key — a tempo or key change goes back to the piano
   const voiceBtn = $('#sc-voice', bar);
-  const vl = () => { voiceBtn.hidden = !view.hasVoice; voiceBtn.classList.toggle('on', view.voice); voiceBtn.setAttribute('aria-pressed', String(view.voice)); $('#sc-rate', bar).textContent = `${bpmNow()} bpm`; time.textContent = `${fmt(secs(+pos.value))} / ${fmt(secs(total))}`; setPlay(); };
+  const vl = () => { voiceBtn.hidden = !view.hasVoice; voiceBtn.classList.toggle('on', view.voice); voiceBtn.setAttribute('aria-pressed', String(view.voice)); $('#sc-rate', bar).textContent = `${bpmNow()} bpm`; setPlay(); };
   voiceBtn.onclick = async () => { const pr = view.setVoice(!view.voice); vl(); await pr; vl(); };
   const toPiano = (why) => { if (!view.voice) return; view.setVoice(false); vl(); toast(`${why} — back to the piano (the voice sings at its own tempo and key)`); };
   const onSung = (e) => { // "Make it sing" finished for this score: Voice turns on
@@ -500,7 +498,6 @@ export function scoreToolbar(bar, it, view) {
     p().setRate(bpm / t.bpm);
     store.update(it.id, { rate: bpm / t.bpm });
     $('#sc-rate', bar).textContent = `${bpm} bpm`;
-    time.textContent = `${fmt(secs(+pos.value))} / ${fmt(secs(total))}`;
   };
   $('#sc-slow', bar).onclick = () => rate(-1);
   $('#sc-fast', bar).onclick = () => rate(1);
@@ -541,8 +538,10 @@ export function scoreToolbar(bar, it, view) {
   bar.closest('.viewer')?.addEventListener('zoomchange', zl);
   const onSpace = (e) => { if (e.key === ' ' && !e.target.closest('input,select,textarea,button')) { e.preventDefault(); playBtn.click(); } };
   document.addEventListener('keydown', onSpace);
+  const offCheck = checkBadge($('#sc-check', bar), view, it, viewer); // "N to check": bars the sheet reader was not sure of
   return () => {
-    host.removeEventListener('tick', onTick); host.removeEventListener('ended', onEnd); document.removeEventListener('keydown', onSpace); removeEventListener('meowsic-new-items', onSung);
+    offCheck();
+    host.removeEventListener('ended', onEnd); document.removeEventListener('keydown', onSpace); removeEventListener('meowsic-new-items', onSung);
     viewer?.removeEventListener('ukeclose', onUkeClose); viewer?.removeEventListener('uketoggle', onUkeToggle); uke?.destroy(); uke = null;
   };
 }

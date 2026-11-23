@@ -230,7 +230,7 @@ console.log('Score');
 await go('#/item/m-02i'); await sleep(1500);
 check('notation drawn', (await count('#osmd svg')) >= 1);
 await page.click('#sc-play'); await sleep(2500);
-const pos = +(await page.$eval('#sc-pos', (e) => e.value));
+const pos = (await page.evaluate(() => window.__score.player.now()));
 check('playback moves the position', pos > 0.5, pos);
 check('play bar visible', await page.$eval('.playbar', (e) => e.style.display === 'block'));
 await page.click('#sc-play');

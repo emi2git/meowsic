@@ -35,9 +35,9 @@ await page.$$eval('.lib-table tbody tr', (e, t) => e.find((x) => x.textContent.i
 check('opens the item', (await page.evaluate(() => location.hash)) === `#/item/${ai.id}`, await page.evaluate(() => location.hash));
 check('score renders (#osmd svg)', (await page.$$('#osmd svg')).length >= 1);
 await page.click('#sc-play'); await sleep(2500);
-const pos = +(await page.$eval('#sc-pos', (e) => e.value));
+const pos = (await page.evaluate(() => window.__score.player.now()));
 check('Play moves the playhead', pos > 0.3, String(pos));
-check('button says Pause while playing', (await page.$eval('#sc-play', (e) => e.textContent)) === 'Pause');
+check('button says Pause while playing', (await page.$eval('#sc-play', (e) => e.getAttribute('aria-label'))) === 'Pause');
 await page.click('#sc-play');
 await page.screenshot({ path: 'aimusic.png' });
 
