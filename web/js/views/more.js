@@ -121,8 +121,8 @@ function funFacts(plays, ranked, total) {
 
 // ================= settings =================
 export function settingsView(main) {
-  let theme = 'system';
-  try { theme = localStorage.getItem('meowsic-theme') || 'system'; } catch {}
+  let theme = 'light';
+  try { theme = localStorage.getItem('meowsic-theme') || 'light'; } catch {}
   const items = store.items();
   main.innerHTML = `<header class="top"><h1>Settings</h1></header>
     <div class="pad narrow settings">

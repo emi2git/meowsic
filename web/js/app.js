@@ -97,8 +97,8 @@ export function addMenu(anchor) {
 
 // ---------- theme ----------
 export function applyTheme() {
-  let t = 'system';
-  try { t = localStorage.getItem('meowsic-theme') || 'system'; } catch {}
+  let t = 'light';
+  try { t = localStorage.getItem('meowsic-theme') || 'light'; } catch {}
   if (t === 'system') delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = t;
 }
