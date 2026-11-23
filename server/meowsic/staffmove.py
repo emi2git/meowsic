@@ -461,26 +461,17 @@ def check_bars(text):
     return []
 
 
-def use_measure(text, bar, measure_xml, part_index=None):
-    """Bar `bar` (1-based) of a part replaced by another reading of it (a <measure>); its number stays."""
-    root = ET.fromstring(text.encode('utf-8'))
-    try: alt = ET.fromstring(str(measure_xml).encode('utf-8'))
-    except ET.ParseError: raise HTTPException(400, 'The other reading is not a MusicXML bar')
-    if alt.tag != 'measure': alt = alt.find('.//measure')
-    if alt is None: raise HTTPException(400, 'The other reading is not a MusicXML bar')
-    parts = root.findall('part')
-    k = int(part_index) if part_index is not None else (edit_part(root)[0] or 0)
-    if not 0 <= k < len(parts): raise HTTPException(400, 'No such part')
-    ms = parts[k].findall('measure')
+def use_measure(text, bar, measure_xml):
+    """Bar `bar` with another reading of it put in (Check bars' preview) — exactly as barcheck.py saves it (the bar
+    keeps its chord names, words and marks), and no longer to check."""
+    from .barcheck import apply_check
     try: bar = int(bar)
     except (TypeError, ValueError): raise HTTPException(400, 'bar: a bar number')
-    if not 1 <= bar <= len(ms): raise HTTPException(400, f'No bar {bar}')
-    m = ms[bar - 1]
-    keep = [e for e in m if e.tag == 'print' or (e.tag == 'attributes' and not any(x.tag == 'attributes' for x in alt))]
-    for c in list(m): m.remove(c)
-    for c in keep + list(alt): m.append(c)
-    ET.indent(root, space='  ')
-    return _head(text) + ET.tostring(root, encoding='unicode') + '\n'
+    root = ET.fromstring(text.encode('utf-8'))
+    if not any(m.get('number') == str(bar) for m in root.iter('measure')): raise HTTPException(400, f'No bar {bar}')
+    try: ET.fromstring(str(measure_xml).encode('utf-8'))
+    except ET.ParseError: raise HTTPException(400, 'The other reading is not a MusicXML bar')
+    return apply_check(text, bar, 'use', str(measure_xml))
 
 
 def edit(text: str, op: dict) -> tuple[str, list]:
@@ -492,11 +483,11 @@ def edit(text: str, op: dict) -> tuple[str, list]:
       {op:'add', refs, by?, midi?}    a note `by` semitones (default 4) above each picked note, in its chord; a
                                       picked rest becomes a note (`midi`, default the middle of its staff)
       {op:'unmark', bars}             bars looked at (no longer to check)
-      {op:'alt', bar, measure, part?} that bar replaced by another reading
+      {op:'alt', bar, measure}        that bar replaced by another reading (as barcheck.py does)
     Every voice of every bar still fills it."""
     kind = op.get('op') or ('move' if 'to' in op else None)
     if kind == 'unmark': return unmark(text, op.get('bars')), []
-    if kind == 'alt': return use_measure(text, op.get('bar'), op.get('measure'), op.get('part')), []
+    if kind == 'alt': return use_measure(text, op.get('bar'), op.get('measure')), []
     if kind not in ('move', 'pitch', 'len', 'delete', 'add'): raise HTTPException(400, f'Unknown edit: {kind}')
     root = ET.fromstring(text.encode('utf-8'))
     _, part, hands = edit_part(root)
