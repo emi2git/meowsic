@@ -137,7 +137,7 @@ check('slim header', await page.$eval('.item-top', (e) => e.offsetHeight <= 50),
 check('full screen button', !!(await page.$('#it-full')));
 await page.keyboard.press('ArrowRight'); await sleep(200);
 check('arrow / pedal turns to the next pair', (await text('#pageno')) === 'Page 3 of 3');
-await sleep(800); await page.click('#sv-ink'); await sleep(400);
+await sleep(1500); await page.click('#sv-ink'); await sleep(600);
 const box = await page.$eval('.page', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
 await page.mouse.move(box.x + 100, box.y + 100); await page.mouse.down();
 for (let i = 1; i < 10; i++) await page.mouse.move(box.x + 100 + i * 15, box.y + 100 + i * 5);
