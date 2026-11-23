@@ -27,7 +27,7 @@ check('Books list has the book, with its cover', rows.some((r) => r.includes('Cl
 check('heading says Books', (await page.$eval('#libhead h1', (e) => e.textContent)) === 'Books');
 await page.goto(`${BASE}#/library?kind=sheet`, { waitUntil: 'networkidle0' }); await sleep(600);
 check('Sheets list no longer has it', !(await page.$$eval('.lib-table tbody tr', (e) => e.some((x) => x.textContent.includes('Cleanup test')))));
-await page.goto(`${BASE}#/library`, { waitUntil: 'networkidle0' }); await sleep(600);
+await page.goto(`${BASE}#/library`, { waitUntil: 'networkidle0' }); await page.evaluate(() => (location.hash = '#/library')); await sleep(600);
 check('All music shows a Book badge', await page.$$eval('.lib-table tbody tr', (e) => e.some((x) => x.textContent.includes('Cleanup test') && x.querySelector('.badge.k-book'))));
 await page.goto(`${BASE}#/item/${sh.id}`, { waitUntil: 'networkidle0' }); await sleep(800);
 check('book ⋯ offers going back to a sheet', await pick('Not a book')); await sleep(1200);

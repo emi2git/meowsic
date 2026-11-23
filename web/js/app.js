@@ -16,6 +16,8 @@ import { placeBanner } from './conn.js';
 const main = $('#main');
 let cleanup = null;
 
+// where the app opens and where Back / the logo land: Sheets (All music is one tap away)
+export const HOME = '#/library?kind=sheet';
 export function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
 
 export function parseHash() {
@@ -53,7 +55,7 @@ export function renderSide() {
   const kind = v === 'library' ? q.get('kind') || '' : null;
   const on = (cond) => (cond ? ' on' : '');
   $('#side').innerHTML = `
-    <a class="brand" href="#/library"><span><b>Meowsic</b><small>2.0</small></span></a>
+    <a class="brand" href="${HOME}"><span><b>Meowsic</b><small>2.0</small></span></a>
     <button class="add-btn primary" id="side-add">${icon('plus')}Add music</button>
     <nav aria-label="Library">
       <a class="nav${on(kind === '')}" href="#/library">${icon('library')}<span>All music</span><i>${items.length}</i></a>
@@ -72,7 +74,7 @@ export function renderSide() {
 
   const tab = (href, ic, label, active) => `<a href="${href}" class="${active ? 'on' : ''}">${icon(ic)}<span>${label}</span></a>`;
   $('#tabbar').innerHTML =
-    tab('#/library', 'library', 'Library', v === 'library' || v === 'item') +
+    tab(HOME, 'library', 'Library', v === 'library' || v === 'item') +
     tab('#/tags', 'tag', 'Tags', v === 'tags') +
     `<button id="tab-add" class="tab-add" aria-label="Add music">Add</button>` +
     tab('#/stats', 'stats', 'Stats', v === 'stats') +
@@ -107,6 +109,8 @@ applyTheme();
 // re-render the side when data changes; views subscribe themselves
 store.on(() => renderSide());
 addEventListener('hashchange', route);
+// a fresh start on #/ or #/library (no type picked) opens Sheets
+if (/^#?\/?(library)?\/?$/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search + HOME);
 // new scores from a finished job → offer tags for review
 addEventListener('meowsic-new-items', (e) => { if (e.detail?.length) import('./views/autotag.js').then((m) => m.autoTag(e.detail, { quiet: true })); });
 route();

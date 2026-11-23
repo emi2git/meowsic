@@ -2,7 +2,7 @@
 import { store } from '../store.js';
 import { $, esc, icon, iconOn, badge, ago, menu, KIND, kindOf, CAT } from '../ui.js';
 import { go, addMenu } from '../app.js';
-import { itemMenu, editTags, binItems, keyShort } from './actions.js';
+import { itemMenu, editTags, binItems, keyShort, verLabel, verDetail, versionMenu } from './actions.js';
 import { autoTag } from './autotag.js';
 import { VERSIONS } from '../musicxml.js';
 import { isTouch, onDeviceChange } from '../device.js';
@@ -17,7 +17,7 @@ const SORTS = {
   kind: ['Type', (a, b) => kindOf(a).localeCompare(kindOf(b)) || a.title.localeCompare(b.title)],
   pages: ['Pages', (a, b) => (a.pages || 0) - (b.pages || 0) || a.title.localeCompare(b.title)],
   key: ['Key', (a, b) => (a.key || '').localeCompare(b.key || '') || a.title.localeCompare(b.title)],
-  version: ['Version', (a, b) => (VERSIONS[a.version] || '').localeCompare(VERSIONS[b.version] || '') || a.title.localeCompare(b.title)],
+  version: ['Version', (a, b) => (verLabel(a) || '\uffff').localeCompare(verLabel(b) || '\uffff') || a.title.localeCompare(b.title)],
   tag: ['Tag', (a, b) => (mainTag(a) || '\uffff').localeCompare(mainTag(b) || '\uffff') || a.title.localeCompare(b.title)],
 };
 // table columns (Mac / iPad); clicking a heading sorts, clicking it again reverses
@@ -26,9 +26,9 @@ const SORTS = {
 const C = { title: ['title', 'Title', 'c-title'], artist: ['artist', 'Artist', 'c-artist'], type: ['kind', 'Type', 'c-type'], version: ['version', 'Version', 'c-ver'],
   tag: ['tag', 'Tag', 'c-tag'], pages: ['pages', 'Pages', 'c-pages'], key: ['key', 'Key', 'c-key'], added: ['added', 'Added', 'c-when'] };
 const COLS_BY = {
-  '': [C.title, C.artist, C.type, C.tag, C.added],
-  sheet: [C.title, C.artist, C.tag, C.pages, C.added],
-  book: [C.title, C.artist, C.tag, C.pages, C.added],
+  '': [C.title, C.artist, C.version, C.type, C.tag, C.key, C.added],
+  sheet: [C.title, C.artist, C.version, C.tag, C.key, C.pages, C.added],
+  book: [C.title, C.artist, C.version, C.tag, C.pages, C.added],
   chords: [C.title, C.artist, C.tag, C.key, C.added],
   score: [C.title, C.artist, C.version, C.tag, C.key, C.added],
 };
@@ -43,19 +43,24 @@ const PAGE = 50; // rows per page on the Mac (the list scrolls)
 // (measured after drawing: header, table heading, pager, row height — book rows with covers are
 // taller), swipe left / right for the next / previous page. `per` is the last measured count;
 // `key` is the view (type + tags) the page number belongs to, so coming back from an item keeps it.
-// All → Vietnamese → World (everything not Vietnamese); remembered on this device
-const LANG_NEXT = { all: 'vi', vi: 'world', world: 'all' };
+// World (every song, the default) ⇄ Vietnamese only; remembered on this device
+const LANG_NEXT = { world: 'vi', vi: 'world' };
 const VI_CHARS = /[ăâđêôơưĂÂĐÊÔƠƯạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/;
 const isVi = (it) => it.tags.includes('Vietnamese') || VI_CHARS.test(it.title || '');
 const LANG_ICON = {
-  vi: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.2l2.2 5.1 5.5.4-4.2 3.6 1.3 5.4L12 15.8l-4.8 2.9 1.3-5.4-4.2-3.6 5.5-.4z"/></svg>',
+  vi: '<svg class="ic star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.2l2.2 5.1 5.5.4-4.2 3.6 1.3 5.4L12 15.8l-4.8 2.9 1.3-5.4-4.2-3.6 5.5-.4z"/></svg>',
   world: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.5 7.5c2 .5 3 1.8 2.5 3.5s1 2.5 2.5 3-1 3.5.5 5M14 3.4c-.5 1.6.5 2.6 2 3s2 2 1.5 3.5 1.5 2.5 3.4 2.4"/></svg>',
 };
-LANG_ICON.all = LANG_ICON.world;
-const LANG_TITLE = { all: 'All songs (tap: Vietnamese only)', vi: 'Vietnamese only (tap: world songs)', world: 'World songs only (tap: all)' };
-let lang = 'all'; try { lang = localStorage.getItem('meowsic-lang') || 'all'; } catch {}
+const LANG_TITLE = { world: 'All songs (tap: Vietnamese only)', vi: 'Vietnamese only (tap: all songs)' };
+// older devices stored 'all' (or 'world' = not Vietnamese): both are World now
+let lang = 'world'; try { lang = localStorage.getItem('meowsic-lang') === 'vi' ? 'vi' : 'world'; } catch {}
 const state = { q: '', sort: 'added', dir: 1, select: false, sel: new Set(), page: 1, anchor: null, per: 0, key: null };
-try { state.sort = localStorage.getItem('meowsic-sort') || 'added'; } catch {}
+try { const s = localStorage.getItem('meowsic-sort'); if (SORTS[s]) state.sort = s; state.dir = localStorage.getItem('meowsic-sort-dir') === '-1' ? -1 : 1; } catch {}
+const saveSort = () => { try { localStorage.setItem('meowsic-sort', state.sort); localStorage.setItem('meowsic-sort-dir', String(state.dir)); } catch {} };
+// the sort button's four choices (the column headings on the Mac can sort by any column)
+const SORT_MENU = [['title', 1, 'Title A–Z', 'A–Z'], ['title', -1, 'Title Z–A', 'Z–A'], ['most', 1, 'Most played', 'Most played'], ['added', 1, 'Recently added', 'Recent']];
+const sortShort = () => SORT_MENU.find(([k, d]) => k === state.sort && d === state.dir)?.[3]
+  || `${SORTS[state.sort][0].replace(/ A–Z$/, '')} ${(state.sort === 'added') === (state.dir > 0) ? '▼' : '▲'}`;
 
 const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase();
 
@@ -80,11 +85,10 @@ export function libraryView(main, { q }) {
       ${tags.map((t) => `<span class="tag-on">${esc(t)}<button class="x" data-untag="${esc(t)}" aria-label="Remove tag ${esc(t)}" title="Remove">×</button></span>`).join('')}
       ${tags.length > 1 ? `<button class="link clear-tags" id="lib-tags-clear">Clear all</button>` : ''}
       ${tags.length ? `<a class="icon-btn btn" href="#/print?tags=${encodeURIComponent(tags.join(','))}">Print all</a>` : ''}
-      
-      <button class="chip-btn" id="lib-sort" hidden aria-haspopup="menu">Sort: ${SORTS[state.sort][0]} ▾</button>
-    
-      <label class="search">${icon('search')}<input type="search" id="lib-q" placeholder="Search titles, artists, tags" value="${esc(state.q)}" aria-label="Search"></label>
-      <button class="icon-btn lang-btn ${lang !== 'all' ? 'on' : ''}" id="lib-lang" data-lang="${lang}" title="${LANG_TITLE[lang]}" aria-label="${LANG_TITLE[lang]}">${LANG_ICON[lang]}</button>
+
+      <label class="search">${icon('search')}<input type="search" id="lib-q" placeholder="Search titles, artists, tags" value="${esc(state.q)}" aria-label="Search" enterkeyhint="search"><button type="button" class="search-x" id="lib-q-x" aria-label="Clear search" title="Clear search" ${state.q ? '' : 'hidden'}>×</button></label>
+      <button class="icon-btn sort-btn" id="lib-sort" aria-haspopup="menu" title="Sort" aria-label="Sort"></button>
+      <button class="icon-btn lang-btn ${lang === 'vi' ? 'on' : ''}" id="lib-lang" data-lang="${lang}" title="${LANG_TITLE[lang]}" aria-label="${LANG_TITLE[lang]}">${LANG_ICON[lang]}</button>
       <button class="icon-btn tag-btn ${tags.length ? 'on' : ''}" id="lib-tag" title="Filter by tag" aria-label="Filter by tag">${iconOn('tag')}</button>
       <button class="icon-btn touch-only" id="lib-select">Select</button>
     </header>
@@ -94,14 +98,17 @@ export function libraryView(main, { q }) {
 
   const draw = (again = true) => {
     const words = fold(state.q).split(/\s+/).filter(Boolean);
-    let list = store.items().filter((it) => (!kind || kindOf(it) === kind) && tags.every((t) => it.tags.includes(t)) && (lang === 'all' || (lang === 'vi') === isVi(it)));
-    if (words.length) list = list.filter((it) => { const hay = fold([it.title, it.artist, ...it.tags, KIND[kindOf(it)].label].join(' ')); return words.every((w) => hay.includes(w)); });
+    let list = store.items().filter((it) => (!kind || kindOf(it) === kind) && tags.every((t) => it.tags.includes(t)) && (lang !== 'vi' || isVi(it)));
+    if (words.length) list = list.filter((it) => { const hay = fold([it.title, it.artist, ...it.tags, KIND[kindOf(it)].label, verLabel(it), it.kind === 'chords' ? '' : it.key || '', keyShort(it.key), it.kind === 'score' ? VERSIONS[it.version] || '' : ''].join(' ')); return words.every((w) => hay.includes(w)); });
     list.sort(SORTS[state.sort][1]);
     if (state.dir < 0) list.reverse();
     const rows = $('#lib-rows', main);
+    const sb = $('#lib-sort', main);
+    sb.innerHTML = `${iconOn('sort')}<span>${esc(sortShort())}</span>`;
+    sb.title = sb.ariaLabel = `Sort: ${SORT_MENU.find(([k, d]) => k === state.sort && d === state.dir)?.[2] || SORTS[state.sort][0]}`;
     if (!list.length) {
       const away = store.mode === 'offline' && !store.items().length;
-      rows.innerHTML = `<ul class="rows"><li class="empty">${CAT}<p>${away ? 'Meowsic can’t reach the Mac. Check that the Mac is on and on the same Wi-Fi.' : state.q || tags.length ? 'No music matches.' : 'Nothing here yet.'}</p>${state.q || tags.length || away ? '' : '<button class="primary" id="empty-add">Add music</button>'}</li></ul>`;
+      rows.innerHTML = `<ul class="rows"><li class="empty">${CAT}<p>${away ? 'Meowsic can’t reach the Mac. Check that the Mac is on and on the same Wi-Fi.' : state.q || tags.length || lang === 'vi' ? 'No music matches.' : 'Nothing here yet.'}</p>${state.q || tags.length || lang === 'vi' || away ? '' : '<button class="primary" id="empty-add">Add music</button>'}</li></ul>`;
       $('#empty-add', main)?.addEventListener('click', (e) => addMenu(e.currentTarget));
     } else {
       const per = perPage();
@@ -115,7 +122,7 @@ export function libraryView(main, { q }) {
         const arrow = (k) => (state.sort !== k ? '' : (k === 'added') === (state.dir > 0) ? ' ▼' : ' ▲');
         const cols = COLS_BY[kind] || COLS_BY[''];
         const cell = {
-          'c-title': (it) => (kind === 'book' ? `<span class="cover">${store.thumbUrl(it, 1, 160) ? `<img src="${store.thumbUrl(it, 1, 160)}" alt="" loading="lazy">` : ''}</span>` : '') + esc(it.title), 'c-artist': (it) => esc(it.artist || ''), 'c-type': (it) => badge(it), 'c-ver': (it) => esc(VERSIONS[it.version] || ''),
+          'c-title': (it) => (kind === 'book' ? `<span class="cover">${store.thumbUrl(it, 1, 160) ? `<img src="${store.thumbUrl(it, 1, 160)}" alt="" loading="lazy">` : ''}</span>` : '') + esc(it.title), 'c-artist': (it) => esc(it.artist || ''), 'c-type': (it) => badge(it), 'c-ver': (it) => (verLabel(it) ? `<span title="${esc(verDetail(it) || verLabel(it))}">${esc(verLabel(it))}</span>` : ''),
           'c-tag': (it) => (mainTag(it) ? `<span class="tagchip">${esc(mainTag(it))}</span>` : ''), 'c-pages': (it) => it.pages || '', 'c-key': (it) => esc(keyShort(it.key)), 'c-when': (it) => ago(it.createdAt),
         };
         rows.innerHTML = `<table class="lib-table ${kind ? 'one-kind' : ''} ${selecting() ? 'selecting' : ''}"><thead><tr><th class="c-pick"></th>${cols.map(([k, l, c]) =>
@@ -135,7 +142,7 @@ export function libraryView(main, { q }) {
           const k = b.dataset.sort;
           state.dir = state.sort === k ? -state.dir : 1;
           state.sort = k; state.page = 1;
-          try { localStorage.setItem('meowsic-sort', k); } catch {}
+          saveSort();
           draw();
         }));
       }
@@ -177,6 +184,7 @@ export function libraryView(main, { q }) {
       <b class="sel-count">${n ? `${n} selected` : 'Select items'}</b>
       <span class="grow"></span>
       <button ${n ? '' : 'disabled'} id="sb-tag">Edit tags</button>
+      <button ${n ? '' : 'disabled'} id="sb-ver" aria-haspopup="menu">Set version…</button>
       ${store.mode === 'server' ? `<button ${n ? '' : 'disabled'} id="sb-auto">Auto-tag</button>` : ''}
       <button ${n ? '' : 'disabled'} id="sb-print">Print</button>
       <button ${n ? '' : 'disabled'} class="danger-text" id="sb-bin">Move to Trash</button>
@@ -185,6 +193,7 @@ export function libraryView(main, { q }) {
     box.indeterminate = n > 0 && !all;
     box.onchange = () => { if (all) state.sel.clear(); else list.forEach((x) => state.sel.add(x.id)); draw(); };
     $('#sb-tag', band).onclick = () => editTags(ids);
+    $('#sb-ver', band).onclick = (e) => versionMenu(e.currentTarget, ids);
     $('#sb-auto', band)?.addEventListener('click', () => autoTag(ids));
     $('#sb-print', band).onclick = () => go(`#/print?items=${ids.join(',')}`);
     $('#sb-bin', band).onclick = () => { binItems(ids); state.sel.clear(); state.select = false; draw(); };
@@ -207,17 +216,23 @@ export function libraryView(main, { q }) {
   $('#lib-tag', main).onclick = (e) => tagFilter(e.currentTarget, tags, setTags);
   $('#lib-lang', main).onclick = (e) => {
     lang = LANG_NEXT[lang]; try { localStorage.setItem('meowsic-lang', lang); } catch {}
-    const btn = e.currentTarget; btn.dataset.lang = lang; btn.classList.toggle('on', lang !== 'all');
+    const btn = e.currentTarget; btn.dataset.lang = lang; btn.classList.toggle('on', lang === 'vi');
     btn.title = btn.ariaLabel = LANG_TITLE[lang]; btn.innerHTML = LANG_ICON[lang];
     state.page = 1; draw();
   };
   main.querySelectorAll('[data-untag]').forEach((b) => (b.onclick = () => setTags(tags.filter((t) => t !== b.dataset.untag))));
   $('#lib-tags-clear', main)?.addEventListener('click', () => setTags([]));
-  $('#lib-sort', main).onclick = (e) => menu(e.currentTarget, Object.entries(SORTS).map(([k, [l]]) => ({
-    label: (state.sort === k ? '✓ ' : '   ') + l,
-    run: () => { state.sort = k; state.dir = 1; state.page = 1; try { localStorage.setItem('meowsic-sort', k); } catch {} $('#lib-sort', main).textContent = `Sort: ${l} ▾`; draw(); },
+  $('#lib-sort', main).onclick = (e) => menu(e.currentTarget, SORT_MENU.map(([k, d, l]) => ({
+    label: l, checked: state.sort === k && state.dir === d,
+    run: () => { state.sort = k; state.dir = d; state.page = 1; saveSort(); draw(); },
   })));
-  $('#lib-q', main).oninput = (e) => { state.q = e.target.value; state.page = 1; draw(); };
+  const qIn = $('#lib-q', main), qX = $('#lib-q-x', main);
+  const setSearch = (v) => { state.q = v; qX.hidden = !v; state.page = 1; draw(); };
+  qIn.oninput = () => setSearch(qIn.value);
+  // × : one tap clears; the field is not focused, so no keyboard comes up on iPad / iPhone
+  qX.addEventListener('pointerdown', (e) => e.preventDefault());
+  qX.onclick = (e) => { e.preventDefault(); qIn.value = ''; qIn.blur(); setSearch(''); };
+  qIn.addEventListener('keydown', (e) => { if (e.key === 'Escape' && (qIn.value || state.q)) { e.preventDefault(); e.stopPropagation(); qIn.value = ''; qIn.blur(); setSearch(''); } });
   $('#lib-select', main).onclick = () => { state.select = true; draw(); };
   const rowsEl = $('#lib-rows', main);
   let pressed = false;
@@ -251,6 +266,7 @@ export function libraryView(main, { q }) {
   const onKey = (e) => {
     if (e.key === '/' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); $('#lib-q', main)?.focus(); }
     if (e.key === 'Escape' && selecting()) { state.select = false; state.sel.clear(); draw(); }
+    else if (e.key === 'Escape' && state.q && !document.querySelector('.menu, .tagpop, .modal')) { const qIn = $('#lib-q', main); qIn.value = ''; qIn.blur(); qIn.oninput(); }
     if ((e.metaKey || e.ctrlKey) && e.key === 'a' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); shownList.forEach((x) => state.sel.add(x.id)); draw(); }
   };
   document.addEventListener('keydown', onKey);

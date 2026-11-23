@@ -22,6 +22,41 @@ export function metaText(it) {
   return keyShort(it.key); // the version has its own column on the Scores view
 }
 
+// Version, in the user's three words. Sheets: 'lead' | 'piano' | 'duet' ('' = not known; books too).
+// Scores keep their detailed version: lead → Lead, duet → Duet, the rest (original, vocal, accomp, clear, pro, easy) → Piano.
+export const SHEET_VERSIONS = { lead: 'Lead', piano: 'Piano', duet: 'Duet' };
+export function verLabel(it) {
+  if (it.kind === 'sheet') return SHEET_VERSIONS[it.version] || '';
+  if (it.kind === 'score') return it.version === 'lead' ? 'Lead' : it.version === 'duet' ? 'Duet' : 'Piano';
+  return '';
+}
+const DETAIL = { original: 'original', vocal: 'with vocals', accomp: 'accompaniment', clear: 'clear', pro: 'pro', easy: 'easy' };
+// the score's own version under the word: "Piano · clear" (sheets: just the word)
+export const verDetail = (it) => (it.kind === 'score' && DETAIL[it.version] ? `${verLabel(it)} · ${DETAIL[it.version]}` : verLabel(it));
+
+// pick Lead / Piano / Duet / Not set for one sheet or many (scores and chord charts are skipped)
+export function versionMenu(anchor, ids) {
+  ids = [].concat(ids);
+  const sheets = ids.map((id) => store.get(id)).filter((it) => it?.kind === 'sheet');
+  const cur = sheets.length && sheets.every((it) => (it.version || '') === (sheets[0].version || '')) ? sheets[0].version || '' : null;
+  menu(anchor, [...Object.entries(SHEET_VERSIONS), ['', 'Not set']].map(([v, l]) => ({
+    label: l, checked: cur === v,
+    run: () => {
+      if (!sheets.length) return toast('Only sheets and books get a version here — a score’s version is its arrangement');
+      store.setVersion(sheets.map((it) => it.id), v);
+      const skip = ids.length - sheets.length;
+      toast((ids.length > 1 ? `${sheets.length} set to ${l}` : `Version: ${l}`) + (skip ? ` · ${skip} score${skip > 1 ? 's' : ''} / chord chart${skip > 1 ? 's' : ''} kept` : ''));
+    },
+  })));
+}
+
+// a sheet's key ('F', 'Am', 'Eb major'); empty clears it
+export async function editKey(id) {
+  const it = store.get(id);
+  const k = await promptSheet({ title: `Key — ${it.title}`, value: it.key || '', placeholder: 'e.g. C, Am, F#m, Bb', required: false });
+  if (k !== null && k !== (it.key || '')) store.update(id, { key: k });
+}
+
 export function editTags(ids) {
   ids = [].concat(ids);
   const items = ids.map((id) => store.get(id));
@@ -77,7 +112,9 @@ export function itemMenu(anchor, id, { viewer = false, info, tools = [], exports
   const group = (...g) => g.filter((x) => x.length).flatMap((x, i) => (i ? ['-', ...x] : x));
   menu(anchor, group(
     viewer ? [{ label: 'Info', icon: 'info', run: info }] : [{ label: 'Open', icon: 'right', run: () => go(`#/item/${id}`) }],
-    [{ label: 'Rename…', icon: 'edit', run: () => rename(id) }, { label: 'Edit tags…', icon: 'tag', run: () => editTags(id) }],
+    [{ label: 'Rename…', icon: 'edit', run: () => rename(id) }, { label: 'Edit tags…', icon: 'tag', run: () => editTags(id) },
+      ...(store.get(id)?.kind === 'sheet' ? [{ label: `Version: ${verLabel(store.get(id)) || 'Lead / Piano / Duet'}…`, icon: 'score', run: () => versionMenu(anchor, id) },
+        { label: `Key: ${store.get(id).key || 'not set'}…`, icon: 'edit', run: () => editKey(id) }] : [])],
     [...tools, ...(viewer ? [] : bookToggle(store.get(id)))],
     [{ label: 'Print…', icon: 'print', run: () => go(`#/print?item=${id}`) }, ...exports],
     [{ label: 'Move to Trash', icon: 'bin', danger: true, run: () => binItems(id) }],

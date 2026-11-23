@@ -7,7 +7,7 @@
 import { isTouch } from './device.js';
 
 export function backToLibrary() {
-  if (history.length > 1) history.back(); else location.hash = '#/library';
+  if (history.length > 1) history.back(); else location.hash = '#/library?kind=sheet';
 }
 
 export function attachSwipe(el, { onLeft, onRight, onUp = backToLibrary, onDown, canStart = () => true, scroller = null, upAtEnd = false }) {
