@@ -1081,3 +1081,10 @@ label .bs-det { display: block; font-weight: 400; margin-top: 2px; }
 .lang-btn .ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .lang-btn[data-lang="all"] { opacity: .45; }
 .lang-btn.on { color: var(--acc-text); background: var(--acc-soft); }
+
+/* ---------- Settings: storage on this device ---------- */
+.st-cap { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 4px; }
+.st-cap > span { color: var(--mute); }
+#st-storage .kv dd { overflow-wrap: anywhere; }
+#st-storage.st-none .st-cap, #st-storage.st-none #st-clear { opacity: .5; }
+@media (max-width: 760px) { #st-storage .kv { grid-template-columns: 110px 1fr; } }

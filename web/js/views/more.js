@@ -2,6 +2,7 @@
 import { store } from '../store.js';
 import { $, esc, icon, badge, ago, mins, toast, confirmSheet, CAT } from '../ui.js';
 import { applyTheme } from '../app.js';
+import * as saved from '../saved.js';
 
 const DAY = 86400000, WEEK = 7 * DAY;
 
@@ -130,9 +131,16 @@ export function settingsView(main) {
         <dt>Last sync</dt><dd>${store.lastSync ? ago(store.lastSync) : '—'}</dd>
         <dt>Waiting to sync</dt><dd>${store.waiting} change${store.waiting === 1 ? '' : 's'}</dd></dl>
         <p class="muted small">Adding music, chord search and transcription need the Mac. Reading the library works offline.</p></section>
-      <section class="card"><h2>${icon('download')} Offline on this device</h2>
-        <label class="ctl check"><input type="checkbox" checked disabled> Keep the library readable offline</label>
-        <dl class="kv"><dt>Stored here</dt><dd id="st-stored">${items.length} items</dd></dl></section>
+      <section class="card" id="st-storage"><h2>${icon('download')} Storage on this device</h2>
+        <p class="muted small">Pages and scores you open are saved here so they still show without the Mac. Old versions and deleted music are cleaned up after each sync.</p>
+        <dl class="kv"><dt>Library list</dt><dd>${items.length} items</dd>
+        <dt>Saved pages</dt><dd id="st-pages">…</dd>
+        <dt>Saved scores</dt><dd id="st-scores">…</dd>
+        <dt>Saved in all</dt><dd id="st-saved">…</dd>
+        <dt>Browser total</dt><dd id="st-usage">…</dd></dl>
+        <div class="st-cap"><span>Keep at most</span><div class="seg small" id="st-cap">${saved.CAPS.map((b) => `<button data-b="${b}">${b >= 1024 * saved.MB ? b / 1024 / saved.MB + ' GB' : b / saved.MB + ' MB'}</button>`).join('')}</div></div>
+        <p class="muted small">When it's full, the pages you haven't opened for the longest go first.</p>
+        <div class="row-ctl"><button id="st-clear">${icon('bin')}Clear saved pages</button></div></section>
       <section class="card"><h2>${icon('moon')} Appearance</h2>
         <div class="seg" id="st-theme">${[['system', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([k, l]) => `<button data-t="${k}" class="${theme === k ? 'on' : ''}">${l}</button>`).join('')}</div></section>
       <section class="card"><h2>${icon('upload')} Backup</h2>
@@ -141,7 +149,7 @@ export function settingsView(main) {
         <label class="btn">${icon('upload')}Import backup<input type="file" id="st-import" accept="application/json,.json" hidden></label></div></section>
 <p class="center muted">Meowsic 2.0 · UI preview</p>
     </div>`;
-  navigator.storage?.estimate?.().then((e) => { const el = $('#st-stored', main); if (el && e.usage) el.textContent = `${store.items().length} items · ${Math.round(e.usage / 1e6)} MB on this device`; }).catch(() => {});
+  storageCard(main);
   $('#st-theme', main).onclick = (e) => {
     const b = e.target.closest('[data-t]');
     if (!b) return;
@@ -160,6 +168,39 @@ export function settingsView(main) {
     if (!f) return;
     try { store.importJson(await f.text()); toast('Backup imported'); } catch (err) { toast(err.message); }
   };
+}
+
+// ---------- storage on this device ----------
+const mb = (b) => (b >= 1024 * saved.MB ? (b / 1024 / saved.MB).toFixed(1) + ' GB' : (b / saved.MB).toFixed(b < 10 * saved.MB ? 1 : 0) + ' MB');
+async function storageCard(main) {
+  const card = $('#st-storage', main);
+  const put = (id, t) => { const el = $(id, main); if (el) el.textContent = t; };
+  const draw = async () => {
+    const [st, est] = await Promise.all([saved.stats(), navigator.storage?.estimate?.().catch(() => null)]);
+    if (!card.isConnected) return;
+    if (!st) { ['#st-pages', '#st-scores', '#st-saved'].forEach((id) => put(id, 'Not available here')); card.classList.add('st-none'); }
+    else {
+      const n = (k) => st.by[k] || [0, 0];
+      const [pc, ps] = n('page'), [tc, ts] = n('thumb'), [sc, ss] = n('score');
+      put('#st-pages', `${pc} page${pc === 1 ? '' : 's'} · ${mb(ps)}${tc ? ` (+ ${tc} preview${tc === 1 ? '' : 's'} · ${mb(ts)})` : ''}`);
+      put('#st-scores', `${sc} score file${sc === 1 ? '' : 's'} · ${mb(ss)}`);
+      put('#st-saved', `${mb(st.size)} of ${mb(st.cap)}`);
+      card.querySelectorAll('#st-cap button').forEach((b) => b.classList.toggle('on', +b.dataset.b === st.cap));
+    }
+    put('#st-usage', est?.quota ? `${mb(est.usage || 0)} used of ${mb(est.quota)} allowed` : '—');
+  };
+  $('#st-cap', main).onclick = async (e) => {
+    const b = e.target.closest('[data-b]'); if (!b) return;
+    const r = await saved.setCap(+b.dataset.b);
+    if (!r) return toast('Saved pages aren’t available here');
+    toast(r.evicted ? `Limit set — ${r.evicted} older saved file${r.evicted === 1 ? '' : 's'} removed` : 'Limit set');
+    draw();
+  };
+  $('#st-clear', main).onclick = async () => {
+    if (!(await confirmSheet({ title: 'Clear saved pages?', body: 'Pages and scores saved on this device are removed. The library list stays; pages load again from the Mac when you open them.', ok: 'Clear', danger: true }))) return;
+    await saved.clear(); toast('Saved pages cleared'); draw();
+  };
+  await draw();
 }
 
 // ================= developer =================

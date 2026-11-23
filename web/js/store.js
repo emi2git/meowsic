@@ -6,6 +6,7 @@
 // The screens only use the `store` object below, so they don't care which mode is on.
 import { buildMock } from './mock.js';
 import { parseChordPro } from './chordchart.js';
+import * as saved from './saved.js';
 
 const KEY = 'meowsic-mock-v6';
 let db;
@@ -72,7 +73,10 @@ async function boot() {
   if (mode === 'mock') { db = ls.get(CACHE) || { items: [], tags: [] }; mode = 'offline'; lastSync = ls.get('meowsic-last-sync') || 0; }
   db.items ||= []; db.tags ||= []; db.plays ||= []; db.jobs ||= []; db.activity ||= []; db.annotations ||= {}; db.printed ||= {};
   hydrate();
+  if (mode === 'server') tidy();
 }
+// after a sync with the Mac: saved pages / scores of items it no longer has, and older versions, go (in the background)
+function tidy() { if (mode === 'server' && Array.isArray(db?.items)) saved.clean(db.items).catch?.(() => {}); }
 
 // offline: ask the Mac every 10 s, and when the app comes back to the front / the network changes.
 // When it answers: server mode again, send what waited, pull the Mac's list, redraw open views.
@@ -84,7 +88,7 @@ function reconnect() {
     setMode('server');
     await flushOutbox();
     if (mode !== 'server') return false;
-    if (!db.items.length) { try { const d = await (await fetch('/api/backup', { cache: 'no-store' })).json(); if (Array.isArray(d.items)) { Object.assign(db, d); hydrate(); } } catch {} }
+    if (!db.items.length) { try { const d = await (await fetch('/api/backup', { cache: 'no-store' })).json(); if (Array.isArray(d.items)) { Object.assign(db, d); hydrate(); tidy(); } } catch {} }
     else await store.resync().catch(() => {});
     lastSync = Date.now(); ls.set('meowsic-last-sync', lastSync);
     changed();
@@ -270,6 +274,7 @@ export const store = {
     const before = JSON.stringify(db.items.map((x) => [x.id, x.updatedAt, x.deleted]));
     const had = new Map(db.items.map((x) => [x.id, x]));
     db.items = items.map((f) => (had.has(f.id) ? Object.assign(had.get(f.id), f) : f)); hydrate(); // same objects: open views keep working
+    tidy();
     if (JSON.stringify(db.items.map((x) => [x.id, x.updatedAt, x.deleted])) !== before) changed();
   },
   async refreshJobs() {
