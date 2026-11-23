@@ -79,6 +79,8 @@ def create_item(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
     ok = re.fullmatch(prefix + r'-[a-z0-9]{3,16}', want) and not c.execute('SELECT 1 FROM item WHERE id=?', (want,)).fetchone()
     text = body.get('musicxmlText')
     if kind == 'chords': body.setdefault('originAt', t)  # fetch / paste time
+    if kind == 'score': body['ai'] = 1 if body.get('ai') else 0  # AI music: a score Claude composed (set once, here)
+    else: body.pop('ai', None)
     it = {'tags': [], 'createdAt': t, 'updatedAt': t, **{k: v for k, v in body.items() if k not in ('folder', 'musicxmlText')},
           'id': want if ok else uid(prefix), 'kind': kind}
     write_item(c, it, new=True)
@@ -93,7 +95,7 @@ def create_item(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
 @router.patch('/items/{item_id}')
 def update_item(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
     it = must_item(c, item_id)
-    patch = {k: v for k, v in body.items() if k not in ('id', 'kind', 'createdAt', 'deleted', 'deletedAt', 'folder', 'book')}
+    patch = {k: v for k, v in body.items() if k not in ('id', 'kind', 'createdAt', 'deleted', 'deletedAt', 'folder', 'book', 'ai')}
     write_item(c, {**patch, 'id': item_id, 'kind': it['kind'], 'updatedAt': now_ms()}, new=False)
     if it['folder'] and 'title' in patch and patch['title'] != it['title']:
         rename_folder(c, cf, it, patch['title'])

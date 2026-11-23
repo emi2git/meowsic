@@ -159,7 +159,7 @@ progress { width: 100%; height: 8px; accent-color: var(--acc); }
 .badge .ic { width: 13px; height: 13px; stroke-width: 2.2; }
 .badge.k-sheet, .badge.k-book { background: var(--k-sheet-soft); color: var(--k-sheet); }
 .badge.k-chords { background: var(--k-chords-soft); color: var(--k-chords); }
-.badge.k-score { background: var(--k-score-soft); color: var(--k-score); }
+.badge.k-score, .badge.k-ai { background: var(--k-score-soft); color: var(--k-score); }
 .pill { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 99px; background: var(--bg2); color: var(--ink2); }
 .pill.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
 .empty { text-align: center; padding: 48px 20px; color: var(--mute); list-style: none; }
@@ -544,8 +544,8 @@ legend { font-weight: 700; margin-bottom: 8px; }
   .toolbar.inline .lbl, .toolbar.inline .zoom { display: none; }
   .toolbar.inline .transport { flex-basis: 100%; max-width: none; }
   .lib-top .search { order: 5; flex-basis: 100%; max-width: none; }
-  .lib-top .seg { order: 6; width: 100%; }
-  .lib-top .seg button { flex: 1; }
+  .lib-top .seg { order: 6; width: 100%; flex-wrap: nowrap; }
+  .lib-top .seg button { flex: 1 1 auto; padding: 0 4px; font-size: 14px; white-space: nowrap; }
   .lib-top .chip-btn, .lib-top .sort { order: 7; }
 }
 .pages:only-child { height: 100%; }

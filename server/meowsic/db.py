@@ -60,6 +60,9 @@ def init_db(cfg: Config):
     scols = [r[1] for r in c.execute('PRAGMA table_info(sheet)')]
     if scols and 'book' not in scols:  # books (many pages, many songs) are sheets with book=1, kept in items/Books/
         c.execute('ALTER TABLE sheet ADD COLUMN book INTEGER NOT NULL DEFAULT 0')
+    mcols = [r[1] for r in c.execute('PRAGMA table_info(score)')]
+    if mcols and 'ai' not in mcols:  # AI music (scores Claude composed) are scores with ai=1
+        c.execute('ALTER TABLE score ADD COLUMN ai INTEGER NOT NULL DEFAULT 0')
     jcols = [r[1] for r in c.execute('PRAGMA table_info(job)')]
     if jcols and 'params' not in jcols:
         c.execute("ALTER TABLE job ADD COLUMN params TEXT NOT NULL DEFAULT '{}'")
@@ -126,12 +129,12 @@ KIND_COLS = {  # kind -> (table, {JSON name -> column})
     'sheet': ('sheet', {'source': 'source', 'pages': 'pages', 'book': 'book'}),
     'chords': ('chord_chart', {'source': 'source', 'url': 'url', 'key': 'key', 'capo': 'capo', 'text': 'text'}),
     'score': ('score', {'version': 'version', 'musicxml': 'musicxml', 'musicxmlOriginal': 'musicxml_original',
-                        'midi': 'midi', 'pdf': 'pdf', 'key': 'key', 'bpm': 'bpm', 'source': 'source', 'groupId': 'group_id'}),
+                        'midi': 'midi', 'pdf': 'pdf', 'key': 'key', 'bpm': 'bpm', 'source': 'source', 'groupId': 'group_id', 'ai': 'ai'}),
 }
 KIND_DEFAULTS = {
     'sheet': {'source': 'photos', 'pages': 0, 'book': 0},
     'chords': {'source': 'pasted', 'url': '', 'key': '', 'capo': 0, 'text': ''},
-    'score': {'version': 'original', 'musicxml': '', 'key': '', 'source': ''},
+    'score': {'version': 'original', 'musicxml': '', 'key': '', 'source': '', 'ai': 0},
 }
 
 

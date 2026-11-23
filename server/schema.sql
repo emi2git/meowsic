@@ -56,7 +56,8 @@ CREATE TABLE IF NOT EXISTS score (            -- kind = 'score'; each version is
   key         TEXT NOT NULL DEFAULT '',
   bpm         REAL,
   source      TEXT NOT NULL DEFAULT '',       -- 'YouTube · …' | 'Audio file · …' | 'From the score “…”'
-  group_id    TEXT                            -- versions made from the same recording share this
+  group_id    TEXT,                           -- versions made from the same recording share this
+  ai          INTEGER NOT NULL DEFAULT 0      -- 1 = composed by Claude (AI music); added only by ~/git/scripts/meowsic-add-ai-score.py
 );
 
 CREATE TABLE IF NOT EXISTS tag (
