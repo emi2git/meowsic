@@ -56,7 +56,7 @@ export function cleanupView(main) {
     return;
   }
   let tab0 = 'sort'; try { tab0 = localStorage.getItem('meowsic-cu-tab') || 'sort'; } catch {}
-  const st = { tab: tab0, filter: 'look', songs: [], titles: [], sid: null, pi: 0, ti: 0, scan: null, crop: null, undo: [], busy: false, renaming: false,
+  const st = { tab: tab0, filter: 'look', songs: [], titles: [], sid: null, pi: 0, ti: 0, scan: null, crop: null, carry: null, undo: [], busy: false, renaming: false,
     sort: { dec: {}, id: null, show: 'todo', summary: false }, notes: {}, noteDue: null };
   main.innerHTML = `<header class="top cu-top">
       <a class="icon-btn back cu-back" href="#/library" aria-label="Back to the library">‹ Library</a>
@@ -130,7 +130,7 @@ export function cleanupView(main) {
     st.pi = Math.max(0, Math.min(st.pi, s.pages.length - 1));
     const p = pg() || { page: 0, file: '', trims: 0 };
     const key = `${s.id}:${p.page}`;
-    if (st.crop?.key !== key) { const pre = p.trim || p.box; st.crop = { key, ...full(), ...(pre ? { top: pre.top, bottom: pre.bottom } : {}) }; }
+    if (st.crop?.key !== key) st.crop = startBox(s, p);
     const ver = it?.updatedAt || 0;
     body.innerHTML = `<div class="cu-side">${filt}
       <ol class="cu-list" id="cu-list">${list.map((x) => `<li class="${x.id === st.sid ? 'on' : ''} ${isGood(x) ? 'good' : x.issues.some((i) => i.kind !== 'trim' && i.kind !== 'title') ? 'bad' : 'look'}" data-id="${x.id}">
@@ -147,13 +147,13 @@ export function cleanupView(main) {
           <span>${x.page}${x.dots ? ` · dot ${x.dots.lit ?? '?'}/${x.dots.count}` : ''}${x.trims ? ' · ✓' : x.trim ? ' · ✂' : ''}</span></button>`).join('')}</div>
         ${!p.page ? '<p class="pad muted">This song has no pages. Delete it?</p>' : ''}
 ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
-          <img id="cu-img" src="${store.fileUrl(s.id, it?.pageFiles?.[p.page - 1] || p.file)}?v=${ver}" alt="" draggable="false">
+          <img id="cu-img" src="${p.trims ? `/api/items/${encodeURIComponent(s.id)}/pages/${p.page}/original` : store.fileUrl(s.id, it?.pageFiles?.[p.page - 1] || p.file)}?v=${ver}" alt="" draggable="false">
           <div class="cu-shade"></div>
           <div class="cu-box"><i data-e="top"></i><i data-e="bottom"></i><i data-e="left"></i><i data-e="right"></i>
             <i data-e="top left"></i><i data-e="top right"></i><i data-e="bottom left"></i><i data-e="bottom right"></i></div>
         </div></div>` : ''}
         <div class="cu-act">
-          <span class="muted small cu-hint">Page ${st.pi + 1} of ${s.pages.length}${p.trim ? ` · found: ${esc(p.trim.reasons.join(', '))}` : ''} · drag the red edges, or draw a new box</span>
+          <span class="muted small cu-hint">Page ${st.pi + 1} of ${s.pages.length} · <b class="cu-from">${esc(st.crop.from)}</b>${p.trim && !p.crop ? ` · found: ${esc(p.trim.reasons.join(', '))}` : ''} · drag the red edges, or draw a new box</span>
           <span class="grow"></span>
           ${p.trims ? '<button id="cu-orig" class="ghost">Original photo</button>' : ''}
           <button id="cu-fine" class="big">Keep page as is</button>
@@ -167,7 +167,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     $('#cu-trim', body).onclick = doTrim;
     if (!p.page) for (const id of ['cu-trim', 'cu-fine']) $('#' + id, body).disabled = true;
     $('#cu-fine', body).onclick = fine;
-    $('#cu-orig', body)?.addEventListener('click', original);
+    $('#cu-orig', body)?.addEventListener('click', () => original());
     body.querySelector('.cu-filter').onclick = (e) => { const b = e.target.closest('[data-f]'); if (b) { st.filter = b.dataset.f; st.crop = null; draw(); } };
     $('#cu-songmore', body).onclick = (e) => menu(e.currentTarget, [
       { label: s.reviewed ? 'Not done yet' : 'Song done — next song', icon: 'check', run: songGood },
@@ -182,10 +182,23 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     const ci = $('.cu-img', body); if (ci) ci.onpointerdown = drag;
   };
 
+  // the box a page starts with: its own crop > the last crop set anywhere this session (any song) > the Mac's suggestion.
+  // Boxes are always on the ORIGINAL photo (the stage shows the original, never the cropped file).
+  const startBox = (s, p, prefer) => {
+    const key = `${s.id}:${p.page}`, cc = st.carry, sug = p.trim || p.box;
+    const pick = (b) => ({ top: b.top, bottom: b.bottom, left: b.left ?? 0, right: b.right ?? 1 });
+    if (prefer !== 'suggested') {
+      if (p.crop) return { key, ...pick(p.crop), from: 'Cropped' };
+      if (cc && !(cc.sid === s.id && cc.page === p.page)) return { key, ...pick(cc.box), from: cc.sid === s.id ? `Same as page ${cc.page}` : `Same as last crop (${cc.title} p${cc.page})` };
+    }
+    if (sug) return { key, ...full(), ...pick(sug), from: 'Suggested' };
+    return { key, ...full(), from: 'Whole page' };
+  };
   const placeBox = () => {
     const c = st.crop, box = $('.cu-img', body);
     if (!box) return;
     for (const k of ['top', 'bottom', 'left', 'right']) box.style.setProperty('--' + k[0], c[k] * 100 + '%');
+    const f = $('.cu-from', body); if (f && c.from) f.textContent = c.from;
   };
   // drag an edge / corner of the box, or anywhere else on the page to draw a new box
   const drag = (e) => {
@@ -250,11 +263,17 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
   const doTrim = () => {
     const c = st.crop;
     if (!c || !pg()) return;
-    if (c.top <= 0.001 && c.bottom >= 0.999 && c.left <= 0.001 && c.right >= 0.999) return fine();
+    const whole = c.top <= 0.001 && c.bottom >= 0.999 && c.left <= 0.001 && c.right >= 0.999;
+    if (whole && !pg().crop) return fine();
+    if (whole) return original(true);
+    const same = (a, b) => a && ['top', 'bottom', 'left', 'right'].every((k) => Math.abs(a[k] - b[k]) < 0.0005);
+    if (same(pg().crop, c)) { st.crop = null; return onward(); }  // already cropped like this
     return busy(async () => {
-      const s = song(), p = pg();
-      store.putItem(await api('POST', `/items/${s.id}/pages/${p.page}/trim`, { top: c.top, bottom: c.bottom, left: c.left, right: c.right }));
-      st.undo.push({ label: 'trim', run: async () => store.putItem(await api('POST', `/items/${s.id}/pages/${p.page}/untrim`, {})), at: [s.id, st.pi], box: { ...c, key: `${s.id}:${p.page}` } });
+      const s = song(), p = pg(), box = { top: c.top, bottom: c.bottom, left: c.left, right: c.right };
+      const prev = st.carry;
+      store.putItem(await api('POST', `/items/${s.id}/pages/${p.page}/trim`, box));
+      st.carry = { box, sid: s.id, page: p.page, title: store.get(s.id)?.title || s.title };  // the next page (any song) starts with this box
+      st.undo.push({ label: 'trim', run: async () => { store.putItem(await api('POST', `/items/${s.id}/pages/${p.page}/untrim`, {})); st.carry = prev; }, at: [s.id, st.pi] });
       await reloadSong(s.id); st.crop = null; onward();
     });
   };
@@ -278,12 +297,16 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     else if (!was) goSong(1);
     else draw();
   });
-  const original = () => busy(async () => {
+  // undo every crop of this page (not undoable: the page is back to the photo it came in as)
+  const original = (next = false) => busy(async () => {
     const s = song(), p = pg();
     if (!p?.trims) return;
     store.putItem(await api('POST', `/items/${s.id}/pages/${p.page}/untrim`, { all: true }));
+    if (st.carry?.sid === s.id && st.carry.page === p.page) st.carry = null;  // only when this page was the source
     toast('Back to the original photo');
-    await reloadSong(s.id); st.crop = null; draw();
+    await reloadSong(s.id);
+    if (next === true) { st.crop = null; return onward(); }
+    st.crop = { key: `${s.id}:${p.page}`, ...full(), from: 'Original photo' }; draw();
   });
   const undo = () => busy(async () => {
     const u = st.undo.pop();
@@ -535,7 +558,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     st.busy = true;
     for (const { id, p } of todo) {
       if (!m.el.isConnected) break;
-      try { store.putItem(await api('POST', `/items/${id}/pages/${p.page}/trim`, { top: p.trim.top, bottom: p.trim.bottom })); } catch {}
+      try { store.putItem(await api('POST', `/items/${id}/pages/${p.page}/trim`, { top: p.trim.top, bottom: p.trim.bottom, left: p.trim.left ?? 0, right: p.trim.right ?? 1 })); } catch {}
       n++; $('#cu-p', m.el).value = n; $('#cu-pm', m.el).textContent = `${n} / ${todo.length}`;
     }
     st.busy = false;
@@ -576,8 +599,8 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
       ']': () => songs && goSong(1), n: () => songs && goSong(1), '[': () => songs && goSong(-1), p: () => songs && goSong(-1),
       ArrowUp: () => (songs ? nudge(e.shiftKey ? 'bottom' : 'top', -0.005) : step(-1)),
       ArrowDown: () => (songs ? nudge(e.shiftKey ? 'bottom' : 'top', 0.005) : step(1)),
-      x: () => { if (songs && pg()) { st.crop = null; draw(); } },
-      c: () => { if (songs && st.crop) { Object.assign(st.crop, full()); placeBox(); } },
+      x: () => { if (songs && pg()) { st.crop = startBox(song(), pg(), 'suggested'); draw(); } },
+      c: () => { if (songs && st.crop) { Object.assign(st.crop, full(), { from: 'Whole page' }); placeBox(); } },
       r: () => rename(), z: () => undo(), u: () => undo(), o: () => songs && original(),
       s: () => songs && splitSong(), Delete: () => songs && delSong(), Backspace: () => songs && delSong(),
       1: () => { st.tab = 'sort'; draw(); }, 2: () => { st.tab = 'songs'; draw(); }, 3: () => { st.tab = 'titles'; draw(); }, '?': help,

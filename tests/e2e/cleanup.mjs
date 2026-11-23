@@ -9,6 +9,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0; const check = (n, c, x = '') => { c ? pass++ : fail++; console.log(c ? '  ok  ' : '  FAIL', n, c ? '' : x); };
 const api = (p, o) => fetch(BASE + 'api' + p, o).then((r) => r.json());
 const post = (p, body) => fetch(BASE + 'api' + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+const pngSize = async (url) => { const buf = Buffer.from(await (await fetch(url)).arrayBuffer()); return [buf.readUInt32BE(16), buf.readUInt32BE(20)]; };
+const origSize = (id, n) => pngSize(`${BASE}api/items/${id}/pages/${n}/original`);
+const boxNow = (pg) => pg.$eval('.cu-img', (e) => Object.fromEntries(['t', 'b', 'l', 'r'].map((k) => [k, parseFloat(e.style.getPropertyValue('--' + k)) / 100])));
+const near = (a, b, d = 0.002) => ['t', 'b', 'l', 'r'].every((k) => Math.abs(a[k] - b[k]) <= d);
+const cropPx = ([W, H], x) => [Math.round(x.r * W) - Math.round(x.l * W), Math.round(x.b * H) - Math.round(x.t * H)];
+const sizeOk = (a, b) => Math.abs(a[0] - b[0]) <= 1 && Math.abs(a[1] - b[1]) <= 1;
+const hint = (pg) => pg.$eval('.cu-from', (e) => e.textContent);
 const imgSize = async (id, n) => { const it = await api('/items/' + id); const r = await fetch(`${BASE}api/items/${id}/file/${encodeURIComponent(it.pageFiles[n - 1])}`); const buf = Buffer.from(await r.arrayBuffer()); return [buf.readUInt32BE(16), buf.readUInt32BE(20)]; };
 
 // reset
@@ -86,14 +93,53 @@ check('→ next page', (await page.$eval('.cu-strip button.on', (e) => +e.datase
 // preset box on every page
 const all = (await api('/cleanup?id=' + sh.id)).songs[0].pages;
 check('every page has a preset box', all.filter((x) => x.box || x.trim).length >= all.length - 1, all.map((x) => !!x.box).join(','));
-// U: undo a trim and get its box back to adjust
+// U: undo a trim → back to that page with the box it had before (here: the suggested one)
 await page.click('.cu-strip button[data-p="1"]'); await sleep(300);
+const tSug = await page.$eval('.cu-img', (e) => e.style.getPropertyValue('--t'));
 await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown'); await page.keyboard.press('ArrowDown');
-const tSet = await page.$eval('.cu-img', (e) => e.style.getPropertyValue('--t'));
 await page.keyboard.press('Enter'); await sleep(1500);
 await page.keyboard.press('u'); await sleep(1500);
 check('U goes back to that page', (await page.$eval('.cu-strip button.on', (e) => +e.dataset.p)) === 1);
-check('U puts the same box back', (await page.$eval('.cu-img', (e) => e.style.getPropertyValue('--t'))) === tSet, tSet);
+check('U puts the previous box back (suggested)', (await page.$eval('.cu-img', (e) => e.style.getPropertyValue('--t'))) === tSug && (await hint(page)) === 'Suggested', tSug);
+// ---------- crop workflow: always the original photo with the box on it ----------
+{
+  await page.click('.cu-strip button[data-p="4"]'); await sleep(500);
+  const O = await origSize(sh.id, 5);
+  const r5 = await page.$eval('#cu-img', (e) => { const x = e.getBoundingClientRect(); return { x: x.x, y: x.y, w: x.width, h: x.height }; });
+  await page.mouse.move(r5.x + r5.w * 0.15, r5.y + r5.h * 0.1); await page.mouse.down();
+  await page.mouse.move(r5.x + r5.w * 0.5, r5.y + r5.h * 0.4, { steps: 5 }); await page.mouse.move(r5.x + r5.w * 0.85, r5.y + r5.h * 0.7, { steps: 5 }); await page.mouse.up();
+  const b1 = await boxNow(page);
+  await page.keyboard.press('t'); await sleep(1800);
+  check('trim crops the page to the box', sizeOk(await imgSize(sh.id, 5), cropPx(O, b1)), `${await imgSize(sh.id, 5)} vs ${cropPx(O, b1)}`);
+  check('next page starts with the same box', near(await boxNow(page), b1) && (await hint(page)) === 'Same as page 5', `${JSON.stringify(await boxNow(page))} ${await hint(page)}`);
+  {  // …and so does the first page of another song
+    const other = (await api('/cleanup')).songs.find((x) => x.id !== sh.id && x.pages.length && !x.pages[0].crop);
+    await page.click('[data-f="all"]'); await sleep(300);
+    await page.evaluate((id) => document.querySelector(`#cu-list li[data-id="${id}"]`)?.click(), other.id); await sleep(600);
+    check('next song starts with the last crop too', near(await boxNow(page), b1) && (await hint(page)) === 'Same as last crop (Cleanup test p5)', `${other.title}: ${await hint(page)}`);
+    await page.click('[data-f="look"]'); await sleep(300);
+    await page.evaluate((id) => document.querySelector(`#cu-list li[data-id="${id}"]`)?.click(), sh.id); await sleep(500);
+  }
+  await page.click('.cu-strip button[data-p="4"]'); await sleep(800);
+  const nat =await page.$eval('#cu-img', (e) => [e.naturalWidth, e.naturalHeight]);
+  check('after Trim the stage still shows the original photo', nat[0] === O[0] && nat[1] === O[1], `${nat} vs ${O}`);
+  check('…with the box where it was cropped', near(await boxNow(page), b1) && (await hint(page)) === 'Cropped', JSON.stringify(await boxNow(page)));
+  check('page reports its crop', near(Object.fromEntries(Object.entries((await api('/cleanup?id=' + sh.id)).songs[0].pages[4].crop).map(([k, v]) => [k[0], v])), b1, 0.001));
+  for (let i = 0; i < 6; i++) await page.keyboard.press('ArrowUp');  // top edge up: more than the cropped file has
+  const b2 = await boxNow(page);
+  check('the box can grow past the old crop', b2.t < b1.t - 0.02, `${b1.t} → ${b2.t}`);
+  await page.keyboard.press('t'); await sleep(1800);
+  check('trim again cuts from the original', sizeOk(await imgSize(sh.id, 5), cropPx(O, b2)), `${await imgSize(sh.id, 5)} vs ${cropPx(O, b2)}`);
+  await page.click('.cu-strip button[data-p="4"]'); await sleep(800);
+  check('…and still shows the original with the new box', near(await boxNow(page), b2) && (await page.$eval('#cu-img', (e) => e.naturalHeight)) === O[1]);
+  await page.keyboard.press('u'); await sleep(1800);
+  check('Undo returns the previous box', (await page.$eval('.cu-strip button.on', (e) => +e.dataset.p)) === 4 && near(await boxNow(page), b1) && (await hint(page)) === 'Cropped', JSON.stringify(await boxNow(page)));
+  check('…and the previous crop', sizeOk(await imgSize(sh.id, 5), cropPx(O, b1)));
+  await page.click('#cu-orig'); await sleep(1800);
+  check('Original photo restores the page', sizeOk(await imgSize(sh.id, 5), O) && !(await api('/cleanup?id=' + sh.id)).songs[0].pages[4].crop && !(await page.$('#cu-orig')));
+  await page.keyboard.press('ArrowRight'); await sleep(400);
+  check('…and the next page no longer copies its box', (await hint(page)) !== 'Same as page 5', await hint(page));
+}
 // Enter on the last page goes to the next song
 await page.click('.cu-strip button[data-p="7"]'); await sleep(300);
 const before = await page.$eval('#cu-list li.on', (e) => e.dataset.id);
@@ -254,6 +300,33 @@ for (const [w, h] of [[1366, 1024], [1024, 1366], [390, 844]]) {
     check(`${w < 600 ? 'iPhone' : 'iPad'} ${w}×${h} tab ${t}: fits, note box + buttons on screen, no left bar`, fit.scroll && fit.onScreen && fit.note && fit.side === 'none', JSON.stringify(fit));
     await q.screenshot({ path: `cleanup-ipad-${w}-${t}.png` });
   }
+  await q.close();
+}
+// iPad: drag the box edges with a finger
+{
+  const q = await b.newPage(); await q.setViewport({ width: 1366, height: 1024, hasTouch: true, isMobile: true });
+  await q.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(1000);
+  await q.keyboard.press('2'); await sleep(600); await q.click('[data-f="all"]'); await sleep(300);
+  await q.evaluate((id) => document.querySelector(`#cu-list li[data-id="${id}"]`)?.click(), sh.id); await sleep(500);
+  await q.evaluate(() => document.querySelector('.cu-strip button[data-p="2"]').click()); await sleep(600);
+  const ir = await q.$eval('#cu-img', (e) => { const x = e.getBoundingClientRect(); return { x: x.x, y: x.y, w: x.width, h: x.height }; });
+  const swipe = async (sel, dx, dy) => {
+    const r = await q.$eval(sel, (e) => { const x = e.getBoundingClientRect(); return { x: x.x + x.width / 2, y: x.y + x.height / 2 }; });
+    await q.touchscreen.touchStart(r.x, r.y);
+    for (let i = 1; i <= 6; i++) { await q.touchscreen.touchMove(r.x + dx * i / 6, r.y + dy * i / 6); await sleep(20); }
+    await q.touchscreen.touchEnd(); await sleep(200);
+  };
+  const t0 = await boxNow(q);
+  await swipe('.cu-box i[data-e="top"]', 0, ir.h * 0.08);
+  const t1 = await boxNow(q);
+  check('iPad: finger drags the top edge', Math.abs(t1.t - t0.t - 0.08) < 0.02 && Math.abs(t1.b - t0.b) < 0.001, `${t0.t} → ${t1.t}`);
+  await swipe('.cu-box i[data-e="right"]', -ir.w * 0.1, 0);
+  const t2 = await boxNow(q);
+  check('iPad: finger drags the right edge', Math.abs(t2.r - t1.r + 0.1) < 0.02 && Math.abs(t2.l - t1.l) < 0.001, `${t1.r} → ${t2.r}`);
+  await swipe('.cu-box i[data-e="bottom left"]', ir.w * 0.05, -ir.h * 0.05);
+  const t3 = await boxNow(q);
+  check('iPad: finger drags a corner', t3.l > t2.l + 0.03 && t3.b < t2.b - 0.03, JSON.stringify(t3));
+  await q.screenshot({ path: 'cleanup-ipad-touch.png' });
   await q.close();
 }
 // shortcuts stop when you leave Clean up
