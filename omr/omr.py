@@ -24,7 +24,8 @@ from pathlib import Path
 import music21 as m21
 
 HERE = Path(__file__).resolve().parent
-HOMR = HERE / '.venv' / 'bin' / 'homr'
+HOMR = next((p for p in (HERE / '.venv' / 'bin' / 'homr', Path.home() / 'git' / 'apps' / 'meowsic' / 'omr' / '.venv' / 'bin' / 'homr') if p.exists()),
+            HERE / '.venv' / 'bin' / 'homr')  # a git worktree has no venv of its own
 AUDIVERIS = Path.home() / 'Applications' / 'Audiveris.app' / 'Contents' / 'MacOS' / 'Audiveris'
 
 
@@ -138,12 +139,16 @@ def staves(png):
     from PIL import Image
     g = np.asarray(Image.open(png).convert('L'), dtype=np.int16)
     h, w = g.shape
-    rows = np.flatnonzero((g < 128).sum(axis=1) > 0.4 * w)
+    hard = (g < 128).sum(axis=1)
+    dark = ((255 - g) / 255).sum(axis=1)  # grey, anti-aliased lines too (a thin line can fall across two pixel rows)
+    rows = np.flatnonzero((hard > 0.4 * w) | (dark > 0.3 * w))
     lines = []
     for r in rows:
         if lines and r - lines[-1][-1] <= 1: lines[-1].append(r)
         else: lines.append([r])
-    ys = [sum(l) / len(l) for l in lines]
+    lines = [l for l in lines if max(hard[r] for r in l) > 0.4 * w or sum(dark[r] for r in l) > 0.6 * w]
+    # a long beam touching a staff line joins its run: the line is the run's darkest rows, not its middle
+    ys = [float(np.mean([r for r in l if dark[r] >= 0.6 * max(dark[q] for q in l)])) for l in lines]
     out, i = [], 0
     while i + 4 < len(ys):
         gaps = [ys[i + k + 1] - ys[i + k] for k in range(4)]
@@ -325,9 +330,10 @@ def chord_names(png, xml_path):
 
 
 
-def lyric_words(png, xml_path):
+def lyric_words(png, xml_path, first_verse=False):
     """[(measure index, offset, text, syllabic, verse)] read under each top staff with Apple Vision.
-    Each line of words under a staff is a verse."""
+    Each line of words under a staff is a verse. Several verses: 'verses' (not reliable enough yet), or with
+    first_verse only the top line under each staff (the words of the main tune, for "Add lyrics from a sheet")."""
     import re
     from PIL import Image, ImageOps
     notes = [n for n in note_positions_notes(xml_path) if n[2] == '1']
@@ -343,6 +349,8 @@ def lyric_words(png, xml_path):
         nxt_top_staff = k + 1 < len(st) and any(st[k + 1][0] - 6 * gap <= n[4] <= st[k + 1][1] + 6 * gap for n in notes)
         y0 = int(bot + 0.8 * gap)
         y1 = int(min(nxt - (4.8 if nxt_top_staff else 0.8) * gap, bot + 12 * gap))  # stop above the next system's chord names
+        if first_verse and nxt_top_staff:  # tight systems: read down to the next staff; its chord names are dropped below
+            y1 = int(min(nxt - 1.0 * gap, bot + 12 * gap))
         if y1 - y0 < gap: continue
         strip = im.crop((0, y0, W, y1)).resize((W * 2, (y1 - y0) * 2))
         line_h = 2.2 * gap / (y1 - y0)  # a text line, as a fraction of the strip height
@@ -352,11 +360,14 @@ def lyric_words(png, xml_path):
             else: lines.append([wd])
         order = sorted(mine, key=lambda q: (q[0], q[1]))
         lines = [l for l in lines if sum(any(ch.isalpha() for ch in w[0]) for w in l) >= 3]  # stray marks are not a verse
+        if first_verse:  # a line of chord names (the next system's) is not words
+            lines = [l for l in lines if sum(bool(CHORD.match(w[0].strip('.,'))) for w in l) < 0.6 * len(l)]
         for verse, words in enumerate((sorted(l, key=lambda q: q[1]) for l in lines), 1):
             toks, aside = [], []  # [text, centre x, hyphen-after]; x ranges of (Instrumental) etc.
             for t, x, w, _ in words:
                 if t.startswith('(') or t.endswith(')'):
                     aside.append((x * W - gap, (x + w) * W + gap)); continue
+                if first_verse and re.fullmatch(r"[A-Z][A-Z.'’]*:", t): continue  # a singer's name ("JV:"), not a word
                 if t in ('-', '–'):  # a hyphen between syllables, unless the word before ends a phrase
                     if toks and toks[-1][0][-1:] not in '.,;:!?': toks[-1][2] = True
                     continue
@@ -389,7 +400,8 @@ def lyric_words(png, xml_path):
                         got.append([q[0], q[1], t.strip('-–'), t.endswith(('-', '–'))])
             found += [[*f, verse] for f in got]
     if any(f[4] > 1 for f in found):
-        return 'verses'  # several verses: not reliable enough yet — no words rather than wrong words
+        if not first_verse: return 'verses'  # several verses: not reliable enough yet — no words rather than wrong words
+        found = [f for f in found if f[4] == 1]
     out, open_ = [], {}
     for mi, off, t, hy, verse in sorted(found, key=lambda f: (f[4], f[0], f[1])):
         o = open_.get(verse, False)
@@ -548,6 +560,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
     ap.add_argument('--title', default='')
+    ap.add_argument('--first-verse', action='store_true', help='several lines of words under a staff: keep the top one')
     ap.add_argument('pages', nargs='+')
     a = ap.parse_args()
     out = Path(a.out).resolve(); out.mkdir(parents=True, exist_ok=True)
@@ -573,7 +586,7 @@ def main():
     say('words', 'Reading the words')
     words = []
     for p in pngs:
-        try: words.append(lyric_words(p, p.with_suffix('.musicxml')))
+        try: words.append(lyric_words(p, p.with_suffix('.musicxml'), a.first_verse))
         except Exception as e: words.append(None); report['notes'].append(f'words: {e}')
     for k, wd in enumerate(words, 1):
         if wd == 'verses': report['notes'].append(f'page {k}: several verses of words — words left out (beta)')

@@ -1,4 +1,4 @@
-"""Jobs (transcriptions, "make another version", AI tag suggestions) with a pluggable runner.
+"""Jobs (transcriptions, "make another version", AI tag suggestions, photo → score, lyrics from a sheet) with a pluggable runner.
 
 A runner is `fn(ctx: JobContext)`, run on its own thread (`app.state.job_runner`; the real ones are in
 runners.py, `stub_runner` just says the engine is not installed).
@@ -109,7 +109,7 @@ def get_job(job_id: str, c=Depends(conn)):
     return job_json(r)
 
 
-PARAMS = ('url', 'fromItemId', 'artist', 'tags', 'key')  # body keys the runner reads later
+PARAMS = ('url', 'fromItemId', 'sheetId', 'artist', 'tags', 'key')  # body keys the runner reads later
 
 
 def get_job_row(app, job_id) -> dict:
@@ -137,10 +137,12 @@ def start_job(app, kind, title, source, outputs, params, jid=None, runner=None, 
 
 @router.post('/jobs', status_code=201)
 def create_job(request: Request, body: dict = Body(...)):
-    """{kind: transcribe|version, title, source, outputs: [...], url?, fromItemId?, artist?, tags?} -> queued, then runs on a thread."""
+    """{kind: transcribe|version|omr|lyrics, title, source, outputs: [...], url?, fromItemId?, sheetId?, artist?, tags?} -> queued, then runs on a thread."""
     kind = body.get('kind') or ('version' if body.get('gen') else 'transcribe')
-    if kind not in ('transcribe', 'version', 'omr') or not body.get('title'):
-        raise HTTPException(400, 'kind (transcribe|version|omr) and title are required')
+    if kind not in ('transcribe', 'version', 'omr', 'lyrics') or not body.get('title'):
+        raise HTTPException(400, 'kind (transcribe|version|omr|lyrics) and title are required')
+    if kind == 'lyrics' and not (body.get('fromItemId') and body.get('sheetId')):
+        raise HTTPException(400, 'fromItemId (the score) and sheetId (the sheet with the words) are required')
     params, source = {k: body[k] for k in PARAMS if body.get(k) not in (None, '')}, body.get('source', '')
     if kind == 'transcribe':  # keep the full original link; the source shown is just the platform ('YouTube' / 'Facebook')
         from .runners import link_of

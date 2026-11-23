@@ -1,7 +1,9 @@
 // Score viewer: OpenSheetMusicDisplay notation, piano playback with a moving bar,
 // tempo, transpose, zoom; export lives in the More menu. Each version is its own entry.
 import { store } from '../store.js';
-import { $, esc, icon, iconOn, toast, menu, sheet as modal } from '../ui.js';
+import { $, esc, icon, iconOn, toast, menu, sheet as modal, confirmSheet } from '../ui.js';
+import { pageSrc } from './sheet.js';
+import { go } from '../app.js';
 import { TUNES } from '../mock.js';
 import { musicXml, tuneNotes, VERSIONS, VERSION_HELP, barBeats, xmlInfo } from '../musicxml.js';
 import { ScorePlayer } from '../audio.js';
@@ -362,6 +364,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
 // Export entries for the item's More menu
 export function scoreTools(it, view) {
   return [{ label: 'Make another version…', icon: 'plus', run: () => generateVersions(it) },
+    ...(store.mode === 'server' ? [{ label: 'Add lyrics from a sheet…', icon: 'text', run: () => addLyrics(it) }] : []),
     { label: 'Note names in noteheads', icon: 'text', checked: view.easy, run: () => view.setEasy(!view.easy) },
     ...(it.measures ? [{ label: 'Revert note edits', icon: 'restore', run: async () => { await view.revert(); document.querySelector('.editbar')?.dispatchEvent(new Event('close')); toast('Back to the original notes'); } }] : [])];
 }
@@ -466,5 +469,35 @@ function generateVersions(it) {
       source: `From the score “${it.title}”`, sourceUrl: it.sourceUrl || '', outputs, output: outputs.map((v) => VERSIONS[v]).join(' + ') });
     s.close();
     toast(`Making ${outputs.map((v) => VERSIONS[v]).join(', ')} — progress is in Add → Score`);
+  };
+}
+
+// the words of a sheet (photos of the printed song) under this score's tune: the Mac reads the sheet, lines its
+// tune up with this one and writes a new score with lyrics; syllables it isn't sure of are red, their bars "check"
+const fold = (t) => (t || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+function addLyrics(it) {
+  const me = fold(it.title);
+  const near = (x) => { const t = fold(x.title); return t && me && (t === me || t.includes(me) || me.includes(t)); };
+  const sheets = store.items().filter((x) => x.kind === 'sheet' && !x.deleted && !x.book && x.pages)
+    .sort((a, b) => near(b) - near(a) || a.title.localeCompare(b.title));
+  const s = modal(`<h2>Add lyrics to “${esc(it.title)}”</h2><p class="muted">Pick the sheet with the words. The Mac reads it (about 20 s a page), finds where each syllable goes in this score's tune and adds the result as a new entry; this score stays as it is.</p>
+    <input type="search" placeholder="Find a sheet" id="al-q">
+    <div class="list-pick" id="al-list"></div><div class="modal-actions"><button data-close>Cancel</button></div>`, { wide: true });
+  const list = $('#al-list', s.el);
+  const draw = (q = '') => (list.innerHTML = sheets.filter((x) => x.title.toLowerCase().includes(q.toLowerCase())).slice(0, 40)
+    .map((x) => `<button data-id="${x.id}"><img src="${pageSrc(x, 1)}" alt=""><span>${esc(x.title)}${near(x) ? ' <small class="have">· same song</small>' : ''}</span><i>${x.pages} p</i></button>`).join('')
+    || '<p class="muted">No sheet with that name.</p>');
+  draw();
+  $('#al-q', s.el).oninput = (e) => draw(e.target.value);
+  list.onclick = async (e) => {
+    const b = e.target.closest('[data-id]');
+    if (!b) return;
+    const sh = store.get(b.dataset.id);
+    s.close();
+    const ok = await confirmSheet({ title: `Add the words of “${sh.title}”?`, body: `The Mac reads its ${sh.pages} page${sh.pages > 1 ? 's' : ''} and puts the words under “${it.title}”. The new score is its own entry, tagged “Lyrics added”; syllables it isn't sure of are red and their bars say “check lyrics”.`, ok: 'Add lyrics' });
+    if (!ok) return;
+    store.addJob({ kind: 'lyrics', title: it.title, fromItemId: it.id, sheetId: sh.id, artist: it.artist || '',
+      source: `From the score “${it.title}” + lyrics from the sheet`, output: 'Lyrics added', outputs: [it.version || 'original'] });
+    toast('Reading the words…', { label: 'Progress', run: () => go('#/jobs') });
   };
 }

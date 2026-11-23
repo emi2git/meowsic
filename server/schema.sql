@@ -89,9 +89,9 @@ CREATE TABLE IF NOT EXISTS play_session (
 );
 CREATE INDEX IF NOT EXISTS play_item ON play_session(item_id, opened_at);
 
-CREATE TABLE IF NOT EXISTS job (              -- transcriptions, "make another version", AI tag suggestions
+CREATE TABLE IF NOT EXISTS job (              -- transcriptions, "make another version", AI tag suggestions, photo → score, lyrics from a sheet
   id          TEXT PRIMARY KEY,
-  kind        TEXT NOT NULL CHECK (kind IN ('transcribe','version','tags','omr')),
+  kind        TEXT NOT NULL CHECK (kind IN ('transcribe','version','tags','omr','lyrics')),
   title       TEXT NOT NULL,
   source      TEXT NOT NULL DEFAULT '',
   outputs     TEXT NOT NULL,                  -- JSON array of versions

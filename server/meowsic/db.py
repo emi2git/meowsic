@@ -77,7 +77,7 @@ def init_db(cfg: Config):
         c.execute("ALTER TABLE job ADD COLUMN params TEXT NOT NULL DEFAULT '{}'")
     c.executescript(SCHEMA.read_text())
     job_sql = (c.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='job'").fetchone() or [''])[0]
-    if "'omr'" not in job_sql:  # job kinds 'tags' (AI suggestions) and 'omr' (photo → score) added later: rebuild the table with the new CHECK, rows kept
+    if "'lyrics'" not in job_sql:  # job kinds 'tags' (AI suggestions), 'omr' (photo → score), 'lyrics' (words from a sheet) added later: rebuild the table with the new CHECK, rows kept
         create = re.search(r'CREATE TABLE IF NOT EXISTS job \(.*?\n\);', SCHEMA.read_text(), re.S).group(0)
         cols = ','.join(r[1] for r in c.execute('PRAGMA table_info(job)'))
         c.executescript(f'BEGIN; ALTER TABLE job RENAME TO job_old; {create} INSERT INTO job({cols}) SELECT {cols} FROM job_old; DROP TABLE job_old; COMMIT;')
@@ -293,7 +293,7 @@ def log_event(c, type_, title, detail=''):
 def job_json(row) -> dict:
     j = dict(row)
     return {
-        'id': j['id'], 'kind': j['kind'], 'gen': j['kind'] == 'version', 'title': j['title'], 'source': j['source'],
+        'id': j['id'], 'kind': j['kind'], 'gen': j['kind'] in ('version', 'lyrics'), 'title': j['title'], 'source': j['source'],
         'outputs': json.loads(j['outputs']), 'status': j['status'], 'stage': j['stage'], 'progress': j['progress'],
         'log': json.loads(j['log']), 'result': json.loads(j['result']) if j['result'] else None,
         'startedAt': j['started_at'], 'doneAt': j['done_at'], 'dismissed': bool(j['dismissed']),

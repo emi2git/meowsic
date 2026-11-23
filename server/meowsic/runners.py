@@ -3,6 +3,8 @@
 transcribe: Emi Music Note's pipeline (its own venv, in a subprocess) turns a link or an audio file into
             original / vocal / lead; other versions are arranged from that with music21 (arrange.py).
 version:    arrange an existing score item into other versions (music21, rule-based).
+omr:        sheet photos → a score (omr/omr.py).
+lyrics:     a score + the words of a sheet → a new score with lyrics (lyricsfit.py).
 Every finished version becomes its own score item (tag = the version's name), all sharing one group id.
 """
 import collections
@@ -43,7 +45,8 @@ def pdf_on() -> bool:
 
 
 def dispatch(ctx: JobContext):
-    {'version': version_runner, 'omr': omr_runner}.get(ctx.job['kind'], transcribe_runner)(ctx)
+    from .lyricsfit import lyrics_runner
+    {'version': version_runner, 'omr': omr_runner, 'lyrics': lyrics_runner}.get(ctx.job['kind'], transcribe_runner)(ctx)
 
 
 # ---------- saving results as items ----------
