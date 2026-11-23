@@ -5,6 +5,7 @@ import { sheetUrl } from '../sheet-art.js';
 import { InkLayer, inkToolbar } from './annotate.js';
 import { go } from '../app.js';
 import { bookToggle } from './actions.js';
+import { titleBox } from '../title-detect.js';
 import { attachSwipe, backToLibrary } from '../swipe.js';
 import { isTouch, isDesktop } from '../device.js';
 
@@ -191,10 +192,26 @@ export function sheetExtraMenu(it, view) {
 
 async function splitAt(it, page) {
   if (page <= 1) return toast('Go to the page where the new sheet should start.');
-  const ok = await confirmSheet({ title: `Split “${it.title}” at page ${page}?`, body: `Pages ${page}–${it.pages} become a new sheet.`, ok: 'Split' });
-  if (!ok) return;
+  const fallback = `${it.title} (part 2)`;
+  let title = fallback;
+  if (store.mode === 'server') { // the new sheet's title, read off its first page (you can change it)
+    title = await new Promise((resolve) => {
+      let answered = false;
+      const s = modal(`<h2>${esc(`Split “${it.title}” at page ${page}?`)}</h2><p class="muted">${esc(`Pages ${page}–${it.pages} become a new sheet.`)}</p>
+        <form><label class="field">New sheet's title <input id="sp-title" value="${esc(fallback)}"><small class="bs-det muted" id="sp-det"></small></label>
+        <div class="modal-actions"><button type="button" data-close>Cancel</button><button class="primary" data-ok>Split</button></div></form>`,
+      { onClose: () => { if (!answered) resolve(null); } });
+      const inp = $('#sp-title', s.el);
+      titleBox(inp, $('#sp-det', s.el), it.id, fallback, it.updatedAt || 0)(page);
+      s.el.querySelector('form').onsubmit = (e) => { e.preventDefault(); answered = true; s.close(); resolve(inp.value.trim() || fallback); };
+    });
+    if (title == null) return;
+  } else {
+    const ok = await confirmSheet({ title: `Split “${it.title}” at page ${page}?`, body: `Pages ${page}–${it.pages} become a new sheet.`, ok: 'Split' });
+    if (!ok) return;
+  }
   if (store.mode === 'server') { // move the real page photos
-    const res = await fetch(`/api/items/${it.id}/split`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pages: Array.from({ length: it.pages - page + 1 }, (_, k) => page + k) }) });
+    const res = await fetch(`/api/items/${it.id}/split`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, pages: Array.from({ length: it.pages - page + 1 }, (_, k) => page + k) }) });
     const d = await res.json();
     if (!res.ok) return toast(d.detail || 'Could not split');
     store.putItem(d.item); store.putItem(d.new);

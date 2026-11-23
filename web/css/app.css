@@ -1026,3 +1026,6 @@ button.bs-seg { cursor: pointer; color: #fff; background: var(--c); }
   .bs-act .bs-hint, .bs-act .grow { display: none; }
   .bs-zoom { width: 34px; height: 34px; right: 8px; top: 8px; }
 }
+.bs-det { font-size: 11px; min-height: 14px; padding: 0 4px; }
+.bs-det[data-state="ok"] { color: var(--acc); }
+label .bs-det { display: block; font-weight: 400; margin-top: 2px; }

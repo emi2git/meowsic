@@ -28,7 +28,9 @@ const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 export function makeBooks(ctx) {
   const { body, st } = ctx;
   let id0 = null; try { id0 = localStorage.getItem('meowsic-cu-book'); } catch {}
-  const bs = { books: null, id: id0, book: null, starts: {}, focus: 1, list: !id0, saving: {}, loading: false, q: Promise.resolve() };
+  const bs = { books: null, id: id0, book: null, starts: {}, focus: 1, list: !id0, saving: {}, loading: false, q: Promise.resolve(), det: {} };
+  // title detection (the Mac reads the biggest text at the top of the page): det[bookId:page] = { state, title, typed }
+  const det = (p, id = bs.id) => (bs.det[`${id}:${p}`] ||= {});
   const book = () => bs.books?.find((b) => b.id === bs.id);
 
   const segs = () => {
@@ -103,6 +105,7 @@ export function makeBooks(ctx) {
     };
     paint();
     g.querySelector(`figure[data-p="${bs.focus}"]`)?.scrollIntoView({ block: 'nearest' });
+    prefetch();
   };
 
   // marks, colour bands, title boxes and the summary — without reloading the page images
@@ -122,14 +125,55 @@ export function makeBooks(ctx) {
         inp.className = 'bs-title'; inp.placeholder = 'Title of this sheet'; inp.enterKeyHint = 'done';
         inp.setAttribute('aria-label', `Title of sheet starting on page ${p}`);
         inp.value = bs.starts[p] || '';
-        inp.oninput = () => { bs.starts[p] = inp.value; saveTitle(p); paintSegs(); };
+        inp.oninput = () => { bs.starts[p] = inp.value; det(p).typed = true; paintDet(fig, p); saveTitle(p); paintSegs(); };
         inp.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); inp.blur(); } };
         inp.onblur = () => flushTitle(p);
-        fig.append(inp);
-      } else if (!start && inp) inp.remove();
+        const hint = document.createElement('small');
+        hint.className = 'bs-det muted';
+        fig.append(inp, hint);
+      } else if (!start && inp) { inp.remove(); fig.querySelector('.bs-det')?.remove(); }
+      if (start) {
+        if ((!det(p).typed || document.activeElement !== inp) && inp.value !== (bs.starts[p] || '')) inp.value = bs.starts[p] || '';
+        paintDet(fig, p);
+      }
     }
     paintSegs();
     const lst = $('#bs-list', body); if (lst) { lst.innerHTML = listHtml(); }
+  };
+  const paintDet = (fig, p) => {
+    const h = fig.querySelector('.bs-det'); if (!h) return;
+    const d = det(p), v = (bs.starts[p] || '').trim();
+    h.textContent = d.typed ? '' : d.state === 'busy' && !v ? 'Reading the title…'
+      : d.state === 'ok' && v === d.title ? 'detected' : d.state === 'fail' && !v ? 'couldn’t read the title' : '';
+    h.dataset.state = d.typed ? '' : d.state || '';
+  };
+  // read the title off the page; it fills the box only if you haven't typed there (yours always wins)
+  const detect = async (p) => {
+    const id = bs.id, d = det(p, id);
+    if (d.state === 'busy') return;
+    if (!d.state) {
+      d.state = 'busy'; paint();
+      let r = null;
+      try { r = await api('GET', `/items/${encodeURIComponent(id)}/pages/${p}/title`); } catch {}
+      const ok = !!(r && r.title && r.confidence >= 0.5);
+      d.state = ok ? 'ok' : 'fail'; d.title = ok ? r.title : '';
+    }
+    const ok = d.state === 'ok', r = { title: d.title };
+    if (bs.id !== id || !(p in bs.starts)) return;
+    const cur = (bs.starts[p] || '').trim();
+    if (ok && !d.typed && (!cur || cur === bs.book?.guess?.[p])) {
+      bs.starts[p] = r.title;
+      bs.saving[p] = 0; flushTitle(p);
+    }
+    paint();
+  };
+  // starts already marked whose title is still empty: read them one after the other
+  const prefetch = async () => {
+    const id = bs.id;
+    for (const p of Object.keys(bs.starts).map(Number).sort((a, b) => a - b)) {
+      if (bs.id !== id || st.tab !== 'books') return;
+      if (!(bs.starts[p] || '').trim()) await detect(p);
+    }
   };
   const paintSegs = () => {
     const sg = segs(), b = bs.book, el = $('#bs-segs', body); if (!el || !b) return;
@@ -161,8 +205,9 @@ export function makeBooks(ctx) {
     if (!bs.book) return;
     flushAll();
     const prev = { ...bs.starts }, on = !(p in bs.starts), id = bs.id;
-    if (on) bs.starts[p] = bs.book.guess?.[p] || ''; else delete bs.starts[p];
+    if (on) bs.starts[p] = bs.book.guess?.[p] || ''; else { delete bs.starts[p]; det(p).typed = false; }
     paint();
+    if (on) detect(p);
     if (on && !bs.starts[p] && isDesktop() && !document.querySelector('.modal')) $('#bs-grid', body)?.querySelector(`figure[data-p="${p}"] input`)?.focus({ preventScroll: true });
     st.undo.push({ label: on ? 'mark' : 'unmark', tab: 'books', run: async () => {
       await bs.q;
