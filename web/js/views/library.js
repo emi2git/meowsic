@@ -5,6 +5,7 @@ import { go, addMenu } from '../app.js';
 import { itemMenu, editTags, binItems, keyShort } from './actions.js';
 import { autoTag } from './autotag.js';
 import { VERSIONS } from '../musicxml.js';
+import { isTouch, onDeviceChange } from '../device.js';
 
 const SORTS = {
   added: ['Recently added', (a, b) => b.createdAt - a.createdAt],
@@ -185,7 +186,7 @@ export function libraryView(main, { q }) {
     holdT = setTimeout(() => { pressed = true; state.select = true; state.sel.add(row.dataset.id); state.anchor = row.dataset.id; draw(); navigator.vibrate?.(10); }, 450);
   });
   ['pointerup', 'pointercancel', 'pointermove'].forEach((t) => rowsEl.addEventListener(t, (e) => { if (t !== 'pointermove' || Math.abs(e.movementY) > 4) clearTimeout(holdT); }));
-  rowsEl.addEventListener('contextmenu', (e) => { if (e.target.closest('.row') && e.pointerType !== 'mouse' && matchMedia('(pointer: coarse)').matches) e.preventDefault(); });
+  rowsEl.addEventListener('contextmenu', (e) => { if (e.target.closest('.row') && e.pointerType !== 'mouse' && isTouch()) e.preventDefault(); });
   const onKey = (e) => {
     if (e.key === '/' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); $('#lib-q', main)?.focus(); }
     if (e.key === 'Escape' && selecting()) { state.select = false; state.sel.clear(); draw(); }
@@ -193,10 +194,9 @@ export function libraryView(main, { q }) {
   };
   document.addEventListener('keydown', onKey);
   draw();
-  const mq = matchMedia('(min-width: 761px)');
-  mq.addEventListener('change', draw);
+  const offDevice = onDeviceChange(draw);
   const off = store.on(draw);
-  return () => { off(); mq.removeEventListener('change', draw); document.removeEventListener('keydown', onKey); };
+  return () => { off(); offDevice(); document.removeEventListener('keydown', onKey); };
 }
 
 // tag filter: a list of checkboxes that stays open while you tick; live counts; Clear all

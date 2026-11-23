@@ -446,62 +446,6 @@ legend { font-weight: 700; margin-bottom: 8px; }
 .plain .ic { color: var(--ok); }
 .settings .cat { width: 54px; height: 54px; }
 
-/* ---------- iPad portrait / small laptop ---------- */
-@media (max-width: 1100px) {
-  :root { --side: 196px; }
-  .details { position: absolute; right: 0; top: 0; bottom: 0; z-index: 30; box-shadow: -10px 0 30px rgba(0, 0, 0, .15); }
-  .viewer-body { position: relative; }
-}
-@media (max-width: 900px) {
-  .split-pane { grid-template-columns: 1fr; }
-  .pane-l { border-right: 0; }
-  .two-col { grid-template-columns: 1fr; }
-}
-
-/* ---------- iPhone ---------- */
-@media (max-width: 760px) {
-  .app { grid-template-columns: 1fr; }
-  .side { display: none; }
-  #main { height: calc(100dvh - 64px - env(safe-area-inset-bottom)); }
-  body[data-view="item"] #main, body[data-view="perform"] #main { height: 100dvh; }
-  body[data-view="item"] .tabbar, body[data-view="perform"] .tabbar { display: none; }
-  .viewer { height: 100dvh; }
-  .tabbar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; height: calc(64px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); background: color-mix(in srgb, var(--card) 92%, transparent); backdrop-filter: blur(12px); border-top: 1px solid var(--line); }
-  .tabbar a, .tabbar button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 13px; font-weight: 650; color: var(--mute); border: 0; background: none; border-radius: 0; min-height: 0; padding: 0; }
-  .tabbar .on { color: var(--acc-text); }
-  .tabbar .ic { width: 24px; height: 24px; }
-  .tabbar .tab-add { flex: none; width: 64px; height: 40px; margin: 12px 6px; border-radius: 12px; font-size: 15px !important; background: var(--acc); color: var(--acc-ink); box-shadow: 0 2px 10px rgba(240, 96, 36, .35); }
-  .tabbar .tab-add .ic { width: 28px; height: 28px; stroke-width: 2.4; }
-  .hide-phone { display: none !important; }
-  .top { padding: 10px 14px; padding-top: calc(10px + env(safe-area-inset-top)); min-height: 56px; flex-wrap: wrap; }
-  .top h1 { font-size: 20px; }
-  .item-top .grow { display: block; }
-  .item-top .icon-btn { padding: 0 7px; font-size: 15px; }
-  .rows.ordered .handle { display: none; }
-  .filters { padding: 10px 14px 4px; gap: 8px; }
-  .filters .seg { width: 100%; }
-  .filters .seg button { flex: 1; padding: 0 6px; }
-  .filters .seg button .ic { display: none; }
-  .rows { margin: 8px 10px 20px; }
-  .rows .row { gap: 10px; padding: 10px; }
-  .hide-s { display: none; }
-  .pad { padding: 14px; }
-  .toolbar { padding: 8px 12px; gap: 8px; }
-  .pages { padding: 6px 4px; height: calc(100% - 40px); }
-  .turn { display: none; }
-  .chart { padding: 0 14px 60px; }
-  .cd { width: 48px; height: 74px; }
-  .selbar { margin: 0 10px 10px; bottom: 8px; }
-  .cards { grid-template-columns: 1fr; }
-  .card-opt { min-height: 56px; }
-  .review { padding: 8px 10px 40px; }
-  .pane-l .rows { margin: 0 10px; }
-  .details { width: 100%; }
-  .kv { grid-template-columns: 110px 1fr; }
-  .spreads { grid-template-columns: 1fr 1fr; gap: 10px; }
-  .transport { order: -1; flex-basis: 100%; }
-}
-
 /* ---------- printing ---------- */
 @media print {
   @page { size: A4; margin: 0; }
@@ -538,36 +482,20 @@ legend { font-weight: 700; margin-bottom: 8px; }
 .lib-top { flex-wrap: wrap; row-gap: 8px; }
 .lib-top .search { max-width: 300px; margin-left: 0; }
 
-@media (max-width: 760px) {
-  .item-top .item-title { max-width: none; flex: 1; order: 0; font-size: 17px; }
-  .toolbar.inline { order: 20; flex-basis: 100%; justify-content: flex-start; flex-wrap: wrap; }
-  .toolbar.inline .lbl, .toolbar.inline .zoom { display: none; }
-  .toolbar.inline .transport { flex-basis: 100%; max-width: none; }
-  .lib-top .search { order: 5; flex-basis: 100%; max-width: none; }
-  .lib-top .seg { order: 6; width: 100%; flex-wrap: nowrap; }
-  .lib-top .seg button { flex: 1 1 auto; padding: 0 4px; font-size: 14px; white-space: nowrap; }
-  .lib-top .chip-btn, .lib-top .sort { order: 7; }
-}
 .pages:only-child { height: 100%; }
 
-.phone-only { display: none !important; }
-@media (max-width: 760px) { .phone-only { display: inline-flex !important; } }
 .lib-top .search { margin-left: auto; }
 
 /* multi-select */
 .rows .pick { width: 28px; height: 28px; margin: 0 -4px 0 -6px; display: inline-flex; align-items: center; justify-content: center; flex: none; cursor: pointer; opacity: 0; transition: opacity .12s; }
 .rows .pick input { width: 20px; height: 20px; cursor: pointer; }
 .rows .row:hover .pick, .rows .row.sel .pick, .rows.selecting .pick { opacity: 1; }
-@media (pointer: coarse) { .rows:not(.selecting) .pick { display: none; } }
 .rows.selecting .row-more { visibility: hidden; }
 .rows .row.sel { background: var(--acc-soft); }
 .selband { background: var(--acc-soft); gap: 10px; }
 .selband .pick { display: inline-flex; align-items: center; }
 .selband .pick input { width: 20px; height: 20px; }
 .selband .sel-count { font-size: 17px; }
-.touch-only { display: none !important; }
-@media (pointer: coarse) { .touch-only { display: inline-flex !important; } }
-@media (max-width: 760px) { .selband button:not(#sb-done) { padding: 0 10px; font-size: 14px; } .selband .sel-count { font-size: 15px; } }
 
 .tag-on { display: inline-flex; align-items: center; gap: 2px; background: var(--acc-soft); color: var(--ink); border-radius: 99px; padding: 0 4px 0 12px; height: 34px; font-weight: 600; font-size: 14px; }
 .tag-on .x { min-height: 0; height: 28px; width: 28px; padding: 0; border: 0; background: none; border-radius: 50%; font-size: 18px; color: var(--ink2); }
@@ -595,7 +523,6 @@ body[data-view="item"] .pages { padding: 4px 48px; background: var(--bg2); }
 body[data-view="item"] .page-row { gap: 4px; }
 body[data-view="item"] .score-wrap { padding: 6px; }
 body[data-view="item"] .score-paper { max-width: none; }
-@media (max-width: 760px) { body[data-view="item"] .pages { padding: 2px; } }
 .tagpop-head b { white-space: nowrap; }
 .tagpop .tagpop-head button { width: auto; min-height: 0; margin-left: auto; padding: 0; justify-content: flex-end; background: none; font-weight: 600; color: var(--acc-text); }
 .tagpop .tagpop-head button:disabled { opacity: .4; }
@@ -615,7 +542,6 @@ html:-webkit-full-screen .side { display: none; }
 .activity code { color: var(--mute); margin-right: 6px; }
 .st { font-weight: 700; }
 .st-running { color: var(--acc-text); } .st-done { color: var(--ok); } .st-failed, .st-cancelled { color: var(--danger); }
-@media (max-width: 760px) { .activity { width: calc(100% - 20px); margin: 10px; } .activity th:nth-child(3), .activity td:nth-child(3) { display: none; } }
 
 /* library table (Mac / iPad) */
 .lib-table { display: table; table-layout: fixed; width: calc(100% - 44px); margin: 8px 22px 8px; border-collapse: separate; border-spacing: 0; font-size: 14px; }
@@ -641,12 +567,6 @@ html:-webkit-full-screen .side { display: none; }
 p.count-row { text-align: center; }
 
 .lib-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-@media (max-width: 760px) {
-  .lib-table { width: calc(100% - 20px); margin: 8px 10px; }
-  .lib-table thead th { top: 0; }
-  .lib-table td { height: 48px; }
-}
-@media (pointer: coarse) { .lib-table:not(.selecting) .c-pick { display: none; } }
 
 .fun ul { margin: 0; padding-left: 20px; line-height: 1.8; }
 .fun b { color: var(--acc-text); }
@@ -667,7 +587,6 @@ p.count-row { text-align: center; }
 .turn-strip:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 6%, var(--bg2)); }
 .turn-strip:disabled { opacity: .25; }
 .turn-strip.prev { border-right: 1px solid var(--line); } .turn-strip.next { border-left: 1px solid var(--line); }
-@media (max-width: 760px) { .turn-strip { width: 28px; font-size: 22px; } }
 .sheet-frame .page { flex: none; max-width: none !important; }
 .sheet-frame .page-row { height: auto; }
 
@@ -687,13 +606,9 @@ p.count-row { text-align: center; }
 .fun h2 { justify-content: space-between; }
 .fun h2 .link { font-size: 14px; }
 
-/* library columns: widths, and hide the less important ones as space runs out (Title > Type > Artist > Added > Tag > Key / Pages) */
+/* library column widths (narrower windows hide some: see the device sections at the end) */
 .lib-table .c-pick { width: 34px; } .lib-table .c-title { width: 30%; } .lib-table .c-artist { width: 20%; } .lib-table .c-type { width: 90px; }
 .lib-table .c-tag { width: 18%; } .lib-table .c-pages, .lib-table .c-key { width: 90px; color: var(--ink2); } .lib-table .c-when { width: 104px; } .lib-table .c-more { width: 44px; }
-@media (max-width: 1100px) { .lib-table .c-pages, .lib-table .c-key { display: none; } }
-@media (max-width: 900px) { .lib-table .c-tag { display: none; } }
-@media (max-width: 640px) { .lib-table .c-when { display: none; } .lib-table .c-artist { width: 34%; } .lib-table .c-title { width: auto; } }
-@media (max-width: 480px) { .lib-table .c-artist { display: none; } }
 
 /* score editor */
 .barsel { position: absolute; border: 2px solid var(--acc); background: color-mix(in srgb, var(--acc) 10%, transparent); border-radius: 6px; pointer-events: none; z-index: 4; }
@@ -741,7 +656,6 @@ p.count-row { text-align: center; }
 /* pagination */
 .pager-row { position: relative; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 10px 22px 30px; list-style: none; flex-wrap: wrap; min-height: 54px; }
 .pager-row > .muted { position: absolute; left: 22px; } /* item count stays left, page numbers centred */
-@media (max-width: 760px) { .pager-row > .muted { position: static; width: 100%; text-align: center; } }
 .rows .pager-row { padding: 12px 14px; }
 .pager { display: inline-flex; gap: 4px; align-items: center; }
 .pager button { min-height: 34px; min-width: 34px; padding: 0 8px; border-radius: 9px; }
@@ -809,7 +723,6 @@ p.count-row { text-align: center; }
 .cu-trow input { font: inherit; flex: 0 1 420px; border: 1px solid transparent; border-radius: 6px; padding: 4px 8px; background: transparent; color: var(--ink); }
 .cu-trow small { flex: 1; }
 .cu-keys td { padding: 4px 10px 4px 0; } .cu-keys kbd { font: 12px ui-monospace, monospace; background: var(--bg2); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
-@media (max-width: 900px) { .cu { grid-template-columns: 1fr; } .cu-list { display: none; } }
 .cu-list li.bad::before { background: var(--danger); }
 .cu-issue.mixed, .cu-issue.empty, .cu-issue.incomplete, .cu-issue.extra, .cu-issue.twice, .cu-issue.order { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
 .cu-pick { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; max-height: 50dvh; overflow-y: auto; }
@@ -819,21 +732,6 @@ p.count-row { text-align: center; }
 button.danger { color: var(--danger); }
 #toast, .toast { pointer-events: none; }
 .toast button, .toast a { pointer-events: auto; }
-/* iPad / iPhone: no room for Artist and Added (still sortable from the sort menu) */
-@media (pointer: coarse) { .lib-table .c-artist, .lib-table .c-when { display: none; } .lib-table .c-title { width: auto; } .lib-table .c-tag { width: 160px; } }
-/* iPad / iPhone: a sheet, chord chart or score gets the whole screen (‹ Back returns to the library) */
-@media (pointer: coarse) {
-  body[data-view="item"] .app, body[data-view="perform"] .app { grid-template-columns: 1fr; }
-  body[data-view="item"] .side, body[data-view="perform"] .side { display: none; }
-}
-/* iPad portrait score: the controls get their own row under the title */
-@media (pointer: coarse) and (min-width: 761px) and (max-width: 1100px) {
-  body[data-view="item"] .k-score .item-top { flex-wrap: wrap; row-gap: 6px; }
-  body[data-view="item"] .k-score .toolbar.inline + .icon-btn { margin-left: auto; }
-  body[data-view="item"] .k-score .toolbar.inline { order: 20; flex-basis: 100%; justify-content: flex-start; }
-  body[data-view="item"] .k-score .toolbar.inline .transport { max-width: none; }
-  body[data-view="item"] .k-score .toolbar.inline .stepper { flex: none; }
-}
 /* Books list: the cover beside the title */
 .lib-table td.c-title:has(.cover) { height: 76px; }
 .lib-table .cover { display: inline-flex; width: 46px; height: 62px; margin-right: 12px; vertical-align: middle; background: #fff; border-radius: 3px; box-shadow: 0 1px 4px rgba(0, 0, 0, .25); overflow: hidden; flex: none; }
@@ -845,11 +743,6 @@ body[data-view="cleanup"] .cu-top { flex: none; flex-wrap: wrap; row-gap: 8px; p
 .cu-top h1 { margin-right: 6px; }
 .cu-top .grow { flex: 1; }
 .cu-back { display: none; }
-@media (pointer: coarse) {
-  body[data-view="cleanup"] .app { grid-template-columns: 1fr; }
-  body[data-view="cleanup"] .side { display: none; }
-  .cu-back { display: inline-flex; }
-}
 .cu-tabs { margin-left: 0; }
 .cu-tabs button { padding: 8px 16px; font-size: 15px; font-weight: 650; min-height: 40px; }
 .cu-undo { min-height: 40px; padding: 0 14px; font-weight: 650; border-radius: 999px; }
@@ -880,7 +773,6 @@ body[data-view="cleanup"] .cu-top { flex: none; flex-wrap: wrap; row-gap: 8px; p
 .danger-btn { background: var(--danger); border-color: var(--danger); color: #fff; font-weight: 700; }
 .danger-btn.on, .primary.on { box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 35%, transparent); }
 kbd { font: 11px ui-monospace, monospace; opacity: .7; margin-left: 6px; border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; }
-@media (pointer: coarse) { .sv-act kbd, .cu-act kbd { display: none; } }
 /* Go through sheets */
 .sv { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .sv-top { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 10px 0; flex-wrap: wrap; }
@@ -905,22 +797,140 @@ kbd { font: 11px ui-monospace, monospace; opacity: .7; margin-left: 6px; border:
 .sv-grid img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; object-position: top; background: #fff; border-radius: 4px; }
 .sv-grid span { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sv-grid small { color: var(--mute); }
-@media (max-width: 760px) { .cu.songs { grid-template-columns: 1fr; } .cu-side { display: none; } .cu-tabs button { padding: 6px 10px; font-size: 14px; } }
 .sv-nopage { aspect-ratio: 3 / 4; display: flex; align-items: center; justify-content: center; background: var(--bg2); color: var(--mute); border-radius: 4px; font-size: 13px; }
 
-/* iPad / iPhone sheet + book viewer: the page fills the width or the height, edge to edge. No ‹ ›
-   strips (swipe, or tap the left / right half, turns the page). */
-@media (pointer: coarse) {
-  body[data-view="item"] .k-sheet .item-top { min-height: 40px; padding-top: calc(3px + env(safe-area-inset-top)); padding-bottom: 3px; padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
-  body[data-view="item"] .sheet-frame .pages { padding: 0; }
-  body[data-view="item"] .sheet-frame .page-row { gap: 0; }
-  body[data-view="item"] .sheet-frame .page { border-radius: 0; box-shadow: none; }
-  body[data-view="item"] .turn-strip { display: none; }
+/* =====================================================================================
+   Device layouts. js/device.js decides the device and sets <html data-device="…">:
+     desktop = Mac browser (mouse / trackpad) · tablet = iPad (touch, wider than 760px)
+     phone = iPhone (touch, 760px or less). The base rules above are the Mac layout.
+   Rules that are really about the window width stay media queries, so a narrow Mac
+   window gets the same compact layout as an iPad in portrait or an iPhone.
+   ===================================================================================== */
+
+/* ===== Narrower windows (iPad portrait, small Mac windows) ===== */
+@media (max-width: 1100px) {
+  :root { --side: 196px; }
+  .details { position: absolute; right: 0; top: 0; bottom: 0; z-index: 30; box-shadow: -10px 0 30px rgba(0, 0, 0, .15); }
+  .viewer-body { position: relative; }
 }
-/* iPhone: Back, title, page number, pen, ⋯ on one row */
-@media (pointer: coarse) and (max-width: 760px) {
-  body[data-view="item"] .k-sheet .item-top { flex-wrap: nowrap; gap: 4px; }
-  body[data-view="item"] .k-sheet .item-title { flex: 1 1 auto; }
-  body[data-view="item"] .k-sheet .toolbar.inline { order: 0; flex: none; flex-basis: auto; flex-wrap: nowrap; gap: 4px; }
-  body[data-view="item"] .k-sheet .toolbar.inline .pageno { font-size: 13px; white-space: nowrap; }
+@media (max-width: 900px) {
+  .split-pane { grid-template-columns: 1fr; }
+  .pane-l { border-right: 0; }
+  .two-col { grid-template-columns: 1fr; }
 }
+/* library columns hide as space runs out (Title > Type > Artist > Added > Tag > Key / Pages) */
+@media (max-width: 1100px) { .lib-table .c-pages, .lib-table .c-key { display: none; } }
+@media (max-width: 900px) { .lib-table .c-tag { display: none; } }
+@media (max-width: 640px) { .lib-table .c-when { display: none; } .lib-table .c-artist { width: 34%; } .lib-table .c-title { width: auto; } }
+@media (max-width: 480px) { .lib-table .c-artist { display: none; } }
+/* Clean up: no song list beside the pages */
+@media (max-width: 900px) { .cu { grid-template-columns: 1fr; } .cu-list { display: none; } }
+
+/* ===== Tablet (iPad) ===== */
+/* portrait score: the controls get their own row under the title */
+@media (max-width: 1100px) {
+  :root[data-device="tablet"] body[data-view="item"] .k-score .item-top { flex-wrap: wrap; row-gap: 6px; }
+  :root[data-device="tablet"] body[data-view="item"] .k-score .toolbar.inline + .icon-btn { margin-left: auto; }
+  :root[data-device="tablet"] body[data-view="item"] .k-score .toolbar.inline { order: 20; flex-basis: 100%; justify-content: flex-start; }
+  :root[data-device="tablet"] body[data-view="item"] .k-score .toolbar.inline .transport { max-width: none; }
+  :root[data-device="tablet"] body[data-view="item"] .k-score .toolbar.inline .stepper { flex: none; }
+}
+
+/* ===== Phone (iPhone) ===== */
+/* 760px or less: the tab bar instead of the left bar, wrapped toolbars, one-column lists.
+   A media query, so a Mac window this narrow gets it too. */
+.phone-only { display: none !important; }
+@media (max-width: 760px) {
+  .phone-only { display: inline-flex !important; }
+  .app { grid-template-columns: 1fr; }
+  .side { display: none; }
+  #main { height: calc(100dvh - 64px - env(safe-area-inset-bottom)); }
+  body[data-view="item"] #main, body[data-view="perform"] #main { height: 100dvh; }
+  body[data-view="item"] .tabbar, body[data-view="perform"] .tabbar { display: none; }
+  .viewer { height: 100dvh; }
+  .tabbar { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; height: calc(64px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom); background: color-mix(in srgb, var(--card) 92%, transparent); backdrop-filter: blur(12px); border-top: 1px solid var(--line); }
+  .tabbar a, .tabbar button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 13px; font-weight: 650; color: var(--mute); border: 0; background: none; border-radius: 0; min-height: 0; padding: 0; }
+  .tabbar .on { color: var(--acc-text); }
+  .tabbar .ic { width: 24px; height: 24px; }
+  .tabbar .tab-add { flex: none; width: 64px; height: 40px; margin: 12px 6px; border-radius: 12px; font-size: 15px !important; background: var(--acc); color: var(--acc-ink); box-shadow: 0 2px 10px rgba(240, 96, 36, .35); }
+  .tabbar .tab-add .ic { width: 28px; height: 28px; stroke-width: 2.4; }
+  .top { padding: 10px 14px; padding-top: calc(10px + env(safe-area-inset-top)); min-height: 56px; flex-wrap: wrap; }
+  .top h1 { font-size: 20px; }
+  .item-top .grow { display: block; }
+  .item-top .icon-btn { padding: 0 7px; font-size: 15px; }
+  .rows { margin: 8px 10px 20px; }
+  .rows .row { gap: 10px; padding: 10px; }
+  .pad { padding: 14px; }
+  .toolbar { padding: 8px 12px; gap: 8px; }
+  .pages { padding: 6px 4px; height: calc(100% - 40px); }
+  .chart { padding: 0 14px 60px; }
+  .cd { width: 48px; height: 74px; }
+  .cards { grid-template-columns: 1fr; }
+  .card-opt { min-height: 56px; }
+  .review { padding: 8px 10px 40px; }
+  .pane-l .rows { margin: 0 10px; }
+  .details { width: 100%; }
+  .kv { grid-template-columns: 110px 1fr; }
+  .spreads { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .transport { order: -1; flex-basis: 100%; }
+  /* header band */
+  .item-top .item-title { max-width: none; flex: 1; order: 0; font-size: 17px; }
+  .toolbar.inline { order: 20; flex-basis: 100%; justify-content: flex-start; flex-wrap: wrap; }
+  .toolbar.inline .zoom { display: none; }
+  .toolbar.inline .transport { flex-basis: 100%; max-width: none; }
+  .lib-top .search { order: 5; flex-basis: 100%; max-width: none; }
+  .lib-top .seg { order: 6; width: 100%; flex-wrap: nowrap; }
+  .lib-top .seg button { flex: 1 1 auto; padding: 0 4px; font-size: 14px; white-space: nowrap; }
+  .lib-top .chip-btn, .lib-top .sort { order: 7; }
+  /* library */
+  .selband button:not(#sb-done) { padding: 0 10px; font-size: 14px; }
+  .selband .sel-count { font-size: 15px; }
+  .lib-table { width: calc(100% - 20px); margin: 8px 10px; }
+  .lib-table thead th { top: 0; }
+  .lib-table td { height: 48px; }
+  .pager-row > .muted { position: static; width: 100%; text-align: center; }
+  .activity { width: calc(100% - 20px); margin: 10px; }
+  .activity th:nth-child(3), .activity td:nth-child(3) { display: none; }
+  /* item views */
+  body[data-view="item"] .pages { padding: 2px; }
+  .turn-strip { width: 28px; font-size: 22px; }
+  /* Clean up */
+  .cu.songs { grid-template-columns: 1fr; }
+  .cu-side { display: none; }
+  .cu-tabs button { padding: 6px 10px; font-size: 14px; }
+}
+/* iPhone sheet: Back, title, page number, pen, ⋯ on one row */
+:root[data-device="phone"] body[data-view="item"] .k-sheet .item-top { flex-wrap: nowrap; gap: 4px; }
+:root[data-device="phone"] body[data-view="item"] .k-sheet .item-title { flex: 1 1 auto; }
+:root[data-device="phone"] body[data-view="item"] .k-sheet .toolbar.inline { order: 0; flex: none; flex-basis: auto; flex-wrap: nowrap; gap: 4px; }
+:root[data-device="phone"] body[data-view="item"] .k-sheet .toolbar.inline .pageno { font-size: 13px; white-space: nowrap; }
+
+/* ===== Touch (iPad + iPhone) ===== */
+/* Select button; press and hold a row to select, so no tick boxes until selecting */
+.touch-only { display: none !important; }
+:root:is([data-device="phone"], [data-device="tablet"]) .touch-only { display: inline-flex !important; }
+:root:is([data-device="phone"], [data-device="tablet"]) .rows:not(.selecting) .pick,
+:root:is([data-device="phone"], [data-device="tablet"]) .lib-table:not(.selecting) .c-pick { display: none; }
+/* no room for Artist and Added (still sortable from the sort menu) */
+:root:is([data-device="phone"], [data-device="tablet"]) .lib-table .c-artist,
+:root:is([data-device="phone"], [data-device="tablet"]) .lib-table .c-when { display: none; }
+:root:is([data-device="phone"], [data-device="tablet"]) .lib-table .c-title { width: auto; }
+:root:is([data-device="phone"], [data-device="tablet"]) .lib-table .c-tag { width: 160px; }
+/* a sheet, chord chart or score, and Clean up, get the whole screen (‹ Back returns to the library) */
+:root:is([data-device="phone"], [data-device="tablet"]) :is(body[data-view="item"], body[data-view="perform"], body[data-view="cleanup"]) .app { grid-template-columns: 1fr; }
+:root:is([data-device="phone"], [data-device="tablet"]) :is(body[data-view="item"], body[data-view="perform"], body[data-view="cleanup"]) .side { display: none; }
+:root:is([data-device="phone"], [data-device="tablet"]) .cu-back { display: inline-flex; }
+/* no keyboard hints */
+:root:is([data-device="phone"], [data-device="tablet"]) :is(.sv-act, .cu-act) kbd { display: none; }
+/* sheet + book viewer: the page fills the width or the height, edge to edge. No ‹ › strips
+   (swipe, or tap the left / right half, turns the page). */
+:root:is([data-device="phone"], [data-device="tablet"]) body[data-view="item"] .k-sheet .item-top { min-height: 40px; padding-top: calc(3px + env(safe-area-inset-top)); padding-bottom: 3px; padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(8px, env(safe-area-inset-right)); }
+:root:is([data-device="phone"], [data-device="tablet"]) body[data-view="item"] .sheet-frame .pages { padding: 0; }
+:root:is([data-device="phone"], [data-device="tablet"]) body[data-view="item"] .sheet-frame .page-row { gap: 0; }
+:root:is([data-device="phone"], [data-device="tablet"]) body[data-view="item"] .sheet-frame .page { border-radius: 0; box-shadow: none; }
+:root:is([data-device="phone"], [data-device="tablet"]) body[data-view="item"] .turn-strip { display: none; }
+
+/* ===== Desktop (Mac) ===== */
+/* The base rules above are the Mac layout: left bar everywhere, ‹ › page strips, tick boxes on
+   hover, keyboard hints. Two-page spreads and keyboard shortcuts are in the views' JS
+   (device.js isDesktop). Nothing extra is needed here. */

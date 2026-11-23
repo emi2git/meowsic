@@ -1,6 +1,6 @@
 // Clean up page against the temp server :5190 ("Cleanup test" = 8 real screenshot pages of different songs + odd title)
 import puppeteer from 'puppeteer-core';
-const BASE = 'http://localhost:5190/';
+const BASE = process.env.BASE || 'http://localhost:5190/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });
 const page = await b.newPage(); await page.setViewport({ width: 1440, height: 900 });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message)); page.on('console', (m) => m.type() === 'error' && errs.push(m.text() + ' ' + (m.location()?.url || '')));

@@ -8,6 +8,7 @@ import { ScorePlayer } from '../audio.js';
 import { scoreEditor } from './scoreeditor.js';
 import { InkLayer } from './annotate.js';
 import { attachSwipe, flipBy } from '../swipe.js';
+import { isTouch, isNarrow } from '../device.js';
 
 let osmdReady;
 export function loadOsmd() {
@@ -38,8 +39,8 @@ export function scoreBody(root, it, { perform = false } = {}) {
   const version = it.version || 'original';
   // each score reopens the way you left it: key (transpose), tempo and zoom are saved on the entry
   // iPad / iPhone keep their own zoom (this device only): a Mac zoom would overflow an iPhone
-  const zDef = () => (perform ? 1.25 : 1) * (innerWidth < 760 ? 0.62 : 1);
-  const zLocal = matchMedia('(pointer: coarse)').matches, zKey = `meowsic-zoom-${it.id}`;
+  const zDef = () => (perform ? 1.25 : 1) * (isNarrow() ? 0.62 : 1);
+  const zLocal = isTouch(), zKey = `meowsic-zoom-${it.id}`;
   let zoom = zDef();
   if (zLocal) { try { zoom = +localStorage.getItem(zKey) || zoom; } catch {} } else zoom = it.zoom || zoom;
   let osmd, player, stops = [], bar, ink = null, inkTool = null;
