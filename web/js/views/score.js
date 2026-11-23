@@ -115,8 +115,31 @@ export function scoreBody(root, it, { perform = false } = {}) {
     root.dispatchEvent(new CustomEvent('tick', { detail: { q }, bubbles: true }));
   };
 
+  // words "Add lyrics from a sheet" wasn't sure of carry <lyric color>: OSMD ignores it, so colour them here
+  let unsureOf = null, unsureXml = null;
+  const unsureLyrics = () => {
+    if (unsureXml !== xmlText) {
+      unsureXml = xmlText; unsureOf = null;
+      if (/<lyric\b[^>]*\bcolor=/.test(xmlText)) {
+        const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+        unsureOf = [...(doc.querySelector('part')?.querySelectorAll(':scope > measure') || [])]
+          .map((m) => new Set([...m.querySelectorAll('lyric[color]')].map((l) => [...l.querySelectorAll('text')].map((t) => t.textContent).join(''))));
+      }
+    }
+    if (!unsureOf) return;
+    osmd.GraphicSheet.MeasureList.forEach((staves, bi) => {
+      const red = unsureOf[bi];
+      if (!red?.size) return;
+      for (const se of staves[0]?.staffEntries || []) for (const le of se.LyricsEntries || []) {
+        const n = le.graphicalLabel?.SVGNode;
+        if (n && red.has(le.lyricsEntry?.Text)) { n.classList.add('lyric-unsure'); [n, ...n.querySelectorAll('*')].forEach((x) => { x.style.fill = '#D22'; }); }
+      }
+    });
+  };
+
   // after every layout: letters in the noteheads, keyboard diagrams under the title (chords follow transpose)
   const decorate = () => {
+    unsureLyrics();
     paper.classList.toggle('easy', easy);
     if (!easy) return;
     drawNoteLetters(osmd, { minPx: isNarrow() ? 7.5 : 0 }); // iPhone: heads grow a little so the letters stay readable

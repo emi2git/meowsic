@@ -219,7 +219,7 @@ def test_lyrics_job_makes_a_new_score(client, data, tmp_path, monkeypatch):
     assert client.post('/api/jobs', json={'kind': 'lyrics', 'title': 'x', 'fromItemId': src['id']}).status_code == 400
     j = client.post('/api/jobs', json={'kind': 'lyrics', 'title': 'Made Up Song', 'fromItemId': src['id'], 'sheetId': sh['id'],
                                        'outputs': ['original'], 'source': 'From the score “Made Up Song” + lyrics from the sheet'}).json()
-    assert j['gen'] is True
+    assert j['kind'] == 'lyrics' and j['gen'] is True
     j = wait(client, j['id'])
     assert j['status'] == 'done', j['log']
     assert seen == [sh['id']] and len(j['result']) == 1
@@ -230,4 +230,4 @@ def test_lyrics_job_makes_a_new_score(client, data, tmp_path, monkeypatch):
     x = client.get(f'/api/items/{it["id"]}/musicxml').text
     assert x.count('<lyric') >= 0.9 * sum(1 for w in words if w) and 'Meowsic AI' in x
     assert client.get(f'/api/items/{src["id"]}/musicxml').text == before  # the score itself is untouched
-    assert any('of the words placed' in l['msg'] for l in j['log'])
+    assert any('of the words placed' in l['msg'] for l in j['log']) and j['stage'] == 3

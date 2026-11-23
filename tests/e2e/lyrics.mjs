@@ -32,6 +32,9 @@ await page.$eval('#al-q', (e) => { e.value = ''; e.dispatchEvent(new Event('inpu
 await page.click(`#al-list [data-id="${sh.id}"]`); await sleep(400);
 check('a confirm sheet asks first', !!(await page.$('.modal [data-ok]')));
 await page.click('.modal [data-ok]'); await sleep(1000);
+await page.goto(`${BASE}#/jobs`, { waitUntil: 'networkidle0' }); await sleep(1500);
+const stages = await page.$$eval('.job .stages li span', (e) => e.map((x) => x.textContent));
+check('the job shows its own stages', stages.includes('Read the words on the sheet') && stages.includes('Fit the words to the tune'), stages.join('|'));
 let job;
 for (let i = 0; i < 240; i++) { await sleep(2000); job = (await api('/jobs')).find((j) => j.kind === 'lyrics' && j.title === TITLE); if (job && ['done', 'failed'].includes(job.status)) break; }
 check('job finishes', job?.status === 'done', JSON.stringify(job?.log?.slice(-2).map((l) => l.msg)));
@@ -48,6 +51,10 @@ await page.goto(`${BASE}#/item/${ns.id}`, { waitUntil: 'networkidle0' }); await 
 check('score shows in the app', (await page.$$('#osmd svg')).length > 0);
 const drawn = await page.$$eval('#osmd svg .vf-lyric, #osmd svg text', (e) => e.length);
 check('words are drawn', drawn > nLy / 2, drawn);
+const nUnsure = (xml.match(/<lyric[^>]*color=/g) || []).length;
+const redDrawn = await page.$$eval('#osmd .lyric-unsure', (e) => e.filter((x) => getComputedStyle(x.querySelector('text') || x).fill.replace(/\s/g, '') === 'rgb(221,34,34)').length);
+check('unsure words are red', nUnsure === 0 ? redDrawn === 0 : redDrawn >= nUnsure * 0.8 && redDrawn <= nUnsure * 1.5, `${redDrawn} red, ${nUnsure} unsure`);
+console.log(`    ${redDrawn} red of ${nUnsure} unsure`);
 await page.setViewport({ width: 1440, height: 7000 }); await sleep(4000);  // the whole score at once, to look bar by bar
 await page.screenshot({ path: `${SHOTS}/lyrics-score.png` });
 console.log(`\n${pass} passed, ${fail} failed`); console.log(errs.length ? 'errors:\n' + errs.join('\n') : 'no page errors');

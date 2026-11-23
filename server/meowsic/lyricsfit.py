@@ -399,8 +399,8 @@ OMR_STEP = {'notes': 0.1, 'lyrics': 0.6, 'check': 0.7, 'chords': 0.75, 'words': 
 
 
 def lyrics_runner(ctx):
-    """Job 'lyrics': fromItemId = the score, sheetId = the sheet with the words. Stages (GEN_STAGES in the UI):
-    0 read the score, 1 read the sheet and fit the words, 2 write the new score, 3 draw its pages."""
+    """Job 'lyrics': fromItemId = the score, sheetId = the sheet with the words. Stages (LYRICS_STAGES in the UI):
+    0 read the score, 1 read the words on the sheet, 2 fit them to the tune, 3 write the new score (and its PDF)."""
     from . import arrange
     from .db import connect, folder_path, get_item
     from .jobs import Cancelled
@@ -420,8 +420,9 @@ def lyrics_runner(ctx):
         ctx.update(progress=round(0.9 * OMR_STEP.get(e.get('step'), 0) + 0.05 * (e.get('progress') or 0), 3))
     sheet_xml = read_sheet(ctx.cfg, sheet, ev, ctx.cancelled)
     if ctx.cancelled(): raise Cancelled()
+    ctx.update(stage=2, progress=0)
     out, rep = fit(score_xml, sheet_xml.read_text(encoding='utf-8'))
-    ctx.update(stage=2, progress=0, msg=f"Placed {rep['placed']} of {rep['syllables']} syllables ({rep['coverage']:g}%)"
+    ctx.update(stage=3, progress=0, msg=f"Placed {rep['placed']} of {rep['syllables']} syllables ({rep['coverage']:g}%)"
                + (f"; {rep['checkBars']} bars to check" if rep['checkBars'] else ''))
     work = ctx.work
     new = work / 'lyrics.musicxml'
@@ -429,7 +430,6 @@ def lyrics_runner(ctx):
     mid = folder_path(ctx.cfg, src['folder']) / src['midi'] if src.get('midi') else None
     pdf = None
     if pdf_on():
-        ctx.update(stage=3, progress=0)
         if arrange.render_pdf(new, work / 'lyrics.pdf'): pdf = work / 'lyrics.pdf'
     v = src.get('version') or 'original'
     ids = save_outputs(ctx, [(v, new, mid, pdf, {})], title=src['title'],
