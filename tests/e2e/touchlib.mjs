@@ -14,7 +14,8 @@ const errs = [];
 const DEVICES = [['ipad13-port', 1032, 1376], ['ipad13-land', 1376, 1032], ['iphone-air', 420, 912]];
 const KINDS = ['', 'sheet', 'book', 'score', 'chords'];
 const hash = (p) => p.evaluate(() => location.hash);
-const lib = (p, k) => p.goto(BASE + '#/library' + (k ? '?kind=' + k : ''), { waitUntil: 'networkidle0' }).then(() => sleep(500));
+// a fresh load of #/library opens Sheets; All music is then a tap (here: a hash change) away
+const lib = (p, k) => p.goto(BASE + '#/library' + (k ? '?kind=' + k : ''), { waitUntil: 'networkidle0' }).then(() => (k ? 0 : p.evaluate(() => (location.hash = '#/library')))).then(() => sleep(500));
 const swipe = async (p, x0, y0, x1, y1, steps = 6) => {
   await p.touchscreen.touchStart(x0, y0);
   for (let i = 1; i <= steps; i++) await p.touchscreen.touchMove(x0 + ((x1 - x0) * i) / steps, y0 + ((y1 - y0) * i) / steps);

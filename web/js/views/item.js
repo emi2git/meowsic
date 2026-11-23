@@ -1,12 +1,13 @@
 // One item (sheet, chord chart or score): header, toolbar, body, details panel.
 import { store } from '../store.js';
 import { $, esc, icon, iconOn, badge, ago, mins, CAT, scoreSource, toast } from '../ui.js';
-import { go } from '../app.js';
-import { itemMenu, editTags, rename, metaText } from './actions.js';
+import { go, HOME } from '../app.js';
+import { itemMenu, editTags, rename, metaText, verLabel, verDetail, SHEET_VERSIONS, editKey } from './actions.js';
 import { autoTag } from './autotag.js';
 import { sheetBody, sheetToolbar, sheetExtraMenu, startInk } from './sheet.js';
 import { chordsBody, chordsToolbar } from './chordsview.js';
 import { scoreBody, scoreToolbar, scoreExportMenu, scoreTools } from './score.js';
+import { VERSIONS } from '../musicxml.js';
 
 const fmtDate = (t) => (t ? new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
 // the item's original date: when the photo was taken / the file was made / the score transcribed / the chords fetched
@@ -22,10 +23,10 @@ function originRow(it) {
 export function itemView(main, { parts }) {
   const it = store.get(parts[1]);
   if (!it) {
-    main.innerHTML = `<div class="empty big">${CAT}<p>This item is not in the library.</p><a class="btn" href="#/library">Back to library</a></div>`;
+    main.innerHTML = `<div class="empty big">${CAT}<p>This item is not in the library.</p><a class="btn" href="${HOME}">Back to library</a></div>`;
     return;
   }
-  const back = history.length > 1 ? 'javascript:history.back()' : '#/library';
+  const back = history.length > 1 ? 'javascript:history.back()' : HOME;
   main.innerHTML = `
     <div class="viewer k-${it.kind}">
       <header class="top item-top">
@@ -81,6 +82,10 @@ export function itemView(main, { parts }) {
         ${it.kind === 'sheet' ? `<dt>File</dt><dd>${it.source === 'pdf' ? 'PDF' : 'Photos (images)'}</dd>` : ''}
         ${it.kind === 'chords' ? `<dt>Source</dt><dd><a href="${esc(it.url)}" target="_blank" rel="noopener">${it.source === 'hopamchuan' ? 'Hợp Âm Chuẩn' : 'Ultimate Guitar'}</a></dd>` : ''}
         ${it.kind === 'score' ? ((s) => `<dt>Source</dt><dd id="dt-source"><span class="src-name">${esc(s.name || '—')}</span>${s.url ? `<br><a class="src-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.url)}</a><br><button class="link" id="dt-copy">Copy link</button>` : ''}${it.bpm ? `<br><small>${it.bpm} bpm</small>` : ''}</dd>`)(scoreSource(it)) : ''}
+        ${it.kind === 'sheet' ? `<dt>Version</dt><dd><div class="seg ver-seg" id="dt-ver" role="radiogroup" aria-label="Version">${Object.entries(SHEET_VERSIONS).map(([v, l]) =>
+          `<button role="radio" aria-checked="${it.version === v}" class="${it.version === v ? 'on' : ''}" data-ver="${v}">${l}</button>`).join('')}</div>${it.version ? '' : '<small class="muted">Not set</small>'}</dd>` : ''}
+        ${it.kind === 'score' ? `<dt>Version</dt><dd id="dt-ver">${esc(verLabel(it))}${verDetail(it) !== verLabel(it) ? `<br><small class="muted" title="${esc(VERSIONS[it.version] || '')}">${esc(verDetail(it))}</small>` : ''}</dd>` : ''}
+        ${it.kind === 'sheet' ? `<dt>Key</dt><dd id="dt-key"><span class="key-val">${esc(it.key || '') || '<span class="muted">Not set</span>'}</span> <button class="link" id="dt-key-edit">${it.key ? 'Change' : 'Set key'}</button></dd>` : ''}
         <dt>Tags</dt><dd><div class="row-tags">${it.tags.map((t) => `<a class="tagchip" href="#/library?tags=${encodeURIComponent(t)}">${esc(t)}</a>`).join('') || '<span class="muted">None</span>'}</div><button class="link" id="dt-tags">Edit tags</button></dd>
         <dt>Practice</dt><dd>${plays.length} session${plays.length === 1 ? '' : 's'} · ${mins(total)}<br><small>Last played ${ago(store.lastPlayed(it.id))}</small></dd>
         ${originRow(it)}
@@ -88,6 +93,9 @@ export function itemView(main, { parts }) {
       </dl>`;
     $('#dt-close', details).onclick = () => (details.hidden = true);
     $('#dt-tags', details).onclick = () => editTags(it.id);
+    $('#dt-key-edit', details)?.addEventListener('click', () => editKey(it.id));
+    // tap a word to set it; tap the lit one again to clear it
+    $('#dt-ver.ver-seg', details)?.addEventListener('click', (e) => { const b = e.target.closest('[data-ver]'); if (b) store.setVersion(it.id, it.version === b.dataset.ver ? '' : b.dataset.ver); });
     const cp = $('#dt-copy', details);
     if (cp) cp.onclick = () => { const url = scoreSource(it).url; (navigator.clipboard?.writeText(url) || Promise.reject()).then(() => toast('Link copied'), () => prompt('Copy the link', url)); };
   };
@@ -119,7 +127,7 @@ export function itemView(main, { parts }) {
   document.addEventListener('keydown', zoomKey);
   let lastFiles = (it.pageFiles || []).join('|');
   const off = store.on(() => {
-    if (!store.get(it.id) || it.deleted) return go('#/library');
+    if (!store.get(it.id) || it.deleted) return go(HOME);
     $('#it-title', main).textContent = it.title;
     if (!details.hidden) drawDetails();
     // page files renamed (title change) or regrouped on the Mac: draw the pages again from the new names

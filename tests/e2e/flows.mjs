@@ -23,6 +23,11 @@ await page.goto(BASE + '#/library', { waitUntil: 'networkidle0' });
 await page.reload({ waitUntil: 'networkidle0' });
 
 console.log('Library');
+check('a fresh start opens Sheets', (await page.evaluate(() => location.hash)) === '#/library?kind=sheet' && (await text('#libhead h1')) === 'Sheets'
+  && (await page.$eval('#side .nav.on', (e) => e.textContent)).includes('Sheets'), await page.evaluate(() => location.hash));
+check('the logo goes to Sheets', (await page.$eval('#side .brand', (e) => e.getAttribute('href'))) === '#/library?kind=sheet');
+await page.click('#side a[href="#/library"]'); await sleep(300);
+check('All music is one tap away', (await text('#libhead h1')) === 'All music' && (await page.evaluate(() => location.hash)) === '#/library');
 check('first page shows 50 items', (await count('#lib-rows .row')) === 50, await count('#lib-rows .row'));
 check('Version column on Scores', true);
 check('count says 88 items', (await text('.pager-row .muted')).startsWith('88'));
@@ -42,9 +47,9 @@ check('second click reverses (Z–A)', (await page.$eval('[data-sort="title"]', 
 await page.click('[data-sort="added"]'); await sleep(200);
 check('no song icons', (await count('.song-ic')) === 0);
 check('no source site names in the library', !/Ultimate Guitar|Hợp Âm Chuẩn/.test(await text('#lib-rows')));
-check('library is a table on Mac with columns', (await page.$$eval('.lib-table th', (e) => e.map((x) => x.textContent.trim()).join('|'))).startsWith('|Title|Artist|Type|Tag|Added'));
+check('library is a table on Mac with columns', (await page.$$eval('.lib-table th', (e) => e.map((x) => x.textContent.trim()).join('|'))).startsWith('|Title|Artist|Version|Type|Tag|Key|Added'));
 await page.click('#side a[href="#/library?kind=sheet"]'); await sleep(300);
-check('Sheets columns: Title Artist Tag Pages Added', (await page.$$eval('.lib-table th', (e) => e.map((x) => x.textContent.trim().replace(/[▲▼]/g, '').trim()).filter(Boolean).join('|'))) === 'Title|Artist|Tag|Pages|Added');
+check('Sheets columns: Title Artist Version Tag Key Pages Added', (await page.$$eval('.lib-table th', (e) => e.map((x) => x.textContent.trim().replace(/[▲▼]/g, '').trim()).filter(Boolean).join('|'))) === 'Title|Artist|Version|Tag|Key|Pages|Added');
 check('one main tag per row (Memory → Piano recital, not Musical)', (await page.$$eval('.lib-table tr.row', (rows) => rows.find((r) => r.querySelector('.c-title').textContent === 'Memory').querySelector('.c-tag').textContent)) === 'Piano recital');
 check('no PDF in the list', !(await text('#lib-rows')).includes('PDF'));
 await go('#/library');
@@ -220,7 +225,7 @@ check('duet score draws two parts', (await count('#osmd svg')) >= 1);
 await go('#/library?kind=score');
 check('each version is its own entry', (await count('#lib-rows .row')) >= 5, await count('#lib-rows .row'));
 check('Scores key shows just C (not "C major" / "Key C")', (await page.$$eval('.lib-table td.c-key', (e) => e.map((x) => x.textContent))).every((k) => /^[A-G][#b]?m?$/.test(k)));
-check('Scores view has a Version column', (await page.$$eval('.lib-table th', (e) => e.map((x) => x.textContent.trim()))).includes('Version') && (await text('#lib-rows')).includes('Lead sheet'));
+check('Scores view has a Version column', (await page.$$eval('.lib-table th', (e) => e.map((x) => x.textContent.trim()))).includes('Version') && ((v) => v.includes('Lead') && v.includes('Piano') && v.every((x) => ['Lead', 'Piano', 'Duet'].includes(x)))(await page.$$eval('.lib-table td.c-ver', (e) => e.map((x) => x.textContent.trim()))));
 await go('#/library?tags=Lead%20sheet');
 check('version is a tag (Lead sheet)', (await count('#lib-rows .row')) === 1);
 await go('#/item/m-02i'); await sleep(1200);

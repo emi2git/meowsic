@@ -50,6 +50,7 @@ const P = {
   down: '<path d="M5 9l7 7 7-7"/>',
   split: '<path d="M12 3v18M5 8l-3 4 3 4M19 8l3 4-3 4"/>',
   merge: '<path d="M4 4l8 8 8-8M12 12v9"/>',
+  sort: '<path d="M7 4v16M3.5 16.5L7 20l3.5-3.5M17 20V4M13.5 7.5L17 4l3.5 3.5"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
   edit: '<path d="M4 20h4L20 8l-4-4L4 16z"/>',
   mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/>',
@@ -141,15 +142,15 @@ export function confirmSheet({ title, body = '', ok = 'OK', danger = false }) {
   });
 }
 
-export function promptSheet({ title, value = '', placeholder = '', ok = 'Save' }) {
+export function promptSheet({ title, value = '', placeholder = '', ok = 'Save', required = true }) {
   return new Promise((resolve) => {
     let answered = false;
-    const s = sheet(`<h2>${esc(title)}</h2><form><input value="${esc(value)}" placeholder="${esc(placeholder)}" required>
+    const s = sheet(`<h2>${esc(title)}</h2><form><input value="${esc(value)}" placeholder="${esc(placeholder)}" ${required ? 'required' : ''}>
       <div class="modal-actions"><button type="button" data-close>Cancel</button><button class="primary">${esc(ok)}</button></div></form>`,
       { onClose: () => { if (!answered) resolve(null); } });
     const input = s.el.querySelector('input');
     setTimeout(() => input.select(), 40);
-    s.el.querySelector('form').onsubmit = (e) => { e.preventDefault(); answered = true; s.close(); resolve(input.value.trim() || null); };
+    s.el.querySelector('form').onsubmit = (e) => { e.preventDefault(); answered = true; s.close(); resolve(input.value.trim() || (required ? null : '')); };
   });
 }
 

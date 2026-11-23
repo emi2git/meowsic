@@ -18,7 +18,7 @@ let pending = null; // [{title, tags, pages:[{name, url, pdf}] , dup}]
 export function addSheetsView(main) {
   if (pending) return reviewSheets(main);
   main.innerHTML = `
-    <header class="top"><a class="icon-btn back" href="#/library" aria-label="Back">‹ Back</a><h1>Add sheet music</h1></header>
+    <header class="top"><a class="icon-btn back" href="#/library?kind=sheet" aria-label="Back">‹ Back</a><h1>Add sheet music</h1></header>
     <div class="pad narrow">
       <label class="drop" id="drop">
         ${CAT}
@@ -128,7 +128,7 @@ function reviewSheets(main) {
     if (act === 'join') { const prev = groups.slice(0, gi).reverse().find((x) => x.pages.length); if (prev) { prev.pages.push(...g.pages); g.pages = []; } }
     draw();
   });
-  $('#rv-cancel', main).onclick = () => { pending = null; go('#/library'); };
+  $('#rv-cancel', main).onclick = () => { pending = null; go('#/library?kind=sheet'); };
   $('#rv-add', main).onclick = async () => {
     if (store.mode !== 'mock') return uploadSheets(main, live());
     const made = live().map((g) => {
@@ -179,7 +179,7 @@ const chordState = { q: '', src: 'auto', picked: null };
 
 export function addChordsView(main) {
   main.innerHTML = `
-    <header class="top"><a class="icon-btn back" href="#/library" aria-label="Back">‹ Back</a><h1>Add chords</h1></header>
+    <header class="top"><a class="icon-btn back" href="#/library?kind=sheet" aria-label="Back">‹ Back</a><h1>Add chords</h1></header>
     <div class="split-pane">
       <div class="pane-l">
         <form class="pad" id="cs-form">
@@ -291,7 +291,7 @@ export const STAGES = ['Download audio', 'Separate voice and instruments', 'Find
 export function addScoreView(main) {
   const f = { src: 'yt', outputs: new Set(['original']) };
   main.innerHTML = `
-    <header class="top"><a class="icon-btn back" href="#/library" aria-label="Back">‹ Back</a><h1>Add score</h1></header>
+    <header class="top"><a class="icon-btn back" href="#/library?kind=sheet" aria-label="Back">‹ Back</a><h1>Add score</h1></header>
     <div class="pad narrow" id="sf-jobs"></div>
     <form class="pad narrow form" id="sf">
       <h2 class="sub-h">New score from a recording</h2>

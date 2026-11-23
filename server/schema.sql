@@ -26,7 +26,9 @@ CREATE TABLE IF NOT EXISTS sheet (            -- kind = 'sheet'
   item_id   TEXT PRIMARY KEY REFERENCES item(id) ON DELETE CASCADE,
   source    TEXT NOT NULL CHECK (source IN ('photos','pdf')),
   pages     INTEGER NOT NULL,
-  book      INTEGER NOT NULL DEFAULT 0        -- 1 = a book (many songs); files in items/Books/<title>/
+  book      INTEGER NOT NULL DEFAULT 0,       -- 1 = a book (many songs); files in items/Books/<title>/
+  version   TEXT NOT NULL DEFAULT '',         -- 'lead' | 'piano' | 'duet'; '' = not known
+  key       TEXT NOT NULL DEFAULT ''          -- 'C', 'Am', 'F#m', 'Eb major' (as written); '' = not known
 );
 CREATE TABLE IF NOT EXISTS sheet_page (
   item_id      TEXT NOT NULL REFERENCES item(id) ON DELETE CASCADE,
@@ -49,7 +51,7 @@ CREATE TABLE IF NOT EXISTS chord_chart (      -- kind = 'chords'
 
 CREATE TABLE IF NOT EXISTS score (            -- kind = 'score'; each version is its own item
   item_id     TEXT PRIMARY KEY REFERENCES item(id) ON DELETE CASCADE,
-  version     TEXT NOT NULL,                  -- original | vocal | lead | duet | accomp | easy | pro
+  version     TEXT NOT NULL,                  -- original | vocal | lead | duet | accomp | clear | pro | easy (shown as Lead / Duet / Piano)
   musicxml    TEXT NOT NULL,                  -- file under items/<id>/ (edited notes are saved back here)
   musicxml_original TEXT,                     -- untouched copy, for "Revert note edits"
   midi        TEXT,
