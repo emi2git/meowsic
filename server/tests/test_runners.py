@@ -196,7 +196,7 @@ def test_transcribe_job_with_stand_in_pipeline(client, data, fake_pipeline, no_p
     items = [client.get(f'/api/items/{i}').json() for i in j['result']]
     assert [i['version'] for i in items] == ['original', 'clear', 'lead']
     assert [set(i['tags']) for i in items] == [{'Original', 'Musicals'}, {'Piano clear', 'Musicals'}, {'Lead sheet', 'Musicals'}]
-    assert len({i['groupId'] for i in items}) == 1 and all(i['source'] == 'YouTube · youtu.be/abc' for i in items)
+    assert len({i['groupId'] for i in items}) == 1 and all(i['source'] == 'YouTube' and i['sourceUrl'] == 'https://youtu.be/abc' for i in items)
     assert all(i['key'] == 'Bb major' and i['bpm'] == 76 and i['originAt'] for i in items)
     for i in items:
         d = data / 'items' / i['folder']

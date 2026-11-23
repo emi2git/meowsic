@@ -7,6 +7,7 @@ import sqlite3
 import string
 import time
 import unicodedata
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -63,6 +64,8 @@ def init_db(cfg: Config):
     mcols = [r[1] for r in c.execute('PRAGMA table_info(score)')]
     if mcols and 'ai' not in mcols:  # AI music (scores Claude composed) are scores with ai=1
         c.execute('ALTER TABLE score ADD COLUMN ai INTEGER NOT NULL DEFAULT 0')
+    if mcols and 'source_url' not in mcols:  # the full YouTube / Facebook link; `source` is just the platform
+        c.execute("ALTER TABLE score ADD COLUMN source_url TEXT NOT NULL DEFAULT ''")
     jcols = [r[1] for r in c.execute('PRAGMA table_info(job)')]
     if jcols and 'params' not in jcols:
         c.execute("ALTER TABLE job ADD COLUMN params TEXT NOT NULL DEFAULT '{}'")
@@ -72,7 +75,56 @@ def init_db(cfg: Config):
         create = re.search(r'CREATE TABLE IF NOT EXISTS job \(.*?\n\);', SCHEMA.read_text(), re.S).group(0)
         cols = ','.join(r[1] for r in c.execute('PRAGMA table_info(job)'))
         c.executescript(f'BEGIN; ALTER TABLE job RENAME TO job_old; {create} INSERT INTO job({cols}) SELECT {cols} FROM job_old; DROP TABLE job_old; COMMIT;')
+    migrate_sources(c)
+    c.commit()
     c.close()
+
+
+YOUTUBE = {'youtube.com', 'youtu.be', 'm.youtube.com', 'music.youtube.com', 'youtube-nocookie.com'}
+FACEBOOK = {'facebook.com', 'fb.watch', 'm.facebook.com', 'fb.com', 'web.facebook.com'}
+AI_SOURCE = 'Meowsic AI'
+
+
+def platform_of(url: str) -> str:
+    """'YouTube' | 'Facebook' | the link's host name ('' when there is none)."""
+    url = (url or '').strip()
+    if not url: return ''
+    host = (urlparse(url if '://' in url else 'https://' + url).hostname or '').lower()
+    if host.startswith('www.'): host = host[4:]
+    return 'YouTube' if host in YOUTUBE else 'Facebook' if host in FACEBOOK else host
+
+
+OLD_LINK_SOURCE = re.compile(r'^(YouTube|Facebook) · (\S+)$')
+
+
+def migrate_sources(c):
+    """Old score sources -> the new shape (runs every start, does nothing once done):
+    'YouTube · youtu.be/x' -> source 'YouTube' + source_url (the job's original link when there is one);
+    versions made from a score get their group's link; AI pieces: 'Composed by Claude' -> 'Meowsic AI', no 'AI Studio' tag."""
+    fixed = 0
+    rows = c.execute("SELECT item_id, source FROM score WHERE source LIKE 'YouTube · %' OR source LIKE 'Facebook · %'").fetchall()
+    if rows:
+        job_url = {}
+        for r in c.execute("SELECT params, result FROM job WHERE result IS NOT NULL AND params LIKE '%\"url\"%'"):
+            try: url, ids = json.loads(r[0]).get('url'), json.loads(r[1])
+            except (ValueError, TypeError, AttributeError): continue
+            for i in ids if url and isinstance(ids, list) else []: job_url[i] = url
+        for item_id, source in rows:
+            m = OLD_LINK_SOURCE.match(source)
+            url = job_url.get(item_id) or (('' if m.group(2).startswith('http') else 'https://') + m.group(2) if m else '')
+            c.execute("UPDATE score SET source=?, source_url=CASE WHEN source_url='' THEN ? ELSE source_url END WHERE item_id=?",
+                      (platform_of(url) or (m.group(1) if m else source), url, item_id))
+            fixed += 1
+    # versions made from a score: the link of the recording they came from
+    fixed += c.execute("""UPDATE score SET source_url=(SELECT p.source_url FROM score p WHERE p.group_id=score.group_id AND p.source_url<>'' LIMIT 1)
+        WHERE source_url='' AND group_id IS NOT NULL AND source LIKE 'From the score%'
+          AND EXISTS (SELECT 1 FROM score p WHERE p.group_id=score.group_id AND p.source_url<>'')""").rowcount
+    ai = c.execute("UPDATE score SET source=? WHERE ai=1 AND source='Composed by Claude'", (AI_SOURCE,)).rowcount
+    tagged = c.execute("DELETE FROM item_tag WHERE tag='AI Studio'").rowcount
+    c.execute("DELETE FROM tag WHERE name='AI Studio'")
+    if fixed or ai or tagged:
+        log_event(c, 'migrate', 'Score sources', f'{fixed} link source(s) → platform + original link; {ai} AI piece(s) → Meowsic AI; '
+                  f'AI Studio tag removed from {tagged} item(s)')
 
 
 # ---------- item folders: items/<folder>/, named after the title ----------
@@ -129,12 +181,13 @@ KIND_COLS = {  # kind -> (table, {JSON name -> column})
     'sheet': ('sheet', {'source': 'source', 'pages': 'pages', 'book': 'book'}),
     'chords': ('chord_chart', {'source': 'source', 'url': 'url', 'key': 'key', 'capo': 'capo', 'text': 'text'}),
     'score': ('score', {'version': 'version', 'musicxml': 'musicxml', 'musicxmlOriginal': 'musicxml_original',
-                        'midi': 'midi', 'pdf': 'pdf', 'key': 'key', 'bpm': 'bpm', 'source': 'source', 'groupId': 'group_id', 'ai': 'ai'}),
+                        'midi': 'midi', 'pdf': 'pdf', 'key': 'key', 'bpm': 'bpm', 'source': 'source', 'groupId': 'group_id', 'ai': 'ai',
+                        'sourceUrl': 'source_url'}),
 }
 KIND_DEFAULTS = {
     'sheet': {'source': 'photos', 'pages': 0, 'book': 0},
     'chords': {'source': 'pasted', 'url': '', 'key': '', 'capo': 0, 'text': ''},
-    'score': {'version': 'original', 'musicxml': '', 'key': '', 'source': '', 'ai': 0},
+    'score': {'version': 'original', 'musicxml': '', 'key': '', 'source': '', 'ai': 0, 'sourceUrl': ''},
 }
 
 

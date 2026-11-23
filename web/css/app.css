@@ -159,7 +159,7 @@ progress { width: 100%; height: 8px; accent-color: var(--acc); }
 .badge .ic { width: 13px; height: 13px; stroke-width: 2.2; }
 .badge.k-sheet, .badge.k-book { background: var(--k-sheet-soft); color: var(--k-sheet); }
 .badge.k-chords { background: var(--k-chords-soft); color: var(--k-chords); }
-.badge.k-score, .badge.k-ai { background: var(--k-score-soft); color: var(--k-score); }
+.badge.k-score { background: var(--k-score-soft); color: var(--k-score); }
 .pill { font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 99px; background: var(--bg2); color: var(--ink2); }
 .pill.ok { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
 .empty { text-align: center; padding: 48px 20px; color: var(--mute); list-style: none; }
@@ -219,6 +219,7 @@ body[data-view="item"] #main, body[data-view="perform"] #main { overflow: hidden
 .details dl { margin: 0; }
 .details dt { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--mute); font-weight: 700; margin-top: 14px; }
 .details dd { margin: 4px 0 0; }
+.details .src-link { overflow-wrap: anywhere; font-size: 13px; }
 
 /* sheet pages */
 .pages { position: relative; height: calc(100% - 40px); display: flex; align-items: center; justify-content: center; padding: 14px 56px; background: var(--bg2); outline: none; touch-action: pan-y pinch-zoom; user-select: none; -webkit-user-select: none; }

@@ -1,6 +1,6 @@
 // One item (sheet, chord chart or score): header, toolbar, body, details panel.
 import { store } from '../store.js';
-import { $, esc, icon, iconOn, badge, ago, mins, CAT } from '../ui.js';
+import { $, esc, icon, iconOn, badge, ago, mins, CAT, scoreSource, toast } from '../ui.js';
 import { go } from '../app.js';
 import { itemMenu, editTags, rename, metaText } from './actions.js';
 import { autoTag } from './autotag.js';
@@ -79,7 +79,7 @@ export function itemView(main, { parts }) {
         <dt>Type</dt><dd>${badge(it)} ${metaText(it)}</dd>
         ${it.kind === 'sheet' ? `<dt>File</dt><dd>${it.source === 'pdf' ? 'PDF' : 'Photos (images)'}</dd>` : ''}
         ${it.kind === 'chords' ? `<dt>Source</dt><dd><a href="${esc(it.url)}" target="_blank" rel="noopener">${it.source === 'hopamchuan' ? 'Hợp Âm Chuẩn' : 'Ultimate Guitar'}</a></dd>` : ''}
-        ${it.kind === 'score' ? `<dt>Made from</dt><dd>${esc(it.source)}<br><small>${it.bpm} bpm</small></dd>` : ''}
+        ${it.kind === 'score' ? ((s) => `<dt>Source</dt><dd id="dt-source"><span class="src-name">${esc(s.name || '—')}</span>${s.url ? `<br><a class="src-link" href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.url)}</a><br><button class="link" id="dt-copy">Copy link</button>` : ''}${it.bpm ? `<br><small>${it.bpm} bpm</small>` : ''}</dd>`)(scoreSource(it)) : ''}
         <dt>Tags</dt><dd><div class="row-tags">${it.tags.map((t) => `<a class="tagchip" href="#/library?tags=${encodeURIComponent(t)}">${esc(t)}</a>`).join('') || '<span class="muted">None</span>'}</div><button class="link" id="dt-tags">Edit tags</button></dd>
         <dt>Practice</dt><dd>${plays.length} session${plays.length === 1 ? '' : 's'} · ${mins(total)}<br><small>Last played ${ago(store.lastPlayed(it.id))}</small></dd>
         ${originRow(it)}
@@ -87,6 +87,8 @@ export function itemView(main, { parts }) {
       </dl>`;
     $('#dt-close', details).onclick = () => (details.hidden = true);
     $('#dt-tags', details).onclick = () => editTags(it.id);
+    const cp = $('#dt-copy', details);
+    if (cp) cp.onclick = () => { const url = scoreSource(it).url; (navigator.clipboard?.writeText(url) || Promise.reject()).then(() => toast('Link copied'), () => prompt('Copy the link', url)); };
   };
   const toggleDetails = () => { details.hidden = !details.hidden; if (!details.hidden) drawDetails(); };
   $('#it-title', main).onclick = () => rename(it.id);
