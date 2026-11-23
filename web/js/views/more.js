@@ -204,15 +204,5 @@ async function storageCard(main) {
 }
 
 // ================= developer =================
-// Things for building and testing Meowsic, kept out of Settings.
-export function developerView(main) {
-  main.innerHTML = `<header class="top"><h1>Developer</h1></header>
-    <div class="pad narrow settings">
-      <section class="card"><h2>Bring in the old apps</h2>
-        <ul class="plain">
-          <li>Meowsic 1 (iPad): 485 sheets, 11 chord charts, 1 score, 31 tags <small class="muted">— phase 2</small></li>
-          <li>Emi Songbook: 11 songs; its 3 collections become tags <small class="muted">— phase 2</small></li>
-          <li>Emi Music Note: 4 transcriptions <small class="muted">— phase 2</small></li>
-        </ul></section>
-    </div>`;
-}
+// Things for building Meowsic, kept out of Settings: the feedback box + list for Claude (views/feedback.js).
+export { feedbackView as developerView } from './feedback.js';
