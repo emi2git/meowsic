@@ -36,7 +36,18 @@ MODEL = Path(os.environ.get('MEOWSIC_SOULX_MODEL', Path.home() / 'ai' / 'models'
 NLTK = Path(os.environ.get('NLTK_DATA', Path.home() / 'ai' / 'models' / 'nltk_data'))
 PIANO = REPO / 'web' / 'vendor' / 'piano'
 # annotated prompt clips in SoulX-Singer's example/audio (<name>.mp3 + <name>.json); VOICE is the default singer
-VOICES = ('en_target', 'en_prompt', 'zh_prompt', 'zh_target', 'yue_target')
+BUILTIN_VOICES = ('en_target', 'en_prompt', 'zh_prompt', 'zh_target', 'yue_target')
+# more singers: free annotated clips made into prompts by sing/make_voices.py (<name>.wav + <name>.json), kept out of
+# git in VOICES_DIR; sources + licences in ~/ai/models/singer-voices/SOURCES.md (personal, non-commercial use)
+VOICES_DIR = Path(os.environ.get('MEOWSIC_VOICES', Path.home() / 'ai' / 'models' / 'singer-voices' / 'voices'))
+EXTRA_VOICES = (
+    'zh_m13', 'zh_m6', 'zh_m1', 'zh_m5', 'zh_m21',              # Mandarin male singers (SoulX-Singer-Eval prompts)
+    'en_m8', 'en_m13', 'en_m21', 'en_m22', 'en_m23', 'en_m1', 'en_m2', 'en_m15',  # English male (SoulX-Singer-Eval)
+    'en_f3', 'en_f10', 'en_f14',                                 # English female (SoulX-Singer-Eval)
+    'gt_tenor_a', 'gt_tenor_b', 'gt_tenor_c',                    # GTSinger EN-Tenor-1 (male)
+    'gt_alto1', 'gt_alto2a', 'gt_alto2b',                        # GTSinger EN-Alto-1 / EN-Alto-2 (female)
+)
+VOICES = BUILTIN_VOICES + EXTRA_VOICES
 VOICE = 'en_target'  # English pop singer: best words + pitch over the five (Amazing Grace tests, 2026-11)
 SR_OUT = 44100
 TAIL_Q = 1.0  # the last note rings on for a beat after the score ends
@@ -80,17 +91,29 @@ def make_g2p():
     return lambda w: [p for p in g(w) if re.fullmatch(r'[A-Z]+[0-2]?', p)]
 
 
+def voice_files(voice):
+    """(audio, json) of a singer: SoulX-Singer's example clips, else VOICES_DIR (sing/make_voices.py)"""
+    if voice in BUILTIN_VOICES:
+        aud = SOULX / 'example' / 'audio'
+        return aud / f'{voice}.mp3', aud / f'{voice}.json'
+    if voice not in EXTRA_VOICES: raise SystemExit(f'Unknown voice {voice}')
+    a, j = VOICES_DIR / f'{voice}.wav', VOICES_DIR / f'{voice}.json'
+    if not (a.exists() and j.exists()): raise SystemExit(f'Voice {voice} is not installed ({VOICES_DIR}); see sing/make_voices.py')
+    return a, j
+
+
 def load_prompt(proc, voice):
-    """The singer: one of SoulX-Singer's annotated example clips. Its notes / phonemes / f0 start at meta['time'][0]
-    inside the mp3 (e.g. en_prompt.mp3 at 5.22 s), so the audio is cut there to line up with them."""
+    """The singer: an annotated clip. Its notes / phonemes / f0 start at meta['time'][0] inside the audio
+    (e.g. en_prompt.mp3 at 5.22 s), so the audio is cut there to line up with them."""
     import librosa
     import soundfile as sf
     import tempfile
-    aud = SOULX / 'example' / 'audio'
-    meta = json.loads((aud / f'{voice}.json').read_text())[0]
+    audio, js = voice_files(voice)
+    meta = json.loads(js.read_text(encoding='utf-8'))[0]
+    meta.pop('source', None)
     t = meta['time']
     t0 = (json.loads(t) if isinstance(t, str) else t)[0] / 1000
-    y, sr = librosa.load(str(aud / f'{voice}.mp3'), sr=proc.sample_rate, mono=True)
+    y, sr = librosa.load(str(audio), sr=proc.sample_rate, mono=True)
     with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f: tmp = f.name
     try:
         sf.write(tmp, y[int(round(t0 * sr)):], sr)
@@ -251,7 +274,7 @@ def main():
     ap.add_argument('--check', action='store_true')
     ap.add_argument('--mode', choices=('syllable', 'word'), default='syllable', help='phonemes per syllable (default) or per word')
     ap.add_argument('--seed', type=int, default=0, help='same seed + same score = the same take')
-    ap.add_argument('--voice', choices=VOICES, default=VOICE, help='the singer: one of SoulX-Singer\'s annotated example clips')
+    ap.add_argument('--voice', choices=VOICES, default=VOICE, help='the singer: a SoulX-Singer example clip or an installed extra voice (sing/make_voices.py)')
     ap.add_argument('--tune', type=float, default=0.85,
                     help='pitch correction: how far each note\'s pitch is pulled to the score, 0 (off) .. 1 (vibrato kept)')
     a = ap.parse_args()
