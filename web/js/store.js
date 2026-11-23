@@ -97,7 +97,10 @@ export const store = {
     if (!it) return;
     Object.assign(it, patch, { updatedAt: Date.now() });
     if ('text' in patch && it.kind === 'chords') it.lines = parseChordPro(it.text);
-    send('PATCH', `/items/${id}`, patch);
+    // the Mac's answer wins: a new title renames the folder and the page files, so take its file names
+    api('PATCH', `/items/${id}`, patch).then((fresh) => {
+      if (fresh && fresh.id === id && ('title' in patch || fresh.pageFiles)) { const cur = this.get(id); if (cur) { Object.assign(cur, fresh); if (cur.kind === 'chords') cur.lines = parseChordPro(cur.text); changed(); } }
+    });
     changed();
   },
   add(item) {
@@ -221,7 +224,8 @@ export const store = {
     const items = await api('GET', '/items', undefined, { queue: false });
     if (!Array.isArray(items)) return;
     const before = JSON.stringify(db.items.map((x) => [x.id, x.updatedAt, x.deleted]));
-    db.items = items; hydrate();
+    const had = new Map(db.items.map((x) => [x.id, x]));
+    db.items = items.map((f) => (had.has(f.id) ? Object.assign(had.get(f.id), f) : f)); hydrate(); // same objects: open views keep working
     if (JSON.stringify(db.items.map((x) => [x.id, x.updatedAt, x.deleted])) !== before) changed();
   },
   async refreshJobs() {

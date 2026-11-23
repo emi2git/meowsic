@@ -1,0 +1,28 @@
+// Rename a sheet while it is open (iPad): the page files are renamed on the Mac and the open pages keep loading
+import puppeteer from 'puppeteer-core';
+import fs from 'fs';
+const BASE = process.env.BASE || 'http://localhost:5190/';
+const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });
+const page = await b.newPage(); await page.setViewport({ width: 1032, height: 1376, hasTouch: true, isMobile: true });
+const errs = []; page.on('pageerror', (e) => errs.push(e.message));
+const bad = []; page.on('response', (r) => { if (r.status() >= 400 && r.url().includes('/file/')) bad.push(r.status() + ' ' + r.url()); });
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+let pass = 0, fail = 0; const check = (n, c, x = '') => { c ? pass++ : fail++; console.log(c ? '  ok  ' : '  FAIL', n, c ? '' : x); };
+const png = fs.readFileSync(new URL('../../web/icon-512.png', import.meta.url));
+const fd = new FormData(); fd.append('title', 'Rename me ' + Date.now());
+for (let k = 0; k < 2; k++) fd.append('files', new Blob([png, Buffer.from(String(Date.now() + k))], { type: 'image/png' }), `p${k}.png`);
+const it = (await (await fetch(BASE + 'api/sheets', { method: 'POST', body: fd })).json()).item;
+await page.goto(BASE + '#/item/' + it.id, { waitUntil: 'networkidle0' }); await sleep(800);
+await page.evaluate(async (id) => { const { store } = await import('/js/store.js'); store.update(id, { title: 'Renamed: Lion' }); }, it.id);
+await sleep(1500);
+const files = await page.evaluate(async (id) => { const { store } = await import('/js/store.js'); return store.get(id).pageFiles; }, it.id);
+check('the app takes the new file names from the Mac', files.every((f) => f.includes('Renamed- Lion')), files.join(','));
+const img = await page.$eval('.page img', (e) => ({ ok: e.complete && e.naturalWidth > 0, src: e.getAttribute('src') }));
+check('the open page still shows after the rename', img.ok && img.src.includes('Renamed'), JSON.stringify(img));
+await page.evaluate(() => document.querySelector('.turn-strip.next')?.click() || dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' })));
+await page.keyboard.press('ArrowRight'); await sleep(1000);
+check('page 2 loads too', await page.$eval('.page img', (e) => e.complete && e.naturalWidth > 0));
+check('no missing page files after settling', !bad.filter((x) => !x.includes('Rename%20me')).length, bad.join('\n'));
+await fetch(BASE + 'api/items/trash', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [it.id] }) });
+console.log(`\n${pass} passed, ${fail} failed`); console.log(errs.length ? 'errors:\n' + errs.join('\n') : 'no page errors');
+await b.close();

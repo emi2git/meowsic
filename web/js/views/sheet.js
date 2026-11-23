@@ -179,6 +179,7 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
     undo() { layers.at(-1)?.undo(); },
     clear() { layers.forEach((l) => l.clear()); },
     goTo(p) { page = p; draw(); },
+    redraw() { draw(); },
     zoomReset() { this.zoomTo(levels()[0]); },
     zoomTo(z) { zoom = z; store.update(it.id, { zoom }); pages.scrollTo({ top: 0, left: 0 }); draw(); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); },
     zoomBy(d) {

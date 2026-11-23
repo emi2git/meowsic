@@ -116,10 +116,14 @@ export function itemView(main, { parts }) {
     else view.setSize(view.size + d * 2);
   };
   document.addEventListener('keydown', zoomKey);
+  let lastFiles = (it.pageFiles || []).join('|');
   const off = store.on(() => {
     if (!store.get(it.id) || it.deleted) return go('#/library');
     $('#it-title', main).textContent = it.title;
     if (!details.hidden) drawDetails();
+    // page files renamed (title change) or regrouped on the Mac: draw the pages again from the new names
+    const pf = (it.pageFiles || []).join('|');
+    if (pf !== lastFiles) { lastFiles = pf; view?.redraw?.(); }
   });
   const opened = Date.now();
   return () => { document.removeEventListener('keydown', zoomKey); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); off(); offBar?.(); view.destroy(); store.logPlay(it.id, opened, Date.now()); };
