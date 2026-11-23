@@ -274,7 +274,9 @@ body[data-view="item"] #main, body[data-view="perform"] #main { overflow: hidden
 
 /* score */
 .score-wrap { padding: 16px; background: var(--bg2); min-height: 100%; }
-.score-paper { background: #fff; color: #000; border-radius: 6px; box-shadow: 0 2px 14px rgba(0, 0, 0, .14); max-width: 1100px; margin: 0 auto; position: relative; padding: 8px 4px 40px; min-height: 300px; }
+.score-paper { background: #fff; color: #000; border-radius: 6px; box-shadow: 0 2px 14px rgba(0, 0, 0, .14); max-width: 1100px; margin: 0 auto; position: relative; }
+.score-clip { position: relative; }
+.score-sheet { position: relative; padding: 8px 4px 40px; min-height: 300px; }
 .score-wrap.perform { background: #111113; padding: 8px; }
 .playbar { position: absolute; left: 0; top: 0; width: 3px; margin-left: -1.5px; border-radius: 2px; background: rgba(240, 96, 36, .9); pointer-events: none; display: none; z-index: 5; will-change: transform; }
 /* the orange line can be dragged (wide invisible grip, no page scroll while dragging) */
@@ -516,6 +518,9 @@ legend { font-weight: 700; margin-bottom: 8px; }
 .clear-tags { font-size: 14px; }
 
 .ink-toggle.on { background: var(--acc-soft); }
+/* note names toggle (score toolbar): lights up when the letters are on */
+.nn-toggle { flex: none; border-radius: 999px; padding: 0 12px; font-size: 13px; font-weight: 800; letter-spacing: .08em; white-space: nowrap; }
+.nn-toggle.on { background: var(--acc); color: var(--acc-ink); border-color: var(--acc); }
 
 /* more room for music: slim header and little padding while a sheet / score / chart is open; the left bar hides only in full screen */
 body[data-view="item"] .item-top { min-height: 46px; padding-top: calc(5px + env(safe-area-inset-top)); padding-bottom: 5px; padding-left: 16px; padding-right: 12px; }
@@ -525,13 +530,6 @@ body[data-view="item"] .pages { padding: 4px 48px; background: var(--bg2); }
 body[data-view="item"] .page-row { gap: 4px; }
 body[data-view="item"] .score-wrap { padding: 6px; }
 body[data-view="item"] .score-paper { max-width: none; }
-/* "super easy piano" look: big sans title, piano chord diagrams, credit on the right */
-.easy-head { color: #000; padding: 18px 24px 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
-.easy-title { text-align: center; font-size: 2.3rem; font-weight: 800; letter-spacing: -.01em; margin: 6px 0 14px; line-height: 1.1; }
-.easy-kbds { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 22px; }
-.easy-kbds .kbd { display: block; }
-.easy-credit { text-align: right; font-size: .95rem; margin: 8px 6px 0; }
-@media (max-width: 600px) { .easy-head { padding: 12px 10px 0; } .easy-title { font-size: 1.6rem; } .easy-kbds { gap: 8px 12px; } }
 .tagpop-head b { white-space: nowrap; }
 .tagpop .tagpop-head button { width: auto; min-height: 0; margin-left: auto; padding: 0; justify-content: flex-end; background: none; font-weight: 600; color: var(--acc-text); }
 .tagpop .tagpop-head button:disabled { opacity: .4; }
@@ -958,6 +956,23 @@ kbd { font: 11px ui-monospace, monospace; opacity: .7; margin-left: 6px; border:
 .pager.mini { gap: 6px; }
 .pager.mini button { min-width: 44px; min-height: 38px; font-size: 20px; line-height: 1; }
 .pager.mini .pg-now { min-width: 72px; text-align: center; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--ink2); }
+
+/* scores and chord charts as pages (iPad / iPhone; js/pager.js): nothing scrolls, the page is the
+   whole area under the top bar, edge to edge like a sheet photo; a page = the long sheet moved up,
+   cut just under its last line */
+#it-body:has(> .score-wrap.paged), #it-body:has(> .chart.paged) { overflow: hidden; overscroll-behavior: none; }
+#it-body .score-wrap.paged { padding: 0; height: 100%; min-height: 0; background: #fff; }
+#it-body .score-wrap.paged .score-paper { height: 100%; max-width: none; border-radius: 0; box-shadow: none; overflow: hidden; }
+#it-body .score-wrap.paged .score-clip { overflow: hidden; }
+#it-body .score-wrap.paged .score-sheet { padding: 0 2px; min-height: 0; }
+#it-body .chart.paged { height: 100%; display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; }
+#it-body .chart.paged .diagrams { position: static; flex: none; }
+.lyrics-box { position: relative; }
+.lyrics { position: relative; }
+#it-body .chart.paged .lyrics-box { flex: 1 1 0; min-height: 0; overflow: hidden; }
+#it-body .chart.paged .lyrics-clip { overflow: hidden; }
+#it-body .chart.paged .lyrics { display: flow-root; } /* first heading's margin stays inside (page maths) */
+#it-body .chart.paged .lyrics > :last-child { margin-bottom: 0; }
 
 /* ===== Desktop (Mac) ===== */
 /* The base rules above are the Mac layout: left bar everywhere, ‹ › page strips, tick boxes on

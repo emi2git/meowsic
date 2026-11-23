@@ -1,5 +1,6 @@
-// "Super easy piano" look for a score: big title, a row of piano-keyboard chord diagrams,
-// the credit on the right, and the note's letter inside every notehead.
+// Note names for a score: the note's letter inside every (normal-size) notehead and, when the
+// score has chord symbols, a row of piano-keyboard chord diagrams under the title. Everything else
+// stays OSMD's classic engraving (serif title, composer, tempo, chord symbols, lyrics).
 // Works on a rendered OpenSheetMusicDisplay instance (screen and print).
 import { splitChord, chordIntervals, notePc, esc } from './chords.js';
 
@@ -9,12 +10,11 @@ const NAT = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const ACC = { '-2': '𝄫', '-1': '♭', 0: '', 1: '♯', 2: '𝄪' };
 const SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif";
 
-// on by default for AI pieces (ai flag, or source "Meowsic AI"), off for the rest; remembered per item on this device
+// off by default for every score; the toggle is remembered per item on this device
 export const isAiScore = (it) => !!it.ai || /^meowsic ai$/i.test(String(it.source || '').trim());
 export const easyKey = (it) => `meowsic-easy-${it.id}`;
 export function easyOn(it) {
-  try { const v = localStorage.getItem(easyKey(it)); if (v != null) return v === '1'; } catch {}
-  return false; // classic look by default for every score; the easy look is opt-in per score
+  try { return localStorage.getItem(easyKey(it)) === '1'; } catch { return false; }
 }
 export function setEasy(it, on) { try { localStorage.setItem(easyKey(it), on ? '1' : '0'); } catch {} }
 
@@ -27,6 +27,34 @@ export function creditOf(xmlText) {
   const t = (c?.textContent || '').trim();
   return /^music21$/i.test(t) ? '' : t; // music21's default stamp is not a credit
 }
+
+// the MusicXML as OSMD should draw it: music21's stand-in title ("Music21 Fragment") becomes the
+// item's title, its "Music21" composer stamp goes, and an AI piece's composer reads "Meowsic AI"
+export function classicXml(xml, it) {
+  if (!xml) return xml;
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  if (doc.querySelector('parsererror')) return xml;
+  const root = doc.documentElement;
+  const mk = (tag, text) => { const e = doc.createElement(tag); e.textContent = text; return e; };
+  let changed = false;
+  const titles = [...root.querySelectorAll(':scope > movement-title, :scope > work > work-title')];
+  if (it?.title && (!titles.length || titles.every((t) => !t.textContent.trim() || /^music21\b/i.test(t.textContent.trim())))) {
+    titles.forEach((t) => t.remove());
+    root.querySelector(':scope > work')?.childElementCount === 0 && root.querySelector(':scope > work').remove();
+    root.insertBefore(mk('movement-title', it.title), root.firstElementChild);
+    changed = true;
+  }
+  let ident = root.querySelector(':scope > identification');
+  root.querySelectorAll(':scope > identification > creator').forEach((c) => { if (/^music21$/i.test(c.textContent.trim())) { c.remove(); changed = true; } });
+  if (it && isAiScore(it) && ![...root.querySelectorAll(':scope > identification > creator')].some((c) => c.getAttribute('type') === 'composer')) {
+    if (!ident) { ident = doc.createElement('identification'); const after = root.querySelector(':scope > movement-title') || root.querySelector(':scope > work'); root.insertBefore(ident, after ? after.nextElementSibling : root.firstElementChild); }
+    const c = mk('creator', 'Meowsic AI'); c.setAttribute('type', 'composer');
+    ident.insertBefore(c, ident.firstElementChild);
+    changed = true;
+  }
+  return changed ? new XMLSerializer().serializeToString(doc) : xml;
+}
+export const hasChordSymbols = (xml) => /<harmony[\s>]/.test(xml || '');
 
 // every graphical note of the drawn score, staff by staff (tab staves left out)
 function* graphicalNotes(osmd) {
@@ -53,10 +81,12 @@ export function chordsOf(osmd) {
 // the drawn pitch's letter (accidentals are drawn as signs, so just A–G)
 export const noteLetter = (gn) => LETTER[(gn.sourceNote.TransposedPitch || gn.sourceNote.Pitch)?.FundamentalNote];
 
-// letters inside the noteheads; noteheads are made a little bigger so the letter fits.
-// White on filled heads (quarter and shorter), black on open ones (half, whole). No letters on rests.
-export function drawNoteLetters(osmd, { grow = 1.5 } = {}) {
+// letters inside the noteheads (normal size). White on filled heads (quarter and shorter), black on
+// open ones (half, whole). No letters on rests. minPx: on a small screen (iPhone) the heads grow
+// just enough for the letter to be at least this many pixels high on screen.
+export function drawNoteLetters(osmd, { grow: grow0 = 1, minPx = 0 } = {}) {
   const svgs = new Set();
+  const pxPer = new Map(); // svg → screen px per svg unit
   for (const gve of graphicalNotes(osmd)) {
     const notes = gve.notes.filter((n) => n.sourceNote && !n.sourceNote.isRest() && (n.sourceNote.TransposedPitch || n.sourceNote.Pitch));
     if (!notes.length) continue;
@@ -69,6 +99,12 @@ export function drawNoteLetters(osmd, { grow = 1.5 } = {}) {
     if (!layer) { layer = document.createElementNS('http://www.w3.org/2000/svg', 'g'); layer.setAttribute('class', 'nl-letters'); layer.setAttribute('pointer-events', 'none'); svg.append(layer); svgs.add(svg); }
     // lowest head first ↔ lowest pitch first
     const boxes = heads.map((h) => ({ h, b: h.getBBox() })).sort((a, b) => b.b.y - a.b.y);
+    let grow = grow0;
+    if (minPx) {
+      if (!pxPer.has(svg)) { const vb = (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number); pxPer.set(svg, vb[2] ? svg.getBoundingClientRect().width / vb[2] : 1); }
+      const px = boxes[0].b.height * 0.8 * pxPer.get(svg);
+      if (px > 0 && px < minPx) grow = Math.max(grow0, Math.min(1.7, minPx / px));
+    }
     const sorted = [...notes].sort((a, b) => (a.sourceNote.TransposedPitch || a.sourceNote.Pitch).getHalfTone() - (b.sourceNote.TransposedPitch || b.sourceNote.Pitch).getHalfTone());
     const stem = g.querySelector('.vf-stem path, path.vf-stem');
     const sx = stem ? stem.getBBox().x : null;
@@ -84,7 +120,7 @@ export function drawNoteLetters(osmd, { grow = 1.5 } = {}) {
       if (grow !== 1) h.setAttribute('transform', `translate(${ax} ${cy}) scale(${grow}) translate(${-ax} ${-cy})`);
       const cx = ax + (b.x + b.width / 2 - ax) * grow;
       const filled = gn.sourceNote.Length.RealValue < 0.5;
-      const fs = b.height * grow * (filled ? 0.74 : 0.7);
+      const fs = b.height * grow * (filled ? 0.8 : 0.76);
       // an open head is drawn as a clean white oval so the black letter reads inside it
       if (!filled) {
         const e = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
@@ -164,41 +200,36 @@ export function keyboardSvg(name, { scale = 1 } = {}) {
   return { width: width * scale, height: height * scale, inner: s, svg: `<svg class="kbd" data-chord="${esc(name)}" data-notes="${esc((v || []).map((n) => n.name).join(' '))}" width="${(width * scale).toFixed(1)}" height="${(height * scale).toFixed(1)}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${s}</svg>` };
 }
 
-// the HTML header above the score on screen
-export function easyHeaderHtml({ title, credit, chords, scale = 1 }) {
-  return `<div class="easy-head">
-    <h1 class="easy-title">${esc(title)}</h1>
-    ${chords.length ? `<div class="easy-kbds">${chords.map((c) => keyboardSvg(c, { scale }).svg).join('')}</div>` : ''}
-    ${credit ? `<p class="easy-credit">${esc(credit)}</p>` : ''}</div>`;
-}
-
-// print: the same header drawn into OSMD's first A4 page (laid out with its title on and room left
-// under it): bold sans title, the keyboard row, the credit on the right; then the letters
-export const PRINT_ROOM = 10; // OSMD units (10 px) kept free under the title for diagrams + credit
-export function decoratePrintPage(osmd, svg, { title, credit }) {
-  drawNoteLetters(osmd);
-  const t = [...svg.querySelectorAll('text')].find((x) => x.textContent.trim() === String(title).trim());
+// the keyboard row drawn into OSMD's first page, in the room left under the title
+// (TitleBottomDistance += KBD_ROOM when laying out). Screen and print.
+export const KBD_ROOM = 10; // OSMD units (10 svg units each) kept free under the title
+export const PRINT_ROOM = KBD_ROOM;
+export function drawKeyboardRow(osmd, svg, { title } = {}) {
+  svg.querySelector(':scope > g.easy-kbd-row')?.remove();
+  const chords = chordsOf(osmd);
+  if (!chords.length) return 0;
+  const t = [...svg.querySelectorAll('text')].find((x) => x.textContent.trim() === String(title || osmd.Sheet?.TitleString || '').trim());
   const vb = (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number);
   const W = vb[2] || +svg.getAttribute('width') || 794;
   let y = 60;
-  if (t) {
-    t.setAttribute('font-family', SANS); t.setAttribute('font-weight', '800');
-    const bb = t.getBBox();
-    y = bb.y + bb.height + 10;
-  }
-  const chords = chordsOf(osmd);
+  if (t) { const bb = t.getBBox(); y = bb.y + bb.height + 8; }
   const ks = chords.map((c) => ({ c, ...keyboardSvg(c) }));
   const gap = 16, sum = ks.reduce((a, k) => a + k.width, 0);
-  const scale = Math.min(1, (W * 0.9 - gap * Math.max(0, ks.length - 1)) / Math.max(1, sum));
+  const room = KBD_ROOM * 10 - 6;
+  const scale = Math.min(room / ks[0].height, (W * 0.9 - gap * Math.max(0, ks.length - 1)) / Math.max(1, sum));
   const total = sum * scale + gap * Math.max(0, ks.length - 1);
-  let x = (W - total) / 2, h = 0, out = '';
+  let x = (W - total) / 2, out = '';
   for (const k of ks) {
-    out += `<g class="kbd" data-chord="${esc(k.c)}" transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${scale.toFixed(3)})">${k.inner}</g>`;
-    x += k.width * scale + gap; h = Math.max(h, k.height * scale);
+    out += `<g class="kbd" data-chord="${esc(k.c)}" data-notes="${esc((chordVoicing(k.c) || []).map((n) => n.name).join(' '))}" transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${scale.toFixed(3)})">${k.inner}</g>`;
+    x += k.width * scale + gap;
   }
-  if (credit) out += `<text class="easy-credit" x="${(W * 0.95).toFixed(1)}" y="${(y + h + 16).toFixed(1)}" text-anchor="end" font-family="${esc(SANS)}" font-size="13" fill="#000">${esc(credit)}</text>`;
   const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  g.setAttribute('class', 'easy-print-head');
+  g.setAttribute('class', 'easy-kbd-row');
   g.innerHTML = out;
   svg.append(g);
+  return chords.length;
+}
+export function decoratePrintPage(osmd, svg, { title } = {}) {
+  drawNoteLetters(osmd);
+  drawKeyboardRow(osmd, svg, { title });
 }
