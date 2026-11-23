@@ -47,7 +47,7 @@ def dispatch(ctx: JobContext):
 
 # ---------- saving results as items ----------
 
-def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), group_id=None, key='', bpm=None):
+def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), group_id=None, key='', bpm=None, ai=0):
     """outs: [(version, musicxml, mid|None, pdf|None, {key, bpm})] -> one score item each, in one transaction.
     Files: items/<id> <title>/<id> <title>.musicxml|.mid|.pdf. Returns the new item ids."""
     cfg, t, made = ctx.cfg, now_ms(), []
@@ -59,7 +59,7 @@ def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), gr
             it = {'id': uid('m'), 'kind': 'score', 'title': title, 'artist': artist or '',
                   'tags': [VERSION_TAGS[v], *[x for x in tags if x not in VERSION_TAGS.values()]],
                   'createdAt': t, 'updatedAt': t, 'originAt': t, 'version': v, 'source': source, 'groupId': gid,
-                  'key': extra.get('key') or key or '', 'bpm': extra.get('bpm') or bpm}
+                  'key': extra.get('key') or key or '', 'bpm': extra.get('bpm') or bpm, 'ai': 1 if ai else 0}
             write_item(c, it, new=True)
             d = folder_path(cfg, it['folder'])
             d.mkdir(parents=True, exist_ok=True)
@@ -144,7 +144,7 @@ def version_runner(ctx: JobContext):
     tags = p['tags'] if isinstance(p.get('tags'), list) else src['tags']
     ids = save_outputs(ctx, outs, title=job['title'], source=job['source'] or f'From the score “{src["title"]}”',
                        artist=p.get('artist', src['artist']), tags=tags, group_id=src.get('groupId'),
-                       key=src.get('key', ''), bpm=src.get('bpm'))
+                       key=src.get('key', ''), bpm=src.get('bpm'), ai=src.get('ai'))
     if pdf_on(): ctx.update(msg=f'{GEN_STAGES[3]} — done')
     finish(ctx, ids, want)
 

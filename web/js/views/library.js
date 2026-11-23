@@ -28,6 +28,7 @@ const COLS_BY = {
   sheet: [C.title, C.artist, C.tag, C.pages, C.added],
   book: [C.title, C.artist, C.tag, C.pages, C.added],
   chords: [C.title, C.artist, C.tag, C.key, C.added],
+  ai: [C.title, C.version, C.tag, C.key, C.added],
   score: [C.title, C.artist, C.version, C.tag, C.key, C.added],
 };
 // The one tag worth showing in the list: the most specific one (a musical, a movie, a set like
@@ -54,7 +55,7 @@ export function libraryView(main, { q }) {
     <header class="top lib-top selband" id="selband" hidden></header>
     <header class="top lib-top" id="libhead">
       <h1>${kind ? KIND[kind].plural : 'All music'}</h1>
-      <div class="seg phone-only" role="tablist">${[['', 'All'], ['sheet', 'Sheets'], ['chords', 'Chords'], ['book', 'Books'], ['score', 'Scores']].map(([k, l]) =>
+      <div class="seg phone-only" role="tablist">${[['', 'All'], ['sheet', 'Sheets'], ['chords', 'Chords'], ['book', 'Books'], ['ai', 'AI music'], ['score', 'Scores']].map(([k, l]) =>
         `<button role="tab" class="${kind === k ? 'on' : ''}" data-kind="${k}">${k ? icon(KIND[k].icon) : ''}${l}</button>`).join('')}</div>
       ${tags.map((t) => `<span class="tag-on">${esc(t)}<button class="x" data-untag="${esc(t)}" aria-label="Remove tag ${esc(t)}" title="Remove">×</button></span>`).join('')}
       ${tags.length > 1 ? `<button class="link clear-tags" id="lib-tags-clear">Clear all</button>` : ''}
@@ -79,7 +80,7 @@ export function libraryView(main, { q }) {
     const rows = $('#lib-rows', main);
     if (!list.length) {
       const away = store.mode === 'offline' && !store.items().length;
-      rows.innerHTML = `<ul class="rows"><li class="empty">${CAT}<p>${away ? 'Meowsic can’t reach the Mac. Check that the Mac is on and on the same Wi-Fi.' : state.q || tags.length ? 'No music matches.' : 'Nothing here yet.'}</p>${state.q || tags.length || away ? '' : '<button class="primary" id="empty-add">Add music</button>'}</li></ul>`;
+      rows.innerHTML = `<ul class="rows"><li class="empty">${CAT}<p>${away ? 'Meowsic can’t reach the Mac. Check that the Mac is on and on the same Wi-Fi.' : state.q || tags.length ? 'No music matches.' : 'Nothing here yet.'}</p>${state.q || tags.length || away || kind === 'ai' ? '' : '<button class="primary" id="empty-add">Add music</button>'}</li></ul>`;
       $('#empty-add', main)?.addEventListener('click', (e) => addMenu(e.currentTarget));
     } else {
       const pages = Math.max(1, Math.ceil(list.length / PAGE));

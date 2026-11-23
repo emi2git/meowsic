@@ -9,6 +9,7 @@ const P = {
   book: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5M8 7h8M8 10h6"/>',
   chords: '<circle cx="8" cy="17" r="3"/><circle cx="17" cy="15" r="3"/><path d="M11 17V5l9-2v12"/>',
   score: '<path d="M3 6h18M3 10h18M3 14h18M3 18h18"/><circle cx="9" cy="16" r="2.2" fill="currentColor"/><path d="M11.2 16V6"/>',
+  ai: '<path d="M7 2.5l1.2 3.3L11.5 7 8.2 8.2 7 11.5 5.8 8.2 2.5 7l3.3-1.2z"/><circle cx="12" cy="18" r="2.6" fill="currentColor"/><path d="M14.6 18V7.5l6-1.5v3"/>',
   collection: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M6 4h12M8 1.8h8"/>',
   tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/>',
   bin: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',
@@ -70,10 +71,12 @@ export const KIND = {
   sheet: { label: 'Sheet', plural: 'Sheets', icon: 'sheet' },
   book: { label: 'Book', plural: 'Books', icon: 'book' },
   chords: { label: 'Chords', plural: 'Chords', icon: 'chords' },
+  ai: { label: 'AI music', plural: 'AI music', icon: 'ai' },
   score: { label: 'Score', plural: 'Scores', icon: 'score' },
 };
 // a book is a sheet with book = 1 (many pages, many songs); everywhere else it reads as its own kind
-export const kindOf = (it) => (it.kind === 'sheet' && it.book ? 'book' : it.kind);
+// AI music is a score with ai = 1 (composed by Claude, added only by ~/git/scripts/meowsic-add-ai-score.py)
+export const kindOf = (it) => (it.kind === 'sheet' && it.book ? 'book' : it.kind === 'score' && it.ai ? 'ai' : it.kind);
 export const badge = (x) => { const kind = typeof x === 'string' ? x : kindOf(x); return `<span class="badge k-${kind}">${icon(KIND[kind].icon)}${KIND[kind].label}</span>`; };
 
 export function ago(ts) {
