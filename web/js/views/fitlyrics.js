@@ -41,9 +41,10 @@ const typeOf = (d) => (d >= 4 ? 'whole' : d >= 2 ? 'half' : d >= 1 ? 'quarter' :
 const notePic = (n) => `<svg class="fl-pic" viewBox="0 0 22 24" aria-hidden="true">${PIC[n.type] || PIC[typeOf(n.dur)]}${n.dots ? dotP : ''}</svg>`;
 const REST = '<svg class="fl-pic" viewBox="0 0 20 24" aria-hidden="true"><path d="M8 3l4.5 5-3.5 4 4.5 5c-3-1.5-5 0-3 3.5-4-2.5-3-6 0-5L6 9z"/></svg>';
 
-export async function fitLyrics(view, it, host) {
-  if (!host || host.querySelector('.fitly')) return;
-  if (!view.real) return toast('Fit lyrics works on scores from the Mac.');
+// opts (from Check bars' "Fix lyrics"): {verse, bar} — open on that verse at that bar; onClose(saved into this score)
+export async function fitLyrics(view, it, host, opts = {}) {
+  if (!host || host.querySelector('.fitly')) return opts.onClose?.(false);
+  if (!view.real) { opts.onClose?.(false); return toast('Fit lyrics works on scores from the Mac.'); }
   host.querySelector('.editbar')?.dispatchEvent(new Event('close'));
   const panel = document.createElement('div');
   panel.className = 'fitly';
@@ -55,7 +56,7 @@ export async function fitLyrics(view, it, host) {
 
   let mel; // {line, lines, verses, notes, bars, sha}
   const load = async (line) => { mel = await api(`/items/${encodeURIComponent(it.id)}/lyrics${line ? `?line=${encodeURIComponent(line)}` : ''}`); };
-  try { await load(); } catch (e) { panel.remove(); host.classList.remove('fitting'); return toast(e.message); }
+  try { await load(); } catch (e) { panel.remove(); host.classList.remove('fitting'); opts.onClose?.(false); return toast(e.message); }
 
   let verse = '1', sel = 0, mode = 'edit', mini = false, previewed = false, playing = false, closed = false, reading = null;
   let lang = (() => { try { return localStorage.getItem(LANG_KEY) || 'auto'; } catch { return 'auto'; } })();
@@ -91,6 +92,9 @@ export async function fitLyrics(view, it, host) {
     mode = T().some(isS) ? 'edit' : 'words';
   };
   resetVerses();
+  let savedHere = false;
+  if (opts.verse != null) { verse = String(opts.verse); V[verse] ||= []; mode = T().some(isS) ? 'edit' : 'words'; }
+  if (opts.bar != null) { const i = mel.notes.findIndex((n) => +mel.bars[n.bar]?.number >= +opts.bar); if (i >= 0) sel = i; }
 
   // ---- auto fit: one syllable per note; a new text line starts at the next phrase (after a rest or a long note) if one is near
   const phraseStart = (k) => {
@@ -411,6 +415,7 @@ export async function fitLyrics(view, it, host) {
         } else {
           const cur = store.get(it.id);
           if (cur) Object.assign(cur, { updatedAt: j.item.updatedAt, musicxmlOriginal: j.item.musicxmlOriginal });
+          savedHere = true;
           close(true);
           await view.reload();
           toast('Lyrics saved — Activities can undo it', { label: 'Activities', run: () => go('#/activity') });
@@ -483,6 +488,7 @@ export async function fitLyrics(view, it, host) {
       host.removeEventListener('tick', tick); host.removeEventListener('ended', ended);
       document.removeEventListener('keydown', keys, true);
       if (previewed && force !== true) view.reload();
+      opts.onClose?.(savedHere);
     };
     if (force === true || !dirty.size) return go2();
     confirmSheet({ title: 'Close without saving?', body: 'The lyrics you fitted here are not saved yet.', ok: 'Close', danger: true }).then((ok) => ok && go2());

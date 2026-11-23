@@ -105,3 +105,17 @@ def test_unit_finer_than_the_score(client, score):
 def test_stale_sha_refused(client, score):
     r = client.post(f'/api/items/{score["id"]}/check', json={'bar': 2, 'action': 'ok', 'sha': 'nope'})
     assert r.status_code == 409
+
+
+def test_mark_all_as_looks_right_one_undo(client, score):
+    before = client.get(f'/api/items/{score["id"]}/musicxml').text
+    assert client.post(f'/api/items/{score["id"]}/check', json={'bars': 'all', 'action': 'use'}).status_code == 400
+    j = client.post(f'/api/items/{score["id"]}/check', json={'bars': 'all', 'action': 'ok'}).json()
+    assert j['open'] == []
+    x = client.get(f'/api/items/{score["id"]}/musicxml').text
+    assert '⚠ check' not in x
+    g = client.get(f'/api/items/{score["id"]}/check').json()
+    assert g['open'] == [] and {d['bar'] for d in g['decisions']} == {2, 3}
+    assert client.post(f'/api/items/{score["id"]}/check', json={'bars': 'all', 'action': 'ok'}).status_code == 409
+    assert client.post(f'/api/activity/{j["activity"]}/undo', json={}).status_code == 200  # one undo puts both back
+    assert client.get(f'/api/items/{score["id"]}/musicxml').text == before

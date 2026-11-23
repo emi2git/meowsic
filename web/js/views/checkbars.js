@@ -4,15 +4,19 @@
 // The score toolbar shows "N to check"; tapping it opens a review: one bar at a time (Prev / Next), the bar boxed
 // in the score and brought into view, why it is flagged in plain words, the printed bar from the sheet next to it
 // (cropped to the bar, or the whole page; tap to zoom), and what to do:
-//   Looks right · Use other reading (preview first, then keep it) · Edit notes (that bar, in the note editor) · Play bar.
+//   Looks right · Use other reading (preview first, then keep it) · Edit notes (that bar, in the note editor) · Play bar;
+//   words read too poorly to write ("lyrics unsure"): Fix lyrics (the Fit lyrics editor on that verse and bar; saved →
+//   those bars are checked); Mark all as looks right (asks first; one Activities undo).
 // Every change is saved into the score with history + Activities undo: Looks right / Use other reading through
 // POST /api/items/{id}/check (server/meowsic/barcheck.py; scores without check.json: through Edit notes), note
 // edits through Edit notes (server/meowsic/staffmove.py), which marks the bar checked in the same save.
-import { esc, iconOn, toast, sheet as modal } from '../ui.js';
+import { esc, iconOn, toast, sheet as modal, confirmSheet } from '../ui.js';
 import { store } from '../store.js';
 import { go } from '../app.js';
 import { pageSrc } from './sheet.js';
 import { editNotes, post } from './editnotes.js';
+import { fitLyrics } from './fitlyrics.js';
+const LYRICS = 'lyrics unsure — use Fit lyrics';
 
 const WHY = 'The two ways of reading the sheet did not agree here, or the bar was changed so its notes add up. Compare it with the printed bar.';
 const REASONS = { disagree: 'The two readers disagree about this bar.', filled: 'This bar did not add up, so notes or rests were changed to fill it.',
@@ -46,6 +50,8 @@ export async function checkList(it, xml) {
   let out = rows.map((x) => ({
     bar: +x.bar, reason: why(x), page: x.page ?? null, box: box(x.box), image: pages.get(x.page)?.url || null, sheetId: j?.sheetId || null,
     alts: (x.alternatives || []).map((a, k) => ({ id: a.id, label: a.label || `Reading ${k + 2}`, measure: a.musicxml })).filter((a) => a.measure),
+    lyrics: x.lyrics?.verse != null ? { verse: String(x.lyrics.verse), bars: (x.lyrics.bars || [x.bar]).map(Number) } : null,
+    lyricsOnly: (x.reasons || []).length > 0 && (x.reasons || []).every((r) => r === LYRICS),
   })).filter((x) => x.bar > 0 && marked.includes(x.bar)); // the score says which bars are left
   if (j) for (const bar of marked) if (!out.some((x) => x.bar === bar)) out.push({ bar, reason: WHY, alts: [], page: null, box: null, image: null, sheetId: j.sheetId || null });
   out = out.sort((a, b) => a.bar - b.bar);
@@ -188,8 +194,9 @@ export async function reviewChecks(view, it, host, list, start = 0, refreshBadge
       <div class="np-acts cb-acts">${alt ? `
         <button data-a="alt-back">Back to the score's reading</button>${c.alts.length > 1 ? '<button data-a="alt-next">Next reading</button>' : ''}<span class="grow"></span>
         <button data-a="play">Play bar</button><button class="primary" data-a="alt-keep">Use this reading</button>` : `
-        <button data-a="play">Play bar</button><button data-a="edit">Edit notes</button>
+        <button data-a="play">Play bar</button>${c.lyrics ? '<button data-a="lyrics">Fix lyrics</button>' : ''}<button data-a="edit">Edit notes</button>
         ${c.alts.length ? '<button data-a="alt">Use other reading</button>' : ''}<span class="grow"></span>
+        ${list.api && list.length > 1 ? '<button data-a="all">Mark all as looks right</button>' : ''}
         <button class="primary" data-a="ok">Looks right</button>`}</div>`;
     host.style.setProperty('--np-h', panel.offsetHeight + 'px');
     fitCrop();
@@ -254,6 +261,42 @@ export async function reviewChecks(view, it, host, list, start = 0, refreshBadge
       } });
   };
 
+  // words read too poorly to write: the Fit lyrics editor on that verse, at the line's first bar; once saved into
+  // this score, the line's bars that were flagged for their words alone are checked
+  const fixLyrics = () => {
+    const c = now(), i = k;
+    hide();
+    fitLyrics(view, it, host, { verse: c.lyrics.verse, bar: c.lyrics.bars[0], onClose: async (saved) => {
+      if (saved && list.api) {
+        const bars = list.filter((x) => x.lyricsOnly && x.lyrics?.verse === c.lyrics.verse && c.lyrics.bars.includes(x.bar)).map((x) => x.bar);
+        try {
+          if (bars.length) await post(`/items/${encodeURIComponent(it.id)}/check`, { bars, action: 'ok', act: 'bar-check' });
+          for (const b of bars) list.splice(list.findIndex((x) => x.bar === b), 1);
+          await view.reload();
+        } catch (e) { toast(e.message); }
+        host.dispatchEvent(new CustomEvent('checkchange')); refreshBadge();
+      }
+      if (list.length) reviewChecks(view, it, host, list, Math.min(i, list.length - 1), refreshBadge);
+      else if (saved) toast('All bars checked');
+    } });
+  };
+  const allOk = async () => {
+    const n = list.length;
+    if (!(await confirmSheet({ title: `Mark all ${n} bars as looking right?`, body: 'Every bar still to check is marked fine as it is, without looking at each one. Activities can undo it.', ok: 'Mark all' }))) return;
+    if (busy) return;
+    busy = true;
+    try {
+      const pv = await post(`${url}/preview`, { ops: [] });
+      await post(`/items/${encodeURIComponent(it.id)}/check`, { bars: 'all', action: 'ok', sha: pv.sha });
+      list.splice(0, list.length);
+      await view.reload();
+      host.dispatchEvent(new CustomEvent('checkchange')); refreshBadge();
+      busy = false;
+      close();
+      toast(`${n} bars marked as looking right — Activities can undo it`, { label: 'Activities', run: () => go('#/activity') });
+    } catch (e) { toast(e.message); } finally { busy = false; }
+  };
+
   const hide = () => {
     closed = true; stopAt = null;
     hl?.remove(); panel.remove();
@@ -266,7 +309,7 @@ export async function reviewChecks(view, it, host, list, start = 0, refreshBadge
   panel.addEventListener('click', (e) => {
     const a = e.target.closest('[data-a]')?.dataset.a;
     if (!a || busy) return;
-    ({ close, prev: () => show(k - 1), next: () => show(k + 1), ok, edit, play, zoom, alt: () => tryAlt(0),
+    ({ close, prev: () => show(k - 1), next: () => show(k + 1), ok, edit, play, zoom, alt: () => tryAlt(0), lyrics: fixLyrics, all: allOk,
       'alt-next': () => tryAlt((alt.i + 1) % now().alts.length), 'alt-back': altBack, 'alt-keep': altKeep })[a]?.();
   });
   const onKey = (e) => {

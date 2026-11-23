@@ -142,8 +142,21 @@ def note_positions(xml_path):
     return out
 
 
-def staves(png, cut=128):
-    """[(top, bottom, line gap)] of every five-line staff on the page. cut: how dark a line pixel is (0–255)."""
+_STAVES = {}
+
+
+def staves(png, cut=None):
+    """[(top, bottom, line gap)] of every five-line staff on the page. cut: how dark a line pixel is (0–255);
+    by default the darkness that finds the most staves (grey, thin or enlarged lines need a lighter cut)."""
+    if cut is None:
+        key = (str(png), Path(png).stat().st_mtime if Path(png).exists() else 0)
+        if key not in _STAVES:
+            _STAVES[key] = max((_staves(png, c) for c in (128, 170, 200)), key=len)  # first (darkest) wins a tie
+        return list(_STAVES[key])
+    return _staves(png, cut)
+
+
+def _staves(png, cut):
     import numpy as np
     from PIL import Image
     g = np.asarray(Image.open(png).convert('L'), dtype=np.int16)
@@ -605,12 +618,225 @@ def chord_names(png, xml_path):
 
 
 
-def lyric_words(png, xml_path, first_verse=False):
+def text_scale(gap):
+    """How much to enlarge a page strip before reading its words: small pages (a staff gap of 14 px) 3×, big scans 2×."""
+    return max(2, min(4, round(40 / max(gap, 1))))
+
+
+def read_words(img, scale=2, sharpen=False):
+    """Words Apple Vision reads in img (Vietnamese + English): [(text, x0, x1, y centre, height, confidence)] in img
+    pixels. The image is enlarged (Lanczos), optionally sharpened, and given a white margin first."""
+    import io, re
+    import Vision
+    from Foundation import NSData, NSMakeRange
+    from PIL import Image, ImageFilter, ImageOps
+    big = img.resize((img.width * scale, img.height * scale), Image.LANCZOS)
+    if sharpen: big = big.filter(ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
+    pad = 30
+    big = ImageOps.expand(big, border=pad, fill=255)
+    b = io.BytesIO(); big.save(b, 'PNG')
+    data = NSData.dataWithBytes_length_(b.getvalue(), len(b.getvalue()))
+    req = Vision.VNRecognizeTextRequest.alloc().init()
+    req.setRecognitionLevel_(0); req.setUsesLanguageCorrection_(False)
+    have = set(req.supportedRecognitionLanguagesAndReturnError_(None)[0] or [])
+    req.setRecognitionLanguages_([l for l in ('vi-VN', 'vi-VT', 'en-US') if l in have] or ['en-US'])
+    hd = Vision.VNImageRequestHandler.alloc().initWithData_options_(data, None)
+    hd.performRequests_error_([req], None)
+    W, H = big.width, big.height
+    out = []
+    for o in req.results() or []:
+        c = o.topCandidates_(1)[0]
+        text, conf = str(c.string()), float(c.confidence())
+        for m in re.finditer(r'\S+', text):
+            box, _ = c.boundingBoxForRange_error_(NSMakeRange(m.start(), m.end() - m.start()), None)
+            if box is None: continue
+            bb = box.boundingBox()
+            x0, x1 = (bb.origin.x * W - pad) / scale, ((bb.origin.x + bb.size.width) * W - pad) / scale
+            yc = ((1 - bb.origin.y - bb.size.height / 2) * H - pad) / scale
+            out.append((m.group(), x0, x1, yc, bb.size.height * H / scale, conf))
+    out.sort(key=lambda w: w[1])
+    keep = []  # Vision can return the same word twice (overlapping observations): keep one
+    for w in out:
+        if any(w[1] < k[2] - 0.4 * (k[2] - k[1]) and k[1] < w[2] - 0.4 * (w[2] - w[1]) and abs(w[3] - k[3]) < 0.5 * max(w[4], k[4]) for k in keep[-4:]): continue
+        keep.append(w)
+    return keep
+
+
+def text_lines(words):
+    """Words grouped into lines (top to bottom), each line left to right."""
+    lines = []
+    for w in sorted(words, key=lambda q: q[3]):
+        if lines and abs(lines[-1][-1][3] - w[3]) < 0.55 * max(w[4], lines[-1][-1][4]): lines[-1].append(w)
+        else: lines.append([w])
+    return [sorted(l, key=lambda q: q[1]) for l in lines]
+
+
+def _line_tokens(words, gap, first_verse=False):
+    """A line's words → syllables [text, centre x, hyphen after, confidence, x0, x1, y, height] and the x ranges set
+    aside ((Instr.))."""
+    import re
+    import lyriccheck as L
+    toks, aside = [], []
+    for t, x0, x1, yc, hh, conf in words:
+        if t.startswith('(') or t.endswith(')'):
+            aside.append((x0 - gap, x1 + gap)); continue
+        if first_verse and re.fullmatch(r"[A-Z][A-Z.'’]*:", t): continue  # a singer's name ("JV:"), not a word
+        if t in ('-', '–'):  # a hyphen between syllables, unless the word before ends a phrase
+            if toks and toks[-1][0][-1:] not in '.,;:!?': toks[-1][2] = True
+            continue
+        if t.strip('-—_–') == '': continue  # hold line
+        if t.startswith(('-', '–')) and toks and toks[-1][0][-1:] not in '.,;:!?': toks[-1][2] = True
+        core = t.strip('-–—_')
+        parts = [q for q in re.split(r'(?<=\w)[-–](?=\w)', core) if q]
+        joined = False
+        if len(parts) == 1 and not (toks and toks[-1][2]) and not t.endswith(("-", "–")):  # syllables printed too close: "Hômchia" → Hôm, chia
+            sp = L.split_viet(parts[0])
+            if sp: parts, joined = sp, True
+        n = sum(len(q) for q in parts) or 1
+        tail = len(core) - len(core.rstrip('.,;:!?"”’')) if parts else 0  # punctuation after: the word's middle is left of the box's
+        span = (x1 - x0) * (1 - tail / max(len(core), 1))
+        at = x0
+        for i, q in enumerate(parts):  # "mat-ter" → two syllables across the word's box
+            wq = span * len(q) / n
+            toks.append([q, at + wq / 2, (i < len(parts) - 1 and not joined) or (i == len(parts) - 1 and t.rstrip('_—').endswith(('-', '–'))), conf, at, at + wq, yc, hh,
+                         (x0, t) if joined else None])
+            at += wq
+    return toks, aside
+
+
+CREDIT = __import__('re').compile(r"©|\(c\)|copyright|all rights|reserved|international|permission|ascap|bmi\b|publishing|music corp|inc\.$|ltd\.?$", __import__('re').I)
+
+
+def is_credit(line):
+    """A copyright / publisher line under the last staff."""
+    return sum(bool(CREDIT.search(w[0])) for w in line) >= 1 and sum(not w[0][:1].islower() for w in line) >= 0.5 * len(line)
+
+
+def _dashes(toks, strip, h):
+    """A hyphen Vision didn't read ("Ba  -  by"): a short dash in the space between two syllables, at the
+    middle of the letters, makes the first syllable go on to the next."""
+    import numpy as np
+    a = np.asarray(strip) < 128
+    for t, u in zip(toks, toks[1:]):
+        if t[2] or t[0][-1:] in '.,;:!?': continue
+        x0, x1 = int(t[5] + 2), int(u[4] - 2)
+        if x1 - x0 < 0.4 * h: continue
+        m = int(0.15 * (x1 - x0))  # the boxes are estimates: keep off the letters either side
+        x0, x1 = max(0, x0 + m), max(0, x1 - m)
+        yc = t[6]
+        y0, y1 = int(max(0, yc - 0.35 * h)), int(min(a.shape[0], yc + 0.35 * h))
+        sub = a[y0:y1, x0:x1]
+        if not sub.size or not sub.any(): continue
+        on = sub.any(0)
+        runs, start = [], None  # runs of inked columns: the dash is one short run
+        for k, v in enumerate(list(on) + [False]):
+            if v and start is None: start = k
+            elif not v and start is not None: runs.append((start, k)); start = None
+        c0, c1 = max(runs, key=lambda r: r[1] - r[0])
+        rows = np.flatnonzero(sub[:, c0:c1].any(1))
+        if len(runs) <= 2 and max(2, 0.15 * h) <= c1 - c0 <= 1.2 * h and len(rows) <= max(3, 0.25 * h) and rows[-1] - rows[0] + 1 <= max(3, 0.3 * h):
+            t[2] = True
+
+
+def _joined(toks):
+    """Syllables joined back into words (by their hyphens), for the language check: [(word, [token indices])]."""
+    out, cur, idx = [], '', []
+    for k, (t, _, hy, *_) in enumerate(toks):
+        cur += t; idx.append(k)
+        if not hy: out.append((cur, idx)); cur, idx = '', []
+    if cur: out.append((cur, idx))
+    return out
+
+
+def vote(base, others):
+    """Syllables of one line read several times (sizes, sharpening): each of base's syllables becomes the text most
+    readings agree on (a tie: the one that is a real word, else base's own)."""
+    import lyriccheck as L
+    from collections import Counter
+    out = []
+    for t in base:
+        w = max(t[5] - t[4], 1)
+        said = [t[0]] + [u[0] for o in others for u in o if abs(u[1] - t[1]) < 0.5 * w and abs(len(u[0]) - len(t[0])) <= 2]
+        c = Counter(x.lower() for x in said)  # "EV" and "Ev" are one reading
+        top = max(c.values())
+        pick = [x for x in c if c[x] == top]
+        low = t[0].lower() if t[0].lower() in pick else next((x for x in pick if L.word_ok(x.strip('.,;:!?'))), pick[0])
+        forms = [x for x in said if x.lower() == low]
+        text = next((x for x in forms if not (x.isupper() and len(x.strip('.,;:!?')) > 1)), forms[0])
+        out.append([text, *t[1:]])
+    return out
+
+
+def judge_line(toks):
+    """(share of real words, tokens to leave out): a word is left out when it isn't a real word and was read with
+    low confidence or is clearly not a word (digits, a capital inside it)."""
+    import lyriccheck as L
+    words = _joined(toks)
+    if not words: return 0.0, set()
+    good = [L.word_ok(w.strip('.,;:!?"“”‘’')) for w, _ in words]
+    # syllables split out of one run-together word ("Hômchia") count as half a real word, once for the run
+    seen = {}
+    for k, (w, idx) in enumerate(words):
+        g = toks[idx[0]][8] if len(toks[idx[0]]) > 8 else None
+        if g is None: continue
+        if g in seen: good[k] = None; continue
+        seen[g] = k; good[k] = 0.5 if good[k] else 0
+    words = [w for w, ok in zip(words, good) if ok is not None]
+    good = [ok for ok in good if ok is not None]
+    drop = set()
+    if words and not good[0] and words[0][0][:1].islower() and toks[0][3] >= 0.5 and not L.bad_shape(words[0][0]):
+        good[0] = True  # the end of a word that started on the line before ("un-ex-pect-ed- / ly")
+    for (w, idx), ok in zip(words, good):
+        if ok: continue
+        if len(toks[idx[0]]) > 8 and toks[idx[0]][8] is not None: continue
+        if L.bad_shape(w) or min(toks[k][3] for k in idx) < 0.5 or len(idx) == 1:
+            drop.update(idx)
+    return sum(good) / len(words), drop
+
+
+def place_syllables(toks, notes, gap, off=0.4):
+    """Syllables (in reading order) → notes (left to right), keeping the order: each syllable sits under the note
+    nearest to it; a note can be left without one (a held note) and a syllable with no note near it is left out.
+    Returns [(token index, note index)]."""
+    INF = float('inf')
+    m, k = len(toks), len(notes)
+    if not m or not k: return []
+    SKIP, FAR = 6.0, 8.0  # leaving a syllable out costs 6 gaps; none goes under a note more than 8 gaps away
+    cost = lambda i, j: abs(toks[i][1] - (notes[j][3] + off * gap)) / gap
+    f = [[0.0] * (k + 1) for _ in range(m + 1)]
+    for i in range(m - 1, -1, -1): f[i][k] = f[i + 1][k] + SKIP
+    for i in range(m - 1, -1, -1):
+        for j in range(k - 1, -1, -1):
+            c = cost(i, j)
+            f[i][j] = min(f[i][j + 1], (c + f[i + 1][j + 1]) if c <= FAR else INF, SKIP + f[i + 1][j])
+    out, i, j = [], 0, 0
+    while i < m and j < k:
+        c = cost(i, j)
+        if c <= FAR and abs(f[i][j] - (c + f[i + 1][j + 1])) < 1e-9: out.append((i, j)); i += 1; j += 1
+        elif abs(f[i][j] - f[i][j + 1]) < 1e-9: j += 1
+        else: i += 1
+    return out
+
+
+GOOD_LINE = 0.8  # share of real words a line needs to be written on the score
+DIRECTION = __import__('re').compile(r"^(d\.?\s?c\.?|d\.?\s?s\.?|coda|fine|segno|rit\.?|rall\.?|ritard\.?|cresc\.?|dim\.?|tempo|al|to|a|e|fade|out|repeat|and|play|times?|only|[0-9]+x)$", __import__('re').I)
+
+
+def is_direction(toks):
+    """A line like "D.C. al Coda" / "To Coda" / "rit." is a playing direction, not words."""
+    ws = [t[0].strip('.,;:!') for t in toks]
+    return bool(ws) and all(DIRECTION.match(w) for w in ws) and any(w.lower() not in ('al', 'to', 'a', 'e', 'and', 'out', 'only', 'play') for w in ws)
+
+
+def lyric_words(png, xml_path, first_verse=False, unsure=None):
     """[(measure index, offset, text, syllabic, verse)] read under each top staff with Apple Vision.
     Each line of words under a staff is a verse (lyric number 1, 2, ...); with first_verse only the top line
-    under each staff (the words of the main tune, for "Add lyrics from a sheet")."""
+    under each staff (the words of the main tune, for "Add lyrics from a sheet").
+    Every line is checked (real Vietnamese / English words): a poorly read line is left off and listed in
+    `unsure` ({'verse', 'bars': [measure indices], 'staff'}) so the bars get "lyrics unsure — use Fit lyrics"."""
     import re
     from PIL import Image, ImageOps
+    import lyriccheck as L
     notes = [n for n in note_positions_notes(xml_path) if n[2] == '1']
     if not notes: return []
     st = staves(png)
@@ -623,58 +849,82 @@ def lyric_words(png, xml_path, first_verse=False):
         nxt = st[k + 1][0] if k + 1 < len(st) else im.height
         nxt_top_staff = k + 1 < len(st) and any(st[k + 1][0] - 6 * gap <= n[4] <= st[k + 1][1] + 6 * gap for n in notes)
         y0 = int(bot + 0.8 * gap)
-        y1 = int(min(nxt - (4.8 if nxt_top_staff else 0.8) * gap, bot + 12 * gap))  # stop above the next system's chord names
-        if first_verse and nxt_top_staff:  # tight systems: read down to the next staff; its chord names are dropped below
-            y1 = int(min(nxt - 1.0 * gap, bot + 12 * gap))
+        y1 = int(min(nxt - 1.0 * gap, bot + 12 * gap))  # down to the next staff: its chord names are dropped below
         if y1 - y0 < gap: continue
-        strip = im.crop((0, y0, W, y1)).resize((W * 2, (y1 - y0) * 2))
-        line_h = 2.2 * gap / (y1 - y0)  # a text line, as a fraction of the strip height
-        lines = []
-        for wd in sorted(ocr_lines(strip), key=lambda q: -q[3]):  # Vision y: 0 bottom, 1 top
-            if lines and abs(lines[-1][-1][3] - wd[3]) < 0.5 * line_h: lines[-1].append(wd)
-            else: lines.append([wd])
+        strip = im.crop((0, y0, W, y1))
+        s = text_scale(gap)
         order = sorted(mine, key=lambda q: (q[0], q[1]))
-        lines = [l for l in lines if sum(any(ch.isalpha() for ch in w[0]) for w in l) >= 3]  # stray marks are not a verse
-        # a line of chord names (the next system's) is not words
-        lines = [l for l in lines if sum(bool(CHORD.match(w[0].strip('.,'))) for w in l) < 0.6 * len(l)]
-        for verse, words in enumerate((sorted(l, key=lambda q: q[1]) for l in lines), 1):
-            toks, aside = [], []  # [text, centre x, hyphen-after]; x ranges of (Instrumental) etc.
-            for t, x, w, _ in words:
-                if t.startswith('(') or t.endswith(')'):
-                    aside.append((x * W - gap, (x + w) * W + gap)); continue
-                if first_verse and re.fullmatch(r"[A-Z][A-Z.'’]*:", t): continue  # a singer's name ("JV:"), not a word
-                if t in ('-', '–'):  # a hyphen between syllables, unless the word before ends a phrase
-                    if toks and toks[-1][0][-1:] not in '.,;:!?': toks[-1][2] = True
-                    continue
-                if t.strip('-—_–') == '': continue  # hold line
-                if t.startswith(('-', '–')) and toks and toks[-1][0][-1:] not in '.,;:!?': toks[-1][2] = True
-                parts = re.split(r'(?<=\w)[-–](?=\w)', t.strip('-–—_'))
-                for i, q in enumerate(parts):  # "mat-ter" → two syllables across the word's box
-                    cx = (x + w * (i + 0.5) / len(parts)) * W
-                    toks.append([q, cx, i < len(parts) - 1 or t.rstrip('_—').endswith(('-', '–'))])
-            last, got = -1, []
-            for t, cx, hy in toks:  # in reading order, each word to the next unused note nearest to it
-                cand = [(abs(q[3] + 0.6 * gap - cx), j) for j, q in enumerate(order) if j > last]
-                if not cand: break
-                d, j = min(cand)
-                if d > 4 * gap: continue
-                last = j
-                got.append([order[j][0], order[j][1], t, hy])
+        lo_x = min(q[3] for q in order) - 3 * gap
+        def keep_line(l):
+            if not (sum(any(ch.isalpha() for ch in w[0]) for w in l) >= 2 or (len(order) <= 3 and l)): return False
+            # a line of chord names (the next system's) or a tempo / title word is not words
+            if sum(bool(CHORD.match(re.sub(r'^[0-9]+\.', '', w[0]).strip('.,'))) for w in l) >= 0.6 * len(l): return False
+            return any(w[2] >= lo_x for w in l)
+        # 1. where the lines of words are (a word box Vision stretched over two lines doesn't count)
+        first = read_words(strip, s)
+        if not first: continue
+        med = sorted(w[4] for w in first)[len(first) // 2]
+        ys, whole = [], {}
+        for l in text_lines([w for w in first if w[4] <= 1.8 * med]):
+            if is_credit(l): break  # the copyright lines at the foot of the page: nothing below is words
+            if keep_line(l): ys.append(sum(w[3] for w in l) / len(l)); whole[ys[-1]] = l
+        # 2. each line read on its own (a band just its height), at two sizes; the better reading is kept
+        best = []  # per line: (score, tokens, aside, dropped, y)
+        for y in ys:
+            half = min([0.95 * med] + [abs(y - o) / 2 for o in ys if o != y])
+            b0, b1 = int(max(0, y - half - 0.15 * med)), int(min(strip.height, y + half + 0.15 * med))
+            band = strip.crop((0, b0, W, b1))
+            cands = []
+            for scale, sharp in ((0, False), (s, False), (min(4, s + 1), True), (min(4, s + 1), False)):
+                if not scale: ls = [whole[y]]  # the line as read with the whole strip
+                else:
+                    ws = [(t, x0, x1, yc + b0, h, c) for t, x0, x1, yc, h, c in read_words(band, scale, sharp)]
+                    ls = [l for l in text_lines(ws) if keep_line(l)]
+                if not ls: continue
+                l = min(ls, key=lambda q: abs(sum(w[3] for w in q) / len(q) - y) - 0.01 * len(q))
+                toks, aside = _line_tokens(l, gap, first_verse)
+                if len(toks) < 2 or is_direction(toks): continue
+                _dashes(toks, strip, med)
+                toks = [t for t in toks if any(ch.isalnum() for ch in t[0])]  # a stray dot / bullet
+                for a_, b_ in zip(toks, toks[1:]):  # Vietnamese words are never split by a hyphen: a stray dash
+                    if a_[2] and L.viet(a_[0]) and L.viet(b_[0]) and not L.english(a_[0] + b_[0]): a_[2] = False
+                sc, drop = judge_line(toks)
+                cands.append((sc, toks, aside, drop, y))
+            if not cands: continue
+            pick = max(cands, key=lambda c: (c[0], len(c[1]) - len(c[3])))
+            if len(cands) > 2:  # each syllable: what most readings say it is
+                toks = vote(pick[1], [c[1] for c in cands if c is not pick])
+                sc, drop = judge_line(toks)
+                pick = (sc, toks, pick[2], drop, y)
+            best.append(pick)
+        best.sort(key=lambda b: b[4])
+        wordy = lambda toks: sum(1 for t in toks if re.fullmatch(r"[^\W\d_]{2,}[.,;:!?]*", t[0]))
+        best = [b for b in best if b[0] >= GOOD_LINE or wordy(b[1]) >= 3]  # a stray mark / misread chord line is no verse
+        for verse, (sc, toks, aside, drop, _) in enumerate(best, 1):
+            if first_verse and verse > 1: break
+            pairs = place_syllables(toks, order, gap)
+            if sc < GOOD_LINE:  # read too poorly: no words rather than wrong words
+                if unsure is not None and len(pairs) >= 3:
+                    unsure.append({'verse': verse, 'staff': k, 'bars': sorted({order[j][0] for _, j in pairs}), 'score': round(sc, 2)})
+                continue
+            got = [[order[j][0], order[j][1], toks[i][0], toks[i][2]] for i, j in pairs if i not in drop]
+            if drop and unsure is not None:
+                bars = sorted({order[j][0] for i, j in pairs if i in drop})
+                if bars: unsure.append({'verse': verse, 'staff': k, 'bars': bars, 'score': round(sc, 2)})
             # words Vision skipped (often short ones at a line end): read under each bare note alone (one verse only)
-            if toks and len(lines) == 1:
+            if len(best) == 1:
                 have = {(f[0], f[1]) for f in got}
                 for j, q in enumerate(order):
                     if (q[0], q[1]) in have or any(a0 <= q[3] <= a1 for a0, a1 in aside): continue
                     left = (order[j - 1][3] + q[3]) / 2 if j else q[3] - 3 * gap
                     right = (order[j + 1][3] + q[3]) / 2 + gap if j + 1 < len(order) else q[3] + 4 * gap
                     box = im.crop((int(max(0, left)), y0, int(min(W, right)), y1))
-                    big = ImageOps.expand(box.resize((box.width * 3, box.height * 3)), border=40, fill=255)
-                    alone = [w for w in ocr_lines(big) if any(ch.isalpha() for ch in w[0]) and not w[0].startswith('(')]
-                    if len(alone) == 1:
+                    alone = [w for w in read_words(box, max(3, s)) if any(ch.isalpha() for ch in w[0]) and not w[0].startswith('(')]
+                    if len(alone) == 1 and alone[0][5] >= 0.5:
                         t = alone[0][0].strip('_—')
-                        got.append([q[0], q[1], t.strip('-–'), t.endswith(('-', '–'))])
+                        if L.word_ok(t.strip('-–.,;:!?')) and not L.bad_shape(t):
+                            got.append([q[0], q[1], t.strip('-–'), t.endswith(('-', '–'))])
             found += [[*f, verse] for f in got]
-    if first_verse: found = [f for f in found if f[4] == 1]  # several verses: the top line is the main tune's words
     out, open_ = [], {}
     for mi, off, t, hy, verse in sorted(found, key=lambda f: (f[4], f[0], f[1])):
         o = open_.get(verse, False)
@@ -700,33 +950,129 @@ def note_positions_notes(xml_path):
     return [n for n, r in zip(out, rest) if not r] if len(out) == len(rest) else out
 
 
-def ocr_lines(img):
-    """Words with their box: (text, x, width, y) — x, width as fractions of the image width."""
-    import Vision, io, re
-    from Foundation import NSData, NSMakeRange
-    b = io.BytesIO(); img.save(b, 'PNG')
-    data = NSData.dataWithBytes_length_(b.getvalue(), len(b.getvalue()))
-    req = Vision.VNRecognizeTextRequest.alloc().init()
-    req.setRecognitionLevel_(0); req.setUsesLanguageCorrection_(False)
-    req.setRecognitionLanguages_(['vi-VT', 'en-US'])
-    hd = Vision.VNImageRequestHandler.alloc().initWithData_options_(data, None)
-    hd.performRequests_error_([req], None)
+_TPL3 = []
+
+
+def _digit_templates():
+    """'3' and the shapes it could be mistaken for, drawn in the fonts sheet music uses (upright and italic)."""
+    import numpy as np
+    from PIL import Image, ImageDraw, ImageFont
+    if _TPL3: return _TPL3
+    S = '/System/Library/Fonts/Supplemental/'
+    fonts = [S + f for f in ('Times New Roman.ttf', 'Times New Roman Italic.ttf', 'Times New Roman Bold.ttf', 'Times New Roman Bold Italic.ttf',
+                             'Georgia Italic.ttf', 'Georgia Bold Italic.ttf', 'Arial.ttf', 'Arial Italic.ttf', 'Arial Bold.ttf', 'Arial Bold Italic.ttf')]
+    for f in fonts:
+        try: font = ImageFont.truetype(f, 120)
+        except OSError: continue
+        for ch in '3123456789BDEGSJ':
+            im = Image.new('L', (240, 240), 0); ImageDraw.Draw(im).text((40, 30), ch, fill=255, font=font)
+            a = np.asarray(im) > 128
+            if a.any(): _TPL3.append((ch,) + _norm(a))
+    return _TPL3
+
+
+def _is_three(m):
+    """A small shape (bool array) that is the numeral 3."""
+    import numpy as np
+    t, ar = _norm(m)
+    sc = {}
+    for ch, x, r in _digit_templates():
+        v = np.logical_and(t, x).sum() / max(1, np.logical_or(t, x).sum()) - 0.5 * abs(ar - r)
+        sc[ch] = max(sc.get(ch, -1), v)
+    other = max(v for ch, v in sc.items() if ch != '3')
+    return sc.get('3', 0) >= 0.5 and sc['3'] - other >= 0.04
+
+
+def triplet_marks(png, xml_path):
+    """Printed triplets: a "3" over (or under) a bracket or beam next to a staff homr read notes on.
+    [(measure index, [onsets of the three notes])] — the three notes under the 3, by their place on the page."""
+    import numpy as np
+    from PIL import Image
+    pos = note_positions(xml_path)
+    if not pos: return []
+    st = staves(png)
+    _, ink = _ink(png, st)  # staff lines taken off: a bracket must not be a staff line
+    ink = ink > 0
+    H, W = ink.shape
     out = []
-    for o in req.results() or []:
-        c = o.topCandidates_(1)[0]
-        text = str(c.string())
-        lb = o.boundingBox()
-        for m in re.finditer(r'\S+', text):
-            box, _ = c.boundingBoxForRange_error_(NSMakeRange(m.start(), m.end() - m.start()), None)
-            if box is None: continue
-            bb = box.boundingBox()
-            out.append((m.group(), bb.origin.x, bb.size.width, lb.origin.y))
-    out.sort(key=lambda w: w[1])
-    keep = []  # Vision can return the same words twice (overlapping lines): keep the first box only
-    for w in out:
-        if keep and w[1] < keep[-1][1] + keep[-1][2] * 0.6 and abs(w[3] - keep[-1][3]) < 0.3: continue
-        keep.append(w)
-    return keep
+    for si, (top, bot, gap) in enumerate(st):
+        def staff_of(y): return min(range(len(st)), key=lambda j: abs((st[j][0] + st[j][1]) / 2 - y))
+        mine = [p for p in pos if staff_of(p[4]) == si]
+        if not mine: continue
+        for side, (r0, r1) in (('above', (top - 5 * gap, top - 0.3 * gap)), ('below', (bot + 0.3 * gap, bot + 5 * gap))):
+            r0, r1 = int(max(0, r0)), int(min(H, r1))
+            if r1 - r0 < gap: continue
+            reg = ink[r0:r1]
+            cols = np.flatnonzero(reg.any(0))
+            if not cols.size: continue
+            # small ink clusters (column runs) only: a 3 is narrow; long runs (beams, words) are split later
+            for x0, x1, y0, y1, m in _components_fast(reg):
+                h, w = y1 - y0, x1 - x0
+                if not (0.75 * gap <= h <= 1.7 * gap and 0.35 * h <= w <= 1.0 * h): continue
+                if not _is_three(m): continue
+                # nothing letter-sized right beside it (a chord name like C13, a word)
+                cy0, cy1 = y0, y1
+                near = reg[cy0:cy1, max(0, x0 - int(0.5 * h)):x0 - 1].any(0).sum() + reg[cy0:cy1, x1 + 1:x1 + int(0.5 * h)].any(0).sum()
+                # a bracket or a beam on both sides, at the 3's height or just past it toward the staff
+                ya, yb = (y0 - int(0.6 * gap), y1 + int(1.4 * gap)) if side == 'above' else (y0 - int(1.4 * gap), y1 + int(0.6 * gap))
+                win = ink[max(0, r0 + ya):min(H, r0 + yb)]
+                Lw = win[:, max(0, x0 - int(2 * gap)):max(0, x0 - 2)]
+                Rw = win[:, x1 + 2:x1 + int(2 * gap)]
+                if not (Lw.size and Rw.size and Lw.any(0).mean() >= 0.6 and Rw.any(0).mean() >= 0.6): continue
+                # a line (bracket) or a beam is thin: not stems / note heads / letters filling the window
+                if max(Lw.sum(0).mean(), Rw.sum(0).mean()) > 0.9 * gap: continue
+                if near > 0.6 * h: continue
+                cx = (x0 + x1) / 2
+                # the three notes under it: three onsets in a row in one bar, centred on the 3
+                ons = sorted({(p[0], p[1]): p[3] for p in mine}.items())
+                best = None
+                for j in range(len(ons) - 2):
+                    win3 = ons[j:j + 3]
+                    if len({k[0][0] for k in win3}) > 1: continue
+                    xs = [k[1] for k in win3]
+                    if not (min(xs) - gap <= cx <= max(xs) + 2 * gap): continue
+                    d = abs((xs[0] + xs[2]) / 2 - cx) + 0.3 * abs(xs[1] - cx)
+                    if best is None or d < best[0]: best = (d, win3)
+                if best and best[0] <= 3 * gap:
+                    out.append((best[1][0][0][0], [k[0][1] for k in best[1]]))
+    return sorted(set((m, tuple(o)) for m, o in out))
+
+
+def _components_fast(a):
+    """Connected ink shapes of a 0/1 array (8-neighbour) with a row-run union-find: [(x0, x1, y0, y1, mask)]."""
+    import numpy as np
+    parent = []
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]; i = parent[i]
+        return i
+    runs = []  # (row, start, end, label)
+    prev = []
+    for y in range(a.shape[0]):
+        row = a[y]
+        if not row.any(): prev = []; continue
+        d = np.diff(np.concatenate(([0], row.astype(np.int8), [0])))
+        starts, ends = np.flatnonzero(d == 1), np.flatnonzero(d == -1)
+        cur = []
+        for s, e in zip(starts, ends):
+            lab = len(parent); parent.append(lab)
+            for ps, pe, pl in prev:
+                if ps <= e and s <= pe:  # 8-neighbour: touching diagonally too
+                    ra, rb = find(lab), find(pl)
+                    if ra != rb: parent[ra] = rb
+            cur.append((s, e, lab)); runs.append((y, s, e, lab))
+        prev = cur
+    groups = {}
+    for y, s, e, lab in runs: groups.setdefault(find(lab), []).append((y, s, e))
+    out = []
+    for rs in groups.values():
+        y0 = min(r[0] for r in rs); y1 = max(r[0] for r in rs) + 1
+        x0 = min(r[1] for r in rs); x1 = max(r[2] for r in rs)
+        if (y1 - y0) * (x1 - x0) > 400 * 400: continue
+        m = np.zeros((y1 - y0, x1 - x0), dtype=bool)  # the shape alone, in its own box
+        for y, s, e in rs: m[y - y0, s - x0:e - x0] = True
+        out.append((x0, x1, y0, y1, m))
+    return out
 
 
 def to_m21_figure(tok):
@@ -753,14 +1099,21 @@ def take_bar(dst, src):
             dst.insert(float(e.offset), x)
 
 
-def merge_page(h, a, page_no, report, chords=None, words=None, empty=None, png=None, carry=None):
+def merge_page(h, a, page_no, report, chords=None, words=None, empty=None, png=None, carry=None, lyr_unsure=None):
     """Copy lyrics + chord names from Audiveris (a) onto homr (h); mark bars that disagree. Ties and slurs: homr's,
     Audiveris', and the arcs seen on the page image (png). carry['tie_out']: a note tied over to the next page."""
+    import lyriccheck as L
+    unsure_bars_lyr = {b for u in lyr_unsure or [] for b in u['bars']}
     hp = top_part(h)
     hm = list(hp.getElementsByClass(m21.stream.Measure)) if hp else []
     if isinstance(hp, m21.stream.PartStaff) or not hm:
         hm = list(h.parts[0].getElementsByClass(m21.stream.Measure))
     am = list(top_part(a).getElementsByClass(m21.stream.Measure)) if a is not None and a.parts else []
+    for mi, ons in (triplet_marks(png, Path(png).with_suffix('.musicxml')) if png is not None else []):
+        if mi >= len(hm): continue
+        r = apply_triplet(hm[mi], ons)
+        hm[mi].meowsicTriplet = r
+        report.setdefault('triplets', []).append({'page': page_no, 'bar': mi + 1, 'result': r})
     pairs = align(hm, am) if am else {}
     # for "bars to check": where each bar is on the page, and the other reader's notes for it
     import copy
@@ -768,27 +1121,37 @@ def merge_page(h, a, page_no, report, chords=None, words=None, empty=None, png=N
     for i, meas in enumerate(hm):
         meas.meowsicPage, meas.meowsicBox = page_no, boxes.get(i)
         meas.meowsicAlt = [('audiveris', copy.deepcopy(am[pairs[i]]))] if i in pairs and not isinstance(hp, m21.stream.PartStaff) else []
+        meas.meowsicAud = copy.deepcopy(am[pairs[i]]) if i in pairs else None
         meas.meowsicWant = bar_len(meas)
     # a homr bar that doesn't add up, where Audiveris read the same bar so it does (and found at least as many
     # notes): Audiveris' notes are taken (homr misreads a beamed run or drops a tied note now and then)
     for i, j in (pairs.items() if not isinstance(hp, m21.stream.PartStaff) else []):
+        if getattr(hm[i], 'meowsicTriplet', None) == 'not applied' and layers_full(am[j]) \
+                and sum(1 for n in real_notes(am[j]) if n.duration.tuplets) >= 3:
+            hm[i].meowsicAlt = [('homr', copy.deepcopy(hm[i]))]
+            take_bar(hm[i], am[j]); hm[i].meowsicTriplet = 'from the second reader'; hm[i].meowsicTaken = True
+            report.setdefault('taken', []).append({'page': page_no, 'bar': i + 1, 'triplet': True})
+            continue
         if i == 0 or not layers_full(am[j]) or layers_full(hm[i]): continue
         if len(real_notes(am[j])) < len(real_notes(hm[i])) or not real_notes(am[j]): continue
         hm[i].meowsicAlt = [('homr', copy.deepcopy(hm[i]))]
-        take_bar(hm[i], am[j])
+        take_bar(hm[i], am[j]); hm[i].meowsicTaken = True
         report.setdefault('taken', []).append({'page': page_no, 'bar': i + 1})
-    # lyrics read from the page image come first; Audiveris only fills gaps in bars that have words
-    worded = set()
+    # lyrics read from the page image come first; Audiveris' only when none could be read there
     for mi, off, text, syl, verse in words or []:
         if mi >= len(hm): continue
-        ns = sorted(real_notes(hm[mi]), key=lambda x: abs(float(x.getOffsetInHierarchy(hm[mi])) - off))
-        n = ns[0] if ns and abs(float(ns[0].getOffsetInHierarchy(hm[mi])) - off) < 0.26 else None
+        at = lambda x: x.meowsicOff0 if getattr(x, 'meowsicOff0', None) is not None else float(x.getOffsetInHierarchy(hm[mi]))  # as read
+        ns = sorted(real_notes(hm[mi]), key=lambda x: abs(at(x) - off))
+        n = ns[0] if ns and abs(at(ns[0]) - off) < 0.26 else None
         if n is not None and not any(l.number == verse for l in n.lyrics):
             n.lyrics = [*n.lyrics, m21.note.Lyric(text=text, number=verse, syllabic=syl)]
-            worded.add(mi)
     if am and len(am) != len(hm):
         report['notes'].append(f'page {page_no}: the two readers found {len(hm)} and {len(am)} bars')
+    for u in lyr_unsure or []:
+        for b in u['bars']:
+            if b < len(hm): hm[b].meowsicLyrics = {'verse': u['verse'], 'meas': [hm[x] for x in u['bars'] if x < len(hm)]}
     for i, meas in enumerate(hm):
+        meas.meowsicFullRead = layers_full(meas)
         flags = []
         full = sum(float(n.quarterLength) for n in meas.getElementsByClass(m21.note.GeneralNote) if not n.duration.isGrace)
         voices = list(meas.voices)
@@ -820,18 +1183,17 @@ def merge_page(h, a, page_no, report, chords=None, words=None, empty=None, png=N
             lyr = {}
             for n in real_notes(ameas):
                 if n.lyrics: lyr.setdefault(round(float(n.getOffsetInHierarchy(ameas)), 3), n.lyrics)
-            for n in (real_notes(meas) if (not words or i in worded) else []):
+            # only when the page image gave no words at all: a note left bare under a read line is held ("miles___")
+            for n in (real_notes(meas) if not words else []):
                 off = round(float(n.getOffsetInHierarchy(meas)), 3)
                 if off in lyr and n.lyrics and lyr[off][0].syllabic in ('begin', 'middle') and n.lyrics[0].syllabic in ('single', 'end', None) and (n.lyrics[0].text or '')[-1:] not in '.,;:!?' \
                         and (lyr[off][0].text or '').strip('.,;:!?').lower() == (n.lyrics[0].text or '').strip('.,;:!?').lower():
                     n.lyrics[0].syllabic = 'begin' if n.lyrics[0].syllabic in ('single', None) else 'middle'  # "loy al" → "loy-al"
-                if off in lyr and not n.lyrics and any(ch.isalpha() for l in lyr[off] for ch in (l.text or '')):
+                if off in lyr and not n.lyrics and i not in (unsure_bars_lyr or ()) \
+                        and all(L.word_ok((l.text or '').strip('.,;:!?')) and not L.bad_shape(l.text or '') for l in lyr[off]):
                     n.lyrics = [m21.note.Lyric(text=l.text, number=l.number, syllabic=l.syllabic) for l in lyr.pop(off)]
+        meas.meowsicFlags = flags
         if flags:
-            tx = m21.expressions.TextExpression('⚠ check')
-            tx.style.color = '#D22'
-            tx.placement = 'above'
-            meas.insert(0, tx)
             report['check'].append({'page': page_no, 'bar': i + 1, 'why': flags})
     for mi, off, tok in chords or []:
         if mi < len(hm):
@@ -928,6 +1290,35 @@ def _triplet(c, notes, want):
     return f'three notes made a triplet ({q:g}-beat notes)'
 
 
+def apply_triplet(meas, onsets):
+    """A "3" is printed over the notes of bar meas at these onsets (triplet_marks): make them a triplet, even when
+    the bar adds up without one (a reader can turn a triplet into a quarter + two eighths). The three get the
+    triplet value that makes the bar add up. Returns 'already' (read as a triplet), 'added' or 'not applied'."""
+    want = bar_len(meas)
+    for c in _layers(meas):
+        notes = _timed(c)
+        idx = [k for k, n in enumerate(notes) if any(abs(float(n.getOffsetInHierarchy(meas)) - o) < 0.02 for o in onsets)]
+        if len(idx) != 3 or idx[2] - idx[0] != 2: continue
+        win = [notes[k] for k in idx]
+        if all(n.duration.tuplets for n in win): return 'already'
+        if any(n.duration.isGrace for n in win): return 'not applied'
+        rest = sum(float(n.quarterLength) for n in notes) - sum(float(n.quarterLength) for n in win)
+        q = (want - rest) / 2
+        unit = next((u for u in (1.0, 0.5, 2.0, 0.25) if abs(q - u) < 0.01), None)
+        if unit is None: return 'not applied'
+        for k, n in enumerate(win):
+            d = m21.duration.Duration(unit)
+            d.appendTuplet(m21.duration.Tuplet(3, 2, {1.0: 'quarter', 0.5: 'eighth', 2.0: 'half', 0.25: '16th'}[unit]))
+            d.tuplets[0].type = 'start' if k == 0 else 'stop' if k == 2 else None
+            n.duration = d
+        for n in notes: n.meowsicOff0 = float(n.getOffsetInHierarchy(meas))  # where the words read off the page sit
+        off = float(notes[0].offset)
+        for n in notes:  # close the gaps / overlaps the new lengths leave
+            n.offset = off; off += float(n.quarterLength)
+        return 'added'
+    return 'not applied'
+
+
 def new_voice(meas):
     """A voice with a number no other voice of the bar has (two voices with one number are written as one)."""
     used = {str(v.id) for v in meas.voices}
@@ -1000,13 +1391,25 @@ def one_voice_each(meas):
     meas.insert(0, v)
 
 
+def pickup_len(score):
+    """A short first bar (in every part): the pickup's length in quarters, else None. It stays short — a pickup
+    (anacrusis) is not padded with rests in front, so playing starts on its first note."""
+    firsts = [next(iter(p.getElementsByClass(m21.stream.Measure)), None) for p in score.parts]
+    lens = [sum(float(n.quarterLength) for n in _timed(c)) for m in firsts if m is not None for c in _layers(m) if _timed(c)]
+    if not lens or firsts[0] is None: return None
+    have = max(lens)
+    return have if 0 < have < bar_len(firsts[0]) - 0.01 else None
+
+
 def fill_bars(score):
-    """Every bar of every part adds up to its time signature (no short, long or empty bars).
+    """Every bar of every part adds up to its time signature (no short, long or empty bars); a short first bar
+    is a pickup: every part's first bar is made as long as the longest (score.meowsicPickup = its length).
     Returns [{part, bar, fix}] for the bars that were changed."""
     done = []
+    pick = score.meowsicPickup = pickup_len(score)
     for pi, part in enumerate(score.parts):
         for k, meas in enumerate(part.getElementsByClass(m21.stream.Measure)):
-            want = bar_len(meas)
+            want = pick if k == 0 and pick else bar_len(meas)
             for c in _layers(meas):
                 fix = _fill(c, want, k == 0, meas)
                 if fix: done.append({'part': pi + 1, 'bar': k + 1, 'fix': fix})
@@ -1015,12 +1418,15 @@ def fill_bars(score):
 
 
 def bars_full(score):
-    """[(part, bar)] whose notes and rests don't add up to the time signature (empty when all are full)."""
+    """[(part, bar)] whose notes and rests don't add up to the time signature (empty when all are full); a pickup
+    first bar (fill_bars) adds up to the pickup's length."""
     bad = []
+    pick = getattr(score, 'meowsicPickup', None)
     for pi, part in enumerate(score.parts):
         for k, meas in enumerate(part.getElementsByClass(m21.stream.Measure)):
+            want = pick if k == 0 and pick else bar_len(meas)
             for c in _layers(meas):
-                if abs(sum(float(n.quarterLength) for n in _timed(c)) - bar_len(meas)) > 0.01: bad.append((pi + 1, k + 1))
+                if abs(sum(float(n.quarterLength) for n in _timed(c)) - want) > 0.01: bad.append((pi + 1, k + 1))
     return bad
 
 
@@ -1119,35 +1525,101 @@ def alt_xml(meas, number, want):
     return ET.tostring(x, encoding='unicode')
 
 
-def check_sheet(score, report, merged, pngs):
-    """check.json: for every bar to check, why (plain words), where it is printed (page + box in image pixels) and
-    the other reader's notes for it (a MusicXML <measure> the app can put in instead)."""
-    from PIL import Image
-    page_bars = [len(top_part(m).getElementsByClass(m21.stream.Measure)) for m in merged]
-    first = [sum(page_bars[:k]) for k in range(len(page_bars))]
-    why = {}
-    for c in report['check']:
-        if c['page'] - 1 < len(first): why.setdefault(first[c['page'] - 1] + c['bar'], []).extend(c['why'])
-    for t in report.get('taken', []):
-        why.setdefault(first[t['page'] - 1] + t['bar'], []).append("notes taken from the second reader (homr's didn't add up)")
-    for t in report.get('filled', []):
-        if t['part'] == 1 and not t['fix'].startswith('pickup'):
-            why.setdefault(t['bar'], []).extend(plain_reason(f) for f in t['fix'].split('; '))
+LYRICS_UNSURE = 'lyrics unsure — use Fit lyrics'
+
+
+def _pitches(meas):
+    return sorted(p.midi for n in real_notes(meas) for p in n.pitches)
+
+
+def _subset(small, big):
+    """Every pitch of small is in big (counting repeats)."""
+    from collections import Counter
+    return not (Counter(small) - Counter(big))
+
+
+def bar_reasons(score, report):
+    """{score bar number: [plain reasons]} for the bars that still need a person, and report['resolved'] for the
+    flags settled here because the evidence is clear:
+      - both readers agree on the bar as it now stands (after a printed triplet was put in, say);
+      - only one reader found the bar, and its notes add up as read;
+      - the readers disagree, but the second reader only missed notes (its notes are all in the first's) or read
+        nothing / didn't add up, while the first reader's bar adds up as read;
+      - a bar split into two voices that each fill the bar exactly;
+      - notes taken from the second reader that differ only in their lengths (same pitches).
+    Reasons that stay: a guess made to fill a bar (rest / dot / shortened / triplet with no printed 3), two
+    readings that both add up but differ, lyrics read too poorly to write."""
     bars = list(score.parts[0].getElementsByClass(m21.stream.Measure))
+    fills = {}
+    for t in report.get('filled', []):
+        if t['part'] == 1 and not t['fix'].startswith('pickup'): fills.setdefault(t['bar'], []).extend(t['fix'].split('; '))
+    out, resolved = {}, []
+    for b, meas in enumerate(bars, 1):
+        flags = list(getattr(meas, 'meowsicFlags', None) or [])
+        fx = fills.get(b, [])
+        taken = getattr(meas, 'meowsicTaken', False)
+        lyr = getattr(meas, 'meowsicLyrics', None)
+        if not flags and not fx and not taken and not lyr: continue
+        aud = getattr(meas, 'meowsicAud', None)
+        read_full = getattr(meas, 'meowsicFullRead', True)
+        agree = aud is not None and not taken and melody(meas) == melody(aud) and real_notes(meas)
+        keep, why_ok = [], []
+        if agree and (flags or fx or taken):
+            why_ok.append('both readers agree')
+        else:
+            for f in flags:
+                if f.startswith('bar adds up to'):
+                    if fx: continue  # the fix below says what was done
+                    keep.append(f)
+                elif f == 'only one reader found this bar':
+                    if read_full and not fx: why_ok.append('one reader only; its notes add up'); continue
+                    keep.append(f)
+                elif f == 'the two readers disagree':
+                    hp_, ap_ = _pitches(meas), _pitches(aud) if aud is not None else []
+                    if read_full and (not ap_ or not layers_full(aud) or (len(ap_) < len(hp_) and _subset(ap_, hp_))):
+                        why_ok.append('second reader missed notes; first adds up'); continue
+                    keep.append(f)
+                else: keep.append(f)
+            for f in fx:
+                if 'split into voices' in f and len(fx) == 1: why_ok.append('two voices that each fill the bar'); continue
+                keep.append(plain_reason(f))
+            if taken:
+                alt = next((m for src, m in getattr(meas, 'meowsicAlt', None) or [] if src == 'homr'), None)
+                if alt is not None and _pitches(alt) == _pitches(meas): why_ok.append('second reader: same notes, lengths that add up')
+                else: keep.append("notes taken from the second reader (homr's didn't add up)")
+        if lyr: keep.append(LYRICS_UNSURE)
+        if keep: out[b] = list(dict.fromkeys(keep))
+        if why_ok: resolved.append({'bar': b, 'why': list(dict.fromkeys(why_ok))})
+    report['resolved'] = resolved
+    return out
+
+
+def check_sheet(score, report, merged, pngs, reasons=None):
+    """check.json: for every bar to check, why (plain words), where it is printed (page + box in image pixels) and
+    the other reader's notes for it (a MusicXML <measure> the app can put in instead). A bar whose words were
+    read too poorly to write gets 'lyrics': {verse, bars} — the line, for the Fit lyrics editor."""
+    from PIL import Image
+    reasons = bar_reasons(score, report) if reasons is None else reasons
+    bars = list(score.parts[0].getElementsByClass(m21.stream.Measure))
+    index = {id(m): k for k, m in enumerate(bars, 1)}
     out = []
-    for b in report['unsure']:
-        if not 0 < b <= len(bars): continue
+    for b in sorted(reasons):
         meas = bars[b - 1]
         alts = []
         for src, am in getattr(meas, 'meowsicAlt', None) or []:
+            if src == 'audiveris' and melody(am) == melody(meas): continue  # the same as what's there
             try:
                 alts.append({'id': src, 'label': {'audiveris': 'Second reader (Audiveris)', 'homr': 'First reader (homr)'}[src],
                              'musicxml': alt_xml(am, b, getattr(meas, 'meowsicWant', None) or bar_len(meas))})
             except Exception as e:
                 report['notes'].append(f'bar {b}: other reading not kept ({e})')
-        reasons = list(dict.fromkeys(why.get(b) or ['marked to check']))
-        box = getattr(meas, 'meowsicBox', None)
-        out.append({'bar': b, 'page': getattr(meas, 'meowsicPage', None), 'box': box, 'reasons': reasons, 'alternatives': alts})
+        entry = {'bar': b, 'page': getattr(meas, 'meowsicPage', None), 'box': getattr(meas, 'meowsicBox', None),
+                 'reasons': reasons[b], 'alternatives': alts}
+        lyr = getattr(meas, 'meowsicLyrics', None)
+        if lyr:
+            line = sorted(index[id(m)] for m in lyr['meas'] if id(m) in index)
+            entry['lyrics'] = {'verse': lyr['verse'], 'bars': line or [b]}
+        out.append(entry)
     pages = []
     for k, p in enumerate(pngs, 1):
         with Image.open(p) as im: pages.append({'page': k, 'file': p.name, 'width': im.width, 'height': im.height})
@@ -1155,12 +1627,34 @@ def check_sheet(score, report, merged, pngs):
 
 
 def unsure_bars(report, page_bars):
-    """Score bar numbers (1-based, all pages joined) to check: readers disagreed, or the bar was changed to add up."""
+    """Score bar numbers (1-based, all pages joined) the readers flagged or that were changed to add up, before
+    bar_reasons settles the clear ones (report.json 'flaggedBefore' counts these)."""
     first = [sum(page_bars[:k]) for k in range(len(page_bars))]
     out = {first[c['page'] - 1] + c['bar'] for c in report['check'] if c['page'] - 1 < len(first)}
     out |= {t['bar'] for t in report.get('filled', []) if not t['fix'].startswith('pickup')}
     out |= {first[t['page'] - 1] + t['bar'] for t in report.get('taken', [])}
     return sorted(out)
+
+
+def mark_check(score, bars):
+    """"⚠ check" in red over each bar still to check."""
+    ms = list(score.parts[0].getElementsByClass(m21.stream.Measure))
+    for b in bars:
+        if 0 < b <= len(ms):
+            tx = m21.expressions.TextExpression('⚠ check')
+            tx.style.color = '#D22'
+            tx.placement = 'above'
+            ms[b - 1].insert(0, tx)
+
+
+def pickup_bar(xml):
+    """The first bar of every part written as a pickup: <measure implicit="yes"> (no number of its own on the page)."""
+    import re
+    def one(m):
+        tag = m.group(0)
+        tag = re.sub(r'\s+implicit="[^"]*"', '', tag)
+        return tag[:-1] + ' implicit="yes">'
+    return re.sub(r'<measure\b[^>]*\bnumber="1"[^>]*>', one, xml)
 
 
 def mark_unsure(xml, bars):
@@ -1222,13 +1716,16 @@ def main():
         try: chords.append(chord_names(p, p.with_suffix('.musicxml')))
         except Exception as e: chords.append([]); report['notes'].append(f'chord names: {e}')
     say('words', 'Reading the words')
-    words = []
+    words, lunsure = [], []
     for p in pngs:
-        try: words.append(lyric_words(p, p.with_suffix('.musicxml'), a.first_verse))
+        u = []
+        try: words.append(lyric_words(p, p.with_suffix('.musicxml'), a.first_verse, unsure=u))
         except Exception as e: words.append(None); report['notes'].append(f'words: {e}')
+        lunsure.append(u)
+    report['lyricsUnsure'] = [{'page': k, **x} for k, u in enumerate(lunsure, 1) for x in u]
     carries = [{} for _ in pngs]
-    merged = [merge_page(h, aud.get(p.stem), k, report, ch, wd, empty_bars(p.with_suffix('.musicxml')), p, cr)
-              for k, (h, p, ch, wd, cr) in enumerate(zip(homr, pngs, chords, words, carries), 1)]
+    merged = [merge_page(h, aud.get(p.stem), k, report, ch, wd, empty_bars(p.with_suffix('.musicxml')), p, cr, lu)
+              for k, (h, p, ch, wd, cr, lu) in enumerate(zip(homr, pngs, chords, words, carries, lunsure), 1)]
     for k, cr in enumerate(carries[:-1]):  # a tie running off a page ends on the next page's first note
         n1 = cr.get('tie_out')
         nxt = merged[k + 1].parts
@@ -1238,8 +1735,12 @@ def main():
     score = join(merged, a.title)
     report['bars'] = len(score.parts[0].getElementsByClass(m21.stream.Measure))
     report['filled'] = fill_bars(score)  # every bar adds up to its time signature (the check marks stay)
+    if score.meowsicPickup: report['pickup'] = score.meowsicPickup
     report['notFull'] = bars_full(score)
-    report['unsure'] = unsure_bars(report, [len(top_part(m).getElementsByClass(m21.stream.Measure)) for m in merged])
+    reasons = bar_reasons(score, report)
+    report['flaggedBefore'] = len(unsure_bars(report, [len(top_part(m).getElementsByClass(m21.stream.Measure)) for m in merged]))
+    report['unsure'] = sorted(reasons)
+    mark_check(score, report['unsure'])
     report['lyrics'] = sum(1 for n in score.recurse().notes if n.lyrics)
     report['ties'] = sum(1 for n in score.recurse().notes if not isinstance(n, m21.harmony.ChordSymbol) and n.tie is not None and n.tie.type == 'start')
     report['slurs'] = len(score.recurse().getElementsByClass(m21.spanner.Slur))
@@ -1247,8 +1748,9 @@ def main():
     x = (out / 'score.musicxml').read_text()
     x = __import__('re').sub(r'<creator type="composer">Music21</creator>\s*', '', x)
     x = mark_unsure(x, report['unsure'])
+    if report.get('pickup'): x = pickup_bar(x)
     (out / 'score.musicxml').write_text(x)
-    try: (out / 'check.json').write_text(json.dumps(check_sheet(score, report, merged, pngs), ensure_ascii=False, indent=1))
+    try: (out / 'check.json').write_text(json.dumps(check_sheet(score, report, merged, pngs, reasons), ensure_ascii=False, indent=1))
     except Exception as e: report['notes'].append(f'check.json: {e}')
     (out / 'report.json').write_text(json.dumps(report, indent=1))
     say('done', f"{report['bars']} bars, {len(report['check'])} to check", report=report)

@@ -147,7 +147,67 @@ async function run(name, vp, how) {
   await page.close();
 }
 
+// Words read too poorly to write: bars 2 + 3 "lyrics unsure" (verse 1, that line), bar 4 a note reason.
+// Mac: Fix lyrics opens Fit lyrics on verse 1 at bar 2 → words typed, fitted, saved into this score → bars 2 + 3 checked,
+// bar 4 left → Mark all as looks right asks first (Cancel keeps it), then marks it → none left; Activities can undo.
+async function lyricsRun() {
+  console.log('\nMac: lyrics unsure + Mark all');
+  const title = `Ode lyrics ${stamp}`;
+  const sc = await send('POST', '/items', { kind: 'score', title, artist: 'Beethoven', musicxmlText: scoreXml(title).replace('>2 3<', '>2 3 4<'), source: 'From the sheet “Ode” (photo → score, beta)' });
+  const LY = 'lyrics unsure — use Fit lyrics';
+  const d = `${DATA}/items/${sc.folder}`;
+  fs.writeFileSync(`${d}/${sc.folder} check.json`, JSON.stringify({ ...SIDECAR, bars: [
+    { bar: 2, page: 1, box: [148, 580, 738, 735], reasons: [LY], alternatives: [], lyrics: { verse: 1, bars: [2, 3] } },
+    { bar: 3, page: 1, box: [738, 580, 1330, 735], reasons: [LY], alternatives: [], lyrics: { verse: 1, bars: [2, 3] } },
+    { bar: 4, page: 1, box: [148, 735, 738, 900], reasons: ['rest added to fill the bar'], alternatives: [] }] }));
+  fs.copyFileSync(PAGE, `${d}/${sc.folder} check p1.jpg`);
+  const page = await b.newPage(); await page.setViewport(MAC);
+  page.on('pageerror', (e) => errs.push(`lyrics: ${e.message}`));
+  page.on('console', (m) => m.type() === 'error' && !/404|409|favicon/.test(m.text()) && errs.push(`lyrics: ${m.text()}`));
+  const badge = () => page.$eval('#sc-check', (e) => (e.hidden ? '' : e.textContent.trim()));
+  await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' });
+  await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(1200);
+  await page.click('#sc-check'); await page.waitForSelector('.cb-panel', { timeout: 5000 }); await sleep(600);
+  const btns = await page.$$eval('.cb-panel .cb-acts button', (e) => e.map((x) => x.textContent.trim()));
+  check('a "lyrics unsure" bar offers Fix lyrics and Mark all', btns.includes('Fix lyrics') && btns.includes('Mark all as looks right'), btns.join('|'));
+  await page.click('.cb-panel [data-a="lyrics"]');
+  await page.waitForSelector('.fitly', { timeout: 8000 }); await sleep(500);
+  check('Fix lyrics: the check panel gives way to Fit lyrics on verse 1', !(await page.$('.cb-panel')) && (await page.evaluate(() => window.__fitLyrics?.verse)) === '1');
+  await page.waitForSelector('.fitly #fl-text');
+  await page.$eval('#fl-text', (e) => { e.value = 'Joy-ful joy-ful we a-dore thee God of glo-ry Lord of love'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.click('.fitly [data-a="fit"]'); await sleep(300);
+  await page.click('.fitly [data-a="save"]'); await page.waitForSelector('.modal [data-mode="this"]');
+  await page.click('.modal [data-mode="this"]'); await sleep(2500);
+  const x = await xmlOf(sc.id);
+  check('saved: words in the score', (x.match(/<lyric/g) || []).length >= 12, (x.match(/<lyric/g) || []).length);
+  check('bars 2 + 3 checked with the save, bar 4 still to check', marked(x) === '4', marked(x));
+  check('the review is back on bar 4', !!(await page.$('.cb-panel')) && (await page.$eval('#cb-count', (e) => e.textContent)) === 'Bar 4 · 1 of 1', await page.$eval('#cb-count', (e) => e.textContent).catch(() => 'none'));
+  // one bar left: no Mark all; open a second look with two bars to try it
+  await send('POST', `/items/${sc.id}/check`, { bar: 4, action: 'ok' });
+  await page.close();
+  const sc2 = await send('POST', '/items', { kind: 'score', title: `${title} 2`, musicxmlText: scoreXml(`${title} 2`) });
+  writeCheck(sc2.folder);
+  const p2 = await b.newPage(); await p2.setViewport(MAC);
+  p2.on('pageerror', (e) => errs.push(`markall: ${e.message}`));
+  await p2.goto(`${BASE}#/item/${sc2.id}`, { waitUntil: 'networkidle0' });
+  await p2.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(1200);
+  await p2.click('#sc-check'); await p2.waitForSelector('.cb-panel'); await sleep(500);
+  await p2.click('.cb-panel [data-a="all"]'); await p2.waitForSelector('.modal'); await sleep(300);
+  check('Mark all asks first', /Mark all 2 bars/.test(await p2.$eval('.modal', (e) => e.textContent)));
+  await p2.click('.modal [data-close], .modal button:not(.primary)'); await sleep(400);
+  check('Cancel: still 2 to check', marked(await xmlOf(sc2.id)) === '2 3');
+  await p2.click('.cb-panel [data-a="all"]'); await p2.waitForSelector('.modal .primary'); await sleep(300);
+  await p2.click('.modal .primary'); await sleep(2000);
+  check('Mark all: none left, review closed, badge gone', marked(await xmlOf(sc2.id)) === '' && !(await p2.$('.cb-panel')) && (await p2.$eval('#sc-check', (e) => e.hidden)));
+  const rows = (await api('/activity')).filter((r) => r.type === 'bar-check' && r.title.includes(`${title} 2`));
+  const row = rows[0];
+  check('one Activities row for both bars', rows.length === 1, rows.length);
+  if (row) { await send('POST', `/activity/${row.id}/undo`, {}); check('its Undo puts both back', marked(await xmlOf(sc2.id)) === '2 3'); }
+  await p2.close();
+}
+
 await run('Mac', MAC, 'mac');
+await lyricsRun();
 await run('iPad', IPAD, 'plain');
 await run('iPhone', PHONE, 'phone');
 await b.close();

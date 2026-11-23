@@ -67,6 +67,9 @@ export class ScorePlayer {
     audioCtx();
     await loadPiano();
     if (this.posQ >= (this.loop ? this.loop[1] : this.endQ)) this.posQ = this.loop ? this.loop[0] : 0;
+    // from the very start: no waiting through rests before the first note (a score read from a sheet can open with them)
+    const first = this.notes.reduce((m, n) => Math.min(m, n.q), Infinity);
+    if (this.posQ <= 1e-3 && !this.loop && first > 0.01 && first < Infinity) this.posQ = first;
     this.out = ctx.createGain(); this.out.gain.value = 0.85;
     const comp = ctx.createDynamicsCompressor();
     this.out.connect(comp); comp.connect(ctx.destination);
