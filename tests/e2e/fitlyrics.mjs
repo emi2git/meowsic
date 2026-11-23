@@ -34,8 +34,8 @@ async function run(name, vp, saveMode) {
   console.log(`\n${name}`);
   const touch = !!vp.hasTouch;
   const title = `Twinkle Twinkle ${name} ${stamp}`;
-  const xml0 = scoreXml(title);
-  const sc = await send('POST', '/items', { kind: 'score', title, artist: 'Traditional', musicxmlText: xml0, tags: ['Kids'] });
+  const sc = await send('POST', '/items', { kind: 'score', title, artist: 'Traditional', musicxmlText: scoreXml(title), tags: ['Kids'] });
+  const xml0 = await fetch(`${BASE}api/items/${sc.id}/musicxml`).then((r) => r.text()); // as stored (server adds the Meowsic credit)
   const page = await b.newPage(); await page.setViewport(vp);
   page.on('pageerror', (e) => errs.push(`${name}: ${e.message}`)); page.on('console', (m) => m.type() === 'error' && !/404|409/.test(m.text()) && errs.push(`${name}: ${m.text()}`));
   const tap = async (sel) => { if (touch) await page.tap(sel); else await page.click(sel); await sleep(120); };
