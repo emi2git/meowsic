@@ -236,7 +236,7 @@ await go('#/item/m-02i'); await sleep(1200);
 check('no Loop, no Files, no Details in the score header', !/Loop|Files|Details/.test(await text('.item-top')));
 await page.click('#it-more'); await sleep(150);
 check('Info and Export are in More', /Info/.test(await text('.menu')) && /Export as MusicXML/.test(await text('.menu')));
-check('score menu order: Info, Rename, Edit tags, Make another version, Note names in noteheads, Print, Export…, Move to Trash', (await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()))).join('|') === 'Info|Rename…|Edit tags…|Make another version…|Note names in noteheads|Print…|Export as MusicXML|Export as MIDI|Export as PDF|Move to Trash', (await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()))).join('|'));
+check('score menu order: Info, Rename, Edit tags, Make another version, Kids note names, Chords, Print, Export…, Move to Trash', (await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()))).join('|') === 'Info|Rename…|Edit tags…|Make another version…|Kids note names|Chords: Chords off (tap for piano chords)|Print…|Export as MusicXML|Export as MIDI|Export as PDF|Move to Trash', (await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()))).join('|'));
 await page.keyboard.press('Escape'); await page.mouse.click(5, 880); await sleep(150);
 await page.click('#sc-tup'); await sleep(1200);
 check('transpose +1', (await text('#sc-tval')) === '+1');

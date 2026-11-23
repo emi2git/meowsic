@@ -57,6 +57,13 @@ const P = {
   wifi: '<path d="M2 9a15 15 0 0120 0M5 12.5a10 10 0 0114 0M8.5 16a5 5 0 017 0"/><circle cx="12" cy="19.5" r="1" fill="currentColor"/>',
   moon: '<path d="M20 14A8 8 0 1110 4a7 7 0 0010 10z"/>',
   restore: '<path d="M3 12a9 9 0 109-9 9 9 0 00-7 3.3M3 3v4h4"/>',
+  // score toolbar toggles: kids note names (a baby's face), chords (piano keys / ukulele / an empty chord box = off), voice (a singing head)
+  baby: '<circle cx="12" cy="13" r="8"/><path d="M12 5c-.6-1.6.4-2.8 1.8-2.4"/><circle cx="9.2" cy="12.4" r="1" fill="currentColor" stroke="none"/><circle cx="14.8" cy="12.4" r="1" fill="currentColor" stroke="none"/><path d="M9.6 16.2c1.4 1.2 3.4 1.2 4.8 0M3.6 12.6H2.4M21.6 12.6h-1.2"/>',
+  piano: '<rect x="2.5" y="5" width="19" height="14" rx="1.5"/><path d="M7.25 13v6M12 13v6M16.75 13v6"/><path d="M6 5h2.5v8H6zM10.75 5h2.5v8h-2.5zM15.5 5H18v8h-2.5z" fill="currentColor"/>',
+  chordgrid: '<rect x="6" y="3" width="12" height="18" rx="1.2"/><path d="M6 7.5h12M6 12h12M6 16.5h12M10 3v18M14 3v18"/>',
+  voice: '<path d="M5 21v-3.2a2 2 0 0 0-.7-1.5A7 7 0 0 1 9.6 4a6.3 6.3 0 0 1 6.3 6.2l1.6 3.3h-1.6v2.2a2 2 0 0 1-2 2h-1.7V21"/><path d="M19 8.2a4.6 4.6 0 0 1 0 5.6M21.4 5.8a8.4 8.4 0 0 1 0 10.4"/>',
+  // ukulele chords: a small guitar body with a sound hole and a neck with tuning pegs
+  ukulele: '<path d="M13.6 10.4l6-6M18.2 2.6l3.2 3.2M17 3.8l1 1M20.2 7l-1-1"/><path d="M13 11a3.2 3.2 0 0 0-4.7.2 3.1 3.1 0 0 1-2.3 1.2 3.9 3.9 0 0 0-2.6 6.6l1.6 1.6a3.9 3.9 0 0 0 6.6-2.6 3.1 3.1 0 0 1 1.2-2.3A3.2 3.2 0 0 0 13 11z"/><circle cx="9.2" cy="14.8" r="1.3"/><path d="M6.2 16.4l1.4 1.4"/>',
   paw: '<ellipse cx="12" cy="16" rx="4.5" ry="3.8" fill="currentColor"/><circle cx="6" cy="10" r="2" fill="currentColor"/><circle cx="10" cy="6.5" r="2" fill="currentColor"/><circle cx="14" cy="6.5" r="2" fill="currentColor"/><circle cx="18" cy="10" r="2" fill="currentColor"/>',
 };
 // Icons are switched off for now (user request); every control carries a text label instead.

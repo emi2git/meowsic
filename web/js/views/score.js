@@ -12,7 +12,10 @@ import { fitLyrics } from './fitlyrics.js';
 import { InkLayer } from './annotate.js';
 import { attachSwipe, flipBy } from '../swipe.js';
 import { isTouch, isNarrow } from '../device.js';
-import { easyOn, setEasy, classicXml, hasChordSymbols, drawNoteLetters, drawKeyboardRow, KBD_ROOM } from '../easyscore.js';
+import { easyOn, setEasy, classicXml, drawNoteLetters, kidsRules } from '../easyscore.js';
+import { chordsMode, setChordsMode, nextMode, MODE_LABEL, ukePanel } from '../ukepanel.js';
+const CHORD_ICON = { piano: 'piano', uke: 'ukulele', off: 'chordgrid' }; // the chords button shows its state
+import { easeRests, canEaseRests } from './easerests.js';
 import { paginate, pageOfY, showPage, pagerInput } from '../pager.js';
 
 let osmdReady;
@@ -42,8 +45,11 @@ export function scoreBody(root, it, { perform = false } = {}) {
     tune = { title: it.title, bpm: info.bpm, beats: info.beats, measures: [], real: true };
   };
   const version = it.version || 'original';
-  // note names (toggle, off by default): letters in the noteheads + keyboard chord diagrams under the title
+  // kids note names (baby toggle, off by default, this device): big noteheads with their letters, all staves
   let easy = easyOn(it);
+  // Ease rests is offered for scores transcribed from a video / audio only (the Mac says)
+  let canEase = false;
+  if (real && store.mode === 'server') canEaseRests(it).then((ok) => { canEase = ok; });
   // iPad / iPhone: no scrolling; the score is cut into screen-high pages, turned like a sheet's
   const paged = isTouch() && !perform;
   let pages = [], page = 0, stopOff = 0;
@@ -139,14 +145,12 @@ export function scoreBody(root, it, { perform = false } = {}) {
     });
   };
 
-  // after every layout: letters in the noteheads, keyboard diagrams under the title (chords follow transpose)
+  // after every layout: kids mode = big noteheads with their letters (they follow transpose)
   const decorate = () => {
     unsureLyrics();
     paper.classList.toggle('easy', easy);
     if (!easy) return;
-    drawNoteLetters(osmd, { minPx: isNarrow() ? 7.5 : 0 }); // iPhone: heads grow a little so the letters stay readable
-    const svg = $('#osmd svg', root);
-    if (svg) drawKeyboardRow(osmd, svg, { title: osmd.Sheet?.TitleString || it.title });
+    drawNoteLetters(osmd, { minPx: isNarrow() ? 9 : 0 }); // iPhone: heads grow more if needed so the letters stay readable
   };
 
   // ---- pages (iPad / iPhone) ----
@@ -200,6 +204,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     decorate(); tagNotes(); measureStops(); repaginate();
     place(player?.now() || 0, follow);
     ink?.fit();
+    root.dispatchEvent(new CustomEvent('scoredrawn', { bubbles: true })); // the ukulele panel reads the drawn chords
   };
   const relayout = () => { if (!osmd || !drawn) return; osmd.render(); afterLayout(!!player?.playing); };
 
@@ -224,7 +229,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
       return x.replace(/(<part-list>)/, '<identification>' + c + '</identification>$1');
     };
     const xml = credit(tidyXml(real ? xmlText : musicXml({ ...tune, title: it.title }, version)));
-    if (easy && hasChordSymbols(xml)) r.TitleBottomDistance += KBD_ROOM; // room for the keyboard diagrams
+    if (easy) kidsRules(r); // big noteheads: wider spacing
     await osmd.load(xml);
     osmd.zoom = zoom;
     if (it.transpose) {
@@ -406,6 +411,8 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get easy() { return easy; },
     async setEasy(on) { easy = !!on; setEasy(it, easy); root.dispatchEvent(new CustomEvent('easychange', { bubbles: true })); await render(); },
     get zoom() { return zoom; },
+    get osmd() { return drawn ? osmd : null; },
+    get canEase() { return canEase; },
     get page() { return page + 1; }, get pages() { return pages.length; },
     get pageLabel() { return paged && pages.length ? `Page ${page + 1} of ${pages.length}` : ''; },
     goTo(n) { goPage(n - 1); },
@@ -424,7 +431,9 @@ export function scoreTools(it, view) {
   return [{ label: 'Make another version…', icon: 'plus', run: () => generateVersions(it) },
     ...(store.mode === 'server' ? [{ label: 'Add lyrics from a sheet…', icon: 'text', run: () => addLyrics(it) }] : []),
     ...(store.mode === 'server' && view.real ? [{ label: 'Fit lyrics…', icon: 'text', run: () => fitLyrics(view, it, document.querySelector('.viewer')) }] : []),
-    { label: 'Note names in noteheads', icon: 'text', checked: view.easy, run: () => view.setEasy(!view.easy) },
+    ...(store.mode === 'server' && view.real && view.canEase ? [{ label: 'Ease rests…', icon: 'wave', run: () => easeRests(view, it, document.querySelector('.viewer')) }] : []),
+    { label: 'Kids note names', icon: 'baby', checked: view.easy, run: () => view.setEasy(!view.easy) },
+    { label: `Chords: ${MODE_LABEL[chordsMode()]} (tap for ${MODE_LABEL[nextMode(chordsMode())].toLowerCase()})`, icon: CHORD_ICON[chordsMode()], run: () => document.querySelector('.viewer')?.dispatchEvent(new CustomEvent('uketoggle')) },
     ...(view.real && /<lyric[\s>]/.test(view.xml()) ? [{ label: view.hasVoice ? 'Make it sing again (beta)' : 'Make it sing (beta)', icon: 'wave', run: () => makeItSing(it) }] : []),
     ...(it.measures ? [{ label: 'Revert note edits', icon: 'restore', run: async () => { await view.revert(); document.querySelector('.editbar')?.dispatchEvent(new Event('close')); toast('Back to the original notes'); } }] : [])];
 }
@@ -451,8 +460,11 @@ export function scoreToolbar(bar, it, view) {
     <div class="stepper" aria-label="Transpose"><button id="sc-tdown" aria-label="Transpose down">♭</button><span id="sc-tval">${it.transpose ? (it.transpose > 0 ? '+' : '') + it.transpose : '0'}</span><button id="sc-tup" aria-label="Transpose up">♯</button></div>
     <div class="stepper zoom" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out" title="Zoom out (−)">${iconOn('zoomout')}</button><button id="sc-zreset" class="zreset" title="Reset zoom (0)">${Math.round(view.zoom * 100)}%</button><button id="sc-zin" aria-label="Zoom in" title="Zoom in (+)">${iconOn('zoomin')}</button></div>
     <button class="icon-btn" id="sc-edit" title="Edit notes" aria-label="Edit notes">${iconOn('edit')}</button>
-    <button class="nn-toggle ${view.easy ? 'on' : ''}" id="sc-names" aria-pressed="${view.easy}" title="Note names in noteheads" aria-label="Note names in noteheads">A B C</button>
-    <button class="nn-toggle ${view.voice ? 'on' : ''}" id="sc-voice" aria-pressed="${view.voice}" title="Voice: hear it sung (Make it sing)" aria-label="Voice"${view.hasVoice ? '' : ' hidden'}>Voice</button>`;
+    <span class="tg-row">
+    <button class="tg-btn ${chordsMode() !== 'off' ? 'on' : ''}" id="sc-chords" data-mode="${chordsMode()}" title="${MODE_LABEL[chordsMode()]}" aria-label="${MODE_LABEL[chordsMode()]}">${iconOn(CHORD_ICON[chordsMode()])}</button>
+    <button class="tg-btn ${view.easy ? 'on' : ''}" id="sc-names" aria-pressed="${view.easy}" title="Kids note names: big noteheads with the note's letter" aria-label="Kids note names">${iconOn('baby')}</button>
+    <button class="tg-btn ${view.voice ? 'on' : ''}" id="sc-voice" aria-pressed="${view.voice}" title="Voice: hear it sung (off = piano only)" aria-label="Voice"${view.hasVoice ? '' : ' hidden'}>${iconOn('voice')}</button>
+    </span>`;
 
   const p = () => view.player;
   const playBtn = $('#sc-play', bar);
@@ -501,11 +513,34 @@ export function scoreToolbar(bar, it, view) {
   const nl = () => { names.classList.toggle('on', view.easy); names.setAttribute('aria-pressed', String(view.easy)); };
   names.onclick = async () => { await view.setEasy(!view.easy); nl(); };
   bar.closest('.viewer')?.addEventListener('easychange', nl);
+  // chords: piano → ukulele → off; a panel beside the score (iPhone: a bottom sheet); remembered on this device
+  const viewer = bar.closest('.viewer');
+  const chBtn = $('#sc-chords', bar);
+  let uke = null;
+  const setMode = (m) => {
+    setChordsMode(m);
+    if (m === 'off') { uke?.destroy(); uke = null; }
+    else if (!uke && viewer) uke = ukePanel(view, it, viewer, m);
+    else uke?.setMode(m);
+    chBtn.innerHTML = iconOn(CHORD_ICON[m]);
+    chBtn.dataset.mode = m;
+    chBtn.classList.toggle('on', m !== 'off');
+    chBtn.setAttribute('aria-label', MODE_LABEL[m]);
+    chBtn.title = `${MODE_LABEL[m]} — tap for ${MODE_LABEL[nextMode(m)].toLowerCase()}`;
+  };
+  chBtn.onclick = () => setMode(nextMode(chordsMode()));
+  const onUkeClose = () => setMode('off'), onUkeToggle = () => setMode(nextMode(chordsMode()));
+  viewer?.addEventListener('ukeclose', onUkeClose);
+  viewer?.addEventListener('uketoggle', onUkeToggle);
+  if (chordsMode() !== 'off') view.ready.then(() => { if (!uke && bar.isConnected) setMode(chordsMode()); });
   $('#sc-edit', bar).onclick = (e) => scoreEditor(view, it, bar.closest('.viewer'), e.currentTarget);
   bar.closest('.viewer')?.addEventListener('zoomchange', zl);
   const onSpace = (e) => { if (e.key === ' ' && !e.target.closest('input,select,textarea,button')) { e.preventDefault(); playBtn.click(); } };
   document.addEventListener('keydown', onSpace);
-  return () => { host.removeEventListener('tick', onTick); host.removeEventListener('ended', onEnd); document.removeEventListener('keydown', onSpace); removeEventListener('meowsic-new-items', onSung); };
+  return () => {
+    host.removeEventListener('tick', onTick); host.removeEventListener('ended', onEnd); document.removeEventListener('keydown', onSpace); removeEventListener('meowsic-new-items', onSung);
+    viewer?.removeEventListener('ukeclose', onUkeClose); viewer?.removeEventListener('uketoggle', onUkeToggle); uke?.destroy(); uke = null;
+  };
 }
 
 // Make it sing (beta): the Mac sings the melody with its lyrics (SoulX-Singer, offline) over a soft piano;

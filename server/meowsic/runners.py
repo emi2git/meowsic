@@ -52,6 +52,9 @@ def dispatch(ctx: JobContext):
 
 # ---------- saving results as items ----------
 
+from .scoretitle import set_file_title  # noqa: E402
+
+
 def credit_meowsic(path):
     """Every score Meowsic makes is credited to "Meowsic" (the song's artist stays in the item's Artist)."""
     try:
@@ -84,7 +87,9 @@ def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), gr
                 if src and Path(src).is_file():
                     names[col] = it['folder'] + ext
                     shutil.copyfile(src, d / names[col])
-                    if col == 'musicxml': credit_meowsic(d / names[col])
+                    if col == 'musicxml':
+                        credit_meowsic(d / names[col])
+                        set_file_title(d / names[col], title)  # the drawn title = the item's title, not the video's name
             c.execute(f'UPDATE score SET {",".join(f"{k}=?" for k in names)} WHERE item_id=?', [*names.values(), it['id']])
             refresh_staves(c, cfg, it['id'])
         # the job keeps what it made from now on (Activities: Stop / Undo moves these to the Trash, even if the job is cancelled before it finishes)

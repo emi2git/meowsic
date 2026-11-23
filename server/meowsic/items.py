@@ -146,6 +146,10 @@ def update_item(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depend
     write_item(c, {**patch, 'id': item_id, 'kind': it['kind'], 'updatedAt': now_ms()}, new=False)
     if it['folder'] and 'title' in patch and patch['title'] != it['title']:
         rename_folder(c, cf, it, patch['title'])
+        if it['kind'] == 'score':  # the title drawn on the score follows Info (scoretitle.py; the file before stays in .history)
+            from .scoretitle import apply as retitle
+            if (st := retitle(c, cf, get_item(c, item_id))):
+                record_undo(c, 'edit', st, edit_title, edit_detail, group='edit', window=3000)
     return get_item(c, item_id)
 
 

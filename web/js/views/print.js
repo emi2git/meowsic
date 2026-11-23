@@ -8,7 +8,7 @@ import { linesHtml, diagramsHtml } from '../chordchart.js';
 import { loadOsmd } from './score.js';
 import { TUNES } from '../mock.js';
 import { musicXml } from '../musicxml.js';
-import { easyOn, classicXml, hasChordSymbols, decoratePrintPage, KBD_ROOM } from '../easyscore.js';
+import { easyOn, classicXml, decoratePrintPage, kidsRules } from '../easyscore.js';
 
 // scores print as real notation: OSMD lays the MusicXML out on A4 pages; each page is an SVG
 const scorePagesCache = new Map(); // item id (+ easy look) → [svg markup per page]
@@ -23,14 +23,14 @@ async function scorePages(it) {
   box.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px';
   document.body.append(box);
   try {
-    // note names (the score's toggle): letters in the noteheads + keyboard diagrams under the title; classic engraving otherwise
+    // kids note names (the score's kitten toggle): big noteheads with their letters; classic engraving otherwise
     const easy = easyOn(it);
     const osmd = new window.opensheetmusicdisplay.OpenSheetMusicDisplay(box, { backend: 'svg', autoResize: false, drawTitle: true, drawSubtitle: true, drawPartNames: true, drawComposer: true, drawMetronomeMarks: true, pageFormat: 'A4_P', pageBackgroundColor: '#FFFFFF' });
-    if (easy && hasChordSymbols(xml)) osmd.EngravingRules.TitleBottomDistance += KBD_ROOM;
+    if (easy) kidsRules(osmd.EngravingRules); // big noteheads need wider spacing
     await osmd.load(xml);
     if (it.transpose) { osmd.TransposeCalculator = new window.opensheetmusicdisplay.TransposeCalculator(); osmd.Sheet.Transpose = it.transpose; osmd.updateGraphic(); }
     osmd.render();
-    if (easy) { const first = box.querySelector('svg'); if (first) decoratePrintPage(osmd, first, { title: osmd.Sheet.TitleString || it.title }); }
+    if (easy) decoratePrintPage(osmd);
     const pages = [...box.querySelectorAll('svg')].map((svg) => { svg.setAttribute('preserveAspectRatio', 'xMidYMin meet'); svg.removeAttribute('height'); svg.setAttribute('width', '100%'); return svg.outerHTML; });
     scorePagesCache.set(ck(it), pages);
     return pages;

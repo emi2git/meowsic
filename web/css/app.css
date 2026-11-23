@@ -1269,3 +1269,71 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 :root[data-device="phone"] .fb-bar .primary { flex: 1; }
 /* Add music sources: two per row on iPhone */
 :root[data-device="phone"] .src-btn { flex: 1 1 40%; min-width: 0; }
+
+/* ===== score toolbar: kitten (kids note names) and ukulele toggles ===== */
+.nn-toggle.ic-toggle { padding: 0 9px; letter-spacing: 0; }
+.nn-toggle.ic-toggle .ic { width: 24px; height: 24px; stroke-width: 1.6; }
+
+/* ===== Ukulele chords (js/ukepanel.js): Mac / iPad a card at the right of the score, iPhone a bottom sheet ===== */
+.viewer.uke-on .viewer-body { padding-right: 262px; }
+.uke-panel { position: absolute; right: 12px; top: 64px; bottom: 12px; width: 238px; z-index: 44; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line2); border-radius: 16px; box-shadow: 0 10px 34px rgba(0, 0, 0, .18); overflow: hidden; overscroll-behavior: contain; }
+.uk-head { display: flex; align-items: center; gap: 8px; padding: 8px 6px 8px 12px; border-bottom: 1px solid var(--line); flex: none; flex-wrap: wrap; }
+.uk-head b { font-size: 15px; }
+.uk-head .muted { font-size: 12px; flex: 1; min-width: 0; }
+.uk-head .uk-close { margin-left: auto; min-height: 34px; padding: 0 9px; }
+.uk-grid { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 6px; padding: 8px; align-content: start; }
+.uk-chord { padding: 2px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); min-height: 0; display: flex; justify-content: center; }
+.uk-chord.on { border: 2px solid var(--acc); padding: 1px; background: var(--acc-soft); }
+.uk-none { grid-column: 1 / -1; text-align: center; padding: 18px 6px; }
+.uk-box { width: 72px; height: auto; display: block; }
+.uk-box .uk-name { font: 700 14px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: var(--ink); }
+.uk-box .uk-l { stroke: var(--ink2); stroke-width: 1; }
+.uk-box .uk-nut { stroke: var(--ink); stroke-width: 3.2; }
+.uk-box .uk-dot, .uk-box .uk-barre { fill: var(--ink); }
+.uk-box .uk-fing { font: 700 9px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: var(--card); }
+.uk-box .uk-open { fill: none; stroke: var(--ink); stroke-width: 1.2; }
+.uk-box .uk-fr { font: 600 9px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: var(--mute); }
+.uk-box .uk-str { font: 600 8px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: var(--mute); }
+.uk-box .uk-q { font: 700 24px sans-serif; fill: var(--mute); }
+/* tapped chord: where it is played lights up in the score */
+#osmd .uke-hit, #osmd .uke-hit * { fill: var(--acc) !important; }
+:root[data-device="tablet"] .uke-panel { bottom: 12px; width: 216px; }
+:root[data-device="tablet"] .viewer.uke-on .viewer-body { padding-right: 232px; }
+:root[data-device="phone"] .viewer.uke-on .viewer-body { padding-right: 0; padding-bottom: min(34dvh, 260px); }
+:root[data-device="phone"] .uke-panel { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: min(34dvh, 260px); border-radius: 14px 14px 0 0; padding-bottom: env(safe-area-inset-bottom); }
+:root[data-device="phone"] .uke-panel::before { content: ''; display: block; width: 38px; height: 4px; border-radius: 2px; background: var(--line2); margin: 6px auto 0; flex: none; }
+:root[data-device="phone"] .uk-grid { grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); }
+
+/* ===== Ease rests (js/views/easerests.js): a panel under the score while previewing ===== */
+.viewer.easing .viewer-body { padding-bottom: 150px; }
+.ease-panel { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 45; background: var(--card); border: 1px solid var(--line2); border-radius: 16px; box-shadow: 0 10px 34px rgba(0, 0, 0, .22); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.er-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.er-title { font-size: 16px; }
+.er-seg button.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, .15); }
+.er-count { font-weight: 700; color: var(--ink2); }
+.er-help { margin: 0; font-size: 13px; }
+.er-acts { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.er-acts button { min-height: 42px; padding: 0 14px; }
+:root[data-device="tablet"] .ease-panel, :root[data-device="phone"] .ease-panel { left: 0; right: 0; bottom: 0; border-radius: 16px 16px 0 0; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+:root[data-device="phone"] .viewer.easing .viewer-body { padding-bottom: 210px; }
+:root[data-device="phone"] .viewer.easing #it-bar { display: none; }
+:root[data-device="phone"] .er-acts button { flex: 1 1 40%; min-height: 48px; }
+
+/* ===== score toolbar: the three round toggles (chords piano/ukulele/off, kids note names, voice); one icon each, the icon shows the state ===== */
+.tg-row { display: inline-flex; gap: 6px; align-items: center; flex: none; }
+.tg-btn { width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex: none; background: var(--card); border: 1px solid var(--line2); color: var(--mute); }
+.tg-btn .ic { width: 24px; height: 24px; stroke-width: 1.6; opacity: .55; }
+.tg-btn.on { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
+.tg-btn.on .ic { opacity: 1; }
+.tg-btn[hidden] { display: none; }
+:root[data-device="phone"] .tg-btn { width: 38px; height: 38px; min-height: 38px; }
+.uke-panel[data-mode="piano"] .uk-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+.uk-chord svg.pn-box { width: 104px; height: auto; display: block; }
+:root[data-device="phone"] .uke-panel[data-mode="piano"] .uk-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.er-acts .grow { flex: 1; }
+.uk-head { position: relative; padding-right: 44px; }
+.uk-head .muted { flex-basis: 100%; }
+.uk-head .uk-close { position: absolute; right: 4px; top: 6px; }
+.uke-panel[data-mode="piano"] .uk-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.uk-chord svg.pn-box { width: 100%; max-width: 210px; height: auto; }
+:root[data-device="phone"] .uke-panel[data-mode="piano"] .uk-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }

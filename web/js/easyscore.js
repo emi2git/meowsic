@@ -1,6 +1,7 @@
-// Note names for a score: the note's letter inside every (normal-size) notehead and, when the
-// score has chord symbols, a row of piano-keyboard chord diagrams under the title. Everything else
-// stays OSMD's classic engraving (serif title, composer, tempo, chord symbols, lyrics).
+// Kids note names (the kitten button): big noteheads with the note's letter inside, on every staff, like an
+// E-Z Play / big-note children's sheet — white letters on filled heads, black on open ones. The notes are
+// spaced wider so the big heads have room; everything else stays OSMD's classic engraving (title, composer,
+// tempo, chord symbols, lyrics). No chord diagrams (those are the ukulele panel's, ukepanel.js).
 // Works on a rendered OpenSheetMusicDisplay instance (screen and print).
 import { splitChord, chordIntervals, notePc, esc } from './chords.js';
 
@@ -10,13 +11,21 @@ const NAT = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const ACC = { '-2': '𝄫', '-1': '♭', 0: '', 1: '♯', 2: '𝄪' };
 const SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif";
 
-// off by default for every score; the toggle is remembered per item on this device
+// off by default; the toggle is remembered on this device, for every score (`it` unused, kept for callers)
 export const isAiScore = (it) => !!it.ai || /^meowsic ai$/i.test(String(it.source || '').trim());
-export const easyKey = (it) => `meowsic-easy-${it.id}`;
-export function easyOn(it) {
-  try { return localStorage.getItem(easyKey(it)) === '1'; } catch { return false; }
+export const KIDS_KEY = 'meowsic-kids';
+export const easyKey = () => KIDS_KEY;
+export function easyOn() {
+  try { return localStorage.getItem(KIDS_KEY) === '1'; } catch { return false; }
 }
-export function setEasy(it, on) { try { localStorage.setItem(easyKey(it), on ? '1' : '0'); } catch {} }
+export function setEasy(it, on) { try { localStorage.setItem(KIDS_KEY, on ? '1' : '0'); } catch {} }
+
+// how big the heads get (× a normal head), and the wider spacing that makes room for them
+export const KIDS_GROW = 1.85;
+export function kidsRules(r) {
+  r.VoiceSpacingMultiplierVexflow = 1.25; r.VoiceSpacingAddendVexflow = 5; r.MinNoteDistance = 4;
+  r.BetweenStaffDistance += 2.5; r.StaffDistance += 3;
+}
 
 // the credit line ("Words and Music by …"): the MusicXML creator, composer first, shown as given
 export function creditOf(xmlText) {
@@ -38,8 +47,11 @@ export function classicXml(xml, it) {
   const mk = (tag, text) => { const e = doc.createElement(tag); e.textContent = text; return e; };
   let changed = false;
   const titles = [...root.querySelectorAll(':scope > movement-title, :scope > work > work-title')];
-  if (it?.title && (!titles.length || titles.every((t) => !t.textContent.trim() || /^music21\b/i.test(t.textContent.trim())))) {
+  // the drawn title is always the item's Info title (a transcription's file says the video's name)
+  const credTitles = [...root.querySelectorAll(':scope > credit')].filter((c) => c.querySelector('credit-type')?.textContent.trim() === 'title');
+  if (it?.title && (titles.some((t) => t.textContent.trim() !== it.title) || !titles.length || credTitles.length)) {
     titles.forEach((t) => t.remove());
+    credTitles.forEach((c) => c.remove());
     root.querySelector(':scope > work')?.childElementCount === 0 && root.querySelector(':scope > work').remove();
     root.insertBefore(mk('movement-title', it.title), root.firstElementChild);
     changed = true;
@@ -118,10 +130,11 @@ export function chordsOf(osmd) {
 // the drawn pitch's letter (accidentals are drawn as signs, so just A–G)
 export const noteLetter = (gn) => LETTER[(gn.sourceNote.TransposedPitch || gn.sourceNote.Pitch)?.FundamentalNote];
 
-// letters inside the noteheads (normal size). White on filled heads (quarter and shorter), black on
-// open ones (half, whole). No letters on rests. minPx: on a small screen (iPhone) the heads grow
-// just enough for the letter to be at least this many pixels high on screen.
-export function drawNoteLetters(osmd, { grow: grow0 = 1, minPx = 0 } = {}) {
+// letters inside the noteheads, the heads grown `grow` times (away from the stem, so it stays attached; a
+// chord's heads only as far as the room between them allows). White on filled heads (quarter and shorter),
+// black on open ones (half, whole). No letters on rests. minPx: on a small screen (iPhone) the heads grow
+// more if needed for the letter to be at least this many pixels high on screen.
+export function drawNoteLetters(osmd, { grow: grow0 = KIDS_GROW, minPx = 0 } = {}) {
   const svgs = new Set();
   const pxPer = new Map(); // svg → screen px per svg unit
   for (const gve of graphicalNotes(osmd)) {
@@ -137,10 +150,15 @@ export function drawNoteLetters(osmd, { grow: grow0 = 1, minPx = 0 } = {}) {
     // lowest head first ↔ lowest pitch first
     const boxes = heads.map((h) => ({ h, b: h.getBBox() })).sort((a, b) => b.b.y - a.b.y);
     let grow = grow0;
+    // a chord: heads a step or a third apart only grow into the room between them
+    for (let i = 1; i < boxes.length; i++) {
+      const a = boxes[i - 1].b, c = boxes[i].b;
+      if (Math.abs(a.x - c.x) < a.width * 0.6) grow = Math.min(grow, Math.max(1, (Math.abs(a.y - c.y) / a.height) * 0.98));
+    }
     if (minPx) {
       if (!pxPer.has(svg)) { const vb = (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number); pxPer.set(svg, vb[2] ? svg.getBoundingClientRect().width / vb[2] : 1); }
       const px = boxes[0].b.height * 0.8 * pxPer.get(svg);
-      if (px > 0 && px < minPx) grow = Math.max(grow0, Math.min(1.7, minPx / px));
+      if (px > 0 && px < minPx) grow = Math.max(grow, Math.min(2.2, minPx / px));
     }
     const sorted = [...notes].sort((a, b) => (a.sourceNote.TransposedPitch || a.sourceNote.Pitch).getHalfTone() - (b.sourceNote.TransposedPitch || b.sourceNote.Pitch).getHalfTone());
     const stem = g.querySelector('.vf-stem path, path.vf-stem');
@@ -266,7 +284,6 @@ export function drawKeyboardRow(osmd, svg, { title } = {}) {
   svg.append(g);
   return chords.length;
 }
-export function decoratePrintPage(osmd, svg, { title } = {}) {
+export function decoratePrintPage(osmd) {
   drawNoteLetters(osmd);
-  drawKeyboardRow(osmd, svg, { title });
 }

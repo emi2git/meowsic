@@ -1,8 +1,8 @@
 // Note names (server on $BASE with an AI piece that has chord symbols, e.g. a lead sheet added by
 // meowsic-add-ai-score.py): every score, AI ones included, opens in OSMD's classic look
-// (title, composer "Meowsic", tempo as OSMD draws them); the A B C button / ⋯ toggle adds a letter in
-// every (normal-size) notehead and keyboard chord diagrams under the title — nothing else changes;
-// transpose updates both; remembered per item; playback still works.
+// (title, composer "Meowsic", tempo as OSMD draws them); the kids button (baby icon) / ⋯ toggle draws big
+// noteheads with the note's letter inside — no chord diagrams (those are the chords button's); the text
+// stays the same; transpose updates the letters; remembered on this device; playback still works.
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5215/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', args: ['--autoplay-policy=no-user-gesture-required'] });
@@ -58,29 +58,24 @@ const state = () => page.evaluate(() => {
 const norm = (c) => c.replace(/♯/g, '#').replace(/♭/g, 'b');
 
 await page.goto(`${BASE}#/library`, { waitUntil: 'networkidle0' });
-await page.evaluate((id) => { localStorage.removeItem(`meowsic-easy-${id}`); }, ai.id);
+await page.evaluate(() => { localStorage.removeItem('meowsic-kids'); localStorage.removeItem('meowsic-chords'); });
 await page.goto(`${BASE}#/item/${ai.id}`, { waitUntil: 'networkidle0' }); await sleep(2500);
 let s = await state();
-check('AI piece: classic look by default (no letters, no diagrams, A B C off)', s.letters.length === 0 && s.kbds.length === 0 && s.btn === false, JSON.stringify({ l: s.letters.length, k: s.kbds.length, b: s.btn }));
+check('AI piece: classic look by default (no letters, no diagrams, kids off)', s.letters.length === 0 && s.kbds.length === 0 && s.btn === false, JSON.stringify({ l: s.letters.length, k: s.kbds.length, b: s.btn }));
 check('classic: OSMD draws the title and "Meowsic" as composer, serif text', s.texts.some((t) => t.t === ai.title) && s.texts.some((t) => t.t === 'Meowsic') && !s.texts.some((t) => /Helvetica/.test(t.f)), JSON.stringify(s.texts.slice(0, 4)));
 check('classic: default zoom 100%', (await page.$eval('#sc-zreset', (e) => e.textContent)) === '100%');
 const classicTexts = s.texts.map((t) => t.t + '|' + t.f).join();
 await page.click('#sc-names'); await sleep(2500);
 s = await state();
-check('A B C button lights up', s.btn === true);
+check('kids button lights up', s.btn === true);
 check('a letter on every notehead (rests none)', s.letters.length === want.steps.length && s.heads === s.letters.length && s.allHeads === s.letters.length + want.rests, `${s.letters.length} letters, ${s.heads}/${s.allHeads} heads, ${want.steps.length} notes`);
 check('each letter is the note\'s pitch letter', s.letters.join('') === want.steps.join(''), `${s.letters.join('')} vs ${want.steps.join('')}`);
 check('each letter sits inside its notehead', s.inside);
 check('white letters on filled heads, black on open', s.fills.includes('#fff') && s.fills.includes('#000'), s.fills.join(','));
-check('noteheads stay normal size (none scaled)', s.grown === 0, String(s.grown));
-check('letters fill the notehead (>= 60% of its height)', s.minSize >= s.headH * 0.6, `${s.minSize} vs ${s.headH}`);
-check('nothing else changes: same title, composer, tempo, chord and lyric text and fonts', s.texts.map((t) => t.t + '|' + t.f).join() === classicTexts);
-check('one keyboard per chord, in order of first appearance', s.kbds.map((k) => norm(k.chord)).join(',') === want.chords.join(','), s.kbds.map((k) => k.chord).join(','));
-check('shaded keys = notes listed', s.kbds.every((k) => k.grey === k.notes.split(' ').length && k.grey >= 3), JSON.stringify(s.kbds));
-const kn = Object.fromEntries(s.kbds.map((k) => [norm(k.chord), k.notes]));
-if (kn.G) check('G = D G B', kn.G === 'D G B', kn.G);
-if (kn.D7) check('D7 = D F♯ A C', kn.D7 === 'D F♯ A C', kn.D7);
-if (kn.C) check('C = C E G', kn.C === 'C E G', kn.C);
+check('noteheads are big (scaled up)', s.grown >= s.letters.length * 0.6, `${s.grown}/${s.letters.length}`);
+check('letters fill the big heads (>= 75% of their height)', s.minSize >= s.headH * 0.75, `${s.minSize} vs ${s.headH}`);
+check('same title, composer, tempo, chord and lyric text and fonts (bar numbers aside: the lines break elsewhere)', s.texts.filter((t) => !/^\d+$/.test(t.t)).map((t) => t.t + '|' + t.f).sort().join() === classicTexts.split(',').filter((x) => !/^\d+\|/.test(x)).sort().join());
+check('no keyboard chord diagrams in the score', s.kbds.length === 0, JSON.stringify(s.kbds));
 
 // transpose up a whole step: every letter moves one letter up, chords and diagrams follow
 const up = (L) => 'CDEFGAB'['CDEFGAB'.indexOf(L) + 1] || 'C';
@@ -89,10 +84,6 @@ await page.click('#sc-tup'); await sleep(1200); await page.click('#sc-tup'); awa
 s = await state();
 check('transpose +2: letters move up one letter', s.letters.join('') === want.steps.map(up).join(''), `${s.letters.join('')} vs ${want.steps.map(up).join('')}`);
 check('transpose +2: still a letter on every notehead', s.heads === s.letters.length && s.allHeads === s.heads + want.rests && s.inside);
-check('transpose +2: diagrams follow', s.kbds.map((k) => norm(k.chord)).join(',') === want.chords.map(shift).join(','), s.kbds.map((k) => k.chord).join(','));
-const kt = Object.fromEntries(s.kbds.map((k) => [norm(k.chord), k.notes]));
-if (kt.A) check('A = C♯ E A', kt.A === 'C♯ E A', kt.A);
-if (kt.E7) check('E7 = D E G♯ B or E G♯ B D', ['E G♯ B D'].includes(kt.E7), kt.E7);
 await page.screenshot({ path: 'easyscore-transposed.png' });
 await page.click('#sc-tdown'); await sleep(1200); await page.click('#sc-tdown'); await sleep(2000);
 s = await state();
@@ -111,18 +102,18 @@ check('Play moves the playhead', pos > 0.3, String(pos));
 await page.click('#sc-play'); await sleep(300);
 
 // ⋯ menu toggle
-const menuItem = async () => { await page.click('#it-more'); await sleep(300); return page.$$eval('.menu button', (bs) => bs.map((x) => ({ t: x.textContent, c: x.getAttribute('aria-checked') }))).then((l) => l.find((x) => x.t.startsWith('Note names in noteheads'))); };
+const menuItem = async () => { await page.click('#it-more'); await sleep(300); return page.$$eval('.menu button', (bs) => bs.map((x) => ({ t: x.textContent, c: x.getAttribute('aria-checked') }))).then((l) => l.find((x) => x.t.startsWith('Kids note names'))); };
 let mi = await menuItem();
-check('⋯ menu has "Note names in noteheads", checked', mi && mi.c === 'true', JSON.stringify(mi));
-await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.startsWith('Note names in noteheads')).click()); await sleep(2000);
+check('⋯ menu has "Kids note names", checked', mi && mi.c === 'true', JSON.stringify(mi));
+await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.startsWith('Kids note names')).click()); await sleep(2000);
 s = await state();
-check('toggle off: no letters, no diagrams, button off', s.letters.length === 0 && s.kbds.length === 0 && s.btn === false);
+check('toggle off: no letters, button off', s.letters.length === 0 && s.kbds.length === 0 && s.btn === false);
 await page.reload({ waitUntil: 'networkidle0' }); await sleep(2500);
 s = await state();
-check('off is remembered for this item', s.letters.length === 0);
+check('off is remembered on this device', s.letters.length === 0);
 mi = await menuItem();
 check('menu shows it unchecked', mi && mi.c === 'false', JSON.stringify(mi));
-await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.startsWith('Note names in noteheads')).click()); await sleep(2000);
+await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.startsWith('Kids note names')).click()); await sleep(2000);
 s = await state();
 check('toggle on again: letters back', s.letters.length === want.steps.length);
 await page.screenshot({ path: 'easyscore.png' });
@@ -131,11 +122,11 @@ await page.screenshot({ path: 'easyscore.png' });
 await page.goto(`${BASE}#/print?item=${ai.id}`, { waitUntil: 'networkidle0' }); await sleep(5000);
 const pr = await page.evaluate(() => ({ letters: [...document.querySelectorAll('#print-root text.nl')].map((t) => t.textContent).join(''), kbds: [...document.querySelectorAll('#print-root g.kbd')].map((k) => k.dataset.chord), credit: [...document.querySelectorAll('#print-root svg text')].some((t) => t.textContent === 'Meowsic'), sans: [...document.querySelectorAll('#print-root svg text:not(.nl)')].some((t) => /Helvetica/.test(t.getAttribute('font-family') || '') && !t.closest('g.kbd')) }));
 check('print: letters in every notehead', pr.letters === want.steps.join(''), pr.letters);
-check('print: keyboard diagrams + OSMD composer "Meowsic", classic fonts', pr.kbds.map(norm).join(',') === want.chords.join(',') && pr.credit && !pr.sans, JSON.stringify(pr));
+check('print: no keyboard diagrams; OSMD composer "Meowsic", classic fonts', pr.kbds.length === 0 && pr.credit && !pr.sans, JSON.stringify(pr));
 
 // another (non-AI) score: off by default, the toggle turns it on
 if (plain) {
-  await page.evaluate((id) => localStorage.removeItem(`meowsic-easy-${id}`), plain.id);
+  await page.evaluate(() => localStorage.removeItem('meowsic-kids'));
   await page.goto(`${BASE}#/item/${plain.id}`, { waitUntil: 'networkidle0' }); await sleep(3000);
   s = await state();
   check('other score: off by default', s.letters.length === 0 && s.kbds.length === 0);
@@ -143,10 +134,10 @@ if (plain) {
   s = await state();
   check('other score: toggle on draws letters on every notehead', s.letters.length > 0 && s.heads === s.letters.length, `${s.letters.length} / ${s.heads} / ${s.allHeads}`);
   await page.screenshot({ path: 'easyscore-other.png' });
-  await page.evaluate((id) => localStorage.removeItem(`meowsic-easy-${id}`), plain.id);
+  await page.evaluate(() => localStorage.removeItem('meowsic-kids'));
 }
 
-const def = await page.evaluate(async () => { const m = await import('/js/easyscore.js'); return [m.easyOn({ id: 'x-src', source: 'Meowsic' }), m.easyOn({ id: 'x-ai', ai: 1 }), m.easyOn({ id: 'x-no', source: 'Transcribed' })]; });
+const def = await page.evaluate(async () => { localStorage.removeItem('meowsic-kids'); const m = await import('/js/easyscore.js'); return [m.easyOn({ id: 'x-src', source: 'Meowsic' }), m.easyOn({ id: 'x-ai', ai: 1 }), m.easyOn({ id: 'x-no', source: 'Transcribed' })]; });
 check('off by default for every score (AI ones too)', def.join() === 'false,false,false', def.join());
 check('no page errors', !errs.length, errs.join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);
