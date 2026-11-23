@@ -22,8 +22,11 @@ const KEYS = {
     ['U / Z', 'Undo'],
   ],
   fix: [
-    ['Enter / T', 'Trim as shown and go on'],
+    ['Enter / T', 'Crop as shown and go on'],
     ['F', 'Keep this page as it is'],
+    ['L', 'Leave this page for later and go on'],
+    ['1 / 2', 'Use saved Frame 1 / 2 (then Crop)'],
+    ['⇧1 / ⇧2', 'Save the box as Frame 1 / 2'],
     ['G', 'Song done'],
     ['→ ←', 'Next / previous page'],
     ['] [', 'Next / previous song'],
@@ -33,6 +36,7 @@ const KEYS = {
     ['O', 'Back to the original photo'],
     ['R', 'Rename'], ['S', 'Split into two songs…'], ['Delete', 'Delete the song'],
     ['U / Z', 'Undo'],
+    ['⌥1 / ⌥2 / ⌥3', 'Go through sheets / Fix pages / Titles'],
   ],
   titles: [['Enter / R', 'Rename'], ['F', 'Title is fine'], ['↑ ↓', 'Next / previous'], ['U / Z', 'Undo']],
   books: BOOK_KEYS,
@@ -40,7 +44,7 @@ const KEYS = {
 // what the Mac found, in plain words
 const ISSUE = { trim: 'Screen junk to trim', mixed: 'Pages from different songs', incomplete: 'Pages missing', extra: 'Extra pages',
   twice: 'Same page twice', order: 'Pages out of order', empty: 'No pages', title: 'Odd title' };
-const FILTERS = [['look', 'To do'], ['good', 'Done'], ['all', 'All']];
+const FILTERS = [['look', 'To do'], ['later', 'Later'], ['good', 'Done'], ['all', 'All']];
 
 const api = async (method, path, body) => {
   const r = await fetch('/api' + path, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -48,7 +52,12 @@ const api = async (method, path, body) => {
   if (!r.ok) throw new Error(data.detail || 'The Mac said no.');
   return data;
 };
-const isGood = (s) => s.reviewed || !s.issues.length;
+// the Mac says per song: 'todo' | 'later' | 'done' (every page cropped or kept; grouping issues are only hints)
+const stateOf = (s) => s.state || (s.reviewed || !s.issues.length ? 'done' : 'todo');
+const isGood = (s) => stateOf(s) === 'done';
+const isTodo = (s) => stateOf(s) === 'todo';
+const isLater = (s) => stateOf(s) === 'later';
+const frameText = (b) => b ? `top ${Math.round(b.top * 100)}% · bottom ${Math.round(b.bottom * 100)}%` + (b.left > 0.001 || b.right < 0.999 ? ` · left ${Math.round(b.left * 100)}% · right ${Math.round(b.right * 100)}%` : '') : 'not saved';
 const full = () => ({ top: 0, bottom: 1, left: 0, right: 1 });
 
 export function cleanupView(main) {
@@ -58,7 +67,7 @@ export function cleanupView(main) {
   }
   let tab0 = 'sort'; try { tab0 = localStorage.getItem('meowsic-cu-tab') || 'sort'; } catch {}
   const st = { tab: tab0, filter: 'look', songs: [], titles: [], sid: null, pi: 0, ti: 0, scan: null, crop: null, carry: null, undo: [], sug: [], busy: false, renaming: false,
-    sort: { dec: {}, id: null, show: 'todo', summary: false }, notes: {}, noteDue: null };
+    sort: { dec: {}, id: null, show: 'todo', summary: false }, notes: {}, noteDue: null, frames: { 1: null, 2: null } };
   main.innerHTML = `<header class="top cu-top">
       <a class="icon-btn back cu-back" href="#/library" aria-label="Back to the library">‹ Library</a>
       <h1>Clean up</h1>
@@ -77,13 +86,14 @@ export function cleanupView(main) {
 
   // the song you're on stays in the list until you move off it — otherwise finishing its last trim
   // would drop it from "To do" and throw you back to the top of the list (the same song again and again)
-  const shown = () => st.songs.filter((s) => s.id === st.sid || (st.filter === 'all' ? true : st.filter === 'good' ? isGood(s) : !isGood(s)));
+  const inFilter = (s) => (st.filter === 'all' ? true : st.filter === 'good' ? isGood(s) : st.filter === 'later' ? isLater(s) : isTodo(s));
+  const shown = () => st.songs.filter((s) => s.id === st.sid || inFilter(s));
   const song = () => st.songs.find((s) => s.id === st.sid);
   const pg = () => song()?.pages[st.pi];
 
   const load = async () => {
-    const [d, so, sg] = await Promise.all([api('GET', '/cleanup'), api('GET', '/cleanup/sort'), api('GET', '/cleanup/suggest').catch(() => [])]);
-    st.sug = sg; st.scan = d.scan; st.songs = d.songs; st.titles = d.titles; st.sort.dec = so.decisions;
+    const [d, so, sg, fr] = await Promise.all([api('GET', '/cleanup'), api('GET', '/cleanup/sort'), api('GET', '/cleanup/suggest').catch(() => []), api('GET', '/cleanup/frames').catch(() => null)]);
+    st.sug = sg; if (fr) st.frames = fr; st.scan = d.scan; st.songs = d.songs; st.titles = d.titles; st.sort.dec = so.decisions;
     for (const s of d.songs) if (!(s.id in st.notes)) st.notes[s.id] = s.note || ''; // what is typed here always wins
     if (!song()) { st.sid = shown()[0]?.id || null; st.pi = 0; }
     st.ti = Math.min(st.ti, Math.max(0, st.titles.length - 1));
@@ -101,7 +111,7 @@ export function cleanupView(main) {
 
   const drawHead = () => {
     $('#cu-nt', main).textContent = st.titles.length + st.sug.length || '';
-    $('#cu-nf', main).textContent = st.songs.filter((s) => !isGood(s)).length || '';
+    $('#cu-nf', main).textContent = st.songs.filter(isTodo).length || '';
     main.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === st.tab));
     const s = st.scan;
     $('#cu-scan', main).textContent = s?.running ? `Checking pages… ${s.done} / ${s.total}` : '';
@@ -110,9 +120,10 @@ export function cleanupView(main) {
     ub.textContent = u ? `↶ Undo ${u.label}` : '↶ Undo';
   };
 
-  const songLine = (s) => (s.reviewed ? 'done' : s.issues.length ? s.issues.map((i) => i.text).join(' · ') : 'nothing found') + (s.trimmed ? ` · ${s.trimmed} trimmed` : '');
+  const songLine = (s) => (s.reviewed ? 'done' : isGood(s) && s.done ? `${s.done} of ${s.pages.length} done` : s.issues.length ? s.issues.map((i) => i.text).join(' · ') : 'nothing found')
+    + (s.later ? ` · ${s.later} for later` : '') + (s.trimmed ? ` · ${s.trimmed} trimmed` : '');
   const chips = (s) => (s.issues.length ? s.issues.map((i) => `<span class="cu-issue ${i.kind}" title="${esc(i.text)}">${esc(ISSUE[i.kind] || i.kind)}${i.kind === 'trim' ? ` · ${esc(i.text.split(' ')[0])}` : ''}</span>`).join('')
-    : `<span class="cu-issue ok">${s.reviewed ? 'Done' : 'Nothing found'}</span>`);
+    : `<span class="cu-issue ok">${s.reviewed || s.done ? 'Done' : 'Nothing found'}</span>`) + (s.later ? `<span class="cu-issue later">${s.later} left for later</span>` : '');
 
   const draw = () => {
     flushNote();
@@ -123,9 +134,13 @@ export function cleanupView(main) {
     if (st.tab === 'books') return books.draw();
     if (st.tab === 'sort') return drawSort();
     const list = shown();
-    const filt = `<div class="cu-filter">${FILTERS.map(([k, l]) => `<button data-f="${k}" class="${st.filter === k ? 'on' : ''}">${l} <i>${{ look: st.songs.filter((s) => !isGood(s)).length, good: st.songs.filter(isGood).length, all: st.songs.length }[k]}</i></button>`).join('')}</div>`;
+    const filt = `<div class="cu-filter">${FILTERS.map(([k, l]) => `<button data-f="${k}" class="${st.filter === k ? 'on' : ''}">${l} <i>${{ look: st.songs.filter(isTodo).length, later: st.songs.filter(isLater).length, good: st.songs.filter(isGood).length, all: st.songs.length }[k]}</i></button>`).join('')}</div>`;
     if (!list.length) {
-      body.innerHTML = `<div class="cu-side">${filt}</div><p class="pad muted">${st.scan?.running ? 'Checking pages…' : st.filter === 'look' ? 'Nothing left to fix. 🎉' : 'No songs here.'}</p>`;
+      const nl = st.songs.filter(isLater).length;
+      body.innerHTML = `<div class="cu-side">${filt}</div><div class="pad cu-empty"><p class="muted">${st.scan?.running ? 'Checking pages…' : st.filter === 'look' ? 'Nothing left to fix. 🎉' : 'No songs here.'}</p>
+        ${st.filter === 'look' && nl ? `<button id="cu-golater" class="primary">Go through the ones you left for later (${nl})</button>` : ''}</div>`;
+      body.querySelector('.cu-filter').onclick = (e) => { const b = e.target.closest('[data-f]'); if (b) { st.filter = b.dataset.f; st.crop = null; draw(); } };
+      $('#cu-golater', body)?.addEventListener('click', () => { st.filter = 'later'; st.sid = null; st.crop = null; draw(); });
       return;
     }
     if (!list.some((s) => s.id === st.sid)) { st.sid = list[0].id; st.pi = 0; }
@@ -136,7 +151,7 @@ export function cleanupView(main) {
     if (st.crop?.key !== key) st.crop = startBox(s, p);
     const ver = it?.updatedAt || 0;
     body.innerHTML = `<div class="cu-side">${filt}
-      <ol class="cu-list" id="cu-list">${list.map((x) => `<li class="${x.id === st.sid ? 'on' : ''} ${isGood(x) ? 'good' : x.issues.some((i) => i.kind !== 'trim' && i.kind !== 'title') ? 'bad' : 'look'}" data-id="${x.id}">
+      <ol class="cu-list" id="cu-list">${list.map((x) => `<li class="${x.id === st.sid ? 'on' : ''} ${isGood(x) ? 'good' : isLater(x) ? 'later' : x.issues.some((i) => i.kind !== 'trim' && i.kind !== 'title') ? 'bad' : 'look'}" data-id="${x.id}">
         <b>${hasNote(x.id) ? '<span class="cu-pen" title="Has a note for Claude">✎</span> ' : ''}${esc(store.get(x.id)?.title || x.title)}</b><small>${x.pages.length} p · ${esc(songLine(x))}</small></li>`).join('')}</ol></div>
       <section class="cu-main">
         <div class="cu-bar">
@@ -147,7 +162,7 @@ export function cleanupView(main) {
         <div class="cu-issues">${chips(s)}${s.issues.some((i) => ['mixed', 'extra', 'twice', 'order', 'incomplete'].includes(i.kind)) ? '<span class="muted small">To fix grouping: Song ▾ → Split into two songs, or Delete.</span>' : ''}</div>
         <div class="cu-strip">${s.pages.map((x, k) => `<button class="${k === st.pi ? 'on' : ''}" data-p="${k}" title="Page ${x.page}">
           <img src="${store.fileUrl(s.id, it?.pageFiles?.[x.page - 1] || x.file)}?v=${ver}" alt="" loading="lazy">
-          <span>${x.page}${x.dots ? ` · dot ${x.dots.lit ?? '?'}/${x.dots.count}` : ''}${x.trims ? ' · ✓' : x.trim ? ' · ✂' : ''}</span></button>`).join('')}</div>
+          <span>${x.page}${x.dots ? ` · dot ${x.dots.lit ?? '?'}/${x.dots.count}` : ''}${x.trims ? ' · ✓' : x.kept ? ' · kept' : x.later ? ' · later' : x.trim ? ' · ✂' : ''}</span></button>`).join('')}</div>
         ${!p.page ? '<p class="pad muted">This song has no pages. Delete it?</p>' : ''}
 ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
           <img id="cu-img" src="${p.trims ? `/api/items/${encodeURIComponent(s.id)}/pages/${p.page}/original` : store.fileUrl(s.id, it?.pageFiles?.[p.page - 1] || p.file)}?v=${ver}" alt="" draggable="false">
@@ -155,12 +170,14 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
           <div class="cu-box"><i data-e="top"></i><i data-e="bottom"></i><i data-e="left"></i><i data-e="right"></i>
             <i data-e="top left"></i><i data-e="top right"></i><i data-e="bottom left"></i><i data-e="bottom right"></i></div>
         </div></div>` : ''}
+        <div class="cu-frames">${[1, 2].map((n) => `<span class="cu-fr"><button data-fr="${n}" class="ghost" ${st.frames[n] ? '' : 'disabled'} title="${st.frames[n] ? `Use Frame ${n} (${n}) · ${frameText(st.frames[n])}` : `Frame ${n} not saved yet — ⤓ saves the box`}">Frame ${n}<small>${frameText(st.frames[n])}</small></button><button data-frs="${n}" class="ghost cu-frsave" title="Save box as Frame ${n} (⇧${n})" aria-label="Save box as Frame ${n}">⤓</button></span>`).join('')}</div>
         <div class="cu-act">
           <span class="muted small cu-hint">Page ${st.pi + 1} of ${s.pages.length} · <b class="cu-from">${esc(st.crop.from)}</b>${p.trim && !p.crop ? ` · found: ${esc(p.trim.reasons.join(', '))}` : ''} · drag the red edges, or draw a new box</span>
           <span class="grow"></span>
           ${p.trims ? '<button id="cu-orig" class="ghost">Original photo</button>' : ''}
-          <button id="cu-fine" class="big">Keep page as is</button>
-          <button id="cu-trim" class="primary big">Trim &amp; next</button>
+          <button id="cu-trim" class="primary big">Crop &amp; next</button>
+          <button id="cu-fine" class="big">Keep</button>
+          <button id="cu-later" class="big" title="Leave this page for later (L)">Later</button>
         </div>
       </section>`;
     placeBox();
@@ -168,8 +185,11 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     $('#cu-list', body).onclick = (e) => { const li = e.target.closest('[data-id]'); if (li) { st.sid = li.dataset.id; st.pi = 0; st.crop = null; draw(); } };
     body.querySelector('.cu-strip').onclick = (e) => { const b = e.target.closest('[data-p]'); if (b) { st.pi = +b.dataset.p; draw(); } };
     $('#cu-trim', body).onclick = doTrim;
-    if (!p.page) for (const id of ['cu-trim', 'cu-fine']) $('#' + id, body).disabled = true;
+    if (!p.page) for (const id of ['cu-trim', 'cu-fine', 'cu-later']) $('#' + id, body).disabled = true;
     $('#cu-fine', body).onclick = fine;
+    $('#cu-later', body).onclick = later;
+    body.querySelector('.cu-frames').onclick = (e) => { const a = e.target.closest('[data-fr]'), sv = e.target.closest('[data-frs]'); if (a) useFrame(+a.dataset.fr); else if (sv) saveFrame(+sv.dataset.frs); };
+    body.querySelector('.cu-frames').oncontextmenu = (e) => { const a = e.target.closest('[data-fr]'); if (a) { e.preventDefault(); saveFrame(+a.dataset.fr); } };
     $('#cu-orig', body)?.addEventListener('click', () => original());
     body.querySelector('.cu-filter').onclick = (e) => { const b = e.target.closest('[data-f]'); if (b) { st.filter = b.dataset.f; st.crop = null; draw(); } };
     $('#cu-songmore', body).onclick = (e) => menu(e.currentTarget, [
@@ -273,20 +293,44 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     if (same(pg().crop, c)) { st.crop = null; return onward(); }  // already cropped like this
     return busy(async () => {
       const s = song(), p = pg(), box = { top: c.top, bottom: c.bottom, left: c.left, right: c.right };
-      const prev = st.carry;
+      const prev = st.carry, wasLater = p.later, key = `${s.id}:${p.page}`;
       store.putItem(await api('POST', `/items/${s.id}/pages/${p.page}/trim`, box));
       st.carry = { box, sid: s.id, page: p.page, title: store.get(s.id)?.title || s.title };  // the next page (any song) starts with this box
-      st.undo.push({ label: 'trim', run: async () => { store.putItem(await api('POST', `/items/${s.id}/pages/${p.page}/untrim`, {})); st.carry = prev; }, at: [s.id, st.pi] });
+      st.undo.push({ label: 'trim', run: async () => { store.putItem(await api('POST', `/items/${s.id}/pages/${p.page}/untrim`, {})); if (wasLater) await api('POST', '/cleanup/later', { key }); st.carry = prev; }, at: [s.id, st.pi] });
       await reloadSong(s.id); st.crop = null; onward();
     });
   };
   const fine = () => busy(async () => {
     const s = song(), p = pg();
     if (!p) return;
-    const key = `${s.id}:${p.page}`;
+    const key = `${s.id}:${p.page}`, wasLater = p.later;
     await api('POST', '/cleanup/ok', { key });
-    st.undo.push({ label: 'page is fine', run: () => api('POST', '/cleanup/ok', { key, undo: true }), at: [s.id, st.pi] });
+    st.undo.push({ label: 'keep', run: async () => { await api('POST', '/cleanup/ok', { key, undo: true }); if (wasLater) await api('POST', '/cleanup/later', { key }); }, at: [s.id, st.pi] });
     await reloadSong(s.id); st.crop = null; onward();
+  });
+  // leave this page for later: marked on the Mac, then on like after a crop
+  const later = () => busy(async () => {
+    const s = song(), p = pg();
+    if (!p) return;
+    if (p.done) return toast('This page is already done');
+    const key = `${s.id}:${p.page}`;
+    await api('POST', '/cleanup/later', { key });
+    st.undo.push({ label: 'later', run: () => api('POST', '/cleanup/later', { key, undo: true }), at: [s.id, st.pi] });
+    await reloadSong(s.id); st.crop = null; onward();
+  });
+  // saved crop frames (kept on the Mac, so every device has them)
+  const useFrame = (n) => {
+    const f = st.frames[n], p = pg();
+    if (!p) return;
+    if (!f) return toast(`Frame ${n} is not saved yet — ⤓ (or ⇧${n}) saves the box`);
+    st.crop = { key: `${song().id}:${p.page}`, ...f, from: `Frame ${n}` }; placeBox();
+  };
+  const saveFrame = (n) => busy(async () => {
+    const c = st.crop;
+    if (!c || !pg()) return;
+    st.frames = await api('POST', '/cleanup/frames', { n, box: { top: c.top, bottom: c.bottom, left: c.left, right: c.right } });
+    toast(`Saved as Frame ${n}: ${frameText(st.frames[n])}`);
+    const keep = { ...c }; draw(); st.crop = keep; placeBox();
   });
   const songGood = () => busy(async () => {
     const s = song(), key = `song:${s.id}`, was = s.reviewed;
@@ -582,7 +626,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
 
   const rescan = () => busy(async () => { st.scan = await api('POST', '/cleanup/scan'); drawHead(); setTimeout(load, 1500); });
   const trimAll = async () => {
-    const todo = st.songs.filter((s) => !s.reviewed && !s.book).flatMap((s) => s.pages.filter((p) => p.trim).map((p) => ({ id: s.id, p })));
+    const todo = st.songs.filter((s) => !s.reviewed && !s.book).flatMap((s) => s.pages.filter((p) => p.trim && !p.done).map((p) => ({ id: s.id, p })));
     if (!(await confirmSheet({ title: `Trim all ${todo.length} pages the Mac suggests?`, body: 'Each page is trimmed as suggested. The original photos are kept — any page can go back with Original photo.', ok: 'Trim all' }))) return;
     const m = modal(`<h2>Trimming…</h2><progress id="cu-p" max="${todo.length}" value="0"></progress><p class="muted small" id="cu-pm"></p>`);
     let n = 0;
@@ -611,6 +655,8 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     if (!main.isConnected || !location.hash.startsWith('#/cleanup') || !body.isConnected) return removeEventListener('keydown', onKey);
     if (st.renaming || document.querySelector('.modal') || e.target.matches?.('input:not([readonly]), textarea')) return;
     const k = e.key, songs = st.tab === 'songs';
+    const tabKey = { Digit1: 'sort', Digit2: 'songs', Digit3: 'titles' }[e.code];  // ⌥1/2/3 switch tabs anywhere
+    if (e.altKey && tabKey && !e.metaKey && !e.ctrlKey) { e.preventDefault(); st.tab = tabKey; return draw(); }
     if (st.tab === 'books') return books.onKey(e);
     if (st.tab === 'sort') {
       const a = { d: () => decide('delete'), Delete: () => decide('delete'), Backspace: () => decide('delete'), k: () => decide('keep'), Enter: () => decide('keep'),
@@ -621,10 +667,11 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
       if (!a || (e.metaKey && k.toLowerCase() !== 'z') || e.ctrlKey || e.altKey) return;
       e.preventDefault(); return a();
     }
+    if (songs && (e.code === 'Digit1' || e.code === 'Digit2') && !e.altKey && !e.metaKey && !e.ctrlKey) { e.preventDefault(); const n = +e.code.slice(-1); return e.shiftKey ? saveFrame(n) : useFrame(n); }
     if (songs && e.altKey && (k === 'ArrowLeft' || k === 'ArrowRight')) { e.preventDefault(); return nudge(e.shiftKey ? 'right' : 'left', k === 'ArrowLeft' ? -0.005 : 0.005); }
     const act = {
       Enter: () => (songs ? doTrim() : rename()), t: () => songs && doTrim(),
-      f: () => (songs ? fine() : titleFine()), g: () => songs && songGood(),
+      f: () => (songs ? fine() : titleFine()), g: () => songs && songGood(), l: () => songs && later(),
       ArrowRight: () => songs && goPage(1), j: () => (songs ? goPage(1) : step(1)),
       ArrowLeft: () => songs && goPage(-1), k: () => (songs ? goPage(-1) : step(-1)),
       ']': () => songs && goSong(1), n: () => songs && goSong(1), '[': () => songs && goSong(-1), p: () => songs && goSong(-1),

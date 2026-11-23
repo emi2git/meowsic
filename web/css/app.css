@@ -1038,3 +1038,15 @@ button.bs-seg { cursor: pointer; color: #fff; background: var(--c); }
 .bs-det { font-size: 11px; min-height: 14px; padding: 0 4px; }
 .bs-det[data-state="ok"] { color: var(--acc); }
 label .bs-det { display: block; font-weight: 400; margin-top: 2px; }
+
+/* ---------- Clean up → Fix pages: Later + saved frames ---------- */
+.cu-list li.later::before { background: var(--acc); }
+.cu-issue.later { background: var(--acc-soft); color: var(--acc-text); }
+.cu-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.cu-frames { flex: none; display: flex; gap: 8px; padding: 6px 14px 0; flex-wrap: wrap; }
+.cu-fr { display: inline-flex; align-items: stretch; min-width: 0; }
+.cu-fr [data-fr] { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; padding: 3px 10px; min-height: 36px; border-radius: 8px 0 0 8px; font-size: 13px; }
+.cu-fr [data-fr] small { font-size: 10px; color: var(--mute); white-space: nowrap; }
+.cu-fr [data-fr]:disabled { opacity: .55; }
+.cu-fr .cu-frsave { border-radius: 0 8px 8px 0; padding: 0 9px; min-height: 36px; border-left: 0; }
+@media (max-width: 760px) { .cu-frames { padding: 4px 8px 0; gap: 6px; } .cu-fr { flex: 1 1 0; } .cu-fr [data-fr] { flex: 1; min-width: 0; } .cu-fr [data-fr] small { overflow: hidden; text-overflow: ellipsis; max-width: 100%; } }

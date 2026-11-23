@@ -145,12 +145,27 @@ def dot_issues(pages) -> list[str]:
     return out
 
 
+GROUPING = ('mixed', 'incomplete', 'extra', 'twice', 'order')
+
+
+def song_state(pages, issues, reviewed=False) -> str:
+    """'todo' | 'later' | 'done'. Grouping issues (and odd titles) are only hints: once every page is
+    cropped or kept the song is done; pages left for later send it to 'later' instead of To do."""
+    if reviewed: return 'done'
+    if not pages: return 'todo'
+    kinds = {i['kind'] for i in issues}
+    look = lambda p: bool(p.get('trim')) or bool(kinds & set(GROUPING))  # pages that need a look
+    if any(look(p) and not p['done'] and not p['later'] for p in pages): return 'todo'
+    return 'later' if any(p['later'] for p in pages) else 'done'
+
+
 @router.get('/cleanup')
 def cleanup_state(request: Request, id: str | None = None, c=Depends(conn), cf=Depends(cfg)):
     """Every sheet song with its pages and issues, plus odd titles. ?id= = just that song."""
     with _lock: data = _load(cf)
     if data.get('v') != CACHE_V: data['pages'] = {}
     ok = set(data.get('ok', []))
+    later = set(data.get('later', []))
     # only sheets: books (scanned songbooks) are left out everywhere — songs, titles, counts and the scan
     items = {r[0]: {'id': r[0], 'title': r[1], 'kind': r[2], 'folder': r[3], 'pages': []}
              for r in c.execute("SELECT id, title, kind, folder FROM item WHERE deleted_at IS NULL AND kind = 'sheet'"
@@ -171,8 +186,11 @@ def cleanup_state(request: Request, id: str | None = None, c=Depends(conn), cf=D
             on = lambda b: {k: round(v, 4) for k, v in _compose(crop, {**FULL, **{k: b[k] for k in ('top', 'bottom')}}).items()}
             if t: t = {**t, **on(t)}
             if box: box = on(box)
-        items[iid]['pages'].append({'page': page, 'file': file, 'trim': t, 'dots': res.get('dots'), 'box': box,
-                                    'crop': crop, 'trims': len(_stack(steps)), 'scanned': bool(ent)})
+        n = len(_stack(steps))
+        done = skip or n > 0  # cropped or kept: never comes back to To do
+        items[iid]['pages'].append({'page': page, 'file': file, 'trim': None if done else t, 'dots': res.get('dots'), 'box': box,
+                                    'crop': crop, 'trims': n, 'kept': skip, 'done': done, 'later': key in later and not done,
+                                    'scanned': bool(ent)})
     songs, odd = [], []
     for it in items.values():
         why = odd_title(it['title'], it['kind'])
@@ -183,9 +201,12 @@ def cleanup_state(request: Request, id: str | None = None, c=Depends(conn), cf=D
         if nt: issues.append({'kind': 'trim', 'text': f"{nt} page{'s' if nt > 1 else ''} to trim"})
         issues += [{'kind': k, 'text': t} for k, t in dot_issues(it['pages'])]
         if why and f'title:{it["id"]}' not in ok: issues.append({'kind': 'title', 'text': f'title: {why}'})
+        reviewed = f'song:{it["id"]}' in ok
+        nd, nl = sum(p['done'] for p in it['pages']), sum(p['later'] for p in it['pages'])
         songs.append({'id': it['id'], 'title': it['title'], 'book': False, 'pages': it['pages'], 'issues': issues,
-                      'note': (notes.get(it['id']) or {}).get('text', ''),
-                      'reviewed': f'song:{it["id"]}' in ok, 'trimmed': sum(p['trims'] > 0 for p in it['pages'])})
+                      'note': (notes.get(it['id']) or {}).get('text', ''), 'reviewed': reviewed,
+                      'trimmed': sum(p['trims'] > 0 for p in it['pages']), 'done': nd, 'later': nl,
+                      'state': song_state(it['pages'], issues, reviewed)})
     if missing and not _scan['running']:
         start_scan(request.app)  # pages not looked at yet
     songs.sort(key=lambda x: x['title'].lower())
@@ -207,8 +228,59 @@ def cleanup_ok(body: dict = Body(...), cf=Depends(cfg)):
         s = set(data.get('ok', []))
         (s.discard if body.get('undo') else s.add)(key)
         data['ok'] = sorted(s)
+        if not body.get('undo'): _unlater(data, key, 'kept')
         _save(cf, data)
     return {'ok': True}
+
+
+def _unlater(data, key, why):
+    """A page left for later was cropped / kept: its later mark goes (the log keeps it)."""
+    s = set(data.get('later', []))
+    if key in s:
+        s.discard(key)
+        data['later'] = sorted(s)
+        data.setdefault('later_log', []).append({'key': key, 'op': why, 'at': now_ms()})
+
+
+@router.post('/cleanup/later')
+def cleanup_later(body: dict = Body(...), cf=Depends(cfg)):
+    """Leave a page ('<id>:<page>') for later; {undo: true} takes the mark off. Every change is logged."""
+    key = body.get('key') or ''
+    if ':' not in key: raise HTTPException(400, 'key must be <id>:<page>')
+    with _lock:
+        data = _load(cf)
+        s = set(data.get('later', []))
+        (s.discard if body.get('undo') else s.add)(key)
+        data['later'] = sorted(s)
+        data.setdefault('later_log', []).append({'key': key, 'op': 'undo' if body.get('undo') else 'later', 'at': now_ms()})
+        _save(cf, data)
+    return {'ok': True, 'later': key in s}
+
+
+@router.get('/cleanup/frames')
+def frames_get(cf=Depends(cfg)):
+    """Saved crop frames: {'1': box | None, '2': box | None} (boxes on the original photo)."""
+    with _lock: f = _load(cf).get('frames', {})
+    return {k: f.get(k) for k in ('1', '2')}
+
+
+@router.post('/cleanup/frames')
+def frames_set(body: dict = Body(...), cf=Depends(cfg)):
+    """{n: 1 | 2, box: {top, bottom, left, right}} saves frame n (box null clears it)."""
+    n = str(body.get('n'))
+    if n not in ('1', '2'): raise HTTPException(400, 'n must be 1 or 2')
+    b = body.get('box')
+    if b is not None:
+        try: b = {k: round(float(b[k]), 4) for k in FULL}
+        except Exception: raise HTTPException(400, 'Bad box')
+        if not (0 <= b['top'] < b['bottom'] <= 1 and 0 <= b['left'] < b['right'] <= 1): raise HTTPException(400, 'Bad box')
+    with _lock:
+        data = _load(cf)
+        f = data.setdefault('frames', {})
+        if b is None: f.pop(n, None)
+        else: f[n] = b
+        _save(cf, data)
+        return {k: f.get(k) for k in ('1', '2')}
 
 
 def _page_row(c, item_id, page):
@@ -463,7 +535,7 @@ def trim_page(item_id: str, page: int, body: dict = Body(...), c=Depends(conn), 
     trim.crop(orig, src, top, bottom, left, right)
     _restroke(c, item_id, page, before, box)
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), item_id))
-    _forget(cf, item_id, page, src)
+    _forget(cf, item_id, page, src, cropped=True)
     return get_item(c, item_id)
 
 
@@ -485,11 +557,12 @@ def untrim_page(item_id: str, page: int, body: dict = Body(default={}), c=Depend
     return get_item(c, item_id)
 
 
-def _forget(cf, item_id, page, path=None):
+def _forget(cf, item_id, page, path=None, cropped=False):
     """The page file changed: look at it again now."""
     with _lock:
         data = _load(cf)
         key = f'{item_id}:{page}'
+        if cropped: _unlater(data, key, 'cropped')
         if path is None: data['pages'].pop(key, None)
         else: data['pages'][key] = [int(path.stat().st_mtime), _analyze(path.parent, page, path.name), path.name]
         data['v'] = CACHE_V
