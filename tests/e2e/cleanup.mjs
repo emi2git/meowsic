@@ -15,6 +15,7 @@ const boxNow = (pg) => pg.$eval('.cu-img', (e) => Object.fromEntries(['t', 'b', 
 const near = (a, b, d = 0.002) => ['t', 'b', 'l', 'r'].every((k) => Math.abs(a[k] - b[k]) <= d);
 const cropPx = ([W, H], x) => [Math.round(x.r * W) - Math.round(x.l * W), Math.round(x.b * H) - Math.round(x.t * H)];
 const sizeOk = (a, b) => Math.abs(a[0] - b[0]) <= 1 && Math.abs(a[1] - b[1]) <= 1;
+const tabKey = async (pg, n) => { await pg.keyboard.down('Alt'); await pg.keyboard.press(String(n)); await pg.keyboard.up('Alt'); };  // ⌥1/2/3 = tabs
 const hint = (pg) => pg.$eval('.cu-from', (e) => e.textContent);
 const imgSize = async (id, n) => { const it = await api('/items/' + id); const r = await fetch(`${BASE}api/items/${id}/file/${encodeURIComponent(it.pageFiles[n - 1])}`); const buf = Buffer.from(await r.arrayBuffer()); return [buf.readUInt32BE(16), buf.readUInt32BE(20)]; };
 
@@ -25,11 +26,13 @@ for (let n = 1; n <= sh.pages; n++) await post(`/items/${sh.id}/pages/${n}/untri
 await fetch(`${BASE}api/items/${sh.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"title":"Cleanup test"}' });
 for (const x of items.filter((x) => x.title === 'Moon River')) await fetch(`${BASE}api/items/${x.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"title":"IMG_4821"}' });
 for (const k of [`song:${sh.id}`, ...Array.from({ length: 8 }, (_, i) => `${sh.id}:${i + 1}`)]) await post('/cleanup/ok', { key: k, undo: true });
+for (let n = 1; n <= 8; n++) await post('/cleanup/later', { key: `${sh.id}:${n}`, undo: true });
+for (const n of [1, 2]) await post('/cleanup/frames', { n, box: null });
 
 await page.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' });
 for (let i = 0; i < 40; i++) { await sleep(1000); if (!(await page.$eval('#cu-scan', (e) => e.textContent))) break; }
 await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
-await page.keyboard.press('2'); await sleep(600);
+await tabKey(page, 2); await sleep(600);
 check('songs list with status', (await page.$$('#cu-list li')).length >= 1);
 await page.evaluate((id) => document.querySelector(`#cu-list li[data-id="${id}"]`)?.click(), sh.id); await sleep(500);
 const issues = await page.$$eval('.cu-issue', (e) => e.map((x) => x.textContent));
@@ -39,7 +42,7 @@ const strip = await page.$$eval('.cu-strip button span', (e) => e.map((x) => x.t
 check('page strip shows dot numbers', strip.some((t) => /dot \d\/\d/.test(t)), strip.join(' | '));
 await page.screenshot({ path: 'cleanup-1.png' });
 const counts = await page.$$eval('[data-f] i', (e) => e.map((x) => +x.textContent));
-check('filters: to do + done = all', counts[0] + counts[1] === counts[2], counts.join(','));
+check('filters: to do + later + done = all', counts[0] + counts[1] + counts[2] === counts[3], counts.join(','));
 // page 2: suggested crop, Enter trims, left/right unchanged
 await page.click('.cu-strip button[data-p="1"]'); await sleep(300);
 const [w0, h0] = await imgSize(sh.id, 2);
@@ -167,7 +170,7 @@ check('U restores it', (await api('/items/' + sp.id)).deleted === false);
 // put the test song back together for the next run
 await post(`/items/${sh.id}/join`, { other: sp.id });
 await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
-await page.keyboard.press('3'); await sleep(400);
+await tabKey(page, 3); await sleep(400);
 const odd = await page.$$eval('.cu-trow input', (e) => e.map((x) => x.value));
 check('odd titles listed (IMG_4821)', odd.includes('IMG_4821'), odd.join(' | '));
 await page.screenshot({ path: 'cleanup-2.png' });
@@ -184,13 +187,13 @@ await page.keyboard.press('Escape'); await sleep(200);
 {
   const mr = (await api('/items')).find((x) => x.title === 'Moon River');
   await post('/cleanup/suggest', { id: mr.id, title: 'Moon River (Mancini)', artist: 'Henry Mancini', why: 'test suggestion' });
-  await page.reload({ waitUntil: 'networkidle0' }); await sleep(800); await page.keyboard.press('3'); await sleep(400);
+  await page.reload({ waitUntil: 'networkidle0' }); await sleep(800); await tabKey(page, 3); await sleep(400);
   const row = `.cu-srow[data-id="${mr.id}"]`;
   check('suggestion shows with count', !!(await page.$(row)) && /Suggested names \(\d+\)/.test(await page.$eval('.cu-sug h3', (e) => e.textContent))
     && +(await page.$eval('#cu-nt', (e) => e.textContent)) >= 1);
   for (const [w, h] of [[1376, 1032], [1032, 1376], [420, 912]]) {
     const q = await b.newPage(); await q.setViewport({ width: w, height: h, hasTouch: true, isMobile: true });
-    await q.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(900); await q.keyboard.press('3'); await sleep(500);
+    await q.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(900); await tabKey(q, 3); await sleep(500);
     const fit = await q.evaluate((sel) => { const r = document.querySelector(sel)?.getBoundingClientRect(); return !!r && r.right <= innerWidth + 1 && document.documentElement.scrollWidth <= innerWidth + 1
       && [...document.querySelectorAll(sel + ' input, ' + sel + ' button')].every((x) => x.getBoundingClientRect().right <= innerWidth + 1); }, row);
     check(`suggestion fits ${w}×${h} (no sideways scroll)`, fit);
@@ -217,7 +220,7 @@ await page.keyboard.press('Escape'); await sleep(200);
 }
 for (let i = 0; i < 40; i++) { await sleep(1000); if (!(await api('/cleanup')).scan.running) break; }
 await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
-await page.keyboard.press('2'); await sleep(500);
+await tabKey(page, 2); await sleep(500);
 await page.click('#cu-more'); await sleep(250);
 await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => /Trim every page/.test(x.textContent)).click()); await sleep(300);
 await page.click('.modal [data-ok]'); await sleep(12000);
@@ -232,7 +235,7 @@ await page.screenshot({ path: 'cleanup-3.png' });
   const tw = (await (await fetch(BASE + 'api/sheets', { method: 'POST', body: fd })).json()).item;
   for (const x of await api('/items')) await post('/cleanup/sort', { id: x.id, decision: null });
   await page.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await page.reload({ waitUntil: 'networkidle0' }); await sleep(1000);
-  await page.keyboard.press('1'); await sleep(800);
+  await tabKey(page, 1); await sleep(800);
   check('sheets: page 1 shows first', await page.$eval('#sv-pages img', (e) => e.complete && e.naturalWidth > 0));
   check('sheets: status chips shown', (await page.$$('.sv-title .cu-issue')).length > 0);
   check('sheets: undo is empty at first', await page.$eval('#cu-undo', (e) => e.disabled));
@@ -274,22 +277,22 @@ await page.screenshot({ path: 'cleanup-3.png' });
   const d = await api('/cleanup');
   check('API: no books in songs or titles', !d.songs.some((x) => bookIds.includes(x.id)) && !d.titles.some((x) => bookIds.includes(x.id)));
   await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
-  await page.keyboard.press('1'); await sleep(500);
+  await tabKey(page, 1); await sleep(500);
   await page.click('[data-show="all"]'); await sleep(300);
   check('Go through sheets: All counts only sheets', +(await page.$eval('[data-show="all"] i', (e) => e.textContent)) === sheetsN, sheetsN);
   const seen = [];
   for (let i = 0; i < sheetsN + 2; i++) { seen.push(await page.$eval('.sv-title b', (e) => e.textContent)); await page.click('#sv-next'); await sleep(200); }
   check('Go through sheets: no book shown', !books.some((x) => seen.includes(x.title)) && !/Book ·/.test(await page.$eval('.sv-title small', (e) => e.textContent)), seen.join(' | '));
-  await page.keyboard.press('2'); await sleep(500); await page.click('[data-f="all"]'); await sleep(300);
+  await tabKey(page, 2); await sleep(500); await page.click('[data-f="all"]'); await sleep(300);
   const fixIds = await page.$$eval('#cu-list li', (e) => e.map((x) => x.dataset.id));
   check('Fix pages: no book listed', fixIds.length === sheetsN && !fixIds.some((x) => bookIds.includes(x)), fixIds.join());
-  await page.keyboard.press('3'); await sleep(400);
+  await tabKey(page, 3); await sleep(400);
   check('Titles: no book listed', !(await page.$$eval('.cu-trow', (e) => e.map((x) => x.dataset.id))).some((x) => bookIds.includes(x)));
 }
 // ---------- note for Claude ----------
 {
   await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
-  await page.keyboard.press('1'); await sleep(500);
+  await tabKey(page, 1); await sleep(500);
   const nid = await page.$eval('#cu-note', (e) => e.dataset.id), t1 = await page.$eval('.sv-title b', (e) => e.textContent);
   await page.click('#cu-note'); await page.keyboard.type('dk split after page 3'); await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowRight');
   await sleep(1000);
@@ -309,11 +312,11 @@ await page.screenshot({ path: 'cleanup-3.png' });
   check('moving on right away still saves', (await api('/cleanup/notes')).some((x) => x.id === nid2 && x.text === 'rename to Moon River'));
   await post('/cleanup/notes', { id: nid2, text: '' });
   await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
-  await page.keyboard.press('1'); await sleep(500);
+  await tabKey(page, 1); await sleep(500);
   await page.click('[data-show="note"]'); await sleep(300);
   check('With a note filter: count and sheet', +(await page.$eval('[data-show="note"] i', (e) => e.textContent)) === 1 && (await page.$eval('#cu-note', (e) => e.dataset.id)) === nid);
   check('note comes back after reload', (await page.$eval('#cu-note', (e) => e.value)) === 'dk split after page 3');
-  await page.keyboard.press('2'); await sleep(500); await page.click('[data-f="all"]'); await sleep(300);
+  await tabKey(page, 2); await sleep(500); await page.click('[data-f="all"]'); await sleep(300);
   check('Fix pages marks the sheet with a note ✎', await page.$eval(`#cu-list li[data-id="${nid}"]`, (e) => !!e.querySelector('.cu-pen')) && !(await page.$$eval('#cu-list li .cu-pen', (e) => e.length > 1)));
   await page.evaluate((id) => document.querySelector(`#cu-list li[data-id="${id}"]`)?.click(), nid); await sleep(400);
   check('Fix pages shows the note', (await page.$eval('.cu-bar #cu-note', (e) => e.value)) === 'dk split after page 3');
@@ -327,9 +330,9 @@ for (const [w, h] of [[1366, 1024], [1024, 1366], [390, 844]]) {
   const q = await b.newPage(); await q.setViewport({ width: w, height: h, hasTouch: true, isMobile: true });
   await q.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(1200);
   for (const t of ['1', '2']) {
-    await q.keyboard.press(t); await sleep(900);
+    await tabKey(q, t); await sleep(900);
     const fit = await q.evaluate(() => {
-      const m = document.querySelector('#main'), btns = [...document.querySelectorAll('#sv-del, #sv-keep, #cu-trim, #cu-fine, #cu-note')];
+      const m = document.querySelector('#main'), btns = [...document.querySelectorAll('#sv-del, #sv-keep, #cu-trim, #cu-fine, #cu-later, [data-fr], [data-frs], #cu-note')];
       return { scroll: m.scrollHeight <= m.clientHeight + 1, side: getComputedStyle(document.querySelector('.side')).display, note: !!document.querySelector('#cu-note'), onScreen: btns.length > 0 && btns.every((x) => { const r = x.getBoundingClientRect(); return r.bottom <= innerHeight && r.top >= 0 && r.width > 0 && r.right <= innerWidth + 1 && x.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); }) };
     });
     check(`${w < 600 ? 'iPhone' : 'iPad'} ${w}×${h} tab ${t}: fits, note box + buttons on screen, no left bar`, fit.scroll && fit.onScreen && fit.note && fit.side === 'none', JSON.stringify(fit));
@@ -341,7 +344,7 @@ for (const [w, h] of [[1366, 1024], [1024, 1366], [390, 844]]) {
 {
   const q = await b.newPage(); await q.setViewport({ width: 1366, height: 1024, hasTouch: true, isMobile: true });
   await q.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(1000);
-  await q.keyboard.press('2'); await sleep(600); await q.click('[data-f="all"]'); await sleep(300);
+  await tabKey(q, 2); await sleep(600); await q.click('[data-f="all"]'); await sleep(300);
   await q.evaluate((id) => document.querySelector(`#cu-list li[data-id="${id}"]`)?.click(), sh.id); await sleep(500);
   await q.evaluate(() => document.querySelector('.cu-strip button[data-p="2"]').click()); await sleep(600);
   const ir = await q.$eval('#cu-img', (e) => { const x = e.getBoundingClientRect(); return { x: x.x, y: x.y, w: x.width, h: x.height }; });
@@ -363,6 +366,81 @@ for (const [w, h] of [[1366, 1024], [1024, 1366], [390, 844]]) {
   check('iPad: finger drags a corner', t3.l > t2.l + 0.03 && t3.b < t2.b - 0.03, JSON.stringify(t3));
   await q.screenshot({ path: 'cleanup-ipad-touch.png' });
   await q.close();
+}
+// ---------- Crop / Keep / Later, done songs leave To do, saved frames ----------
+{
+  const P = async () => (await api('/cleanup?id=' + sh.id)).songs[0];
+  const openSh = async (f = 'all') => {
+    await page.reload({ waitUntil: 'networkidle0' }); await sleep(800); await tabKey(page, 2); await sleep(500);
+    await page.click(`[data-f="${f}"]`); await sleep(300);
+    await page.evaluate((id) => document.querySelector(`#cu-list li[data-id="${id}"]`)?.click(), sh.id); await sleep(500);
+  };
+  for (const p of (await P()).pages) {  // start clean: nothing cropped, kept or left for later
+    await post(`/items/${sh.id}/pages/${p.page}/untrim`, { all: true });
+    await post('/cleanup/ok', { key: `${sh.id}:${p.page}`, undo: true }); await post('/cleanup/later', { key: `${sh.id}:${p.page}`, undo: true });
+  }
+  await post('/cleanup/ok', { key: `song:${sh.id}`, undo: true });
+  let s0 = await P();
+  check('song has a mixed issue and is To do', s0.issues.some((i) => i.kind === 'mixed') && s0.state === 'todo', JSON.stringify([s0.state, s0.issues.map((i) => i.kind)]));
+  await openSh();
+  const order = await page.$$eval('.cu-act button.big', (e) => e.map((x) => x.textContent.trim()));
+  check('bottom bar: Crop / Keep / Later', order.length === 3 && /^Crop/.test(order[0]) && order[1] === 'Keep' && order[2] === 'Later', order.join(' / '));
+  const keys = await page.evaluate(() => { dispatchEvent(new KeyboardEvent('keydown', { key: '?' })); return new Promise((r) => setTimeout(() => { const t = document.querySelector('.cu-keys')?.textContent || ''; document.querySelector('.modal [data-close]')?.click(); r(t); }, 300)); });
+  check('shortcuts list has L = Later and the frames', /Leave this page for later/.test(keys) && /Frame 1/.test(keys), keys.slice(0, 80));
+  // Later moves on; Undo takes it back
+  await page.click('.cu-strip button[data-p="1"]'); await sleep(300);
+  await page.click('#cu-later'); await sleep(1200);
+  check('Later moves on to the next page', (await page.$eval('.cu-strip button.on', (e) => +e.dataset.p)) === 2);
+  check('…and marks the page later on the Mac', (await P()).pages[1].later === true);
+  await page.keyboard.press('z'); await sleep(1200);
+  check('Undo of Later', (await P()).pages[1].later === false && (await page.$eval('.cu-strip button.on', (e) => +e.dataset.p)) === 1);
+  // crop every other page; L leaves page 2 → the song goes to Later (not To do), also after a reload
+  for (const p of s0.pages) if (p.page !== 2) await post(`/items/${sh.id}/pages/${p.page}/trim`, { top: 0.04, bottom: 0.96, left: 0, right: 1 });
+  await openSh();
+  await page.click('.cu-strip button[data-p="1"]'); await sleep(300);
+  await page.keyboard.press('l'); await sleep(1200);
+  let s1 = await P();
+  check('L = Later; the song is Later, with later/done counts', s1.state === 'later' && s1.later === 1 && s1.done === s1.pages.length - 1, JSON.stringify([s1.state, s1.later, s1.done]));
+  await openSh('later');
+  check('after reload the song shows under Later', !!(await page.$(`#cu-list li[data-id="${sh.id}"]`)) && /later/.test((await page.$$eval('.cu-strip button span', (e) => e.map((x) => x.textContent)))[1]));
+  const cnt = await page.$$eval('[data-f] i', (e) => e.map((x) => +x.textContent));
+  check('Later (n) count', cnt[1] >= 1, cnt.join(','));
+  // frames: draw a box on page 2, Shift+1 saves it, 1 applies it on another page, it survives a reload
+  await page.click('.cu-strip button[data-p="1"]'); await sleep(400);
+  const fr = await page.$eval('#cu-img', (e) => { const x = e.getBoundingClientRect(); return { x: x.x, y: x.y, w: x.width, h: x.height }; });
+  await page.mouse.move(fr.x + fr.w * 0.3, fr.y + fr.h * 0.3); await page.mouse.down();
+  await page.mouse.move(fr.x + fr.w * 0.5, fr.y + fr.h * 0.5, { steps: 5 }); await page.mouse.move(fr.x + fr.w * 0.85, fr.y + fr.h * 0.88, { steps: 5 }); await page.mouse.up();
+  const fb = await boxNow(page);
+  check('drew a box for the frame', Math.abs(fb.t - 0.3) < 0.02 && Math.abs(fb.r - 0.85) < 0.02, JSON.stringify(fb));
+  check('Frame 1 is disabled before it is saved', await page.$eval('[data-fr="1"]', (e) => e.disabled));
+  await page.keyboard.down('Shift'); await page.keyboard.press('1'); await page.keyboard.up('Shift'); await sleep(1000);
+  const saved = (await api('/cleanup/frames'))['1'];
+  check('⇧1 saves the box as Frame 1 on the Mac', saved && Math.abs(saved.top - fb.t) < 0.002 && Math.abs(saved.right - fb.r) < 0.002, JSON.stringify(saved));
+  await page.click('.cu-strip button[data-p="0"]'); await sleep(400);
+  check('another page starts with a different box', !near(await boxNow(page), fb));
+  await page.keyboard.press('1'); await sleep(200);
+  check('1 applies Frame 1', near(await boxNow(page), fb) && (await hint(page)) === 'Frame 1', JSON.stringify(await boxNow(page)));
+  await openSh('later');
+  check('Frame 1 survives a reload (label shown)', await page.$eval('[data-fr="1"]', (e) => !e.disabled && /top \d+%/.test(e.textContent)));
+  check('Frame 2 still not saved', await page.$eval('[data-fr="2"]', (e) => e.disabled));
+  await page.click('.cu-strip button[data-p="1"]'); await sleep(400);
+  await page.click('[data-fr="1"]'); await sleep(200);
+  check('tapping Frame 1 applies it', near(await boxNow(page), fb));
+  await page.click('#cu-trim'); await sleep(1800);
+  const s2 = await P();
+  check('crop clears the later mark; every page cropped → Done', s2.state === 'done' && s2.later === 0 && s2.done === s2.pages.length && s2.pages[1].trims > 0, JSON.stringify([s2.state, s2.later, s2.done, s2.pages[1]]));
+  await openSh('look');
+  check('a song with all pages cropped is not in To do (mixed is only a hint)', !(await page.$(`#cu-list li[data-id="${sh.id}"]`)));
+  await page.click('[data-f="good"]'); await sleep(300);
+  check('…it is under Done', !!(await page.$(`#cu-list li[data-id="${sh.id}"]`)));
+  // look at every page again: cropped pages never come back to To do
+  await post('/cleanup/scan', {});
+  for (let i = 0; i < 40; i++) { await sleep(800); if (!(await api('/cleanup?id=' + sh.id)).scan.running) break; }
+  const s3 = await P();
+  check('a cropped song does not come back to To do', s3.state === 'done' && s3.pages.every((p) => !p.trim), s3.state);
+  // put it back
+  for (const p of s3.pages) await post(`/items/${sh.id}/pages/${p.page}/untrim`, { all: true });
+  for (const n of [1, 2]) await post('/cleanup/frames', { n, box: null });
 }
 // shortcuts stop when you leave Clean up
 await page.goto(BASE + '#/library', { waitUntil: 'networkidle0' }); await sleep(300);
