@@ -114,9 +114,11 @@ def finish(ctx, ids, versions):
 OLD_NAMES = {'easy': 'clear'}  # 'Piano easy' is no longer made: an older app asking for it gets 'Piano clear'
 
 
-def arrange_versions(ctx, base_xml: Path, versions, out_dir: Path, *, title, artist, stage_arrange, stage_write, stage_pdf, piano_xml=None):
+def arrange_versions(ctx, base_xml: Path, versions, out_dir: Path, *, title, artist, stage_arrange, stage_write, stage_pdf, piano_xml=None,
+                     simple=None):
     """music21 versions of base_xml into out_dir. Returns [(version, xml, mid, pdf, {})].
-    'clear' thins the piano score itself (piano_xml, else base_xml) instead of re-arranging the tune."""
+    'clear' thins the piano score itself (piano_xml, else base_xml) instead of re-arranging the tune; with `simple`
+    (Simple piano settings, simplepiano.defaults()) the rest of the Simple piano menu runs on it too."""
     out_dir.mkdir(parents=True, exist_ok=True)
     tune = arrange.read(base_xml) if any(v != 'clear' for v in versions) else None
     scores = []
@@ -130,6 +132,13 @@ def arrange_versions(ctx, base_xml: Path, versions, out_dir: Path, *, title, art
         ctx.update(stage=stage_write, progress=i / len(scores))
         xml, mid = out_dir / f'{v}.musicxml', out_dir / f'{v}.mid'
         arrange.write_files(sc, xml, mid)
+        if v == 'clear' and simple:
+            from . import simplepiano
+            text = xml.read_text(encoding='utf-8')
+            new, a, b, _ = simplepiano.make(text, {**simple, 'main': False})  # main note: done above
+            if new != text:
+                xml.write_text(new, encoding='utf-8'); simplepiano.write_midi(xml, mid)
+                ctx.update(msg=f"{VERSION_TAGS[v]} — {a['rests']} → {b['rests']} rests")
         outs.append([v, xml, mid, None, {}])
     if stage_write != stage_arrange:
         ctx.update(msg=f'{STAGES[5] if stage_write == 5 else GEN_STAGES[2]} — done')
@@ -163,8 +172,12 @@ def version_runner(ctx: JobContext):
     work = ctx.work
     shutil.copyfile(xml, work / 'from.musicxml')
     ctx.update(stage=1, progress=0, msg=f'{GEN_STAGES[0]} — done')
+    from . import simplepiano
+    c = connect(ctx.cfg)
+    try: simple = simplepiano.defaults(c, src)
+    finally: c.close()
     outs = arrange_versions(ctx, work / 'from.musicxml', want, work / 'out', title=job['title'], artist=p.get('artist', src['artist']),
-                            stage_arrange=1, stage_write=2, stage_pdf=3)
+                            stage_arrange=1, stage_write=2, stage_pdf=3, simple=simple)
     ctx.update(stage=3, progress=1)
     tags = p['tags'] if isinstance(p.get('tags'), list) else src['tags']
     ids = save_outputs(ctx, outs, title=job['title'], source=job['source'] or f'From the score “{src["title"]}”',
