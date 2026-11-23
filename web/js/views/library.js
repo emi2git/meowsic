@@ -57,10 +57,12 @@ let lang = 'world'; try { lang = localStorage.getItem('meowsic-lang') === 'vi' ?
 const state = { q: '', sort: 'added', dir: 1, select: false, sel: new Set(), page: 1, anchor: null, per: 0, key: null };
 try { const s = localStorage.getItem('meowsic-sort'); if (SORTS[s]) state.sort = s; state.dir = localStorage.getItem('meowsic-sort-dir') === '-1' ? -1 : 1; } catch {}
 const saveSort = () => { try { localStorage.setItem('meowsic-sort', state.sort); localStorage.setItem('meowsic-sort-dir', String(state.dir)); } catch {} };
-// the sort button's four choices (the column headings on the Mac can sort by any column)
-const SORT_MENU = [['title', 1, 'Title A–Z', 'A–Z'], ['title', -1, 'Title Z–A', 'Z–A'], ['most', 1, 'Most played', 'Most played'], ['added', 1, 'Recently added', 'Recent']];
-const sortShort = () => SORT_MENU.find(([k, d]) => k === state.sort && d === state.dir)?.[3]
-  || `${SORTS[state.sort][0].replace(/ A–Z$/, '')} ${(state.sort === 'added') === (state.dir > 0) ? '▼' : '▲'}`;
+// No sort button: tap a column heading to sort by it (Title: A–Z ⇄ Z–A); the small ⌄ next to
+// "Title" opens these four orders. Remembered on this device.
+const SORT_MENU = [['title', 1, 'Title A–Z'], ['title', -1, 'Title Z–A'], ['most', 1, 'Most played'], ['added', 1, 'Recently added']];
+const CHEVRON = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg>';
+const sortName = () => SORT_MENU.find(([k, d]) => k === state.sort && d === state.dir)?.[2]
+  || `${SORTS[state.sort][0]}${(state.sort === 'added') === (state.dir > 0) ? '' : ' (reversed)'}`;
 
 const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase();
 
@@ -87,7 +89,6 @@ export function libraryView(main, { q }) {
       ${tags.length ? `<a class="icon-btn btn" href="#/print?tags=${encodeURIComponent(tags.join(','))}">Print all</a>` : ''}
 
       <label class="search">${icon('search')}<input type="search" id="lib-q" placeholder="Search titles, artists, tags" value="${esc(state.q)}" aria-label="Search" enterkeyhint="search"><button type="button" class="search-x" id="lib-q-x" aria-label="Clear search" title="Clear search" ${state.q ? '' : 'hidden'}>×</button></label>
-      <button class="icon-btn sort-btn" id="lib-sort" aria-haspopup="menu" title="Sort" aria-label="Sort"></button>
       <button class="icon-btn lang-btn ${lang === 'vi' ? 'on' : ''}" id="lib-lang" data-lang="${lang}" title="${LANG_TITLE[lang]}" aria-label="${LANG_TITLE[lang]}">${LANG_ICON[lang]}</button>
       <button class="icon-btn tag-btn ${tags.length ? 'on' : ''}" id="lib-tag" title="Filter by tag" aria-label="Filter by tag">${iconOn('tag')}</button>
       <button class="icon-btn touch-only" id="lib-select">Select</button>
@@ -103,9 +104,6 @@ export function libraryView(main, { q }) {
     list.sort(SORTS[state.sort][1]);
     if (state.dir < 0) list.reverse();
     const rows = $('#lib-rows', main);
-    const sb = $('#lib-sort', main);
-    sb.innerHTML = `${iconOn('sort')}<span>${esc(sortShort())}</span>`;
-    sb.title = sb.ariaLabel = `Sort: ${SORT_MENU.find(([k, d]) => k === state.sort && d === state.dir)?.[2] || SORTS[state.sort][0]}`;
     if (!list.length) {
       const away = store.mode === 'offline' && !store.items().length;
       rows.innerHTML = `<ul class="rows"><li class="empty">${CAT}<p>${away ? 'Meowsic can’t reach the Mac. Check that the Mac is on and on the same Wi-Fi.' : state.q || tags.length || lang === 'vi' ? 'No music matches.' : 'Nothing here yet.'}</p>${state.q || tags.length || lang === 'vi' || away ? '' : '<button class="primary" id="empty-add">Add music</button>'}</li></ul>`;
@@ -123,10 +121,11 @@ export function libraryView(main, { q }) {
         const cols = COLS_BY[kind] || COLS_BY[''];
         const cell = {
           'c-title': (it) => (kind === 'book' ? `<span class="cover">${store.thumbUrl(it, 1, 160) ? `<img src="${store.thumbUrl(it, 1, 160)}" alt="" loading="lazy">` : ''}</span>` : '') + esc(it.title), 'c-artist': (it) => esc(it.artist || ''), 'c-type': (it) => badge(it), 'c-ver': (it) => (verLabel(it) ? `<span title="${esc(verDetail(it) || verLabel(it))}">${esc(verLabel(it))}</span>` : ''),
-          'c-tag': (it) => (mainTag(it) ? `<span class="tagchip">${esc(mainTag(it))}</span>` : ''), 'c-pages': (it) => it.pages || '', 'c-key': (it) => esc(keyShort(it.key)), 'c-when': (it) => ago(it.createdAt),
+          'c-tag': (it) => (mainTag(it) ? `<span class="tagchip">${esc(mainTag(it))}</span>` : ''), 'c-pages': (it) => (it.pages ? `${it.pages}<span class="pg-u"> p</span>` : ''), 'c-key': (it) => esc(keyShort(it.key)), 'c-when': (it) => ago(it.createdAt),
         };
         rows.innerHTML = `<table class="lib-table ${kind ? 'one-kind' : ''} ${selecting() ? 'selecting' : ''}"><thead><tr><th class="c-pick"></th>${cols.map(([k, l, c]) =>
-          `<th class="${c}">${k ? `<button class="th-sort ${state.sort === k ? 'on' : ''}" data-sort="${k}">${l}${arrow(k)}</button>` : l}</th>`).join('')}<th class="c-more"></th></tr></thead><tbody>${shownList.map((it) => `
+          `<th class="${c}">${k ? `<button class="th-sort ${state.sort === k ? 'on' : ''}" data-sort="${k}">${l}${arrow(k)}</button>` : l}${c === 'c-title'
+            ? `<button class="th-menu" id="lib-sort-menu" aria-haspopup="menu" title="Sort: ${esc(sortName())}" aria-label="Sort options (now: ${esc(sortName())})">${CHEVRON}</button>` : ''}</th>`).join('')}<th class="c-more"></th></tr></thead><tbody>${shownList.map((it) => `
           <tr class="row ${state.sel.has(it.id) ? 'sel' : ''}" data-id="${it.id}">
             <td class="c-pick"><label class="pick" title="Select (Shift-click for a range)"><input type="checkbox" ${state.sel.has(it.id) ? 'checked' : ''} aria-label="Select ${esc(it.title)}"></label></td>
             ${cols.map(([, , c]) => `<td class="${c}${c === 'c-title' ? ' row-title' : ''}">${cell[c](it)}</td>`).join('')}
@@ -138,6 +137,10 @@ export function libraryView(main, { q }) {
           state.page = b.dataset.pg === 'next' ? state.page + 1 : b.dataset.pg === 'prev' ? state.page - 1 : +b.dataset.pg;
           draw(); main.scrollTo({ top: 0 });
         });
+        $('#lib-sort-menu', rows).onclick = (e) => menu(e.currentTarget, SORT_MENU.map(([k, d, l]) => ({
+          label: l, checked: state.sort === k && state.dir === d,
+          run: () => { state.sort = k; state.dir = d; state.page = 1; saveSort(); draw(); },
+        })));
         rows.querySelectorAll('[data-sort]').forEach((b) => (b.onclick = () => {
           const k = b.dataset.sort;
           state.dir = state.sort === k ? -state.dir : 1;
@@ -222,10 +225,6 @@ export function libraryView(main, { q }) {
   };
   main.querySelectorAll('[data-untag]').forEach((b) => (b.onclick = () => setTags(tags.filter((t) => t !== b.dataset.untag))));
   $('#lib-tags-clear', main)?.addEventListener('click', () => setTags([]));
-  $('#lib-sort', main).onclick = (e) => menu(e.currentTarget, SORT_MENU.map(([k, d, l]) => ({
-    label: l, checked: state.sort === k && state.dir === d,
-    run: () => { state.sort = k; state.dir = d; state.page = 1; saveSort(); draw(); },
-  })));
   const qIn = $('#lib-q', main), qX = $('#lib-q-x', main);
   const setSearch = (v) => { state.q = v; qX.hidden = !v; state.page = 1; draw(); };
   qIn.oninput = () => setSearch(qIn.value);

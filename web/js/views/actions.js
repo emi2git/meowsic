@@ -23,16 +23,18 @@ export function metaText(it) {
 }
 
 // Version, in the user's three words. Sheets: 'lead' | 'piano' | 'duet' ('' = not known; books too).
-// Scores keep their detailed version: lead → Lead, duet → Duet, the rest (original, vocal, accomp, clear, pro, easy) → Piano.
+// Scores: what the notes are (the server counts the MusicXML's staves into `staves`):
+//   duet → Duet; lead, or one staff (a melody line) → Lead; a grand staff (right + left hand) → Piano.
+//   Voice + piano ('vocal') shows as Piano ("Piano · vocals" under Info).
 export const SHEET_VERSIONS = { lead: 'Lead', piano: 'Piano', duet: 'Duet' };
 export function verLabel(it) {
   if (it.kind === 'sheet') return SHEET_VERSIONS[it.version] || '';
-  if (it.kind === 'score') return it.version === 'lead' ? 'Lead' : it.version === 'duet' ? 'Duet' : 'Piano';
+  if (it.kind === 'score') return it.version === 'duet' ? 'Duet' : it.version === 'lead' || it.staves === 1 ? 'Lead' : 'Piano';
   return '';
 }
-const DETAIL = { original: 'original', vocal: 'with vocals', accomp: 'accompaniment', clear: 'clear', pro: 'pro', easy: 'easy' };
-// the score's own version under the word: "Piano · clear" (sheets: just the word)
-export const verDetail = (it) => (it.kind === 'score' && DETAIL[it.version] ? `${verLabel(it)} · ${DETAIL[it.version]}` : verLabel(it));
+const DETAIL = { original: 'original', vocal: 'vocals', accomp: 'accompaniment', clear: 'clear', pro: 'pro', easy: 'easy' };
+// the score's own version under the word: "Piano · clear" (sheets and lead sheets: just the word)
+export const verDetail = (it) => (it.kind === 'score' && verLabel(it) === 'Piano' && DETAIL[it.version] ? `Piano · ${DETAIL[it.version]}` : verLabel(it));
 
 // pick Lead / Piano / Duet / Not set for one sheet or many (scores and chord charts are skipped)
 export function versionMenu(anchor, ids) {

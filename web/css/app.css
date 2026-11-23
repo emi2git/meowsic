@@ -674,9 +674,6 @@ p.count-row { text-align: center; }
 .search-x { flex: none; width: 24px; height: 24px; min-height: 0; padding: 0; margin-right: -4px; border: 0; border-radius: 50%; background: var(--line2); color: var(--ink2); font-size: 17px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 .search-x[hidden] { display: none; }
 :root:is([data-device="phone"], [data-device="tablet"]) .search-x { width: 28px; height: 28px; }
-/* sort: icon + short label, a menu of four orders */
-.sort-btn { min-height: 0; height: 36px; padding: 0 10px; gap: 5px; display: inline-flex; align-items: center; font-size: 14px; font-weight: 600; white-space: nowrap; }
-.sort-btn .ic { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 /* Info: Lead / Piano / Duet */
 .ver-seg button { min-height: 32px; font-size: 14px; }
 .side-foot.offline { color: var(--warn); }
@@ -842,7 +839,7 @@ kbd { font: 11px ui-monospace, monospace; opacity: .7; margin-left: 6px; border:
   .two-col { grid-template-columns: 1fr; }
 }
 /* library columns hide as space runs out (Title > Type > Artist > Added > Tag > Key / Pages) */
-@media (max-width: 1100px) { .lib-table .c-pages, .lib-table .c-key { display: none; } }
+@media (max-width: 1100px) { .lib-table .c-key { display: none; } }
 @media (max-width: 900px) { .lib-table .c-tag { display: none; } }
 @media (max-width: 640px) { .lib-table .c-when { display: none; } .lib-table .c-artist { width: 34%; } .lib-table .c-title { width: auto; } }
 @media (max-width: 480px) { .lib-table .c-artist { display: none; } }
@@ -1118,3 +1115,19 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 }
 #st-voice .seg { margin-bottom: 6px; }
 @media (prefers-reduced-motion: reduce) { .ti-mic.on { animation: none; } }
+
+/* ===== Library: sort from the Title heading (no sort button) ===== */
+/* tap Title = A–Z ⇄ Z–A; the tiny ⌄ beside it opens Title A–Z / Z–A / Most played / Recently added */
+.lib-table thead th.c-title { overflow: visible; }
+.th-menu { min-height: 0; width: 22px; height: 22px; padding: 0; margin-left: 2px; border: 0; border-radius: 6px; background: none; color: var(--mute); display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; cursor: pointer; opacity: .75; }
+.th-menu svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.th-menu:hover { opacity: 1; background: var(--line); color: var(--ink2); }
+/* bigger target on touch, same small look */
+:root:is([data-device="phone"], [data-device="tablet"]) .th-menu { width: 30px; height: 30px; margin-left: 0; }
+/* Pages: always shown for sheets and books (Key and Tag give way first); "12 p" when narrow */
+.lib-table .c-pages { width: 68px; }
+.lib-table .c-pages .pg-u { display: none; }
+@media (max-width: 760px) {
+  .lib-table .c-pages { width: 50px; }
+  .lib-table .c-pages .pg-u { display: inline; }
+}

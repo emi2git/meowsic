@@ -14,6 +14,7 @@ from pathlib import Path
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 
+from .sheetversion import refresh_staves
 from .db import AI_SOURCE, BOOKS, KIND_COLS, SCORE_VERSIONS, SHEET_VERSIONS, book_folder, ensure_tags, folder_base, folder_path, get_item, item_json, log_event, now_ms, folder_name, rebase, uid, write_item
 
 router = APIRouter(prefix='/api')
@@ -92,6 +93,7 @@ def create_item(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
         d.mkdir(parents=True, exist_ok=True)
         (d / f'{it["folder"]}.musicxml').write_text(text)
         c.execute('UPDATE score SET musicxml=? WHERE item_id=?', (f'{it["folder"]}.musicxml', it['id']))
+    if kind == 'score': refresh_staves(c, cf, it['id'])
     return get_item(c, it['id'])
 
 
@@ -120,7 +122,7 @@ def set_versions(body: dict = Body(...), c=Depends(conn)):
 @router.patch('/items/{item_id}')
 def update_item(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
     it = must_item(c, item_id)
-    patch = {k: v for k, v in body.items() if k not in ('id', 'kind', 'createdAt', 'deleted', 'deletedAt', 'folder', 'book', 'ai')}
+    patch = {k: v for k, v in body.items() if k not in ('id', 'kind', 'createdAt', 'deleted', 'deletedAt', 'folder', 'book', 'ai', 'staves')}
     if 'version' in patch:
         patch['version'] = check_version(it['kind'], patch['version'])
     if 'key' in patch: patch['key'] = str(patch['key'] or '').strip()
@@ -488,7 +490,7 @@ async def put_musicxml(item_id: str, request: Request, c=Depends(conn), cf=Depen
     cur.write_text(text)
     c.execute('UPDATE score SET musicxml=?, musicxml_original=? WHERE item_id=?', (name, orig, item_id))
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), item_id))
-    return {'ok': True, 'musicxml': name, 'musicxmlOriginal': orig}
+    return {'ok': True, 'musicxml': name, 'musicxmlOriginal': orig, 'staves': refresh_staves(c, cf, item_id)}
 
 
 @router.post('/items/{item_id}/musicxml/revert')
@@ -497,4 +499,4 @@ def revert_musicxml(item_id: str, c=Depends(conn), cf=Depends(cfg)):
     if not it['musicxmlOriginal']: raise HTTPException(409, 'Nothing to revert')
     shutil.copyfile(safe_file(d, it['musicxmlOriginal']), safe_file(d, it['musicxml']))
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), item_id))
-    return {'ok': True}
+    return {'ok': True, 'staves': refresh_staves(c, cf, item_id)}
