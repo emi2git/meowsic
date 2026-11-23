@@ -1118,3 +1118,7 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 }
 #st-voice .seg { margin-bottom: 6px; }
 @media (prefers-reduced-motion: reduce) { .ti-mic.on { animation: none; } }
+/* score pages on iPad/iPhone: page dots like printed songbooks — one per page, current one black */
+.score-dots { position: absolute; left: 0; right: 0; bottom: 10px; display: flex; justify-content: center; gap: 7px; pointer-events: none; z-index: 4; }
+.score-dots i { width: 7px; height: 7px; border-radius: 50%; border: 1.2px solid #222; background: #fff; }
+.score-dots i.on { background: #222; }

@@ -144,10 +144,19 @@ export function scoreBody(root, it, { perform = false } = {}) {
       bottom: i < sys.length - 1 ? (s.bottom + sys[i + 1].top) / 2 : Math.max(s.bottom + 12, Math.min(end, s.bottom + 40)),
     }));
   };
+  // page dots under the score (iPad/iPhone pages): one dot per page, the current one filled
+  const drawDots = () => {
+    let d = paper.querySelector('.score-dots');
+    if (!paged || pages.length < 2) { d?.remove(); return; }
+    if (!d) { d = document.createElement('div'); d.className = 'score-dots'; d.setAttribute('aria-hidden', 'true'); paper.append(d); }
+    if (d.childElementCount !== pages.length) d.innerHTML = '<i></i>'.repeat(pages.length);
+    [...d.children].forEach((x, k) => x.classList.toggle('on', k === page));
+  };
   const goPage = (k) => {
     if (!pages.length) return;
     page = Math.max(0, Math.min(pages.length - 1, k));
     showPage(sheet, clip, pages[page]);
+    drawDots();
     root.dispatchEvent(new CustomEvent('pagechange', { detail: { page: page + 1, show: [page + 1], pages: pages.length }, bubbles: true }));
   };
   const repaginate = () => {
@@ -155,7 +164,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     const anchor = pages[page]?.first ?? 0;
     sheet.style.transform = '';
     const blocks = systemBlocks();
-    pages = blocks.length ? paginate(blocks, paper.clientHeight) : [{ start: 0, end: paper.clientHeight, first: 0, last: 0 }];
+    pages = blocks.length ? paginate(blocks, paper.clientHeight - 26) /* room for the page dots */ : [{ start: 0, end: paper.clientHeight, first: 0, last: 0 }];
     const k = pages.findIndex((p) => anchor >= p.first && anchor <= p.last);
     goPage(k < 0 ? 0 : k);
   };
