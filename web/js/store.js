@@ -208,6 +208,8 @@ export const store = {
   fileUrl(id, file) { return `/api/items/${encodeURIComponent(id)}/file/${file.split('/').map(encodeURIComponent).join('/')}`; },
   api,
   // after an upload / server-side change: put the server's copy of an item into the library
+  // items the Mac already removed for good (no request, no activity): just forget them here
+  drop(ids) { const s = new Set([].concat(ids)); db.items = db.items.filter((x) => !s.has(x.id)); changed(); },
   putItem(it) { const i = db.items.findIndex((x) => x.id === it.id); if (it.kind === 'chords') it.lines = parseChordPro(it.text); if (i >= 0) db.items[i] = it; else db.items.unshift(it); for (const t of it.tags) if (!db.tags.includes(t)) db.tags.push(t); changed(); },
   async refreshJobs() {
     if (mode !== 'server') return;

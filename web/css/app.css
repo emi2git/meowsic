@@ -945,3 +945,64 @@ kbd { font: 11px ui-monospace, monospace; opacity: .7; margin-left: 6px; border:
 @media (max-width: 760px) { body[data-view="cleanup"] #main { height: calc(100dvh - 64px - env(safe-area-inset-bottom)); } /* above the tab bar */
   .cu-bar { flex-wrap: wrap; } .cu-bar #cu-title { flex: 1 1 0; } .cu-bar .cu-note { order: 3; flex-basis: 100%; }
   .sv-act, .cu-act { flex-wrap: nowrap; } .sv-act button.big, .cu-act button.big { min-width: 0; flex: 1; padding: 0 10px; } .cu-act .cu-hint { display: none; } }
+
+/* ---------- Clean up → Books → sheets (js/views/cleanup-books.js) ---------- */
+.cu.books { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+:root { --seg0: #2f7de1; --seg1: #d9652a; --seg2: #23935f; --seg3: #a548c4; --seg4: #d0385e; --seg5: #16929e; }
+.bs { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.bs-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+.bs-side-h { margin: 0; padding: 8px 12px; }
+.bs-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+.bs-list li { padding: 10px 14px; cursor: pointer; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); }
+.bs-list li b { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bs-list li small { color: var(--mute); font-size: 12px; }
+.bs-list li.on { background: var(--acc-soft); }
+.bs-cnt { color: var(--acc-text); font-weight: 650; }
+.bs-main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.bs-bar { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 14px; border-bottom: 1px solid var(--line); }
+.bs-back { display: none; flex: none; }
+.bs-name { display: flex; flex-direction: column; min-width: 0; }
+.bs-name b { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bs-name small { font-size: 12px; }
+.bs-segs { flex: none; display: flex; gap: 6px; padding: 6px 14px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--line); min-height: 40px; align-items: center; }
+.bs-seg { flex: none; font-size: 13px; padding: 3px 10px; min-height: 28px; border-radius: 999px; border: 0; background: var(--bg2); color: var(--ink2); white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+button.bs-seg { cursor: pointer; color: #fff; background: var(--c); }
+.bs-grid { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--bg2); padding: 12px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px 12px; align-content: start; }
+.bs-grid figure { margin: 0; position: relative; display: flex; flex-direction: column; gap: 4px; padding: 6px 6px 6px; border-radius: 10px; border-top: 6px solid var(--c, transparent); background: color-mix(in srgb, var(--c, transparent) 10%, transparent); }
+.bs-grid figure.lead { --c: transparent; }
+.seg-0 { --c: var(--seg0); } .seg-1 { --c: var(--seg1); } .seg-2 { --c: var(--seg2); } .seg-3 { --c: var(--seg3); } .seg-4 { --c: var(--seg4); } .seg-5 { --c: var(--seg5); }
+.bs-pg { position: relative; padding: 0; border: 3px solid transparent; border-radius: 6px; background: none; min-height: 0; display: block; cursor: pointer; }
+.bs-pg img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; object-position: top; display: block; background: #fff; border-radius: 3px; box-shadow: 0 1px 5px rgba(0, 0, 0, .2); user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.bs-grid figure.start .bs-pg { border-color: var(--c); }
+.bs-flag:empty { display: none; }
+.bs-flag { position: absolute; left: 0; top: 0; background: var(--c); color: #fff; font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 3px 0 8px 0; }
+.bs-grid figure.focus .bs-pg { outline: 3px solid var(--acc); outline-offset: 2px; }
+.bs-zoom { position: absolute; right: 10px; top: 10px; width: 40px; height: 40px; min-height: 0; padding: 0; border-radius: 50%; font-size: 18px; background: rgba(255, 255, 255, .9); color: #222; border: 1px solid rgba(0, 0, 0, .15); }
+.bs-grid figure.start .bs-zoom { top: 14px; }
+.bs-grid figcaption { display: flex; gap: 8px; align-items: baseline; font-size: 12px; color: var(--mute); padding: 0 2px; }
+.bs-n { font-weight: 700; color: var(--ink2); }
+.bs-title { min-height: 38px; border-radius: 8px; font-size: 15px; font-weight: 600; border: 2px solid var(--c); padding: 0 8px; }
+.bs-act { flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 14px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--bg); }
+.bs-act .grow { flex: 1; }
+.bs-act button.big { width: auto; min-width: 200px; padding: 0 24px; }
+.bs-confirm { list-style: none; padding: 0; margin: 10px 0; max-height: 50dvh; overflow-y: auto; }
+.bs-confirm li { padding: 8px 10px; border-left: 6px solid var(--c); margin-bottom: 6px; background: var(--bg2); border-radius: 6px; }
+.bs-modal .bs-large { display: flex; justify-content: center; background: var(--bg2); border-radius: 8px; touch-action: pan-y; }
+.bs-modal .bs-large img { max-width: 100%; max-height: calc(100dvh - 190px); object-fit: contain; display: block; background: #fff; }
+.bs-large-act { align-items: center; flex-wrap: wrap; }
+.bs-large-act .grow { flex: 1; text-align: center; color: var(--mute); font-size: 13px; }
+#bs-lm.on { background: var(--acc-soft); border-color: var(--acc); }
+/* iPad: a little narrower list */
+:root[data-device="tablet"] .bs { grid-template-columns: 220px minmax(0, 1fr); }
+@media (max-width: 1100px) { .bs-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); } }
+/* narrow (iPhone): the list of books or one book, two pages a row */
+@media (max-width: 760px) {
+  .cu-tabs { flex-wrap: wrap; row-gap: 4px; }
+  .bs { grid-template-columns: minmax(0, 1fr); }
+  .bs.has-book .bs-side, .bs:not(.has-book) .bs-main { display: none; }
+  .bs-back { display: inline-flex; }
+  .bs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 8px; gap: 10px 8px; }
+  .bs-act button.big { min-width: 0; flex: 1; padding: 0 10px; }
+  .bs-act .bs-hint, .bs-act .grow { display: none; }
+  .bs-zoom { width: 34px; height: 34px; right: 8px; top: 8px; }
+}
