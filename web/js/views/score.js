@@ -9,7 +9,8 @@ import { musicXml, tuneNotes, VERSIONS, VERSION_HELP, barBeats, xmlInfo } from '
 import { ScorePlayer, VoicePlayer } from '../audio.js';
 import { scoreEditor } from './scoreeditor.js';
 import { fitLyrics } from './fitlyrics.js';
-import { editNotes, hasPiano } from './editnotes.js';
+import { editNotes } from './editnotes.js';
+import { checkBadge } from './checkbars.js';
 import { InkLayer } from './annotate.js';
 import { attachSwipe, flipBy } from '../swipe.js';
 import { isTouch, isNarrow } from '../device.js';
@@ -433,7 +434,7 @@ export function scoreTools(it, view) {
   return [{ label: 'Make another version…', icon: 'plus', run: () => generateVersions(it) },
     ...(store.mode === 'server' ? [{ label: 'Add lyrics from a sheet…', icon: 'text', run: () => addLyrics(it) }] : []),
     ...(store.mode === 'server' && view.real ? [{ label: 'Fit lyrics…', icon: 'text', run: () => fitLyrics(view, it, document.querySelector('.viewer')) }] : []),
-    ...(store.mode === 'server' && view.real && hasPiano(view.xml()) ? [{ label: 'Edit notes…', icon: 'edit', run: () => editNotes(view, it, document.querySelector('.viewer')) }] : []),
+    ...(store.mode === 'server' && view.real ? [{ label: 'Edit notes…', icon: 'edit', run: () => editNotes(view, it, document.querySelector('.viewer')) }] : []),
     { label: 'Kids note names', icon: 'baby', checked: view.easy, run: () => view.setEasy(!view.easy) },
     { label: `Chords: ${MODE_LABEL[chordsMode()]} (tap for ${MODE_LABEL[nextMode(chordsMode())].toLowerCase()})`, icon: CHORD_ICON[chordsMode()], run: () => document.querySelector('.viewer')?.dispatchEvent(new CustomEvent('uketoggle')) },
     ...(view.real && /<lyric[\s>]/.test(view.xml()) ? [{ label: view.hasVoice ? 'Make it sing again (beta)' : 'Make it sing (beta)', icon: 'wave', run: () => makeItSing(it) }] : []),
@@ -456,6 +457,7 @@ export function scoreToolbar(bar, it, view) {
       <button class="icon-btn stop" id="sc-stop" aria-label="Stop" title="Stop: back to the beginning">${iconOn('stop')}</button>
       <button class="play" id="sc-play" aria-label="Play" title="Play (space)">${iconOn('play')}</button>
     </div>
+    <button class="check-badge" id="sc-check" hidden></button>
     <div class="stepper" aria-label="Tempo" title="Tempo"><button id="sc-slow" aria-label="Slower">−</button><span id="sc-rate">${bpmNow()} bpm</span><button id="sc-fast" aria-label="Faster">+</button></div>
     <div class="stepper" aria-label="Transpose"><button id="sc-tdown" aria-label="Transpose down">♭</button><span id="sc-tval">${it.transpose ? (it.transpose > 0 ? '+' : '') + it.transpose : '0'}</span><button id="sc-tup" aria-label="Transpose up">♯</button></div>
     <div class="stepper zoom" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out" title="Zoom out (−)">${iconOn('zoomout')}</button><button id="sc-zreset" class="zreset" title="Reset zoom (0)">${Math.round(view.zoom * 100)}%</button><button id="sc-zin" aria-label="Zoom in" title="Zoom in (+)">${iconOn('zoomin')}</button></div>
@@ -536,7 +538,9 @@ export function scoreToolbar(bar, it, view) {
   bar.closest('.viewer')?.addEventListener('zoomchange', zl);
   const onSpace = (e) => { if (e.key === ' ' && !e.target.closest('input,select,textarea,button')) { e.preventDefault(); playBtn.click(); } };
   document.addEventListener('keydown', onSpace);
+  const offCheck = checkBadge($('#sc-check', bar), view, it, viewer); // "N to check": bars the sheet reader was not sure of
   return () => {
+    offCheck();
     host.removeEventListener('ended', onEnd); document.removeEventListener('keydown', onSpace); removeEventListener('meowsic-new-items', onSung);
     viewer?.removeEventListener('ukeclose', onUkeClose); viewer?.removeEventListener('uketoggle', onUkeToggle); uke?.destroy(); uke = null;
   };

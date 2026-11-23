@@ -102,7 +102,7 @@ async function run(name, vp, how) {
   check('score Info actions have Edit notes…', entries.includes('Edit notes…'), entries.join('|'));
   await page.evaluate(() => [...document.querySelectorAll('.info-actions button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
   await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(600);
-  const nNotes = await EN(() => window.__editNotes.notes.length);
+  const nNotes = await EN(() => window.__editNotes.notes.filter((n) => !n.rest).length);
   const tagged = await page.$$eval('#paper g[data-ref]', (e) => new Set(e.map((g) => g.dataset.ref)).size);
   check('every note on the score can be picked (23)', nNotes === 23 && tagged === 23, `${nNotes} / ${tagged}`);
   const fits = await page.evaluate(() => { const r = document.querySelector('.notes-panel').getBoundingClientRect(); return r.bottom <= innerHeight + 1 && r.left >= -1 && r.right <= innerWidth + 1 && document.scrollingElement.scrollWidth <= innerWidth + 1; });
@@ -120,7 +120,7 @@ async function run(name, vp, how) {
   check('the F is in the left hand now', ns.some((n) => n.bar === 0 && n.midi === 65 && n.staff === 2) && !ns.some((n) => n.bar === 0 && n.midi === 65 && n.staff === 1));
   check('both staves keep full bars', barsFull(x));
   check('clefs unchanged', clefs(x) === clefs(x0));
-  check('score drew again, the moved note is still picked', (await page.$$eval('#paper g[data-ref]', (e) => new Set(e.map((g) => g.dataset.ref)).size)) === 23 && (await page.$$eval('#paper g.nh-on', (e) => e.length)) === 1);
+  check('score drew again, the moved note is still picked', (await page.$$eval('#paper g[data-ref]:not(.nh-rest)', (e) => new Set(e.map((g) => g.dataset.ref)).size)) === 23 && (await page.$$eval('#paper g.nh-on', (e) => e.length)) === 1);
   check('a rest where the F was', /<rest\b/.test(x.split('<measure')[1]));
   if (name !== 'iPhone') await page.screenshot({ path: `${SHOTS}/${name}-moved-one.png` });
 
@@ -153,7 +153,7 @@ async function run(name, vp, how) {
   await act('up'); await idle();
   ns = await EN(() => window.__editNotes.notes);
   x = await EN(() => window.__editNotes.xml);
-  check('bar 2 left hand moved up, left hand rests', !ns.some((n) => n.bar === 1 && n.staff === 2) && ns.filter((n) => n.bar === 1 && n.staff === 1).length === 6 && barsFull(x));
+  check('bar 2 left hand moved up, left hand rests', !ns.some((n) => !n.rest && n.bar === 1 && n.staff === 2) && ns.filter((n) => !n.rest && n.bar === 1 && n.staff === 1).length === 6 && barsFull(x));
   if (name !== 'iPhone') await page.screenshot({ path: `${SHOTS}/${name}-moved-three.png` });
   else await page.screenshot({ path: `${SHOTS}/${name}-editor.png` });
 
@@ -161,11 +161,11 @@ async function run(name, vp, how) {
   check('three steps', (await EN(() => window.__editNotes.step)) === 3);
   await act('undo'); await idle();
   ns = await EN(() => window.__editNotes.notes);
-  check('Undo: bar 2 back in the left hand', ns.filter((n) => n.bar === 1 && n.staff === 2).length === 2 && (await EN(() => window.__editNotes.step)) === 2);
-  check('Undo: drawn again with those notes', (await page.$$eval('#paper g[data-ref]', (e) => e.length)) === 23);
+  check('Undo: bar 2 back in the left hand', ns.filter((n) => !n.rest && n.bar === 1 && n.staff === 2).length === 2 && (await EN(() => window.__editNotes.step)) === 2);
+  check('Undo: drawn again with those notes', (await page.$$eval('#paper g[data-ref]:not(.nh-rest)', (e) => e.length)) === 23);
   await act('redo'); await idle();
   ns = await EN(() => window.__editNotes.notes);
-  check('Redo: bar 2 up again', !ns.some((n) => n.bar === 1 && n.staff === 2) && (await EN(() => window.__editNotes.step)) === 3);
+  check('Redo: bar 2 up again', !ns.some((n) => !n.rest && n.bar === 1 && n.staff === 2) && (await EN(() => window.__editNotes.step)) === 3);
   if (!touch) { await page.keyboard.down('Meta'); await page.keyboard.press('z'); await page.keyboard.up('Meta'); await idle(); check('⌘Z undoes', (await EN(() => window.__editNotes.step)) === 2); await act('redo'); await idle(); }
   const want = await EN(() => window.__editNotes.xml);
   const wantNotes = await EN(() => window.__editNotes.notes.map((n) => `${n.bar}/${n.staff}/${n.on}/${n.dur}/${n.midi}`).sort().join(','));
@@ -197,6 +197,31 @@ async function run(name, vp, how) {
     await send('POST', `/activity/${row.id}/undo`, {});
     check('Activities undo trashes the new version', (await api(`/items/${id}`)).deleted);
   } else {
+    // the other note tools: pitch, length, delete, add (on a note and on a rest), each one drawn again with full bars
+    const pick = async (pred) => { const h = await headAt(pred); await act('none'); await tapXY(h.x, h.y); return h.ref; };
+    const notesNow = () => EN(() => window.__editNotes.notes);
+    await pick((n) => n.bar === 2 && n.staff === 1 && n.on === 1);  // bar 3, beat 2: C4
+    await act('semi+'); await idle();
+    let nn = await notesNow();
+    check('♯: a semitone up (C → C♯)', nn.some((n) => n.bar === 2 && n.on === 1 && n.midi === 61 && !n.rest) && barsFull(await EN(() => window.__editNotes.xml)));
+    await act('oct-'); await idle();
+    check('8↓: an octave down', (await notesNow()).some((n) => n.bar === 2 && n.on === 1 && n.midi === 49));
+    await tap('.notes-panel [data-len="2"]'); await idle();
+    nn = await notesNow();
+    check('½: a half note, written over the next beat, bar still full', nn.some((n) => n.bar === 2 && n.on === 1 && n.dur === 2 && n.midi === 49) && !nn.some((n) => n.bar === 2 && n.staff === 1 && n.on === 2 && !n.rest) && barsFull(await EN(() => window.__editNotes.xml)));
+    await act('del'); await idle();
+    nn = await notesNow();
+    check('Delete: a rest in its place', !nn.some((n) => n.bar === 2 && n.midi === 49) && nn.some((n) => n.bar === 2 && n.staff === 1 && n.on === 1 && n.rest) && barsFull(await EN(() => window.__editNotes.xml)));
+    const rr = await headAt((n) => n.bar === 2 && n.staff === 1 && n.on === 1 && n.rest);
+    check('the rest can be picked on the score', !!rr);
+    await act('none'); await tapXY(rr.x, rr.y);
+    await act('add'); await idle();
+    nn = await notesNow();
+    check('+ Note on a rest: a note there', nn.some((n) => n.bar === 2 && n.staff === 1 && n.on === 1 && !n.rest && n.midi === 71) && barsFull(await EN(() => window.__editNotes.xml)));
+    await act('add'); await idle();
+    nn = await notesNow();
+    check('+ Note on a note: a third above, same chord', nn.filter((n) => n.bar === 2 && n.staff === 1 && n.on === 1 && !n.rest).map((n) => n.midi).sort().join() === '71,75');
+    await page.screenshot({ path: `${SHOTS}/${name}-tools.png` });
     await act('close'); await sleep(300);
     check('closing asks first', !!(await page.$('.modal-wrap')));
     await page.evaluate(() => [...document.querySelectorAll('.modal-wrap button')].find((x) => x.textContent.trim() === 'Close').click()); await sleep(1500);

@@ -1,4 +1,6 @@
-"""Edit notes (score ⋯ → "Edit notes…", web/js/views/editnotes.js): move notes between the hands — the upper
+"""Edit notes (score ⋯ → "Edit notes…", web/js/views/editnotes.js; also Check bars, web/js/views/checkbars.js):
+change notes — pitch, length, delete, add (edit(): one op each), take a bar from another reading of the sheet, mark
+checked bars — and move notes between the hands — the upper
 staff (1, right hand) and the lower staff (2, left hand) of the score's piano part (its first part with two staves).
 
 move(text, refs, to) changes the <staff> of the chosen notes and rebuilds only the bars they are in:
@@ -12,13 +14,13 @@ move(text, refs, to) changes the <staff> of the chosen notes and rebuilds only t
   again per beat; a moved note loses its stem direction (the renderer picks one).
 Grace notes stay where they are (with the note they lead into when that note stays in its voice).
 
-refs = indexes among the part's <note> elements (as notes() gives them). ops = [{refs, to}, …] applied in order
+refs = indexes among the part's <note> elements (as notes() gives them). ops = [{op, refs, …}, …] applied in order
 (the refs of an op are in the score as the ops before it left it).
 
 POST /api/items/{id}/editnotes/preview  {ops} -> {xml, notes, moved, part, sha, changed}  (nothing saved)
 POST /api/items/{id}/editnotes          {ops, mode: 'this'|'new', sha?} -> saved like Fit lyrics (lyricsedit.py):
      'this' keeps the file before in items/<folder>/.history/notes-<ms>-<name> + an Activities 'musicxml' step;
-     'new' makes a new score in the same group, tagged "Hands moved" (Undo moves it to the Trash).
+     'new' makes a new score in the same group, tagged "Hands moved" / "Notes edited" (Undo moves it to the Trash).
 """
 import copy
 import shutil
@@ -34,7 +36,8 @@ from .sheetversion import refresh_staves
 from .undolog import _q, record_undo
 
 router = APIRouter(prefix='/api')
-TAG = 'Hands moved'
+TAG = 'Hands moved'      # a new version where notes only changed hands
+TAG_EDIT = 'Notes edited'  # any other edit
 STEP = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11}
 TOP = {'1': 1, '2': 5}  # first voice number of each staff (MuseScore's habit)
 
@@ -64,9 +67,10 @@ def piano_part(root):
 
 
 def notes(root):
-    """The piano part's notes you can move: [{ref, bar, on, dur, staff, midi, voice}] (on / dur in quarters, on
-    from the start of its bar; ref = index among the part's <note>s). No rests, no grace notes."""
-    k, part = piano_part(root)
+    """The notes of the part you edit (edit_part): [{ref, bar, on, dur, staff, midi, voice, rest?}] (on / dur in
+    quarters, on from the start of its bar; ref = index among the part's <note>s). Rests too (rest: True, midi
+    None); no grace notes."""
+    k, part, _ = edit_part(root)
     if part is None: return []
     ref = {id(e): i for i, e in enumerate(part.iter('note'))}
     out, div = [], Fr(1)
@@ -82,8 +86,8 @@ def notes(root):
                 chord = e.find('chord') is not None
                 at = last if chord else t
                 if not chord: last, t = t, t + d
-                if e.find('rest') is not None: continue
-                out.append({'ref': ref[id(e)], 'bar': bi, 'on': float(at), 'dur': float(d), 'staff': int(_st(e)), 'midi': _midi(e), 'voice': _vo(e)})
+                out.append({'ref': ref[id(e)], 'bar': bi, 'on': float(at), 'dur': float(d), 'staff': int(_st(e)), 'midi': _midi(e), 'voice': _vo(e),
+                            **({'rest': True} if e.find('rest') is not None or e.find('pitch') is None else {})})
     return out
 
 
@@ -270,118 +274,329 @@ def _write_bar(m, voices, other, bar_len, div, beat):
     for c in kids: m.append(c)
 
 
-def move(text: str, refs, to) -> tuple[str, list]:
-    """(new MusicXML, refs of the moved notes in it). refs: note indexes in the piano part; to: 1 (upper) or 2 (lower)."""
-    to = str(to)
-    if to not in ('1', '2'): raise HTTPException(400, 'to: 1 (upper staff) or 2 (lower staff)')
+FLATS = ['C', 'D', 'D', 'E', 'E', 'F', 'G', 'G', 'A', 'A', 'B', 'B']
+FLAT_ALT = [0, -1, 0, -1, 0, 0, -1, 0, -1, 0, -1, 0]
+SHARPS = ['C', 'C', 'D', 'D', 'E', 'F', 'F', 'G', 'G', 'A', 'A', 'B']
+SHARP_ALT = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0]
+LENGTHS = {Fr(1, 4), Fr(3, 8), Fr(1, 2), Fr(3, 4), Fr(1), Fr(3, 2), Fr(2), Fr(3), Fr(4)}  # written lengths you can pick
+
+
+def _set_pitch(n, midi, flats):
+    """The note at this MIDI pitch (spelled with flats in a flat key, else sharps); its accidental and ties go."""
+    midi = max(21, min(108, int(midi)))
+    pc, octave = midi % 12, midi // 12 - 1
+    step, alt = (FLATS[pc], FLAT_ALT[pc]) if flats else (SHARPS[pc], SHARP_ALT[pc])
+    r = n.find('rest')
+    if r is not None: n.remove(r)
+    p = n.find('pitch')
+    if p is None: p = _put(n, ET.Element('pitch'))
+    for c in list(p): p.remove(c)
+    ET.SubElement(p, 'step').text = step
+    if alt: ET.SubElement(p, 'alter').text = str(alt)
+    ET.SubElement(p, 'octave').text = str(octave)
+    for tag in ('accidental', 'tie'):
+        for e in n.findall(tag): n.remove(e)
+    nt = n.find('notations')
+    if nt is not None:
+        for e in nt.findall('tied'): nt.remove(e)
+        if not len(nt): n.remove(nt)
+
+
+def _set_type(n, q, div):
+    """Written value of q quarters (one note value, maybe dotted)."""
+    (v, ty, dots), = pieces(q)
+    n.find('duration').text = str(int(q * div))
+    t = n.find('type')
+    if t is None: t = _put(n, ET.Element('type'))
+    t.text = ty
+    for d in n.findall('dot'): n.remove(d)
+    for _ in range(dots): _put(n, ET.Element('dot'))
+    r = n.find('rest')
+    if r is not None and r.get('measure'): del r.attrib['measure']
+
+
+def edit_part(root):
+    """(index, part, hands): the piano part (two staves: hands = True), else the first part."""
+    k, part = piano_part(root)
+    if part is not None: return k, part, True
+    parts = root.findall('part')
+    return (0, parts[0], False) if parts else (None, None, False)
+
+
+def _take_out(voices, want, to=None):
+    """Take the chosen notes out of their chords; a chord with nothing left becomes a rest of its length.
+    Returns [(on, dur, [notes])]. to: notes already on that staff stay."""
+    taken = []
+    for vo in voices:
+        for ev in list(vo.evs):
+            if ev.kind != 'notes' or ev.dur == 0: continue
+            go = [n for n in ev.notes if id(n) in want and (to is None or _st(n) != to)]
+            if not go: continue
+            stay = [n for n in ev.notes if n not in go]
+            for n in go: _strip_moved(n)
+            taken.append((ev.on, ev.dur, go))
+            vo.touched = True
+            if stay:
+                ev.notes = stay; _as_chord(stay)
+            else:
+                tm = ev.notes[0].find('time-modification')
+                r = _note_el(vo.num, vo.staff, ev.dur, ET.Element('rest'))
+                if ev.notes[0].find('type') is not None: _put(r, copy.deepcopy(ev.notes[0].find('type')))
+                for d in ev.notes[0].findall('dot'): _put(r, copy.deepcopy(d))
+                if tm is not None: _put(r, copy.deepcopy(tm))
+                _put(r, ET.Element('staff')).text = vo.staff
+                vo.evs[vo.evs.index(ev)] = Ev(ev.on, ev.dur, [r], 'rest', ev.graces)
+    return taken
+
+
+def _place(voices, taken, to, div, beat, bar_len):
+    """Put taken notes on staff `to`: joined to a chord of the same time and length, into a voice resting then,
+    or a new voice. Returns the notes placed."""
+    placed = []
+    groups = {}
+    for on, dur, ns in taken:
+        tm = ns[0].find('time-modification')
+        groups.setdefault((on, dur, None if tm is None else ET.tostring(tm)), []).extend(ns)
+    for (on, dur, _), ns in sorted(groups.items(), key=lambda x: (x[0][0], -x[0][1])):
+        ns.sort(key=lambda n: _midi(n) or 0)
+        placed.extend(ns)
+        dest = sorted([v for v in voices if v.staff == to], key=lambda v: (len(v.num), v.num))
+        hit = None
+        for vo in dest:
+            for ev in vo.evs:
+                if ev.kind == 'notes' and ev.on == on and ev.dur == dur and ev.notes and \
+                        (ev.notes[0].find('time-modification') is None) == (ns[0].find('time-modification') is None):
+                    hit = (vo, ev); break
+            if hit: break
+        if hit:
+            vo, ev = hit
+            for n in ns: _set_voice(n, vo.num, vo.staff)
+            ev.notes = sorted(ev.notes + ns, key=lambda n: _midi(n) or 0)
+            _as_chord(ev.notes)
+            vo.touched = True
+            continue
+        _as_chord(ns)
+        chord = Ev(on, dur, ns, 'notes')
+        vo = next((v for v in dest if _fill(v, on, dur)), None)
+        if vo is None:
+            used = {v.num for v in voices}
+            num = TOP[to]
+            while str(num) in used: num += 1
+            vo = Voice(str(num), to)
+            vo.first = 10 ** 9
+            vo.evs = _rests(Fr(0), bar_len, div, beat, bar_len, vo.num, to)
+            voices.append(vo)
+        _put_in(vo, chord, div, beat, bar_len)
+    return placed
+
+
+def _lengthen(voices, want, q, div, beat, bar_len):
+    """Chords picked get q quarters: shorter = a rest after; longer = over what follows in the voice (rests, or
+    notes: they are written over; one only partly covered leaves a rest for the rest of it)."""
+    done = []
+    d = q * div
+    for vo in voices:
+        for ev in list(vo.evs):
+            if ev.kind != 'notes' or ev.dur == 0 or not any(id(n) in want for n in ev.notes): continue
+            if ev.notes[0].find('time-modification') is not None: raise HTTPException(400, 'Notes in a triplet keep their length')
+            if ev.on + d > bar_len: raise HTTPException(400, 'That length does not fit in the bar')
+            end, new_end = ev.end, ev.on + d
+            out = []
+            for x in vo.evs:
+                if x is ev or x.on < end or x.on >= new_end: out.append(x); continue
+                # after the chord, inside its new length: written over (what sticks out stays as a rest)
+                if x.end > new_end: out.extend(_rests(new_end, x.end - new_end, div, beat, bar_len, vo.num, vo.staff))
+            if new_end < end: out.extend(_rests(new_end, end - new_end, div, beat, bar_len, vo.num, vo.staff))
+            ev.dur = d
+            for n in ev.notes:
+                _set_type(n, q, div)
+                for e in n.findall('tie'): n.remove(e)
+                nt = n.find('notations')
+                if nt is not None:
+                    for e in nt.findall('tied'): nt.remove(e)
+                    if not len(nt): n.remove(nt)
+            out.sort(key=lambda e: e.on)
+            vo.evs = out
+            vo.touched = True
+            done.extend(ev.notes)
+    return done
+
+
+def _key_flats(part):
+    """{bar index: True when the key in force has flats}."""
+    out, f = {}, False
+    for bi, m in enumerate(part.findall('measure')):
+        for k in m.iter('key'):
+            try: f = int(k.findtext('fifths') or 0) < 0
+            except ValueError: pass
+        out[bi] = f
+    return out
+
+
+def unmark(text, bars):
+    """Bars looked at: out of <miscellaneous-field name="meowsic-check-bars">, and their "⚠ check" marks gone."""
     root = ET.fromstring(text.encode('utf-8'))
-    _, part = piano_part(root)
-    if part is None: raise HTTPException(400, 'This score has no piano part with two staves')
+    bars = {int(b) for b in bars or []}
+    for f in root.iter('miscellaneous-field'):
+        if f.get('name') != 'meowsic-check-bars': continue
+        f.text = ' '.join(b for b in (f.text or '').split() if b.isdigit() and int(b) not in bars)
+    for ident in root.iter('identification'):
+        for misc in ident.findall('miscellaneous'):
+            for f in [f for f in misc if f.get('name') == 'meowsic-check-bars' and not (f.text or '').strip()]: misc.remove(f)
+            if not len(misc): ident.remove(misc)
+    for part in root.findall('part'):
+        for bi, m in enumerate(part.findall('measure'), 1):
+            if bi not in bars: continue
+            for d in [d for d in m.findall('direction') if any('check' in (w.text or '') and '⚠' in (w.text or '') for w in d.iter('words'))]:
+                m.remove(d)
+    ET.indent(root, space='  ')
+    return _head(text) + ET.tostring(root, encoding='unicode') + '\n'
+
+
+def check_bars(text):
+    """The bars still to check (1-based), from the MusicXML."""
+    root = ET.fromstring(text.encode('utf-8'))
+    for f in root.iter('miscellaneous-field'):
+        if f.get('name') == 'meowsic-check-bars': return sorted({int(b) for b in (f.text or '').split() if b.isdigit()})
+    return []
+
+
+def use_measure(text, bar, measure_xml, part_index=None):
+    """Bar `bar` (1-based) of a part replaced by another reading of it (a <measure>); its number stays."""
+    root = ET.fromstring(text.encode('utf-8'))
+    try: alt = ET.fromstring(str(measure_xml).encode('utf-8'))
+    except ET.ParseError: raise HTTPException(400, 'The other reading is not a MusicXML bar')
+    if alt.tag != 'measure': alt = alt.find('.//measure')
+    if alt is None: raise HTTPException(400, 'The other reading is not a MusicXML bar')
+    parts = root.findall('part')
+    k = int(part_index) if part_index is not None else (edit_part(root)[0] or 0)
+    if not 0 <= k < len(parts): raise HTTPException(400, 'No such part')
+    ms = parts[k].findall('measure')
+    try: bar = int(bar)
+    except (TypeError, ValueError): raise HTTPException(400, 'bar: a bar number')
+    if not 1 <= bar <= len(ms): raise HTTPException(400, f'No bar {bar}')
+    m = ms[bar - 1]
+    keep = [e for e in m if e.tag == 'print' or (e.tag == 'attributes' and not any(x.tag == 'attributes' for x in alt))]
+    for c in list(m): m.remove(c)
+    for c in keep + list(alt): m.append(c)
+    ET.indent(root, space='  ')
+    return _head(text) + ET.tostring(root, encoding='unicode') + '\n'
+
+
+def edit(text: str, op: dict) -> tuple[str, list]:
+    """One editing step -> (new MusicXML, refs of the notes it touched, in the new score). op:
+      {op:'move', refs, to: 1|2}      to the upper / lower staff of the piano part
+      {op:'pitch', refs, by}          semitones up (+) / down (-)
+      {op:'len', refs, q}             a written length in quarters (1/16 … whole, dotted too)
+      {op:'delete', refs}             gone (a rest where nothing is left)
+      {op:'add', refs, by?, midi?}    a note `by` semitones (default 4) above each picked note, in its chord; a
+                                      picked rest becomes a note (`midi`, default the middle of its staff)
+      {op:'unmark', bars}             bars looked at (no longer to check)
+      {op:'alt', bar, measure, part?} that bar replaced by another reading
+    Every voice of every bar still fills it."""
+    kind = op.get('op') or ('move' if 'to' in op else None)
+    if kind == 'unmark': return unmark(text, op.get('bars')), []
+    if kind == 'alt': return use_measure(text, op.get('bar'), op.get('measure'), op.get('part')), []
+    if kind not in ('move', 'pitch', 'len', 'delete', 'add'): raise HTTPException(400, f'Unknown edit: {kind}')
+    root = ET.fromstring(text.encode('utf-8'))
+    _, part, hands = edit_part(root)
+    if part is None: raise HTTPException(400, 'This score has no notes')
+    if kind == 'move' and not hands: raise HTTPException(400, 'This score has no piano part with two staves')
     all_notes = list(part.iter('note'))
-    want = set()
-    for r in refs or []:
+    want, rests = set(), set()
+    for r in op.get('refs') or []:
         try: r = int(r)
         except (TypeError, ValueError): raise HTTPException(400, f'Not a note: {r}')
         if not 0 <= r < len(all_notes): raise HTTPException(400, f'No note {r} in this score')
         n = all_notes[r]
-        if n.find('rest') is not None or n.find('grace') is not None or n.find('pitch') is None:
-            raise HTTPException(400, f'Note {r} is a rest or a grace note')
+        if n.find('grace') is not None: raise HTTPException(400, f'Note {r} is a grace note')
+        if n.find('rest') is not None or n.find('pitch') is None:
+            if kind == 'add': rests.add(id(n)); continue
+            raise HTTPException(400, f'Note {r} is a rest')
         want.add(id(n))
-    moved_els = []
-    div, tsig = Fr(1), (4, 4)
-    for m in part.findall('measure'):
-        for a in m.findall('attributes'):
-            if a.findtext('divisions'): div = Fr(int(float(a.findtext('divisions'))))
-            tm = a.find('time')
-            if tm is not None and (tm.findtext('beats') or '').strip().isdigit():
-                tsig = (int(tm.findtext('beats')), int(tm.findtext('beat-type') or 4))
-        if not any(id(n) in want and _st(n) != to for n in m.iter('note')): continue
-        beat = _beat(tsig)
-        voices, other, bar_len = _read_bar(m, div)
-        bar_len = bar_len or Fr(4 * tsig[0], tsig[1]) * div
-        # take the chosen notes out of their chords (what is left behind: a rest of the same length)
-        taken = []  # [(on, dur, [notes])]
-        for vo in voices:
-            for ev in list(vo.evs):
-                if ev.kind != 'notes' or ev.dur == 0: continue
-                go = [n for n in ev.notes if id(n) in want and _st(n) != to]
-                if not go: continue
-                stay = [n for n in ev.notes if n not in go]
-                for n in go: _strip_moved(n)
-                taken.append((ev.on, ev.dur, go))
-                vo.touched = True
-                if stay:
-                    ev.notes = stay; _as_chord(stay)
-                else:
-                    tm = ev.notes[0].find('time-modification')
-                    r = _note_el(vo.num, vo.staff, ev.dur, ET.Element('rest'))
-                    for tag in ('type',):
-                        if ev.notes[0].find(tag) is not None: _put(r, copy.deepcopy(ev.notes[0].find(tag)))
-                    for d in ev.notes[0].findall('dot'): _put(r, copy.deepcopy(d))
-                    if tm is not None: _put(r, copy.deepcopy(tm))
-                    _put(r, ET.Element('staff')).text = vo.staff
-                    i = vo.evs.index(ev)
-                    vo.evs[i] = Ev(ev.on, ev.dur, [r], 'rest', ev.graces)
-        for vo in voices:
-            if vo.touched: _normalize(vo, div, beat, bar_len)
-        # one chord per (time, length, tuplet): chosen notes of different chords at the same time go together
-        groups = {}
-        for on, dur, ns in taken:
-            tm = ns[0].find('time-modification')
-            k = (on, dur, None if tm is None else ET.tostring(tm))
-            groups.setdefault(k, []).extend(ns)
-        for (on, dur, _), ns in sorted(groups.items(), key=lambda x: (x[0][0], -x[0][1])):
-            ns.sort(key=lambda n: _midi(n) or 0)
-            moved_els.extend(ns)
-            dest = sorted([v for v in voices if v.staff == to], key=lambda v: (len(v.num), v.num))
-            # 1. join a chord of the same time and length
-            hit = None
-            for vo in dest:
-                for ev in vo.evs:
-                    if ev.kind == 'notes' and ev.on == on and ev.dur == dur and ev.notes and \
-                            (ev.notes[0].find('time-modification') is None) == (ns[0].find('time-modification') is None):
-                        hit = (vo, ev); break
-                if hit: break
-            if hit:
-                vo, ev = hit
-                for n in ns: _set_voice(n, vo.num, vo.staff)
-                ev.notes = sorted(ev.notes + ns, key=lambda n: _midi(n) or 0)
-                _as_chord(ev.notes)
-                vo.touched = True
-                continue
-            _as_chord(ns)
-            chord = Ev(on, dur, ns, 'notes')
-            # 2. a voice of that staff resting then; 3. a new voice
-            vo = next((v for v in dest if _fill(v, on, dur)), None)
-            if vo is None:
-                used = {v.num for v in voices}
-                num = TOP[to]
-                while str(num) in used: num += 1
-                vo = Voice(str(num), to)
-                vo.first = 10 ** 9
-                vo.evs = _rests(Fr(0), bar_len, div, beat, bar_len, vo.num, to)
-                voices.append(vo)
-            _put_in(vo, chord, div, beat, bar_len)
-        for vo in voices:
-            if vo.touched: _normalize(vo, div, beat, bar_len)
-        # a voice with only rests goes when its staff has another voice (the lowest number stays)
-        for vo in sorted(voices, key=lambda v: (len(v.num), v.num), reverse=True):
-            if vo.touched and all(e.kind != 'notes' for e in vo.evs) and any(o is not vo and o.staff == vo.staff for o in voices):
-                voices.remove(vo)
-        voices.sort(key=lambda v: (v.staff, v.first))  # upper staff first, then lower, each as the bar had them
-        _write_bar(m, voices, other, bar_len, div, beat)
+    if not want and not rests: raise HTTPException(400, 'Pick some notes first')
+    touched = []
+    flats = _key_flats(part)
+    bars = part.findall('measure')
+    if kind in ('pitch', 'add'):
+        by = int(op.get('by', 4 if kind == 'add' else 0) or 0)
+        div = Fr(1)
+        for bi, m in enumerate(bars):
+            for a in m.iter('attributes'):
+                if a.findtext('divisions'): div = Fr(int(float(a.findtext('divisions'))))
+            kids = list(m)
+            for i, n in enumerate(kids):
+                if n.tag != 'note': continue
+                if kind == 'pitch' and id(n) in want:
+                    _set_pitch(n, _midi(n) + by, flats[bi] if by >= 0 else True)
+                    touched.append(n)
+                elif kind == 'add' and id(n) in rests:
+                    q = _dur(n) / div
+                    _set_pitch(n, int(op.get('midi') or (71 if _st(n) == '1' else 50)), flats[bi])
+                    if (n.find('type') is None or n.findtext('type') == '') and len(pieces(q)) == 1: _set_type(n, q, div)
+                    touched.append(n)
+                elif kind == 'add' and id(n) in want:  # a note `by` above it, in its chord (after the chord's last note)
+                    j = i
+                    while j + 1 < len(kids) and kids[j + 1].tag == 'note' and kids[j + 1].find('chord') is not None: j += 1
+                    new = copy.deepcopy(n)
+                    for tag in ('lyric', 'beam', 'notations', 'stem', 'chord'):
+                        for e in new.findall(tag): new.remove(e)
+                    _put(new, ET.Element('chord'))
+                    _set_pitch(new, _midi(n) + by, flats[bi])
+                    m.insert(list(m).index(kids[j]) + 1, new)
+                    touched.append(new)
+    else:
+        to = str(op.get('to', ''))
+        if kind == 'move' and to not in ('1', '2'): raise HTTPException(400, 'to: 1 (upper staff) or 2 (lower staff)')
+        q = None
+        if kind == 'len':
+            try: q = Fr(str(op.get('q')))
+            except (TypeError, ValueError, ZeroDivisionError): raise HTTPException(400, 'q: a length in quarters')
+            if q not in LENGTHS: raise HTTPException(400, 'Pick a written length (1/16 to a whole note)')
+        div, tsig = Fr(1), (4, 4)
+        for m in bars:
+            for a in m.findall('attributes'):
+                if a.findtext('divisions'): div = Fr(int(float(a.findtext('divisions'))))
+                tm = a.find('time')
+                if tm is not None and (tm.findtext('beats') or '').strip().isdigit():
+                    tsig = (int(tm.findtext('beats')), int(tm.findtext('beat-type') or 4))
+            if not any(id(n) in want and (kind != 'move' or _st(n) != to) for n in m.iter('note')): continue
+            if kind == 'len' and (q * div).denominator != 1: raise HTTPException(400, 'That length is too short for this score')
+            beat = _beat(tsig)
+            voices, other, bar_len = _read_bar(m, div)
+            bar_len = bar_len or Fr(4 * tsig[0], tsig[1]) * div
+            if kind == 'len':
+                touched += _lengthen(voices, want, q, div, beat, bar_len)
+            else:
+                taken = _take_out(voices, want, to if kind == 'move' else None)
+                for vo in voices:
+                    if vo.touched: _normalize(vo, div, beat, bar_len)
+                if kind == 'move': touched += _place(voices, taken, to, div, beat, bar_len)
+            for vo in voices:
+                if vo.touched: _normalize(vo, div, beat, bar_len)
+            # a voice with only rests goes when its staff has another voice (the lowest number stays)
+            for vo in sorted(voices, key=lambda v: (len(v.num), v.num), reverse=True):
+                if vo.touched and all(e.kind != 'notes' for e in vo.evs) and any(o is not vo and o.staff == vo.staff for o in voices):
+                    voices.remove(vo)
+            voices.sort(key=lambda v: (v.staff, v.first))  # upper staff first, then lower, each as the bar had them
+            _write_bar(m, voices, other, bar_len, div, beat)
     ET.indent(root, space='  ')
     out = _head(text) + ET.tostring(root, encoding='unicode') + '\n'
     ref = {id(e): i for i, e in enumerate(part.iter('note'))}
-    return out, sorted(ref[id(e)] for e in moved_els)
+    return out, sorted(ref[id(e)] for e in touched if id(e) in ref)
+
+
+def move(text: str, refs, to) -> tuple[str, list]:
+    """(new MusicXML, refs of the moved notes in it). refs: note indexes in the piano part; to: 1 (upper) or 2 (lower)."""
+    return edit(text, {'op': 'move', 'refs': refs, 'to': to})
 
 
 def apply_ops(text, ops):
     moved = []
-    if not isinstance(ops, list): raise HTTPException(400, 'ops: a list of {refs, to}')
+    if not isinstance(ops, list): raise HTTPException(400, 'ops: a list of edits')
     for op in ops:
-        if not isinstance(op, dict): raise HTTPException(400, 'ops: a list of {refs, to}')
-        text, moved = move(text, op.get('refs'), op.get('to'))
+        if not isinstance(op, dict): raise HTTPException(400, 'ops: a list of edits')
+        text, moved = edit(text, op)
     return text, moved
 
 
@@ -404,11 +619,11 @@ def preview(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cf
     it = must_item(c, item_id)
     text = _xml_path(cf, it).read_text(encoding='utf-8')
     root = ET.fromstring(text.encode('utf-8'))
-    k, part = piano_part(root)
-    if part is None: raise HTTPException(400, 'This score has no piano part with two staves')
+    k, part, hands = edit_part(root)
+    if part is None: raise HTTPException(400, 'This score has no notes')
     out, moved = apply_ops(text, body.get('ops') or [])
-    return {'xml': out, 'notes': notes(ET.fromstring(out.encode('utf-8'))), 'moved': moved, 'part': k,
-            'sha': _sha(text), 'changed': bool(body.get('ops'))}
+    return {'xml': out, 'notes': notes(ET.fromstring(out.encode('utf-8'))), 'moved': moved, 'part': k, 'hands': hands,
+            'check': check_bars(out), 'sha': _sha(text), 'changed': bool(body.get('ops'))}
 
 
 def keep(d, name):
@@ -421,10 +636,22 @@ def keep(d, name):
 
 
 def _what(ops):
-    up = sum(len(o.get('refs') or []) for o in ops if str(o.get('to')) == '1')
-    down = sum(len(o.get('refs') or []) for o in ops if str(o.get('to')) == '2')
+    """What the edits did, in words (the Activities row)."""
     s = lambda n: f'{n} note{"s" if n != 1 else ""}'
-    return ', '.join(x for x in ((f'{s(up)} to the right hand' if up else ''), (f'{s(down)} to the left hand' if down else '')) if x) or 'no notes'
+    cnt = {}
+    for o in ops:
+        k = o.get('op') or ('move' if 'to' in o else '')
+        k = f'move{o.get("to")}' if k == 'move' else k
+        cnt[k] = cnt.get(k, 0) + (len(o.get('bars') or []) if k == 'unmark' else 1 if k == 'alt' else len(o.get('refs') or []))
+    words = {'move1': lambda n: f'{s(n)} to the right hand', 'move2': lambda n: f'{s(n)} to the left hand',
+             'pitch': lambda n: f'{s(n)} higher / lower', 'len': lambda n: f'{s(n)} longer / shorter', 'delete': lambda n: f'{s(n)} deleted',
+             'add': lambda n: f'{s(n)} added', 'unmark': lambda n: f'{n} bar{"s" if n != 1 else ""} checked',
+             'alt': lambda n: f'{n} bar{"s" if n != 1 else ""} from the other reading'}
+    return ', '.join(words[k](n) for k, n in cnt.items() if k in words and n) or 'no notes'
+
+
+def _tag(ops):
+    return TAG if all((o.get('op') or 'move') == 'move' for o in ops) else TAG_EDIT
 
 
 @router.post('/items/{item_id}/editnotes')
@@ -435,14 +662,14 @@ def save(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg))
     if body.get('sha') and body['sha'] != _sha(text):
         raise HTTPException(409, 'This score was changed since the editor opened it — close the editor and open it again')
     ops = body.get('ops') or []
-    if not ops: raise HTTPException(422, 'No notes were moved')
+    if not ops: raise HTTPException(422, 'Nothing was changed')
     out, _ = apply_ops(text, ops)
     what = _what(ops)
     if body.get('mode') == 'new':
         t = now_ms()
         new = {'id': uid('m'), 'kind': 'score', 'title': it['title'], 'artist': it.get('artist') or '',
-               'tags': [*[x for x in it.get('tags', []) if x != TAG], TAG], 'createdAt': t, 'updatedAt': t, 'originAt': t,
-               'version': it.get('version') or 'original', 'source': f'From the score {_q(it["title"])}, notes moved between the hands',
+               'tags': [*[x for x in it.get('tags', []) if x not in (TAG, TAG_EDIT)], _tag(ops)], 'createdAt': t, 'updatedAt': t, 'originAt': t,
+               'version': it.get('version') or 'original', 'source': f'From the score {_q(it["title"])}, notes edited',
                'groupId': it.get('groupId') or uid('g'), 'key': it.get('key') or '', 'bpm': it.get('bpm'), 'ai': it.get('ai') or 0,
                'sourceUrl': it.get('sourceUrl') or ''}
         if not it.get('groupId'): c.execute('UPDATE score SET group_id=? WHERE item_id=?', (new['groupId'], it['id']))
@@ -466,6 +693,6 @@ def save(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg))
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), it['id']))
     refresh_staves(c, cf, it['id'])
     aid = record_undo(c, 'edit-notes', {'op': 'musicxml', 'id': it['id'], 'title': it['title'], 'file': p.name, 'before': hist,
-                                        'beforeSha': _sha(text), 'afterSha': _sha(out), 'what': 'notes were moved'},
+                                        'beforeSha': _sha(text), 'afterSha': _sha(out), 'what': 'notes were edited'},
                       f'Edited notes: {it["title"]}', f'{what}; the score before is kept in {hist}')
-    return {'ok': True, 'mode': 'this', 'item': get_item(c, it['id']), 'activity': aid, 'history': hist, 'sha': _sha(out)}
+    return {'ok': True, 'mode': 'this', 'item': get_item(c, it['id']), 'activity': aid, 'history': hist, 'sha': _sha(out), 'check': check_bars(out)}

@@ -54,18 +54,18 @@ def full(text):
 
 def music(text):
     """{(bar, staff, onset, quarters, midi)} — what sounds where."""
-    return {(n['bar'], n['staff'], n['on'], n['dur'], n['midi']) for n in sm.notes(ET.fromstring(text.encode()))}
+    return {(n['bar'], n['staff'], n['on'], n['dur'], n['midi']) for n in sm.notes(ET.fromstring(text.encode())) if not n.get('rest')}
 
 
 def refs(text, pred):
-    return [n['ref'] for n in sm.notes(ET.fromstring(text.encode())) if pred(n)]
+    return [n['ref'] for n in sm.notes(ET.fromstring(text.encode())) if not n.get('rest') and pred(n)]
 
 
 def chords(text, bar, staff):
     """[(onset, (midis…))] of a staff's chords in a bar."""
     out = {}
     for n in sm.notes(ET.fromstring(text.encode())):
-        if n['bar'] == bar and n['staff'] == staff: out.setdefault((n['on'], n['voice']), []).append(n['midi'])
+        if not n.get('rest') and n['bar'] == bar and n['staff'] == staff: out.setdefault((n['on'], n['voice']), []).append(n['midi'])
     return sorted((on, tuple(sorted(ms))) for (on, _), ms in out.items())
 
 
@@ -203,7 +203,7 @@ def piano(client):
 def test_api_preview_save_this_and_undo(client, piano, data):
     i = piano['id']
     p0 = client.post(f'/api/items/{i}/editnotes/preview', json={'ops': []}).json()
-    assert p0['part'] == 0 and not p0['changed'] and len(p0['notes']) == 12
+    assert p0['part'] == 0 and not p0['changed'] and len([n for n in p0['notes'] if not n.get('rest')]) == 12 and p0['hands']
     d5 = [n['ref'] for n in p0['notes'] if n['midi'] == 74 and n['bar'] == 0]
     ops = [{'refs': d5, 'to': 2}]
     p = client.post(f'/api/items/{i}/editnotes/preview', json={'ops': ops}).json()
@@ -235,4 +235,103 @@ def test_api_save_as_new(client, piano):
 def test_api_no_piano_part(client):
     x = score(RH, LH).replace('<staves>2</staves>', '')
     it = client.post('/api/items', json={'kind': 'score', 'title': 'One staff', 'musicxmlText': x}).json()
-    assert client.post(f'/api/items/{it["id"]}/editnotes/preview', json={}).status_code == 400
+    p = client.post(f'/api/items/{it["id"]}/editnotes/preview', json={}).json()
+    assert p['hands'] is False and p['notes']
+    assert client.post(f'/api/items/{it["id"]}/editnotes/preview', json={'ops': [{'op': 'move', 'refs': [0], 'to': 2}]}).status_code == 400
+
+
+# ---------- the other edits (Edit notes, Check bars) ----------
+
+def test_pitch_up_and_down():
+    x = score(RH, LH)
+    d5 = refs(x, lambda n: n['midi'] == 74 and n['bar'] == 0)
+    out, t = sm.edit(x, {'op': 'pitch', 'refs': d5, 'by': 1})
+    assert (0, 1, 1.0, 1.0, 75) in music(out) and full(out)
+    n = sm.notes(ET.fromstring(out.encode()))
+    assert next(x for x in n if x['ref'] == t[0])['midi'] == 75
+    out, _ = sm.edit(out, {'op': 'pitch', 'refs': t, 'by': -13})
+    assert (0, 1, 1.0, 1.0, 62) in music(out)
+    m = ET.fromstring(out.encode()).find('part/measure')
+    d = next(e for e in m.iter('note') if sm._midi(e) == 62)
+    assert d.findtext('pitch/step') == 'D' and d.find('pitch/alter') is None
+
+
+def test_flat_spelling_going_down():
+    x = score(RH, LH)
+    e5 = refs(x, lambda n: n['midi'] == 76 and n['bar'] == 0 and n['on'] == 2.0)
+    out, _ = sm.edit(x, {'op': 'pitch', 'refs': e5, 'by': -1})
+    m = ET.fromstring(out.encode()).find('part/measure')
+    e = next(e for e in m.iter('note') if sm._midi(e) == 75)
+    assert e.findtext('pitch/step') == 'E' and e.findtext('pitch/alter') == '-1'
+
+
+def test_length_shorter_and_longer_keep_bars_full():
+    x = score(RH, LH)
+    e5 = refs(x, lambda n: n['bar'] == 0 and n['on'] == 2.0 and n['staff'] == 1)  # the half note E5
+    out, t = sm.edit(x, {'op': 'len', 'refs': e5, 'q': 1})
+    assert full(out) and (0, 1, 2.0, 1.0, 76) in music(out)
+    # D5 (beat 2) longer: a half note over the E5 → the E5 is written over, the bar still adds up
+    d5 = refs(out, lambda n: n['midi'] == 74 and n['bar'] == 0)
+    out2, _ = sm.edit(out, {'op': 'len', 'refs': d5, 'q': 2})
+    assert full(out2) and (0, 1, 1.0, 2.0, 74) in music(out2) and not any(k[0] == 0 and k[2] == 2.0 and k[1] == 1 for k in music(out2))
+    with pytest.raises(Exception): sm.edit(x, {'op': 'len', 'refs': e5, 'q': 4})       # does not fit the bar
+    with pytest.raises(Exception): sm.edit(x, {'op': 'len', 'refs': e5, 'q': 1.25})    # not one written value
+
+
+def test_delete_leaves_a_rest_and_chords_lose_one_note():
+    x = score(RH, LH)
+    out, _ = sm.edit(x, {'op': 'delete', 'refs': refs(x, lambda n: n['midi'] == 74 and n['bar'] == 0)})
+    assert full(out) and not any(k[4] == 74 and k[0] == 0 for k in music(out))
+    out, _ = sm.edit(x, {'op': 'delete', 'refs': refs(x, lambda n: n['midi'] == 72 and n['bar'] == 0)})
+    assert full(out) and chords(out, 0, 1)[0] == (0.0, (76,))
+
+
+def test_add_a_note_to_a_chord_and_on_a_rest():
+    x = score(RH, LH)
+    g5 = refs(x, lambda n: n['midi'] == 79)
+    out, t = sm.edit(x, {'op': 'add', 'refs': g5})
+    assert full(out) and chords(out, 1, 1)[0] == (0.0, (79, 83))
+    # the left hand rests a whole bar after moving it up; a note there
+    out, _ = sm.move(x, refs(x, lambda n: n['staff'] == 2 and n['bar'] == 1), 1)
+    rest = [n['ref'] for n in sm.notes(ET.fromstring(out.encode())) if n.get('rest') and n['bar'] == 1 and n['staff'] == 2]
+    out2, t = sm.edit(out, {'op': 'add', 'refs': rest, 'midi': 48})
+    assert full(out2) and (1, 2, 0.0, 4.0, 48) in music(out2)
+    n = next(e for e in ET.fromstring(out2.encode()).findall('part/measure')[1].iter('note') if sm._midi(e) == 48)
+    assert n.findtext('type') == 'whole' and n.find('rest') is None
+
+
+CHECK = '<identification><miscellaneous><miscellaneous-field name="meowsic-check-bars">{}</miscellaneous-field></miscellaneous></identification><part-list>'
+
+
+def test_unmark_and_check_bars():
+    x = score(RH, LH).replace('<part-list>', CHECK.format('1 2'))
+    x = x.replace('<measure number="2">', '<measure number="2"><direction><direction-type><words color="#D00">⚠ check</words></direction-type></direction>')
+    assert sm.check_bars(x) == [1, 2]
+    out, _ = sm.edit(x, {'op': 'unmark', 'bars': [2]})
+    assert sm.check_bars(out) == [1] and '⚠ check' not in out and full(out)
+    out, _ = sm.edit(out, {'op': 'unmark', 'bars': [1]})
+    assert sm.check_bars(out) == [] and 'meowsic-check-bars' not in out
+
+
+def test_use_the_other_reading_of_a_bar():
+    x = score(RH, LH)
+    alt = '<measure number="9">' + ev('A5', 4) + '<backup><duration>16</duration></backup>' + ev('A3', 4, 2) + '</measure>'
+    out, _ = sm.edit(x, {'op': 'alt', 'bar': 2, 'measure': alt})
+    assert full(out) and music(out) >= {(1, 1, 0.0, 4.0, 81), (1, 2, 0.0, 4.0, 57)}
+    assert ET.fromstring(out.encode()).findall('part/measure')[1].get('number') == '2'
+    with pytest.raises(Exception): sm.edit(x, {'op': 'alt', 'bar': 9, 'measure': alt})
+
+
+def test_api_save_check_edits_with_undo(client, data):
+    x = score(RH, LH).replace('<part-list>', CHECK.format('2'))
+    it = client.post('/api/items', json={'kind': 'score', 'title': 'Check me', 'musicxmlText': x}).json()
+    p0 = client.post(f'/api/items/{it["id"]}/editnotes/preview', json={}).json()
+    assert p0['check'] == [2]
+    f = data / 'items' / it['folder'] / it['musicxml']
+    was = f.read_text()
+    j = client.post(f'/api/items/{it["id"]}/editnotes', json={'ops': [{'op': 'unmark', 'bars': [2]}], 'mode': 'this', 'sha': p0['sha']}).json()
+    assert j['check'] == [] and sm.check_bars(f.read_text()) == []
+    row = next(a for a in client.get('/api/activity').json() if a['id'] == j['activity'])
+    assert row['type'] == 'edit-notes' and '1 bar checked' in row['detail']
+    assert client.post(f'/api/activity/{j["activity"]}/undo', json={}).status_code == 200
+    assert f.read_text() == was

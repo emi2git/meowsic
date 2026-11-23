@@ -1483,3 +1483,36 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 :root[data-device="phone"] .np-acts button { flex: 1 1 28%; min-height: 46px; padding: 0 8px; }
 :root[data-device="phone"] .np-acts .np-move, :root[data-device="phone"] .np-acts .primary { flex-basis: 40%; }
 :root[data-device="phone"] .np-acts .grow { display: none; }
+/* note tools: pitch and length steppers */
+.np-tools .stepper { display: inline-flex; }
+.np-tools .stepper button { min-height: 42px; min-width: 40px; padding: 0 8px; font-size: 16px; }
+.np-tools .stepper button.on { background: var(--acc-soft); color: var(--acc-text); }
+.nh-rest { cursor: pointer; }
+:root[data-device="phone"] .np-tools .stepper { flex: 1 1 100%; }
+:root[data-device="phone"] .np-tools .stepper button { flex: 1; min-width: 0; min-height: 44px; }
+
+/* ===== Check bars (js/views/checkbars.js): "N to check" on the toolbar, a review panel one bar at a time ===== */
+.check-badge { min-height: 34px; padding: 0 12px; border-radius: 17px; background: color-mix(in srgb, var(--warn) 14%, var(--card)); border: 1px solid var(--warn); color: var(--warn); font-weight: 700; white-space: nowrap; flex: none; }
+.check-badge[hidden] { display: none; }
+.viewer.checking .viewer-body { padding-bottom: var(--np-h, 220px); }
+.viewer.checking #osmd { position: relative; }
+.cb-box { position: absolute; z-index: 4; border: 2.5px solid var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); border-radius: 6px; pointer-events: none; }
+.cb-panel { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 45; background: var(--card); border: 1px solid var(--line2); border-radius: 16px; box-shadow: 0 10px 34px rgba(0, 0, 0, .22); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.cb-panel .np-row .grow, .cb-acts .grow { flex: 1; }
+.cb-body { display: flex; gap: 12px; align-items: flex-start; }
+.cb-sheet { position: relative; overflow: hidden; flex: none; width: min(46%, 420px); height: 150px; padding: 0; border: 1px solid var(--line2); border-radius: 8px; background: #fff; cursor: zoom-in; }
+.cb-sheet img { position: absolute; left: 0; top: 0; max-width: none; }
+.cb-sheet.whole img { position: static; width: 100%; height: 100%; object-fit: contain; }
+.cb-what { flex: 1; min-width: 0; }
+.cb-why { margin: 0 0 6px; font-weight: 600; }
+.cb-ask, .cb-alt-on, .cb-nosheet { margin: 0; font-size: 14px; }
+.cb-acts button { min-height: 42px; padding: 0 14px; }
+.cb-page { max-height: 70dvh; overflow: auto; }
+.cb-page img { width: 100%; display: block; }
+.cb-page.big img { width: 220%; }
+:root[data-device="tablet"] .cb-panel, :root[data-device="phone"] .cb-panel { left: 0; right: 0; bottom: 0; border-radius: 16px 16px 0 0; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+:root[data-device="phone"] .viewer.checking #it-bar { display: none; }
+:root[data-device="phone"] .cb-body { flex-direction: column; }
+:root[data-device="phone"] .cb-sheet { width: 100%; height: 120px; }
+:root[data-device="phone"] .cb-acts button { flex: 1 1 40%; min-height: 46px; }
+:root[data-device="phone"] .cb-acts .grow { display: none; }
