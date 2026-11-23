@@ -12,6 +12,7 @@ import { activityView } from './views/activity.js';
 import { cleanupView } from './views/cleanup.js';
 import { makeTagsView } from './views/maketags.js';
 import { placeBanner } from './conn.js';
+import './textinput.js'; // mic + double-tap select-all on every text box
 
 const main = $('#main');
 let cleanup = null;
