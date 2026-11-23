@@ -38,10 +38,13 @@ def test_short_long_empty_and_pickup_bars_are_filled():
     assert len(omr.bars_full(s)) == 5
     fixes = omr.fill_bars(s)
     assert omr.bars_full(s) == []
-    assert [f['bar'] for f in fixes] == [1, 2, 3, 4, 5]
+    assert [f['bar'] for f in fixes] == [2, 3, 4, 5]
     first = s.parts[0].getElementsByClass(m21.stream.Measure)[0]
-    assert [type(n).__name__ for n in first.notesAndRests] == ['Rest', 'Note']  # tune still ends on the bar line
+    # a pickup stays a pickup: no rests in front (playing starts on its note), written <measure implicit="yes">
+    assert [type(n).__name__ for n in first.notesAndRests] == ['Note'] and s.meowsicPickup == 1
     assert lyrics(s) == ['a', 'b', 'c', 'd', 'e']
+    x = omr.pickup_bar(m21.musicxml.m21ToXml.GeneralObjectExporter(s).parse().decode())
+    assert __import__('re').search(r'<measure[^>]*number="1"[^>]*implicit="yes"', x) and x.count('implicit="yes"') == 1
 
 
 def test_too_long_bar_is_split_into_voices_no_note_dropped():
@@ -193,3 +196,65 @@ def test_other_reading_for_a_bar_and_plain_reasons():
     assert x.startswith('<measure number="5"') and 'lyric' not in x and '<clef' not in x and '<rest' in x  # filled up
     assert omr.plain_reason('three notes made a triplet (1-beat notes)') == 'triplet added to make the bar add up'
     assert omr.plain_reason('1 beats too long: split into voices') == 'bar was too long — split into 2 voices'
+
+
+# ---------- printed triplets, words checked before they go on the score, bars that need a person ----------
+
+def test_printed_triplet_put_on_the_three_notes_even_when_the_bar_adds_up():
+    # Baby Mine bar 11: G half, then a quarter triplet G A B♭ read as quarter + two eighths (adds up to 4 anyway)
+    s = score([('G4', 2, 'heart'), ('G4', 1, 'nev'), ('A4', 0.5, 'er'), ('B-4', 0.5, 'to')])
+    m = s.parts[0].getElementsByClass(m21.stream.Measure)[0]
+    assert omr.apply_triplet(m, [2.0, 3.0, 3.5]) == 'added'
+    ns = list(m.notes)
+    assert [round(float(n.quarterLength), 3) for n in ns] == [2, 0.667, 0.667, 0.667] and all(n.duration.tuplets for n in ns[1:])
+    assert [round(float(n.offset), 3) for n in ns] == [0, 2, 2.667, 3.333] and omr.bars_full(s) == []
+    assert ns[3].meowsicOff0 == 3.5  # where the words read off the page were (they still find their note)
+    assert omr.apply_triplet(m, [2.0, 2.667, 3.333]) == 'already'
+    s2 = score([('C4', 1, None), ('D4', 1, None), ('E4', 1, None), ('F4', 0.5, None)])  # no triplet value fills the bar
+    assert omr.apply_triplet(s2.parts[0].getElementsByClass(m21.stream.Measure)[0], [0, 1, 2]) == 'not applied'
+
+
+def test_a_three_is_told_from_other_digits():
+    import numpy as np
+    from PIL import Image, ImageDraw, ImageFont
+    def draw(ch):
+        im = Image.new('L', (60, 60), 0)
+        ImageDraw.Draw(im).text((10, 5), ch, fill=255, font=ImageFont.truetype('/System/Library/Fonts/Supplemental/Times New Roman Italic.ttf', 40))
+        a = np.asarray(im) > 128
+        ys, xs = np.flatnonzero(a.any(1)), np.flatnonzero(a.any(0))
+        return a[ys[0]:ys[-1] + 1, xs[0]:xs[-1] + 1]
+    assert omr._is_three(draw('3'))
+    assert not any(omr._is_three(draw(c)) for c in '1258B')
+
+
+def test_words_are_checked_vietnamese_and_english():
+    import sys
+    sys.path.insert(0, str(Path(omr.__file__).parent))
+    import lyriccheck as L
+    assert all(L.word_ok(w) for w in ['người', 'Này', 'yêu', 'khuya', 'giữa', 'quyên', 'friends', "don't", 'Beauty'])
+    assert not any(L.word_ok(w) for w in ['V3n', 'muÂn', 'Nàu', 'hữi', 'nưiời', 'Wrng', 'tànNhững'])
+    assert L.split_viet('Hômchia') == ['Hôm', 'chia'] and L.split_viet('người') is None
+    toks = [[w, 10 * k, False, 1.0, 10 * k, 10 * k + 8, 0, 10] for k, w in enumerate(['Nàu', 'nưiời', 'vêu', 'V3n', 'em'])]
+    sc, drop = omr.judge_line(toks)
+    assert sc < omr.GOOD_LINE  # a line like this is left off the score, its bars flagged "lyrics unsure"
+
+
+def test_syllables_go_to_notes_in_order():
+    notes = [(0, 0.0, '1', 100, 0), (0, 1.0, '1', 200, 0), (0, 2.0, '1', 300, 0), (1, 0.0, '1', 400, 0)]
+    toks = [['a', 104, False, 1, 0, 0, 0, 10], ['b', 296, False, 1, 0, 0, 0, 10], ['c', 410, False, 1, 0, 0, 0, 10]]
+    assert omr.place_syllables(toks, notes, 10) == [(0, 0), (1, 2), (2, 3)]  # the note at 200 is held (no syllable)
+
+
+def test_flags_settled_when_the_evidence_is_clear():
+    a = score([('A4', 2, None), ('C5', 2, None)], [('G4', 4, None)], [('C4', 1, None), ('D4', 1, None), ('E4', 1, None), ('F4', 1, None)])
+    ms = list(a.parts[0].getElementsByClass(m21.stream.Measure))
+    aud = score([('C5', 2, None)], [('G4', 4, None)], [('C4', 1, None), ('D4', 1, None), ('F4', 1, None), ('F4', 1, None)])
+    am = list(aud.parts[0].getElementsByClass(m21.stream.Measure))
+    ms[0].meowsicFlags, ms[0].meowsicAud, ms[0].meowsicFullRead = ['the two readers disagree'], am[0], True  # second reader missed a note
+    ms[1].meowsicFlags, ms[1].meowsicFullRead = ['only one reader found this bar'], True                      # one reader, adds up
+    ms[2].meowsicFlags, ms[2].meowsicAud, ms[2].meowsicFullRead = ['the two readers disagree'], am[2], True  # both add up, differ
+    ms[2].meowsicLyrics = {'verse': 1, 'meas': [ms[2]]}
+    rep = {'filled': [], 'notes': []}
+    out = omr.bar_reasons(a, rep)
+    assert out == {3: ['the two readers disagree', omr.LYRICS_UNSURE]}
+    assert [r['bar'] for r in rep['resolved']] == [1, 2]

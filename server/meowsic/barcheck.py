@@ -14,6 +14,7 @@ Activities undo (the MusicXML before, from .history) opens it again by itself.
 GET  /api/items/{id}/check  → the above + open, url per page, sha of the score
 POST /api/items/{id}/check  {bar, action: "ok" | "use", alt?: id, sha?, act?} → the bar marked fine, or the other
      reading put in (its notes; the bar keeps its chord names, words — by order — and marks). Logged with Undo.
+     {bars: "all" | [n, ...], action: "ok"} → those bars (all still open) marked fine at once: one Undo.
 """
 import json
 import math
@@ -230,20 +231,30 @@ def _keep(d: Path, name: str) -> str:
 def post_check(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
     it = must_item(c, item_id)
     d, cp, data = _load(cf, it)
-    try: bar = int(body.get('bar'))
-    except (TypeError, ValueError): raise HTTPException(400, 'bar (a number) is required')
     action = body.get('action')
     if action not in ('ok', 'use'): raise HTTPException(400, 'action is ok or use')
-    entry = next((b for b in data.get('bars', []) if b['bar'] == bar), None)
     p = _xml_path(cf, it)
     text = p.read_text(encoding='utf-8')
     if body.get('sha') and body['sha'] != sha(text): raise HTTPException(409, 'This score was changed since — open the check again')
-    if bar not in open_bars(text): raise HTTPException(409, f'Bar {bar} is not waiting for a check')
+    many = body.get('bars')
+    if many is not None:  # "Mark all as looks right"
+        if action != 'ok': raise HTTPException(400, 'Several bars at once: action ok only')
+        try: want = open_bars(text) if many == 'all' else [int(b) for b in many]
+        except (TypeError, ValueError): raise HTTPException(400, 'bars is "all" or a list of bar numbers')
+        bars = [b for b in want if b in open_bars(text)]
+        if not bars: raise HTTPException(409, 'No bars are waiting for a check')
+    else:
+        try: bars = [int(body.get('bar'))]
+        except (TypeError, ValueError): raise HTTPException(400, 'bar (a number) is required')
+        if bars[0] not in open_bars(text): raise HTTPException(409, f'Bar {bars[0]} is not waiting for a check')
+    bar = bars[0]
+    entry = next((b for b in data.get('bars', []) if b['bar'] == bar), None)
     alt = None
     if action == 'use':
         alt = next((a for a in (entry or {}).get('alternatives', []) if a['id'] == body.get('alt')), None)
         if not alt: raise HTTPException(400, 'No such other reading for this bar')
-    out = apply_check(text, bar, action, alt['musicxml'] if alt else None)
+    out = text
+    for b in bars: out = apply_check(out, b, action, alt['musicxml'] if alt else None)
     hist = _keep(d, p.name)
     orig = it.get('musicxmlOriginal')
     if not orig:  # like note edits: the first change keeps the untouched file ("Revert")
@@ -253,9 +264,9 @@ def post_check(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends
     c.execute('UPDATE score SET musicxml=?, musicxml_original=? WHERE item_id=?', (p.name, orig, it['id']))
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), it['id']))
     refresh_staves(c, cf, it['id'])
-    data.setdefault('decisions', []).append({'bar': bar, 'action': action, 'alt': alt['id'] if alt else None, 'at': now_ms()})
+    for b in bars: data.setdefault('decisions', []).append({'bar': b, 'action': action, 'alt': alt['id'] if alt else None, 'at': now_ms()})
     cp.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
-    what = f'bar {bar}: ' + ('marked OK' if action == 'ok' else f'{alt["label"]} put in')
+    what = (f'{len(bars)} bars marked OK' if len(bars) > 1 else f'bar {bar}: ' + ('marked OK' if action == 'ok' else f'{alt["label"]} put in'))
     aid = record_undo(c, body.get('act') or 'bar-check',
                       {'op': 'musicxml', 'id': it['id'], 'title': it['title'], 'file': p.name, 'before': hist,
                        'beforeSha': sha(text), 'afterSha': sha(out), 'what': 'bar check'},
