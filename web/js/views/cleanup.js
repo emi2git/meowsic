@@ -423,19 +423,20 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
   // ---------- Go through sheets: Delete / Keep, one sheet at a time ----------
   const sheets = () => st.songs; // every sheet (no books), A–Z (the Mac's order)
   const sortList = () => sheets().filter((x) => st.sort.show === 'all' || (st.sort.show === 'note' ? hasNote(x.id) : st.sort.show === 'todo' ? !st.sort.dec[x.id] : st.sort.dec[x.id] === st.sort.show));
-  const counts = () => { const v = Object.values(st.sort.dec); return { del: v.filter((x) => x === 'delete').length, keep: v.filter((x) => x === 'keep').length }; };
+  // only decisions about sheets still in Clean up count (deleted sheets, books, merged ones don't)
+  const counts = () => { const ids = new Set(sheets().map((x) => x.id)); const v = Object.entries(st.sort.dec).filter(([id]) => ids.has(id)).map(([, d]) => d); return { del: v.filter((x) => x === 'delete').length, keep: v.filter((x) => x === 'keep').length }; };
   const drawSort = (force = true) => {
     if (force) flushNote();
     if (st.sort.summary) return drawSummary();
     const all = sheets(), list = sortList();
-    if (!st.sort.id || !all.some((x) => x.id === st.sort.id)) st.sort.id = list[0]?.id || all[0]?.id || null;
+    if (!st.sort.id || !all.some((x) => x.id === st.sort.id)) st.sort.id = list[0]?.id || (st.sort.show === 'all' ? all[0]?.id : null) || null;
     const s = all.find((x) => x.id === st.sort.id), it = s && store.get(s.id), n = counts();
     const pos = all.findIndex((x) => x.id === st.sort.id);
     const showBtns = [['todo', 'Not decided', all.length - n.del - n.keep], ['delete', 'To delete', n.del], ['keep', 'Kept', n.keep], ['note', 'With a note', all.filter((x) => hasNote(x.id)).length], ['all', 'All', all.length]]
       .map(([k, l, c]) => `<button data-show="${k}" class="${st.sort.show === k ? 'on' : ''}">${l} <i>${c}</i></button>`).join('');
     if (!force && body.dataset.sid === st.sort.id) { const f = body.querySelector('.sv-show'); if (f) f.innerHTML = showBtns; return; }
     body.dataset.sid = st.sort.id || '';
-    if (!s) { body.innerHTML = `<div class="sv"><div class="sv-top"><div class="cu-filter sv-show">${showBtns}</div></div><p class="pad muted">${st.scan?.running ? 'Checking pages…' : 'No sheets here.'}</p></div>`; return wireSort(); }
+    if (!s) { body.innerHTML = `<div class="sv"><div class="sv-top"><div class="cu-filter sv-show">${showBtns}</div></div><p class="pad muted">${st.scan?.running ? 'Checking pages…' : st.sort.show === 'todo' && all.length ? `All ${all.length} sheets are decided ✓${n.del ? ` — ${n.del} marked to delete: tap Finish.` : ''}` : 'No sheets here.'}</p>${st.sort.show === 'todo' && n.del ? `<div class="sv-act"><button id="sv-finish" class="danger-btn big">Finish — delete ${n.del} ›</button></div>` : ''}</div>`; return wireSort(); }
     const dec = st.sort.dec[s.id];
     body.innerHTML = `<div class="sv">
       <div class="sv-top">
