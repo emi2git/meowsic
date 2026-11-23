@@ -1,4 +1,4 @@
-"""Ease rests (score ⋯ → "Ease rests…", web/js/views/easerests.js).
+"""Ease rests: the rest-merging step of Smooth… (smoothrhythm.py, which has the API and the panel).
 
 A score transcribed from audio is full of short rests: every note the player let go of a little early. Easing:
   1. rests in a row (same voice) become one rest;
@@ -10,28 +10,11 @@ Every voice keeps its length, so every bar stays full (= its time signature; see
 Voices with tuplets or grace notes in the way are left alone; beams of a changed voice are drawn again per beat;
 a lengthened note loses its staccato (it was only short because of the recording).
 
-Only for scores transcribed from a video / audio (transcribed(); GET /api/items/{id}/easerests says {allowed, why});
-the others get 409.
-POST /api/items/{id}/easerests/preview  {strength: 'light'|'strong'} -> {xml, before, after, changed}  (nothing saved)
-POST /api/items/{id}/easerests          {strength, mode: 'this'|'new', sha?} -> saved like Fit lyrics (lyricsedit.py):
-     'this' keeps the file before in items/<folder>/.history/rests-<ms>-<name> + an Activities 'musicxml' step;
-     'new' makes a new score in the same group, tagged "Rests eased" (Undo moves it to the Trash).
 """
 import copy
-import re
-import shutil
 import xml.etree.ElementTree as ET
 from fractions import Fraction as Fr
 
-from fastapi import APIRouter, Body, Depends, HTTPException
-
-from .db import folder_path, get_item, now_ms, uid, write_item
-from .items import cfg, conn, item_dir, must_item
-from .sheetversion import refresh_staves
-from .undolog import _q, record_undo
-
-router = APIRouter(prefix='/api')
-TAG = 'Rests eased'
 LIMIT = {'light': Fr(1, 2), 'strong': Fr(1)}  # quarters: the longest rest that goes
 TYPES = [(Fr(4), 'whole', 0), (Fr(3), 'half', 1), (Fr(2), 'half', 0), (Fr(3, 2), 'quarter', 1), (Fr(1), 'quarter', 0),
          (Fr(3, 4), 'eighth', 1), (Fr(1, 2), 'eighth', 0), (Fr(3, 8), '16th', 1), (Fr(1, 4), '16th', 0),
@@ -230,8 +213,11 @@ def _beam(out, beat):
                 _put(ns[0], b)  # beams on the chord's first note (OSMD / MuseScore read them there)
 
 
-def ease(text: str, strength: str = 'light'):
-    """(new MusicXML text, rests before, rests after)."""
+def ease(text: str, strength: str = 'light', firm: bool = False):
+    """(new MusicXML text, rests before, rests after). firm (Simple Piano, smoothrhythm.py): Strong, and every rest
+    shorter than half the bar goes (only real silences stay)."""
+    if firm: strength = 'strong'
+
     if strength not in LIMIT: raise ValueError(strength)
     lim = LIMIT[strength]
     root = ET.fromstring(text.encode('utf-8'))
@@ -247,6 +233,7 @@ def ease(text: str, strength: str = 'light'):
                 if tm is not None and (tm.findtext('beats') or '').isdigit(): tsig = (int(tm.findtext('beats')), int(tm.findtext('beat-type') or 4))
             beat = _beat(tsig)
             lim_q = lim * (beat if beat == Fr(3, 2) else 1)
+            if firm: lim_q = max(lim_q, Fr(4 * tsig[0], tsig[1]) / 2 - Fr(1, 64))
             items = _runs(meas, div)
             changed = False
             new_last = {}
@@ -329,112 +316,3 @@ def bar_lengths(text):
                 vs[k] = vs.get(k, Fr(0)) + Fr(int(float(n.findtext('duration') or 0))) / div
             out.append((meas.get('number'), vs, Fr(4 * tsig[0], tsig[1])))
     return out
-
-
-# ---------- API ----------
-
-FROM_AUDIO = re.compile(r'^(YouTube|Facebook|Audio file)\b')
-
-
-def transcribed(c, it, _seen=None) -> str | None:
-    """None when the score was transcribed from a video / audio (made by a 'transcribe' job), else why not.
-    Only those get Ease rests: an AI lead sheet, a score read from a sheet (OMR) or imported MusicXML has the
-    rests its writer meant. A score saved by Ease rests "as a new score" counts as its transcription's."""
-    if it.get('kind') != 'score': return 'Not a score'
-    if c.execute("SELECT 1 FROM job WHERE kind='transcribe' AND result LIKE ?", (f'%"{it["id"]}"%',)).fetchone(): return None
-    if not it.get('ai') and FROM_AUDIO.match(it.get('source') or '') and (it.get('sourceUrl') or str(it.get('source')).startswith('Audio file')): return None
-    if TAG in (it.get('tags') or []) and it.get('groupId'):
-        seen = _seen or {it['id']}
-        for (i,) in c.execute('SELECT item_id FROM score WHERE group_id=?', (it['groupId'],)).fetchall():
-            if i in seen: continue
-            seen.add(i)
-            o = get_item(c, i)
-            if o and TAG not in (o.get('tags') or []) and transcribed(c, o, seen) is None: return None
-    return 'Ease rests is for scores transcribed from a video or audio recording'
-
-
-def _allowed(c, it):
-    why = transcribed(c, it)
-    if why: raise HTTPException(409, why)
-
-
-@router.get('/items/{item_id}/easerests')
-def can_ease(item_id: str, c=Depends(conn)):
-    why = transcribed(c, must_item(c, item_id))
-    return {'allowed': why is None, 'why': why}
-
-def _xml_path(cf, it):
-    if it['kind'] != 'score' or not it.get('musicxml'): raise HTTPException(400, 'Not a score with MusicXML')
-    p = item_dir(cf, it) / it['musicxml']
-    if not p.is_file(): raise HTTPException(404, 'No MusicXML')
-    return p
-
-
-def _ease(text, body):
-    s = str(body.get('strength') or 'light').lower()
-    if s not in LIMIT: raise HTTPException(400, 'strength: light or strong')
-    return (*ease(text, s), s)
-
-
-@router.post('/items/{item_id}/easerests/preview')
-def preview(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
-    from .lyricsedit import sha
-    it = must_item(c, item_id)
-    _allowed(c, it)
-    text = _xml_path(cf, it).read_text(encoding='utf-8')
-    out, a, b, s = _ease(text, body)
-    return {'xml': out, 'before': a, 'after': b, 'strength': s, 'changed': out != text and a != b, 'sha': sha(text)}
-
-
-def keep(d, name):
-    (d / '.history').mkdir(exist_ok=True)
-    rel = f'.history/rests-{now_ms()}-{name}'
-    n = 1
-    while (d / rel).exists(): rel = f'.history/rests-{now_ms() + n}-{name}'; n += 1
-    shutil.copyfile(d / name, d / rel)
-    return rel
-
-
-@router.post('/items/{item_id}/easerests')
-def save(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
-    from .lyricsedit import sha
-    it = must_item(c, item_id)
-    _allowed(c, it)
-    p = _xml_path(cf, it)
-    text = p.read_text(encoding='utf-8')
-    if body.get('sha') and body['sha'] != sha(text):
-        raise HTTPException(409, 'This score was changed since the preview — open Ease rests again')
-    out, a, b, s = _ease(text, body)
-    if a == b: raise HTTPException(422, 'No rests to ease in this score')
-    what = f'{a} → {b} rests ({s.capitalize()})'
-    if body.get('mode') == 'new':
-        t = now_ms()
-        new = {'id': uid('m'), 'kind': 'score', 'title': it['title'], 'artist': it.get('artist') or '',
-               'tags': [*[x for x in it.get('tags', []) if x != TAG], TAG], 'createdAt': t, 'updatedAt': t, 'originAt': t,
-               'version': it.get('version') or 'original', 'source': f'From the score {_q(it["title"])}, rests eased',
-               'groupId': it.get('groupId') or uid('g'), 'key': it.get('key') or '', 'bpm': it.get('bpm'), 'ai': it.get('ai') or 0,
-               'sourceUrl': it.get('sourceUrl') or ''}
-        if not it.get('groupId'): c.execute('UPDATE score SET group_id=? WHERE item_id=?', (new['groupId'], it['id']))
-        write_item(c, new, new=True)
-        d = folder_path(cf, new['folder'])
-        d.mkdir(parents=True, exist_ok=True)
-        (d / f'{new["folder"]}.musicxml').write_text(out, encoding='utf-8')
-        c.execute('UPDATE score SET musicxml=? WHERE item_id=?', (f'{new["folder"]}.musicxml', new['id']))
-        refresh_staves(c, cf, new['id'])
-        aid = record_undo(c, 'ease-rests', {'op': 'created', 'ids': [new['id']], 'titles': [new['title']]},
-                          f'Eased rests: {it["title"]}', f'New score, {what} (the score it came from is untouched)')
-        return {'ok': True, 'mode': 'new', 'item': get_item(c, new['id']), 'activity': aid, 'before': a, 'after': b}
-    d = p.parent
-    hist = keep(d, p.name)
-    orig = it.get('musicxmlOriginal')
-    if not orig:  # like note edits: the first change keeps the untouched file ("Revert")
-        orig = f'{it["folder"]} (original).musicxml'
-        if not (d / orig).exists(): shutil.copyfile(p, d / orig)
-    p.write_text(out, encoding='utf-8')
-    c.execute('UPDATE score SET musicxml=?, musicxml_original=? WHERE item_id=?', (p.name, orig, it['id']))
-    c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), it['id']))
-    refresh_staves(c, cf, it['id'])
-    aid = record_undo(c, 'ease-rests', {'op': 'musicxml', 'id': it['id'], 'title': it['title'], 'file': p.name, 'before': hist,
-                                        'beforeSha': sha(text), 'afterSha': sha(out), 'what': 'rests were eased'},
-                      f'Eased rests: {it["title"]}', f'{what}; the score before is kept in {hist}')
-    return {'ok': True, 'mode': 'this', 'item': get_item(c, it['id']), 'activity': aid, 'history': hist, 'sha': sha(out), 'before': a, 'after': b}

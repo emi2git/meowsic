@@ -1,5 +1,5 @@
-"""Ease rests (easerests.py): short rests merged into the note before, rests in a row combined, bars full, ties
-right, Light / Strong, preview, saving into the score (history + Activities undo) or as a new score."""
+"""Ease rests (easerests.py, the rest step of Smooth…; the API is in test_smooth.py): short rests merged into the note before, rests in a row combined, bars full, ties
+right, Light / Strong / firm."""
 import xml.etree.ElementTree as ET
 from fractions import Fraction as Fr
 
@@ -139,59 +139,9 @@ def test_tuplets_are_left_alone():
     assert a == b == 1
 
 
-@pytest.fixture
-def eased(client):
-    x = score([BAR, [ev('R', 0.5), ev('C4', 1.5), ev('G4', 2)]])
-    return client.post('/api/items', json={'kind': 'score', 'title': 'Home NDP', 'musicxmlText': x, 'tags': ['NDP'],
-                                           'source': 'YouTube', 'sourceUrl': 'https://youtu.be/x'}).json()
-
-
-def test_api_preview_save_this_and_undo(client, eased, data):
-    i = eased['id']
-    p = client.post(f'/api/items/{i}/easerests/preview', json={'strength': 'strong'}).json()
-    assert p['changed'] and p['after'] < p['before'] and full(p['xml'])
-    f = data / 'items' / eased['folder'] / eased['musicxml']
-    was = f.read_text()
-    assert client.post(f'/api/items/{i}/easerests', json={'strength': 'strong', 'mode': 'this', 'sha': 'nope'}).status_code == 409
-    j = client.post(f'/api/items/{i}/easerests', json={'strength': 'strong', 'mode': 'this', 'sha': p['sha']}).json()
-    assert f.read_text() == p['xml'] and (f.parent / j['history']).read_text() == was
-    acts = client.get('/api/activity').json()
-    row = next(a for a in acts if a['id'] == j['activity'])
-    assert row['type'] == 'ease-rests' and row['action'] == 'undo'
-    assert client.post(f'/api/activity/{j["activity"]}/undo', json={}).status_code == 200
-    assert f.read_text() == was
-
-
-def test_api_save_as_new(client, eased, data):
-    j = client.post(f'/api/items/{eased["id"]}/easerests', json={'strength': 'light', 'mode': 'new'}).json()
-    new = j['item']
-    assert new['id'] != eased['id'] and new['title'] == 'Home NDP' and er.TAG in new['tags'] and 'NDP' in new['tags']
-    assert new['groupId'] and client.get(f'/api/items/{eased["id"]}').json()['groupId'] == new['groupId']
-    assert full(client.get(f'/api/items/{new["id"]}/musicxml').text)
-    assert client.post(f'/api/activity/{j["activity"]}/undo', json={}).status_code == 200
-    assert client.get(f'/api/items/{new["id"]}').json().get('deleted')
-
-
-def test_nothing_to_ease(client):
-    x = score([[ev('C4', 4)]])
-    it = client.post('/api/items', json={'kind': 'score', 'title': 'Plain', 'musicxmlText': x, 'source': 'Audio file · a.mp3'}).json()
-    assert client.post(f'/api/items/{it["id"]}/easerests', json={'strength': 'light'}).status_code == 422
-
-
-def test_only_for_transcriptions(client, app):
-    """AI lead sheets, scores read from a sheet and imported MusicXML: no Ease rests (409); a transcribe job's score,
-    and the score Ease rests saved "as new" from it: yes."""
-    x = score([BAR])
-    mk = lambda **k: client.post('/api/items', json={'kind': 'score', 'title': 'S', 'musicxmlText': x, **k}).json()
-    for it in (mk(ai=1), mk(source='From the sheet “S” (photo → score, beta)'), mk()):
-        assert client.get(f'/api/items/{it["id"]}/easerests').json()['allowed'] is False
-        assert client.post(f'/api/items/{it["id"]}/easerests/preview', json={'strength': 'light'}).status_code == 409
-        assert client.post(f'/api/items/{it["id"]}/easerests', json={'strength': 'light', 'mode': 'this'}).status_code == 409
-    job = mk(source='vimeo.com')   # a link the platform list does not know: the transcribe job says so
-    c = app.state.connect()
-    c.execute("INSERT INTO job(id, kind, title, outputs, status, result, started_at) VALUES ('job-t1','transcribe','S','[]','done',?,1)",
-              (f'["{job["id"]}"]',))
-    c.commit(); c.close()
-    assert client.get(f'/api/items/{job["id"]}/easerests').json()['allowed'] is True
-    new = client.post(f'/api/items/{job["id"]}/easerests', json={'strength': 'light', 'mode': 'new'}).json()['item']
-    assert client.get(f'/api/items/{new["id"]}/easerests').json()['allowed'] is True
+def test_firm_takes_rests_under_half_a_bar():
+    x = score([[ev('C4', 1), ev('R', 1.5), ev('D4', 1.5)], [ev('E4', 2), ev('R', 2)]])
+    out, a, b = er.ease(x, firm=True)
+    assert voice(out)[0][0] == 'C4' and sum(q for p, q, _ in voice(out) if p == 'C4') == Fr(5, 2)
+    assert voice(out, 1)[-1] == ('R', 2, ())       # half a bar of silence stays
+    assert b == 1 and full(out) and ties_ok(out)
