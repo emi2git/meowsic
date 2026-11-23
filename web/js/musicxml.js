@@ -99,9 +99,11 @@ const head = (title, parts) => `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
 <score-partwise version="3.1"><work><work-title>${title}</work-title></work><part-list>${parts.map((p, i) => `<score-part id="P${i + 1}"><part-name>${p}</part-name></score-part>`).join('')}</part-list>`;
 
-export const VERSIONS = { original: 'Original', vocal: 'Piano + vocals', lead: 'Lead sheet', duet: 'Piano duet', accomp: 'Piano accompaniment', clear: 'Piano clear', pro: 'Piano pro' };
+export const VERSIONS = { original: 'Original', clear: 'Simple Piano', lead: 'Lead sheet' };
 // older entries may still be 'Piano easy': readable by name, but no longer offered (not enumerable)
 Object.defineProperty(VERSIONS, 'easy', { value: 'Piano easy', enumerable: false });
+// no longer offered; old scores keep their label
+for (const [k, v] of Object.entries({ vocal: 'Piano + vocals', duet: 'Piano duet', accomp: 'Piano accompaniment', pro: 'Piano pro' })) Object.defineProperty(VERSIONS, k, { value: v, enumerable: false });
 export const VERSION_HELP = { original: 'What is played in the recording, both hands', vocal: 'Melody with lyrics above the piano', lead: 'Melody, lyrics and chord names',
   duet: 'Two players: melody up high, accompaniment below', accomp: 'Only the accompaniment, no melody', clear: 'Both hands as written, one note at a time (the top note on the right, the bass note on the left)', pro: 'Fuller chords for advanced players' };
 

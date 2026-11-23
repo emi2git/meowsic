@@ -104,7 +104,7 @@ def test_version_job_makes_items(client, data, small_xml, no_pdf):
     assert j['status'] == 'done', j['log']
     assert len(j['result']) == 6 and j['stage'] == 3 and j['progress'] == 1
     msgs = [x['msg'] for x in j['log']]
-    assert 'Read the score — done' in msgs and 'Piano clear — arranged' in msgs and msgs[-1].startswith('Done — added Piano clear')
+    assert 'Read the score — done' in msgs and 'Simple Piano — arranged' in msgs and msgs[-1].startswith('Done — added Simple Piano')
     for iid, v in zip(j['result'], outs):
         it = client.get(f'/api/items/{iid}').json()
         assert it['version'] == v and it['kind'] == 'score'
@@ -117,7 +117,7 @@ def test_version_job_makes_items(client, data, small_xml, no_pdf):
         assert converter.parse(str(d / it['musicxml'])).parts and (d / it['midi']).is_file()
         assert client.get(f'/api/items/{iid}/musicxml').status_code == 200
     tags = {t['name'] for t in client.get('/api/tags').json()}
-    assert {'Piano clear', 'Lead sheet', 'Piano duet', 'Piano accompaniment', 'Piano pro', 'Piano + vocals'} <= tags
+    assert {'Simple Piano', 'Lead sheet', 'Piano duet', 'Piano accompaniment', 'Piano pro', 'Piano + vocals'} <= tags
     assert (data / 'work' / j['id'] / 'out').is_dir()
 
 
@@ -190,12 +190,12 @@ def test_transcribe_job_with_stand_in_pipeline(client, data, fake_pipeline, no_p
     assert j['stage'] == 6 and len(j['result']) == 3
     msgs = [x['msg'] for x in j['log']]
     for s in runners.STAGES[:5]: assert any(m.startswith(s + ' — done') for m in msgs), (s, msgs)
-    assert 'Piano clear — arranged' in msgs
+    assert 'Simple Piano — arranged' in msgs
     calls = [json.loads(x) for x in (data / 'work' / j['id'] / 'calls.txt').read_text().splitlines()]
     assert calls[0][:2] == ['https://youtu.be/abc', ['original', 'lead']] and calls[0][2]  # models cache passed through
     items = [client.get(f'/api/items/{i}').json() for i in j['result']]
     assert [i['version'] for i in items] == ['original', 'clear', 'lead']
-    assert [set(i['tags']) for i in items] == [{'Original', 'Musicals'}, {'Piano clear', 'Musicals'}, {'Lead sheet', 'Musicals'}]
+    assert [set(i['tags']) for i in items] == [{'Original', 'Musicals'}, {'Simple Piano', 'Musicals'}, {'Lead sheet', 'Musicals'}]
     assert len({i['groupId'] for i in items}) == 1 and all(i['source'] == 'YouTube' and i['sourceUrl'] == 'https://youtu.be/abc' for i in items)
     assert all(i['key'] == 'Bb major' and i['bpm'] == 76 and i['originAt'] for i in items)
     for i in items:

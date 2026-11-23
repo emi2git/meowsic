@@ -16,7 +16,7 @@ from fractions import Fraction
 from pathlib import Path
 
 VERSION_TAGS = {'original': 'Original', 'vocal': 'Piano + vocals', 'lead': 'Lead sheet', 'duet': 'Piano duet',
-                'accomp': 'Piano accompaniment', 'clear': 'Piano clear', 'easy': 'Piano easy', 'pro': 'Piano pro'}
+                'accomp': 'Piano accompaniment', 'clear': 'Simple Piano', 'easy': 'Piano easy', 'pro': 'Piano pro'}
 ARRANGED = ('lead', 'vocal', 'accomp', 'clear', 'pro', 'duet')
 MSCORE = '/Applications/MuseScore 4.app/Contents/MacOS/mscore'
 MELODY_NAMES = ('voice', 'melody', 'vocal', 'vocals', 'lead', 'soprano')
