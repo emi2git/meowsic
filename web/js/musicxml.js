@@ -99,9 +99,11 @@ const head = (title, parts) => `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 3.1 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
 <score-partwise version="3.1"><work><work-title>${title}</work-title></work><part-list>${parts.map((p, i) => `<score-part id="P${i + 1}"><part-name>${p}</part-name></score-part>`).join('')}</part-list>`;
 
-export const VERSIONS = { original: 'Original', vocal: 'Piano + vocals', lead: 'Lead sheet', duet: 'Piano duet', accomp: 'Piano accompaniment', easy: 'Piano easy', pro: 'Piano pro' };
+export const VERSIONS = { original: 'Original', vocal: 'Piano + vocals', lead: 'Lead sheet', duet: 'Piano duet', accomp: 'Piano accompaniment', clear: 'Piano clear', pro: 'Piano pro' };
+// older entries may still be 'Piano easy': readable by name, but no longer offered (not enumerable)
+Object.defineProperty(VERSIONS, 'easy', { value: 'Piano easy', enumerable: false });
 export const VERSION_HELP = { original: 'What is played in the recording, both hands', vocal: 'Melody with lyrics above the piano', lead: 'Melody, lyrics and chord names',
-  duet: 'Two players: melody up high, accompaniment below', accomp: 'Only the accompaniment, no melody', easy: 'Simpler left hand, fewer notes', pro: 'Fuller chords for advanced players' };
+  duet: 'Two players: melody up high, accompaniment below', accomp: 'Only the accompaniment, no melody', clear: 'Both hands as written, one note at a time (the top note on the right, the bass note on the left)', pro: 'Fuller chords for advanced players' };
 
 export function musicXml(tune, version) {
   if (version === 'lead') return head(tune.title, ['Melody']) + `<part id="P1">${melodyPart(tune, { harmony: true, lyrics: true })}</part></score-partwise>`;
@@ -110,7 +112,7 @@ export function musicXml(tune, version) {
   if (version === 'duet') return head(tune.title, ['Primo', 'Secondo']) +
     `<part id="P1">${pianoPart(tune, { melody: true, octave: 12 })}</part><part id="P2">${pianoPart(tune, { melody: false, harmony: true })}</part></score-partwise>`;
   if (version === 'accomp') return head(tune.title, ['Piano']) + `<part id="P1">${pianoPart(tune, { melody: false, harmony: true })}</part></score-partwise>`;
-  if (version === 'easy') return head(tune.title, ['Piano']) + `<part id="P1">${pianoPart(tune, { melody: true, harmony: true, easy: true })}</part></score-partwise>`;
+  if (version === 'easy' || version === 'clear') return head(tune.title, ['Piano']) + `<part id="P1">${pianoPart(tune, { melody: true, harmony: true, easy: true })}</part></score-partwise>`;
   return head(tune.title, ['Piano']) + `<part id="P1">${pianoPart(tune, { melody: true, harmony: true })}</part></score-partwise>`;
 }
 
@@ -123,7 +125,7 @@ export function tuneNotes(tune, version) {
     let q = q0;
     if (version !== 'accomp') for (const [p, d] of m.mel) { if (p !== 'r') out.push({ q, d, n: midiOf(p) + (version === 'duet' ? 12 : 0), v: 96 }); q += d; }
     const { bass, rh } = voicing(m.chord);
-    if (version === 'easy' || mb !== 4) out.push({ q: q0, d: mb, n: midiOf(bass), v: 70 });
+    if (version === 'easy' || version === 'clear' || mb !== 4) out.push({ q: q0, d: mb, n: midiOf(bass), v: 70 });
     else { out.push({ q: q0, d: 2, n: midiOf(bass), v: 70 }); out.push({ q: q0 + 2, d: 2, n: midiOf(bass) + 7, v: 62 }); }
     if (['vocal', 'duet', 'accomp', 'pro'].includes(version)) rh.forEach((p) => out.push({ q: q0, d: mb, n: midiOf(p), v: 52 }));
     q0 += mb;

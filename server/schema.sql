@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS item (
 CREATE TABLE IF NOT EXISTS sheet (            -- kind = 'sheet'
   item_id   TEXT PRIMARY KEY REFERENCES item(id) ON DELETE CASCADE,
   source    TEXT NOT NULL CHECK (source IN ('photos','pdf')),
-  pages     INTEGER NOT NULL
+  pages     INTEGER NOT NULL,
+  book      INTEGER NOT NULL DEFAULT 0        -- 1 = a book (many songs); files in items/Books/<title>/
 );
 CREATE TABLE IF NOT EXISTS sheet_page (
   item_id      TEXT NOT NULL REFERENCES item(id) ON DELETE CASCADE,

@@ -40,7 +40,7 @@ export function statsView(main) {
     const ranked = [...per.entries()].map(([id, e]) => ({ it: store.get(id), ...e })).filter((x) => x.it && !x.it.deleted);
     const most = [...ranked].sort((a, b) => b.t - a.t).slice(0, 8);
     const recent = [...ranked].sort((a, b) => b.last - a.last).slice(0, 8);
-    const row = (x, right) => `<li class="row" onclick="location.hash='#/item/${x.it.id}'"><div class="row-main"><div class="row-title">${esc(x.it.title)}</div><div class="row-sub">${badge(x.it.kind)}</div></div><div class="row-when">${right}</div></li>`;
+    const row = (x, right) => `<li class="row" onclick="location.hash='#/item/${x.it.id}'"><div class="row-main"><div class="row-title">${esc(x.it.title)}</div><div class="row-sub">${badge(x.it)}</div></div><div class="row-when">${right}</div></li>`;
     const unit = step === DAY ? 'day' : step >= 30 * DAY ? 'month' : 'week';
 
     main.innerHTML = `<header class="top"><h1>Stats</h1><span class="grow"></span>

@@ -57,6 +57,9 @@ def init_db(cfg: Config):
     for col, typ in (('folder', 'TEXT'), ('origin_at', 'INTEGER')):  # columns added after the first schema
         if cols and col not in cols:
             c.execute(f'ALTER TABLE item ADD COLUMN {col} {typ}')
+    scols = [r[1] for r in c.execute('PRAGMA table_info(sheet)')]
+    if scols and 'book' not in scols:  # books (many pages, many songs) are sheets with book=1, kept in items/Books/
+        c.execute('ALTER TABLE sheet ADD COLUMN book INTEGER NOT NULL DEFAULT 0')
     jcols = [r[1] for r in c.execute('PRAGMA table_info(job)')]
     if jcols and 'params' not in jcols:
         c.execute("ALTER TABLE job ADD COLUMN params TEXT NOT NULL DEFAULT '{}'")
@@ -79,10 +82,30 @@ def folder_name(item_id: str, title: str) -> str:
     return f'{item_id} {t}' if t else item_id
 
 
+BOOKS = 'Books'  # books live in items/Books/<book name>/, their pages are '<book name> <n>.<ext>'
+
+
 def folder_path(cfg: Config, folder: str) -> Path:
-    if not folder or '/' in folder or '\\' in folder or folder.startswith('.'):
+    """items/<folder>; a book's folder is 'Books/<name>' (one level, nothing else may hold a '/')."""
+    sub = folder[len(BOOKS) + 1:] if folder and folder.startswith(BOOKS + '/') else folder
+    if not sub or '/' in sub or '\\' in sub or sub.startswith('.') or sub == BOOKS:
         raise ValueError('bad folder')
     return cfg.items_dir / folder
+
+
+def folder_base(folder: str) -> str:
+    """What the page files are named after: the folder's own name ('Books/X' -> 'X')."""
+    return folder.rsplit('/', 1)[-1]
+
+
+def book_folder(cfg: Config, title: str, own: str | None = None) -> str:
+    """'Books/<title>' (cleaned like any folder name); ' (2)', ' (3)'… when another book has that name."""
+    t = ''.join(ch for ch in unicodedata.normalize('NFC', title or '') if ch >= ' ')
+    t = t.replace('/', '-').replace(':', '-').strip().lstrip('.').strip()[:100].strip() or 'Book'
+    name, n = t, 1
+    while (cfg.items_dir / BOOKS / name).exists() and f'{BOOKS}/{name}' != own:
+        n += 1; name = f'{t} ({n})'
+    return f'{BOOKS}/{name}'
 
 
 def rebase(name: str, old: str, new: str):
@@ -100,13 +123,13 @@ ITEM_COLS = {  # JSON name -> item column
     'printedAt': 'printed_at', 'legacyRef': 'legacy_ref', 'folder': 'folder', 'originAt': 'origin_at',
 }
 KIND_COLS = {  # kind -> (table, {JSON name -> column})
-    'sheet': ('sheet', {'source': 'source', 'pages': 'pages'}),
+    'sheet': ('sheet', {'source': 'source', 'pages': 'pages', 'book': 'book'}),
     'chords': ('chord_chart', {'source': 'source', 'url': 'url', 'key': 'key', 'capo': 'capo', 'text': 'text'}),
     'score': ('score', {'version': 'version', 'musicxml': 'musicxml', 'musicxmlOriginal': 'musicxml_original',
                         'midi': 'midi', 'pdf': 'pdf', 'key': 'key', 'bpm': 'bpm', 'source': 'source', 'groupId': 'group_id'}),
 }
 KIND_DEFAULTS = {
-    'sheet': {'source': 'photos', 'pages': 0},
+    'sheet': {'source': 'photos', 'pages': 0, 'book': 0},
     'chords': {'source': 'pasted', 'url': '', 'key': '', 'capo': 0, 'text': ''},
     'score': {'version': 'original', 'musicxml': '', 'key': '', 'source': ''},
 }

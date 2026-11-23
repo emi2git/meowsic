@@ -13,17 +13,18 @@ const sc = await api('/items', { method: 'POST', headers: { 'Content-Type': 'app
 await page.goto(BASE + '#/item/' + sc.id, { waitUntil: 'networkidle0' }); await sleep(4000);
 await page.click('#it-more'); await sleep(200);
 await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.includes('Make another version')).click()); await sleep(300);
-await page.click('#gv [data-o="lead"]'); await page.click('#gv [data-o="easy"]'); await page.click('.modal [data-ok]');
+const oldJobs = new Set((await api('/jobs')).map((j) => j.id)); const scoresBefore = (await api('/items?kind=score')).length;
+await page.click('#gv [data-o="lead"]'); await page.click('#gv [data-o="clear"]'); await page.click('.modal [data-ok]');
 let done = null; const t0 = Date.now();
-for (let i = 0; i < 120 && !done; i++) { await sleep(1000); const js = await api('/jobs'); done = js.find((j) => j.kind === 'version' && ['done', 'failed'].includes(j.status)); }
+for (let i = 0; i < 120 && !done; i++) { await sleep(1000); const js = await api('/jobs'); done = js.find((j) => !oldJobs.has(j.id) && j.kind === 'version' && ['done', 'failed'].includes(j.status)); }
 check('version job finishes', done?.status === 'done', JSON.stringify(done?.log?.slice(-2)));
 console.log('   version job took', Math.round((Date.now() - t0) / 1000), 's');
-const items = await api('/items?kind=score');
-check('lead + easy became two new score items', items.filter((x) => ['lead', 'easy'].includes(x.version)).length === 2, items.map((x) => x.version).join());
+const all = await api('/items?kind=score'); const items = (done?.result || []).map((id) => all.find((x) => x.id === id));
+check('lead + clear became two new score items', items.map((x) => x?.version).sort().join() === 'clear,lead', items.map((x) => x?.version).join());
 await page.goto(BASE + '#/add-score', { waitUntil: 'networkidle0' }); await sleep(1500);
 check('UI lists the new versions', (await page.$eval('#sf-jobs', (e) => e.textContent)).includes('Open Lead sheet'));
 await page.goto(BASE + '#/library?kind=score', { waitUntil: 'networkidle0' }); await sleep(800);
-check('library shows them', (await page.$$eval('#lib-rows tr.row', (e) => e.length)) === 3);
+check('library shows them', (await page.$$eval('#lib-rows tr.row', (e) => e.length)) === Math.min(50, scoresBefore + 2));
 const lead = items.find((x) => x.version === 'lead');
 await page.goto(BASE + '#/item/' + lead.id, { waitUntil: 'networkidle0' }); await sleep(4000);
 check('lead sheet draws', (await page.$$('#osmd svg')).length > 0);
@@ -33,7 +34,7 @@ await page.click('#sf-src [data-s="file"]');
 const fi = await page.$('#sf-audio'); await fi.uploadFile('/private/tmp/claude-501/-Users-emi2mac/4133b106-9ccb-4a6c-97de-aed86ecf9500/scratchpad/clip.wav'); await sleep(300);
 await page.click('#sf-go');
 let tj = null; const t1 = Date.now();
-for (let i = 0; i < 300 && !(tj && ['done', 'failed'].includes(tj.status)); i++) { await sleep(2000); tj = (await api('/jobs')).find((j) => j.kind === 'transcribe'); }
+for (let i = 0; i < 300 && !(tj && ['done', 'failed'].includes(tj.status)); i++) { await sleep(2000); tj = (await api('/jobs')).find((j) => !oldJobs.has(j.id) && j.kind === 'transcribe'); }
 check('transcription job finishes', tj?.status === 'done', JSON.stringify(tj?.log?.slice(-3)));
 console.log('   transcription took', Math.round((Date.now() - t1) / 1000), 's');
 await sleep(3000);

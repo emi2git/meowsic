@@ -14,7 +14,7 @@ from pathlib import Path
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 
-from .db import KIND_COLS, ensure_tags, folder_path, get_item, item_json, log_event, now_ms, folder_name, rebase, uid, write_item
+from .db import BOOKS, KIND_COLS, book_folder, ensure_tags, folder_base, folder_path, get_item, item_json, log_event, now_ms, folder_name, rebase, uid, write_item
 
 router = APIRouter(prefix='/api')
 
@@ -93,7 +93,7 @@ def create_item(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
 @router.patch('/items/{item_id}')
 def update_item(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
     it = must_item(c, item_id)
-    patch = {k: v for k, v in body.items() if k not in ('id', 'kind', 'createdAt', 'deleted', 'deletedAt', 'folder')}
+    patch = {k: v for k, v in body.items() if k not in ('id', 'kind', 'createdAt', 'deleted', 'deletedAt', 'folder', 'book')}
     write_item(c, {**patch, 'id': item_id, 'kind': it['kind'], 'updatedAt': now_ms()}, new=False)
     if it['folder'] and 'title' in patch and patch['title'] != it['title']:
         rename_folder(c, cf, it, patch['title'])
@@ -107,17 +107,25 @@ def rename_folder(c, cf, it, title):
     """Title changed: rename items/<folder>/ and the title-named files in it, then the db rows.
     Any failure undoes the renames done so far and keeps the old names."""
     old = it['folder']
-    new = folder_name(it['id'], title)
+    new = book_folder(cf, title, own=old) if it.get('book') else folder_name(it['id'], title)
+    move_folder(c, cf, it, new)
+
+
+def move_folder(c, cf, it, new):
+    """items/<old>/ -> items/<new>/ with the title-named files renamed to match (undone on failure)."""
+    old = it['folder']
     if new == old:
         return
     src, dst = folder_path(cf, old), folder_path(cf, new)
+    ob, nb = folder_base(old), folder_base(new)
+    dst.parent.mkdir(parents=True, exist_ok=True)
     done = []  # (from, to) in order, for the undo
     try:
         if src.is_dir():
             os.rename(src, dst)
             done.append((src, dst))
             for f in sorted(dst.iterdir()):
-                to = rebase(f.name, old, new)
+                to = rebase(f.name, ob, nb)
                 if to:
                     os.rename(f, dst / to)
                     done.append((f, dst / to))
@@ -129,11 +137,11 @@ def rename_folder(c, cf, it, title):
         return
     c.execute('UPDATE item SET folder=? WHERE id=?', (new, it['id']))
     for page, f in c.execute('SELECT page, file FROM sheet_page WHERE item_id=?', (it['id'],)).fetchall():
-        if rebase(f, old, new): c.execute('UPDATE sheet_page SET file=? WHERE item_id=? AND page=?', (rebase(f, old, new), it['id'], page))
+        if rebase(f, ob, nb): c.execute('UPDATE sheet_page SET file=? WHERE item_id=? AND page=?', (rebase(f, ob, nb), it['id'], page))
     row = c.execute(f'SELECT {",".join(FILE_COLS)} FROM score WHERE item_id=?', (it['id'],)).fetchone()
     if row:
         c.execute(f'UPDATE score SET {",".join(f"{k}=?" for k in FILE_COLS)} WHERE item_id=?',
-                  [(rebase(v, old, new) or v) if v else v for v in row] + [it['id']])
+                  [(rebase(v, ob, nb) or v) if v else v for v in row] + [it['id']])
 
 
 @router.post('/items/trash')
@@ -166,7 +174,7 @@ def purge(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
         titles.append(r[0])
         if not r[1]: continue
         d = folder_path(cf, r[1])
-        if d.is_dir() and d.resolve().parent == cf.items_dir.resolve():
+        if d.is_dir() and d.resolve().parent in (cf.items_dir.resolve(), (cf.items_dir / BOOKS).resolve()):
             shutil.rmtree(d)
     if titles: log_event(c, 'delete', *summary(titles))
     return {'ok': True, 'count': len(titles)}
@@ -350,7 +358,7 @@ async def upload_sheet(files: list[UploadFile] = File(...), title: str = Form(''
               'artist': artist, 'tags': json.loads(tags), 'createdAt': now_ms(), 'updatedAt': now_ms(),
               'source': 'pdf' if any(b[1] == '.pdf' for b in blobs) else 'photos', 'pages': 0}
         write_item(c, it, new=True)
-    folder = it['folder']
+    folder = folder_base(it['folder'])  # file names: a book's 'Books/X' -> 'X'
     d = item_dir(cf, it)
     d.mkdir(parents=True, exist_ok=True)
     page = (c.execute('SELECT MAX(page) FROM sheet_page WHERE item_id=?', (it['id'],)).fetchone()[0] or 0) + 1

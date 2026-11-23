@@ -52,7 +52,7 @@ def full_bars(sc):
                for p in sc.parts for m in p.getElementsByClass('Measure'))
 
 
-@pytest.mark.parametrize('version,parts', [('lead', 1), ('vocal', 3), ('accomp', 2), ('easy', 2), ('pro', 2), ('duet', 3)])
+@pytest.mark.parametrize('version,parts', [('lead', 1), ('vocal', 3), ('accomp', 2), ('pro', 2), ('duet', 3)])
 def test_arrange_each_version_parses_back(small_xml, tmp_path, version, parts):
     sc = arrange.arrange(small_xml, version, title='Memory')
     xml, mid = tmp_path / 'x.musicxml', tmp_path / 'x.mid'
@@ -73,10 +73,6 @@ def test_arrange_rules(small_xml):
     duet = arrange.arrange(t, 'duet')
     primo = [n.pitch.midi for n in notes(duet.parts[0])]
     assert primo == [p + 12 for p in mel]  # primo = the tune an octave up
-    easy = arrange.arrange(t, 'easy')
-    lh = notes(easy.parts[1])
-    assert all(len(n.pitches) == 1 for n in lh)  # one root at a time
-    assert min(n.quarterLength for n in lh) >= 1  # long values
     pro = arrange.arrange(t, 'pro')
     assert any(len(n.pitches) > 1 for n in notes(pro.parts[0]))  # fuller right hand
     assert max(n.quarterLength for n in notes(pro.parts[1])) <= 0.5  # broken chords in eighths
@@ -101,14 +97,14 @@ def score_item(client, xml, **kw):
 
 def test_version_job_makes_items(client, data, small_xml, no_pdf):
     src = score_item(client, small_xml)
-    outs = ['easy', 'lead', 'duet', 'accomp', 'pro', 'vocal']
+    outs = ['clear', 'lead', 'duet', 'accomp', 'pro', 'vocal']
     j = client.post('/api/jobs', json={'kind': 'version', 'title': 'Memory', 'fromItemId': src['id'], 'outputs': outs,
                                        'source': 'From the score “Memory”'}).json()
     j = wait(client, j['id'])
     assert j['status'] == 'done', j['log']
     assert len(j['result']) == 6 and j['stage'] == 3 and j['progress'] == 1
     msgs = [x['msg'] for x in j['log']]
-    assert 'Read the score — done' in msgs and 'Piano easy — arranged' in msgs and msgs[-1].startswith('Done — added Piano easy')
+    assert 'Read the score — done' in msgs and 'Piano clear — arranged' in msgs and msgs[-1].startswith('Done — added Piano clear')
     for iid, v in zip(j['result'], outs):
         it = client.get(f'/api/items/{iid}').json()
         assert it['version'] == v and it['kind'] == 'score'
@@ -121,7 +117,7 @@ def test_version_job_makes_items(client, data, small_xml, no_pdf):
         assert converter.parse(str(d / it['musicxml'])).parts and (d / it['midi']).is_file()
         assert client.get(f'/api/items/{iid}/musicxml').status_code == 200
     tags = {t['name'] for t in client.get('/api/tags').json()}
-    assert {'Piano easy', 'Lead sheet', 'Piano duet', 'Piano accompaniment', 'Piano pro', 'Piano + vocals'} <= tags
+    assert {'Piano clear', 'Lead sheet', 'Piano duet', 'Piano accompaniment', 'Piano pro', 'Piano + vocals'} <= tags
     assert (data / 'work' / j['id'] / 'out').is_dir()
 
 
@@ -137,10 +133,10 @@ def test_version_job_draws_pdf(client, data, small_xml):
 
 
 def test_version_job_needs_a_score(client, no_pdf):
-    j = wait(client, client.post('/api/jobs', json={'gen': True, 'title': 'X', 'outputs': ['easy']}).json()['id'])
+    j = wait(client, client.post('/api/jobs', json={'gen': True, 'title': 'X', 'outputs': ['clear']}).json()['id'])
     assert j['status'] == 'failed' and 'fromItemId' in j['log'][-1]['msg']
     chord = client.post('/api/items', json={'kind': 'chords', 'title': 'C', 'text': '[C]x'}).json()
-    j = wait(client, client.post('/api/jobs', json={'gen': True, 'title': 'X', 'fromItemId': chord['id'], 'outputs': ['easy']}).json()['id'])
+    j = wait(client, client.post('/api/jobs', json={'gen': True, 'title': 'X', 'fromItemId': chord['id'], 'outputs': ['clear']}).json()['id'])
     assert j['status'] == 'failed' and 'gone' in j['log'][-1]['msg']
 
 
@@ -187,19 +183,19 @@ def test_link_of():
 
 
 def test_transcribe_job_with_stand_in_pipeline(client, data, fake_pipeline, no_pdf):
-    j = client.post('/api/jobs', json={'title': 'Memory', 'source': 'YouTube · youtu.be/abc', 'outputs': ['original', 'easy', 'lead'],
+    j = client.post('/api/jobs', json={'title': 'Memory', 'source': 'YouTube · youtu.be/abc', 'outputs': ['original', 'clear', 'lead'],
                                        'tags': ['Musicals']}).json()
     j = wait(client, j['id'])
     assert j['status'] == 'done', j['log']
     assert j['stage'] == 6 and len(j['result']) == 3
     msgs = [x['msg'] for x in j['log']]
     for s in runners.STAGES[:5]: assert any(m.startswith(s + ' — done') for m in msgs), (s, msgs)
-    assert 'Piano easy — arranged' in msgs
+    assert 'Piano clear — arranged' in msgs
     calls = [json.loads(x) for x in (data / 'work' / j['id'] / 'calls.txt').read_text().splitlines()]
     assert calls[0][:2] == ['https://youtu.be/abc', ['original', 'lead']] and calls[0][2]  # models cache passed through
     items = [client.get(f'/api/items/{i}').json() for i in j['result']]
-    assert [i['version'] for i in items] == ['original', 'easy', 'lead']
-    assert [set(i['tags']) for i in items] == [{'Original', 'Musicals'}, {'Piano easy', 'Musicals'}, {'Lead sheet', 'Musicals'}]
+    assert [i['version'] for i in items] == ['original', 'clear', 'lead']
+    assert [set(i['tags']) for i in items] == [{'Original', 'Musicals'}, {'Piano clear', 'Musicals'}, {'Lead sheet', 'Musicals'}]
     assert len({i['groupId'] for i in items}) == 1 and all(i['source'] == 'YouTube · youtu.be/abc' for i in items)
     assert all(i['key'] == 'Bb major' and i['bpm'] == 76 and i['originAt'] for i in items)
     for i in items:
@@ -261,14 +257,14 @@ def test_real_transcription_end_to_end(client, data, tmp_path):
     t0 = time.time()
     with clip.open('rb') as f:
         j = client.post('/api/jobs/upload', files={'file': ('clip.wav', f, 'audio/wav')},
-                        data={'title': 'Clip', 'outputs': 'vocal,easy'}).json()
+                        data={'title': 'Clip', 'outputs': 'vocal,clear'}).json()
     j = wait(client, j['id'], t=1800)
     secs = time.time() - t0
     print(f'\nreal transcription: {secs:.1f} s')
     for x in j['log']: print('  ', x['msg'])
     assert j['status'] == 'done', j['log']
     items = [client.get(f'/api/items/{i}').json() for i in j['result']]
-    assert [i['version'] for i in items] == ['vocal', 'easy']
+    assert [i['version'] for i in items] == ['vocal', 'clear']
     for i in items:
         d = data / 'items' / i['folder']
         assert converter.parse(str(d / i['musicxml'])).parts

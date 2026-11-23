@@ -205,14 +205,14 @@ await page.click('#gv [data-o="vocal"]'); await sleep(100);
 check('picking one you have shows a warning', (await text('#gv-warn')).includes('already have Piano + vocals'));
 await page.click('#gv [data-o="vocal"]'); await sleep(100);
 check('warning goes when unpicked', await page.$eval('#gv-warn', (e) => e.hidden));
-await page.click('#gv [data-o="duet"]'); await page.click('#gv [data-o="easy"]');
+await page.click('#gv [data-o="duet"]'); await page.click('#gv [data-o="clear"]');
 check('generate button counts picks', (await text('.modal [data-ok]')) === 'Make 2');
 await page.click('.modal [data-ok]'); await sleep(300);
 let gen = false;
 for (let i = 0; i < 30 && !gen; i++) { await sleep(700); gen = (await db()).items.filter((x) => x.title === 'Amazing Grace' && x.kind === 'score').length === 3; }
-check('duet + easy generated as two new entries', gen);
+check('duet + clear generated as two new entries', gen);
 d = await db();
-check('new entries tagged Piano duet / Piano easy', d.items.some((x) => x.tags.includes('Piano duet')) && d.items.some((x) => x.tags.includes('Piano easy')));
+check('new entries tagged Piano duet / Piano clear', d.items.some((x) => x.tags.includes('Piano duet')) && d.items.some((x) => x.tags.includes("Piano clear")));
 const duet = d.items.find((x) => x.version === 'duet');
 await go('#/item/' + duet.id); await sleep(1500);
 check('duet score draws two parts', (await count('#osmd svg')) >= 1);

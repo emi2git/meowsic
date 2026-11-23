@@ -146,8 +146,8 @@ def cleanup_state(request: Request, id: str | None = None, c=Depends(conn), cf=D
     with _lock: data = _load(cf)
     if data.get('v') != CACHE_V: data['pages'] = {}
     ok = set(data.get('ok', []))
-    items = {r[0]: {'id': r[0], 'title': r[1], 'kind': r[2], 'folder': r[3], 'pages': []}
-             for r in c.execute('SELECT id, title, kind, folder FROM item WHERE deleted_at IS NULL' + (' AND id=?' if id else ''), (id,) if id else ())}
+    items = {r[0]: {'id': r[0], 'title': r[1], 'kind': r[2], 'folder': r[3], 'book': bool(r[4]), 'pages': []}
+             for r in c.execute('SELECT id, title, kind, folder, (SELECT book FROM sheet WHERE item_id=item.id) FROM item WHERE deleted_at IS NULL' + (' AND id=?' if id else ''), (id,) if id else ())}
     missing = False
     for iid, page, file, folder in _pages(c):
         if iid not in items: continue
@@ -167,9 +167,9 @@ def cleanup_state(request: Request, id: str | None = None, c=Depends(conn), cf=D
         if not it['pages']: issues.append({'kind': 'empty', 'text': 'no pages'})
         nt = sum(1 for p in it['pages'] if p['trim'])
         if nt: issues.append({'kind': 'trim', 'text': f"{nt} page{'s' if nt > 1 else ''} to trim"})
-        issues += [{'kind': k, 'text': t} for k, t in dot_issues(it['pages'])]
+        if not it['book']: issues += [{'kind': k, 'text': t} for k, t in dot_issues(it['pages'])]  # a book holds many songs: grouping checks don't apply
         if why and f'title:{it["id"]}' not in ok: issues.append({'kind': 'title', 'text': f'title: {why}'})
-        songs.append({'id': it['id'], 'title': it['title'], 'pages': it['pages'], 'issues': issues,
+        songs.append({'id': it['id'], 'title': it['title'], 'book': it['book'], 'pages': it['pages'], 'issues': issues,
                       'reviewed': f'song:{it["id"]}' in ok, 'trimmed': sum(p['trims'] > 0 for p in it['pages'])})
     if missing and not _scan['running']:
         start_scan(request.app)  # pages not looked at yet

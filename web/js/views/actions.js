@@ -61,12 +61,24 @@ export function binItems(ids) {
 
 // ⋯ menu. In the library: Open, edit, Print, bin. In a viewer, grouped as
 // Info · Rename / Edit tags · what this kind can do · Print / Export · Move to Trash.
+// sheet <-> book (server moves the files into / out of items/Books/)
+export async function setBook(ids, on) {
+  ids = [].concat(ids);
+  const res = await fetch('/api/items/book', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids, book: on }) });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) return toast(d.detail || 'Could not move it');
+  d.items.forEach((x) => x && store.putItem(x));
+  toast(ids.length > 1 ? `${d.count} ${on ? 'books' : 'sheets'}` : on ? 'Now a book — it lives under Books' : 'Now a sheet');
+}
+export const bookToggle = (it) => (store.mode === 'server' && it.kind === 'sheet'
+  ? [it.book ? { label: 'Not a book — make it a sheet', icon: 'sheet', run: () => setBook(it.id, false) } : { label: 'Make it a book', icon: 'book', run: () => setBook(it.id, true) }] : []);
+
 export function itemMenu(anchor, id, { viewer = false, info, tools = [], exports = [] } = {}) {
   const group = (...g) => g.filter((x) => x.length).flatMap((x, i) => (i ? ['-', ...x] : x));
   menu(anchor, group(
     viewer ? [{ label: 'Info', icon: 'info', run: info }] : [{ label: 'Open', icon: 'right', run: () => go(`#/item/${id}`) }],
     [{ label: 'Rename…', icon: 'edit', run: () => rename(id) }, { label: 'Edit tags…', icon: 'tag', run: () => editTags(id) }],
-    tools,
+    [...tools, ...(viewer ? [] : bookToggle(store.get(id)))],
     [{ label: 'Print…', icon: 'print', run: () => go(`#/print?item=${id}`) }, ...exports],
     [{ label: 'Move to Trash', icon: 'bin', danger: true, run: () => binItems(id) }],
   ));

@@ -86,15 +86,19 @@ def finish(ctx, ids, versions):
 
 
 # ---------- arranging (shared by both runners) ----------
+OLD_NAMES = {'easy': 'clear'}  # 'Piano easy' is no longer made: an older app asking for it gets 'Piano clear'
 
-def arrange_versions(ctx, base_xml: Path, versions, out_dir: Path, *, title, artist, stage_arrange, stage_write, stage_pdf):
-    """music21 versions of base_xml into out_dir. Returns [(version, xml, mid, pdf, {})]."""
+
+def arrange_versions(ctx, base_xml: Path, versions, out_dir: Path, *, title, artist, stage_arrange, stage_write, stage_pdf, piano_xml=None):
+    """music21 versions of base_xml into out_dir. Returns [(version, xml, mid, pdf, {})].
+    'clear' thins the piano score itself (piano_xml, else base_xml) instead of re-arranging the tune."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    tune = arrange.read(base_xml)
+    tune = arrange.read(base_xml) if any(v != 'clear' for v in versions) else None
     scores = []
     for i, v in enumerate(versions):
         ctx.update(stage=stage_arrange, progress=i / len(versions))
-        scores.append((v, arrange.arrange(tune, v, title=title, artist=artist)))
+        scores.append((v, arrange.clear(piano_xml or base_xml, title=title, artist=artist) if v == 'clear'
+                       else arrange.arrange(tune, v, title=title, artist=artist)))
         ctx.update(msg=f'{VERSION_TAGS[v]} — arranged')
     outs = []
     for i, (v, sc) in enumerate(scores):
@@ -117,8 +121,9 @@ def arrange_versions(ctx, base_xml: Path, versions, out_dir: Path, *, title, art
 
 def version_runner(ctx: JobContext):
     job, p = ctx.job, ctx.params
-    want = [v for v in dict.fromkeys(job['outputs']) if v in arrange.ARRANGED]
-    skipped = [v for v in job['outputs'] if v not in arrange.ARRANGED]
+    asked = [OLD_NAMES.get(v, v) for v in job['outputs']]
+    want = [v for v in dict.fromkeys(asked) if v in arrange.ARRANGED]
+    skipped = [v for v in asked if v not in arrange.ARRANGED]
     if not p.get('fromItemId'): raise RuntimeError('No score to start from (fromItemId is missing)')
     c = connect(ctx.cfg)
     try: src = get_item(c, p['fromItemId'])
@@ -304,7 +309,7 @@ def snapshot(ev, v):
 
 def transcribe_runner(ctx: JobContext):
     job, p = ctx.job, ctx.params
-    outputs = [v for v in dict.fromkeys(job['outputs'] or ['original']) if v in VERSION_TAGS]
+    outputs = [v for v in dict.fromkeys(OLD_NAMES.get(v, v) for v in job['outputs'] or ['original']) if v in VERSION_TAGS]
     if not outputs: raise RuntimeError('No version to make')
     up = p.get('upload')
     src = up if up and Path(up).is_file() else link_of(job, p)
@@ -327,7 +332,7 @@ def transcribe_runner(ctx: JobContext):
             base = snapshot(made['vocal'], 'vocal')[1]
         ctx.update(stage=5, progress=0)
         outs += arrange_versions(ctx, base, arranged, work / 'arranged', title=job['title'], artist=p.get('artist', ''),
-                                 stage_arrange=5, stage_write=5, stage_pdf=6)
+                                 stage_arrange=5, stage_write=5, stage_pdf=6, piano_xml=snapshot(ev, 'original')[1])
     ctx.update(stage=6, progress=1, msg=f'{STAGES[6]} — done' if 6 not in prog.logged else None)
     outs.sort(key=lambda o: outputs.index(o[0]))
     key = next((o[4]['key'] for o in outs if o[4].get('key')), '')

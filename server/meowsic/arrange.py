@@ -3,7 +3,9 @@
 lead    melody + chord symbols
 vocal   melody staff above a piano accompaniment
 accomp  piano accompaniment only
-easy    melody + left hand on chord roots, long values
+easy    melody + left hand on chord roots, long values (old; no longer offered)
+clear   the original's two hands as written, but one note at a time: right hand keeps the top
+        (melody) note of each chord, left hand the bottom (bass) note; extra voices in a staff go
 pro     melody with chord tones under it + broken-chord left hand
 duet    primo (melody an octave up) + secondo (the accompaniment)
 """
@@ -14,8 +16,8 @@ from fractions import Fraction
 from pathlib import Path
 
 VERSION_TAGS = {'original': 'Original', 'vocal': 'Piano + vocals', 'lead': 'Lead sheet', 'duet': 'Piano duet',
-                'accomp': 'Piano accompaniment', 'easy': 'Piano easy', 'pro': 'Piano pro'}
-ARRANGED = ('lead', 'vocal', 'accomp', 'easy', 'pro', 'duet')
+                'accomp': 'Piano accompaniment', 'clear': 'Piano clear', 'easy': 'Piano easy', 'pro': 'Piano pro'}
+ARRANGED = ('lead', 'vocal', 'accomp', 'clear', 'pro', 'duet')
 MSCORE = '/Applications/MuseScore 4.app/Contents/MacOS/mscore'
 MELODY_NAMES = ('voice', 'melody', 'vocal', 'vocals', 'lead', 'soprano')
 
@@ -312,6 +314,54 @@ def arrange(src, version: str, title=None, artist=''):
         parts += piano_pair(block_chords(t, lo=52), bass_events(t, lo=36), name='Secondo')
     for p in parts: sc.insert(0, p)
     return sc
+
+
+def clear(src_xml, title=None, artist=''):
+    """'Piano clear': the score as written, one note at a time per hand. Right hand (and any single
+    staff) keeps the top note of each chord, left hand (a bass-clef staff, or the lower staff of a
+    pair) the bottom one; a staff with several voices keeps its first voice. Rhythm, ties, lyrics,
+    chord symbols, dynamics and bars stay as they are."""
+    from music21 import converter, chord, note, stream, clef, metadata
+    sc = converter.parse(str(src_xml))
+    sc.metadata = sc.metadata or metadata.Metadata()
+    if title: sc.metadata.title = title
+    if artist is not None: sc.metadata.composer = artist
+    parts = list(sc.parts)
+    if not parts: raise ValueError('The score has no parts')
+    for i, part in enumerate(parts):
+        first = part.recurse().getElementsByClass(clef.Clef).first()
+        lower = isinstance(first, clef.BassClef) or (
+            type(part).__name__ == 'PartStaff' and i > 0 and type(parts[i - 1]).__name__ == 'PartStaff' and _same_group(sc, parts[i - 1], part))
+        for m in part.getElementsByClass(stream.Measure):
+            vs = list(m.voices)
+            if len(vs) > 1:  # keep the first voice: the main line of that hand
+                keep = vs[0]
+                for v in vs[1:]: m.remove(v)
+                for el in list(keep): m.insert(keep.elementOffset(el) + keep.offset, el)
+                m.remove(keep)
+            for c in list(m.recurse().getElementsByClass(chord.Chord)):
+                if type(c).__name__ != 'Chord' or len(c.pitches) < 2: continue  # ChordSymbol subclasses Chord
+                ps = sorted(c.notes, key=lambda n: n.pitch.ps)
+                main = ps[0] if lower else ps[-1]
+                n = note.Note(main.pitch, quarterLength=c.quarterLength)
+                n.duration = c.duration
+                if c.tie is not None or main.tie is not None: n.tie = main.tie or c.tie
+                for attr in ('lyrics', 'articulations', 'expressions'):
+                    setattr(n, attr, list(getattr(c, attr)))
+                n.stemDirection = 'unspecified'
+                if c.beams: n.beams = c.beams
+                n.volume.velocity = c.volume.velocity
+                c.activeSite.replace(c, n)
+    return sc
+
+
+def _same_group(sc, a, b) -> bool:
+    """Both staves belong to one brace (a piano's two hands)."""
+    from music21 import layout
+    for g in sc.recurse().getElementsByClass(layout.StaffGroup):
+        sp = g.getSpannedElements()
+        if a in sp and b in sp: return True
+    return not list(sc.recurse().getElementsByClass(layout.StaffGroup))  # no groups written: treat a PartStaff pair as one piano
 
 
 def write_files(sc, xml: Path, mid: Path):

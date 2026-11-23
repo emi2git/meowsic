@@ -96,7 +96,7 @@ export function printView(main, { q }) {
     const pages = layout(items, src.name);
     const blanks = pages.filter((p) => p.blank).length;
     $('#pr-sum', main).textContent = `${pages.length} pages · ${Math.ceil(pages.length / 2)} sheets of paper double-sided${blanks ? ` · ${blanks} blank${blanks > 1 ? 's' : ''}` : ''}`;
-    $('#pr-list', main).innerHTML = items.map((it) => `<li class="row"><div class="row-main"><div class="row-title">${esc(it.title)}</div><div class="row-sub">${badge(it.kind)}<span>${printedPages(it, opts.paper)} page${printedPages(it, opts.paper) > 1 ? 's' : ''}</span></div></div></li>`).join('');
+    $('#pr-list', main).innerHTML = items.map((it) => `<li class="row"><div class="row-main"><div class="row-title">${esc(it.title)}</div><div class="row-sub">${badge(it)}<span>${printedPages(it, opts.paper)} page${printedPages(it, opts.paper) > 1 ? 's' : ''}</span></div></div></li>`).join('');
     // book spreads: page 1 is a right-hand page on its own
     const spreads = [[pages[0]]];
     for (let i = 1; i < pages.length; i += 2) spreads.push([pages[i], pages[i + 1] || null]);

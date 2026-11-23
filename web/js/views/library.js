@@ -1,6 +1,6 @@
 // Library: every sheet, chord chart and score in one list.
 import { store } from '../store.js';
-import { $, esc, icon, iconOn, badge, ago, menu, KIND, CAT } from '../ui.js';
+import { $, esc, icon, iconOn, badge, ago, menu, KIND, kindOf, CAT } from '../ui.js';
 import { go, addMenu } from '../app.js';
 import { itemMenu, editTags, binItems, keyShort } from './actions.js';
 import { autoTag } from './autotag.js';
@@ -12,7 +12,7 @@ const SORTS = {
   played: ['Recently played', (a, b) => store.lastPlayed(b.id) - store.lastPlayed(a.id)],
   most: ['Most played', (a, b) => store.playCount(b.id) - store.playCount(a.id)],
   artist: ['Artist A–Z', (a, b) => (a.artist || '').localeCompare(b.artist || '') || a.title.localeCompare(b.title)],
-  kind: ['Type', (a, b) => a.kind.localeCompare(b.kind) || a.title.localeCompare(b.title)],
+  kind: ['Type', (a, b) => kindOf(a).localeCompare(kindOf(b)) || a.title.localeCompare(b.title)],
   pages: ['Pages', (a, b) => (a.pages || 0) - (b.pages || 0) || a.title.localeCompare(b.title)],
   key: ['Key', (a, b) => (a.key || '').localeCompare(b.key || '') || a.title.localeCompare(b.title)],
   version: ['Version', (a, b) => (VERSIONS[a.version] || '').localeCompare(VERSIONS[b.version] || '') || a.title.localeCompare(b.title)],
@@ -26,6 +26,7 @@ const C = { title: ['title', 'Title', 'c-title'], artist: ['artist', 'Artist', '
 const COLS_BY = {
   '': [C.title, C.artist, C.type, C.tag, C.added],
   sheet: [C.title, C.artist, C.tag, C.pages, C.added],
+  book: [C.title, C.artist, C.tag, C.pages, C.added],
   chords: [C.title, C.artist, C.tag, C.key, C.added],
   score: [C.title, C.artist, C.version, C.tag, C.key, C.added],
 };
@@ -33,7 +34,7 @@ const COLS_BY = {
 // "Piano recital"), not genre, language or version tags.
 const GENERIC = new Set(['Musical', 'Disney', 'Movie', 'Anime', 'Pop', 'Rock', 'Ballad', 'Jazz', 'Folk', 'Country', 'Classical', 'Christmas', 'Children',
   'English', 'Vietnamese', 'Chinese', 'Russian', 'Korea', 'Japan', 'Singapore', 'Original', 'Piano + vocals', 'Lead sheet', 'Piano duet',
-  'Piano accompaniment', 'Piano easy', 'Piano pro', 'Printed', 'Never printed']);
+  'Piano accompaniment', 'Piano clear', 'Piano easy', 'Piano pro', 'Printed', 'Never printed']);
 export const mainTag = (it) => it.tags.find((t) => !GENERIC.has(t)) || '';
 const PAGE = 50; // rows per page
 const state = { q: '', sort: 'added', dir: 1, select: false, sel: new Set(), page: 1, anchor: null };
@@ -53,7 +54,7 @@ export function libraryView(main, { q }) {
     <header class="top lib-top selband" id="selband" hidden></header>
     <header class="top lib-top" id="libhead">
       <h1>${kind ? KIND[kind].plural : 'All music'}</h1>
-      <div class="seg phone-only" role="tablist">${[['', 'All'], ['sheet', 'Sheets'], ['chords', 'Chords'], ['score', 'Scores']].map(([k, l]) =>
+      <div class="seg phone-only" role="tablist">${[['', 'All'], ['sheet', 'Sheets'], ['book', 'Books'], ['chords', 'Chords'], ['score', 'Scores']].map(([k, l]) =>
         `<button role="tab" class="${kind === k ? 'on' : ''}" data-kind="${k}">${k ? icon(KIND[k].icon) : ''}${l}</button>`).join('')}</div>
       ${tags.map((t) => `<span class="tag-on">${esc(t)}<button class="x" data-untag="${esc(t)}" aria-label="Remove tag ${esc(t)}" title="Remove">×</button></span>`).join('')}
       ${tags.length > 1 ? `<button class="link clear-tags" id="lib-tags-clear">Clear all</button>` : ''}
@@ -71,8 +72,8 @@ export function libraryView(main, { q }) {
 
   const draw = () => {
     const words = fold(state.q).split(/\s+/).filter(Boolean);
-    let list = store.items().filter((it) => (!kind || it.kind === kind) && tags.every((t) => it.tags.includes(t)));
-    if (words.length) list = list.filter((it) => { const hay = fold([it.title, it.artist, ...it.tags, KIND[it.kind].label].join(' ')); return words.every((w) => hay.includes(w)); });
+    let list = store.items().filter((it) => (!kind || kindOf(it) === kind) && tags.every((t) => it.tags.includes(t)));
+    if (words.length) list = list.filter((it) => { const hay = fold([it.title, it.artist, ...it.tags, KIND[kindOf(it)].label].join(' ')); return words.every((w) => hay.includes(w)); });
     list.sort(SORTS[state.sort][1]);
     if (state.dir < 0) list.reverse();
     const rows = $('#lib-rows', main);
@@ -91,7 +92,7 @@ export function libraryView(main, { q }) {
         const arrow = (k) => (state.sort !== k ? '' : (k === 'added') === (state.dir > 0) ? ' ▼' : ' ▲');
         const cols = COLS_BY[kind] || COLS_BY[''];
         const cell = {
-          'c-title': (it) => esc(it.title), 'c-artist': (it) => esc(it.artist || ''), 'c-type': (it) => badge(it.kind), 'c-ver': (it) => esc(VERSIONS[it.version] || ''),
+          'c-title': (it) => esc(it.title), 'c-artist': (it) => esc(it.artist || ''), 'c-type': (it) => badge(it), 'c-ver': (it) => esc(VERSIONS[it.version] || ''),
           'c-tag': (it) => (mainTag(it) ? `<span class="tagchip">${esc(mainTag(it))}</span>` : ''), 'c-pages': (it) => it.pages || '', 'c-key': (it) => esc(keyShort(it.key)), 'c-when': (it) => ago(it.createdAt),
         };
         rows.innerHTML = `<table class="lib-table ${kind ? 'one-kind' : ''} ${selecting() ? 'selecting' : ''}"><thead><tr><th class="c-pick"></th>${cols.map(([k, l, c]) =>

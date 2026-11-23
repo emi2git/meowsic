@@ -6,6 +6,7 @@ export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&a
 const P = {
   library: '<path d="M4 5h4v14H4zM10 5h4v14h-4zM16.5 5.5l3.8 1-3.3 13-3.8-1z"/>',
   sheet: '<path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4M9 11h7M9 14h7M9 17h7"/>',
+  book: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5M8 7h8M8 10h6"/>',
   chords: '<circle cx="8" cy="17" r="3"/><circle cx="17" cy="15" r="3"/><path d="M11 17V5l9-2v12"/>',
   score: '<path d="M3 6h18M3 10h18M3 14h18M3 18h18"/><circle cx="9" cy="16" r="2.2" fill="currentColor"/><path d="M11.2 16V6"/>',
   collection: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M6 4h12M8 1.8h8"/>',
@@ -67,10 +68,13 @@ export const CAT = ''; // mascot removed for now
 
 export const KIND = {
   sheet: { label: 'Sheet', plural: 'Sheets', icon: 'sheet' },
+  book: { label: 'Book', plural: 'Books', icon: 'book' },
   chords: { label: 'Chords', plural: 'Chords', icon: 'chords' },
   score: { label: 'Score', plural: 'Scores', icon: 'score' },
 };
-export const badge = (kind) => `<span class="badge k-${kind}">${icon(KIND[kind].icon)}${KIND[kind].label}</span>`;
+// a book is a sheet with book = 1 (many pages, many songs); everywhere else it reads as its own kind
+export const kindOf = (it) => (it.kind === 'sheet' && it.book ? 'book' : it.kind);
+export const badge = (x) => { const kind = typeof x === 'string' ? x : kindOf(x); return `<span class="badge k-${kind}">${icon(KIND[kind].icon)}${KIND[kind].label}</span>`; };
 
 export function ago(ts) {
   if (!ts) return 'Never';

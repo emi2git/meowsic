@@ -1,6 +1,6 @@
 // Meowsic 2.0 shell: sidebar (iPad / Mac), tab bar (iPhone), hash router.
 import { store } from './store.js';
-import { $, esc, icon, CAT, KIND, menu } from './ui.js';
+import { $, esc, icon, CAT, KIND, kindOf, menu } from './ui.js';
 import { libraryView } from './views/library.js';
 import { itemView } from './views/item.js';
 import { addSheetsView, addChordsView, addScoreView } from './views/add.js';
@@ -46,7 +46,7 @@ export function renderSide() {
   const { parts, q } = parseHash();
   const v = parts[0] || 'library';
   const items = store.items();
-  const n = (k) => items.filter((x) => x.kind === k).length;
+  const n = (k) => items.filter((x) => kindOf(x) === k).length;
   const kind = v === 'library' ? q.get('kind') || '' : null;
   const on = (cond) => (cond ? ' on' : '');
   $('#side').innerHTML = `
@@ -54,7 +54,7 @@ export function renderSide() {
     <button class="add-btn primary" id="side-add">${icon('plus')}Add music</button>
     <nav aria-label="Library">
       <a class="nav${on(kind === '')}" href="#/library">${icon('library')}<span>All music</span><i>${items.length}</i></a>
-      ${['sheet', 'chords', 'score'].map((k) => `<a class="nav sub${on(kind === k)}" href="#/library?kind=${k}">${icon(KIND[k].icon)}<span>${KIND[k].plural}</span><i>${n(k)}</i></a>`).join('')}
+      ${['sheet', 'book', 'chords', 'score'].map((k) => `<a class="nav sub${on(kind === k)}" href="#/library?kind=${k}">${icon(KIND[k].icon)}<span>${KIND[k].plural}</span><i>${n(k)}</i></a>`).join('')}
       <a class="nav${on(v === 'tags')}" href="#/tags">${icon('tag')}<span>Tags</span></a>
       <a class="nav${on(v === 'stats')}" href="#/stats">${icon('stats')}<span>Stats</span></a>
       <h3>Utilities</h3>

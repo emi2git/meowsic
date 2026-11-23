@@ -4,6 +4,7 @@ import { $, esc, icon, iconOn, toast, sheet as modal, confirmSheet } from '../ui
 import { sheetUrl } from '../sheet-art.js';
 import { InkLayer, inkToolbar } from './annotate.js';
 import { go } from '../app.js';
+import { bookToggle } from './actions.js';
 
 // real sheets: the page files on the Mac; the UI preview draws mock pages
 export const pageSrc = (it, p) => (it.pageFiles?.[p - 1] && `${store.fileUrl(it.id, it.pageFiles[p - 1])}?v=${it.updatedAt || 0}`) || (it.upload && store.sessionImage(`${it.id}:${p}`)) || sheetUrl(it.title, p, it.pages, { artist: it.artist });
@@ -196,6 +197,7 @@ export function sheetExtraMenu(it, view) {
     { label: 'Split…', icon: 'split', run: () => splitAt(it, view.page) },
     { label: 'Join…', icon: 'merge', run: () => mergeInto(it) },
     ...(store.mode === 'server' ? [{ label: 'Make a score (beta)…', icon: 'wave', run: () => makeScore(it) }] : []),
+    ...bookToggle(it),
   ];
 }
 

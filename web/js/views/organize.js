@@ -39,7 +39,7 @@ export function binView(main) {
     const items = store.items({ deleted: true }).sort((a, b) => b.deletedAt - a.deletedAt);
     $('#bn-empty', main).disabled = !items.length;
     $('#bn', main).innerHTML = items.map((it) => `<li class="row" data-id="${it.id}">
-      <div class="row-main"><div class="row-title">${esc(it.title)}</div><div class="row-sub">${badge(it.kind)}<span>Deleted ${ago(it.deletedAt)}</span></div></div>
+      <div class="row-main"><div class="row-title">${esc(it.title)}</div><div class="row-sub">${badge(it)}<span>Deleted ${ago(it.deletedAt)}</span></div></div>
       <button data-act="restore">${icon('restore')}<span>Restore</span></button><button class="danger-text" data-act="purge">${icon('bin')}<span>Delete</span></button></li>`).join('') ||
       `<li class="empty">${CAT}<p>Trash is empty.</p></li>`;
   };

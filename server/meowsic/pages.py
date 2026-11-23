@@ -7,8 +7,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
-from .db import folder_path, get_item, log_event, now_ms, uid, write_item
-from .items import cfg, conn, must_item
+from .db import book_folder, folder_base, folder_name, folder_path, get_item, log_event, now_ms, uid, write_item
+from .items import cfg, conn, ids_of, move_folder, must_item
 
 router = APIRouter(prefix='/api')
 
@@ -42,7 +42,7 @@ def _relayout(c, cf, item_id, pages: list[dict]):
         staged.append((r, tmp, hist, ann[0] if ann else None))
     # 2. final names and rows
     for k, (r, tmp, hist, ann) in enumerate(staged, 1):
-        name = f'{it["folder"]} {k}{tmp.suffix}'
+        name = f'{folder_base(it["folder"])} {k}{tmp.suffix}'
         os.rename(tmp, dst / name)
         for h in hist:
             os.rename(h, dst / '.history' / f'p{k}-{h.name.split("-", 3)[3]}')
@@ -102,3 +102,20 @@ def join(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg))
     log_event(c, 'join', it['title'], f'+ “{other["title"]}”')
     _forget_items(cf, item_id, other['id'])
     return {'item': get_item(c, item_id)}
+
+
+@router.post('/items/book')
+def set_book(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
+    """{ids, book: true|false} → sheets become books (folder items/Books/<title>/) or back to sheets."""
+    on, done = bool(body.get('book', True)), []
+    for i in ids_of(body):
+        it = get_item(c, i)
+        if not it or it['kind'] != 'sheet' or not it.get('folder') or bool(it.get('book')) == on: continue
+        new = book_folder(cf, it['title']) if on else folder_name(it['id'], it['title'])
+        move_folder(c, cf, it, new)
+        if get_item(c, i)['folder'] != new: raise HTTPException(500, f'Could not move the files of “{it["title"]}”')
+        c.execute('UPDATE sheet SET book=? WHERE item_id=?', (int(on), i))
+        c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), i))
+        done.append(it['title'])
+    if done: log_event(c, 'book' if on else 'unbook', done[0] if len(done) == 1 else f'{len(done)} sheets', 'now a book' if on else 'now a sheet')
+    return {'ok': True, 'count': len(done), 'items': [get_item(c, i) for i in ids_of(body)]}

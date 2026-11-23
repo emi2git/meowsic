@@ -336,12 +336,12 @@ export function addScoreView(main) {
 
 function jobsList(host) {
   const draw = () => {
-    const jobs = store.jobs().filter((j) => !j.dismissed);
+    const jobs = store.jobs().filter((j) => !j.dismissed && j.kind !== 'tags'); // auto-tag jobs show in their own review window
     host.hidden = !jobs.length;
     host.innerHTML = `<h2 class="sub-h">In progress and done <a class="link small" href="#/activity">All logs ›</a></h2>` + jobs.map((j) => `
       <section class="job ${j.status}">
         <div class="job-head"><div><b>${esc(j.title)}</b><small>${esc(j.source)} · ${esc(j.output)}</small></div>
-          ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : j.status === 'done' ? `${(j.items || (j.result || []).map((id) => ({ id, version: store.get(id)?.version }))).map((x) => `<a class="btn primary" href="#/item/${x.id}">Open ${VERSIONS[x.version] || 'score'}</a>`).join('')}<button data-dismiss="${j.id}">Dismiss</button>` : `<button data-dismiss="${j.id}">Dismiss</button>`}</div>
+          ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : j.status === 'done' ? `${(j.items || (Array.isArray(j.result) ? j.result : []).map((id) => ({ id, version: store.get(id)?.version }))).map((x) => `<a class="btn primary" href="#/item/${x.id}">Open ${VERSIONS[x.version] || 'score'}</a>`).join('')}<button data-dismiss="${j.id}">Dismiss</button>` : `<button data-dismiss="${j.id}">Dismiss</button>`}</div>
         <ol class="stages">${stagesOf(j).map((s, i) => `<li class="${i < j.stage || j.status === 'done' ? 'done' : i === j.stage && j.status === 'running' ? 'now' : ''}"><span>${s}</span>${i === j.stage && j.status === 'running' ? `<progress max="1" value="${j.progress}"></progress>` : ''}</li>`).join('')}</ol>
         ${j.kind === 'omr' && j.status !== 'running' && j.log?.length ? `<p class="small">${esc(j.log.at(-1).msg)}</p>` : ''}
         <small class="muted">${j.status === 'running' ? `Started ${ago(j.startedAt)}` : j.status === 'done' ? `Finished ${ago(j.doneAt)}` : j.status === 'failed' ? `Failed — ${esc(j.log?.at(-1)?.msg || '')}` : 'Cancelled'}</small>

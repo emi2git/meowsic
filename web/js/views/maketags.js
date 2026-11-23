@@ -110,7 +110,7 @@ function review(host, groups) {
             <span class="pill">${existing.has(g.name.trim()) ? 'adds to existing tag' : 'new tag'}</span>
           </div>
           <p class="muted small">${esc(g.why)} · ${g.ids.length} song${g.ids.length === 1 ? '' : 's'}</p>
-          <ul class="mt-songs">${g.ids.map((id) => { const it = store.get(id); return `<li>${badge(it.kind)}<span>${esc(it.title)}</span><small class="muted">${esc(it.artist || '')}</small><button class="x" data-rm="${id}" aria-label="Remove ${esc(it.title)}">×</button></li>`; }).join('')}</ul>
+          <ul class="mt-songs">${g.ids.map((id) => { const it = store.get(id); return `<li>${badge(it)}<span>${esc(it.title)}</span><small class="muted">${esc(it.artist || '')}</small><button class="x" data-rm="${id}" aria-label="Remove ${esc(it.title)}">×</button></li>`; }).join('')}</ul>
           <button class="link" data-add>+ Add songs</button>
         </section>`).join('') : '<p class="muted">No tags found. Try other options.</p>'}</div>`;
     $('#mt-apply', main)?.addEventListener('click', apply);
