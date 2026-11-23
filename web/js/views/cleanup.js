@@ -7,7 +7,7 @@
 //  · Books → sheets (cleanup-books.js) and Versions — the same song more than once, side by side (cleanup-versions.js).
 // Only sheets — books are left out everywhere. Each sheet can carry a short note for Claude (what should
 // happen to it); it saves as you type.
-// Every action can be undone (Undo button, U or Z); the original photo of a trimmed page is always kept.
+// Every action can be undone (Undo button, U or Z); the original photo of a trimmed page is kept for 24 hours.
 import { store } from '../store.js';
 import { go } from '../app.js';
 import { $, esc, toast, menu, sheet as modal, confirmSheet } from '../ui.js';
@@ -356,7 +356,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
   // undo every crop of this page (not undoable: the page is back to the photo it came in as)
   const original = (next = false) => busy(async () => {
     const s = song(), p = pg();
-    if (!p?.trims) return;
+    if (!p?.trims) return toast('No earlier crop is kept for this page (originals are kept 24 hours after a trim)');
     store.putItem(await api('POST', `/items/${s.id}/pages/${p.page}/untrim`, { all: true }));
     if (st.carry?.sid === s.id && st.carry.page === p.page) st.carry = null;  // only when this page was the source
     toast('Back to the original photo');
@@ -636,7 +636,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
   const rescan = () => busy(async () => { st.scan = await api('POST', '/cleanup/scan'); drawHead(); setTimeout(load, 1500); });
   const trimAll = async () => {
     const todo = st.songs.filter((s) => !s.reviewed && !s.book).flatMap((s) => s.pages.filter((p) => p.trim && !p.done).map((p) => ({ id: s.id, p })));
-    if (!(await confirmSheet({ title: `Trim all ${todo.length} pages the Mac suggests?`, body: 'Each page is trimmed as suggested. The original photos are kept — any page can go back with Original photo.', ok: 'Trim all' }))) return;
+    if (!(await confirmSheet({ title: `Trim all ${todo.length} pages the Mac suggests?`, body: 'Each page is trimmed as suggested. The original photos are kept for 24 hours — until then any page can go back with Original photo.', ok: 'Trim all' }))) return;
     const m = modal(`<h2>Trimming…</h2><progress id="cu-p" max="${todo.length}" value="0"></progress><p class="muted small" id="cu-pm"></p>`);
     let n = 0;
     st.busy = true;

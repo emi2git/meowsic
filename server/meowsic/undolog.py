@@ -11,6 +11,7 @@ import re
 from .db import now_ms, quiet_now, uid
 
 FIELDS = ('title', 'artist', 'key', 'version', 'tags')
+GRACE_MS = 24 * 3600 * 1000  # Undo is open for 24 hours; then the activity is Final (dailycleanup.py)
 
 
 def _steps_of(payload):
@@ -58,11 +59,13 @@ def record_undo(c, act, payload, title=None, detail=None, *, type_=None, group=N
     row = None
     if isinstance(act, str) and act.startswith('act-'):
         row = c.execute('SELECT * FROM activity WHERE id=?', (act,)).fetchone()
+        if row is not None and (row['final_at'] or row['at'] < now_ms() - GRACE_MS):  # Final: a new row, undoable on its own
+            type_, act, row = type_ or row['type'], uid('act'), None
         if row is None:
             if not re.fullmatch(r'act-[a-z0-9]{3,24}', act): act = uid('act')
             return _insert(c, act, type_ or 'change', title, detail, none, steps)
     elif group is not None:
-        r = c.execute('SELECT * FROM activity WHERE type=? AND undone_at IS NULL AND at>=? ORDER BY at DESC LIMIT 1',
+        r = c.execute('SELECT * FROM activity WHERE type=? AND undone_at IS NULL AND final_at IS NULL AND at>=? ORDER BY at DESC LIMIT 1',
                       (act, now_ms() - window)).fetchone()
         if r and (json.loads(r['undo'] or '{}').get('group') == group): row = r
     if row is None:

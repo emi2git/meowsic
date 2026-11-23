@@ -38,7 +38,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 from . import cleanstate as cs
 from .db import get_item, job_json, now_ms, quiet, uid
 from .items import cfg, conn
-from .undolog import FIELDS, _q, record_undo  # noqa: F401  (record_undo: re-exported)
+from .undolog import FIELDS, GRACE_MS, _q, record_undo  # noqa: F401  (record_undo: re-exported)
 
 router = APIRouter(prefix='/api')
 
@@ -388,6 +388,35 @@ OPS = {'fields': _fields, 'trash': _trash, 'restore': _untrash, 'created': _untr
        'vocal': _vocal, 'credit': _credit, 'musicxml': _musicxml}
 
 
+# ---------- 24 hours to undo, then Final ----------
+
+def _hm(t): return time.strftime('%d %b %H:%M', time.localtime(t / 1000))
+
+
+def final_at(at, stored=None, now=None):
+    """When the row is (or was made) Final; None while Undo is still open."""
+    if stored: return stored
+    end = (at or 0) + GRACE_MS
+    return end if (now or now_ms()) >= end else None
+
+
+def too_late(at):
+    return HTTPException(409, {'message': f'Too late to undo: Undo was open for 24 hours, until {_hm(at + GRACE_MS)}. '
+                                          'This change is Final now and the old copies are no longer kept.', 'reason': 'final'})
+
+
+def _grace(a, at, stored=None):
+    """Add finalAt / undoUntil to a listed row; a Final row has no Undo."""
+    fa = final_at(at, stored)
+    a['finalAt'], a['final'] = fa, bool(fa)
+    if fa:
+        if a.get('action') == 'undo':
+            a['action'] = None
+            a['noUndo'] = f'Final: Undo was open for 24 hours (until {_hm((at or 0) + GRACE_MS)}); the old copies are no longer kept.'
+    elif a.get('action') == 'undo': a['undoUntil'] = at + GRACE_MS
+    return a
+
+
 # ---------- listing ----------
 
 def _undo_of_row(row):
@@ -405,7 +434,7 @@ def row_json(row, job_undone=None) -> dict:
     elif steps: a['action'] = 'undo'
     else: a['action'], a['noUndo'] = None, (u or {}).get('none') or NOT_UNDOABLE.get(row['type']) or 'Kept no undo information (logged before Activities could roll things back).'
     if steps: a['undoText'] = [describe(s) for s in reversed(steps[-8:])] + ([f'… and {len(steps) - 8} more'] if len(steps) > 8 else [])
-    return a
+    return _grace(a, row['at'], row['final_at'])
 
 
 def job_activity(j: dict, undone: dict) -> dict:
@@ -422,7 +451,7 @@ def job_activity(j: dict, undone: dict) -> dict:
         a['action'] = None
         a['noUndo'] = (NOT_UNDOABLE['tags-job'] if j['kind'] == 'tags' else 'Undo it from its “Made … sing” row.' if j['kind'] == 'sing' and j['status'] == 'done'
                        else 'Nothing was made, nothing to roll back.')
-    return a
+    return a if a['action'] == 'stop' else _grace(a, j.get('doneAt') or j['startedAt'])
 
 
 def list_activity(c, limit=500):
@@ -434,7 +463,8 @@ def list_activity(c, limit=500):
 
 @router.get('/activity')
 def get_activity(limit: int = 500, c=Depends(conn)):
-    """Change events plus jobs, newest first; each with action 'undo' | 'stop' | None, undoText, noUndo, undoneAt."""
+    """Change events plus jobs, newest first; each with action 'undo' | 'stop' | None, undoText, noUndo, undoneAt,
+    undoUntil (Undo is open 24 hours) and final / finalAt (after that: no Undo, old copies deleted)."""
     return list_activity(c, limit)
 
 
@@ -470,6 +500,7 @@ def _undo_job(c, cf, job_id):
     made = made if isinstance(made, list) and j['kind'] in JOB_MADE else []
     if not running and not made:
         raise HTTPException(409, {'message': NOT_UNDOABLE['tags-job'] if j['kind'] == 'tags' else 'Nothing to roll back: the job made nothing.', 'reason': 'not-undoable'})
+    if not running and final_at(j['doneAt'] or j['startedAt']): raise too_late(j['doneAt'] or j['startedAt'])
     ok, res = _each(c, {'ids': made}, False)
     with quiet():
         if ok: trash({'ids': ok}, c)
@@ -492,6 +523,7 @@ def undo_activity(c, cf, act_id, force=False):
     if not steps:
         a = row_json(row)
         raise HTTPException(409, {'message': f'This can’t be rolled back: {a.get("noUndo")}', 'reason': 'not-undoable'})
+    if final_at(row['at'], row['final_at']): raise too_late(row['at'])
     steps = list(reversed(steps))
     checks = []
     for s in steps:
@@ -530,5 +562,6 @@ def undo_activity(c, cf, act_id, force=False):
 @router.post('/activity/{act_id}/undo')
 def post_undo(act_id: str, body: dict = Body(default={}), c=Depends(conn), cf=Depends(cfg)):
     """Roll one activity back (or stop a running job and roll back what it made). {force: true} = go ahead over
-    later edits of the same fields / crops / marks. 409 {message, reason: not-undoable | done | conflict | failed}."""
+    later edits of the same fields / crops / marks. 409 {message, reason: not-undoable | done | final | conflict | failed};
+    'final' = more than 24 hours old."""
     return undo_activity(c, cf, act_id, bool((body or {}).get('force')))
