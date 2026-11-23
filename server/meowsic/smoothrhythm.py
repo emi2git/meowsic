@@ -1,16 +1,17 @@
-"""Smooth… (score ⋯ → "Smooth…", web/js/views/smooth.js): a slider from 0 (as is) to 100 (smoothest), any score.
+"""Smooth rests + rhythm: the slider of the Simple piano menu (simplepiano.py), 0 (as is) to 100 (smoothest).
 
 A score heard from a recording is full of near-misses: a note held 7/8 of a bar and the next one 1/8, a tiny rest
 where the player let go early, a note tied to a 16th, a stray quintuplet. Smoothing writes what was meant; the higher
 the level the bigger the rests that go and the coarser the grid:
   1. rests in a row become one; a note followed by a short rest during which no other note starts, in any voice or
-     hand, simply lasts through it (15/16 + a 1/16 rest -> a whole note). From level 40 up Ease rests
-     (easerests.py) also takes short rests while the other hand plays (Light, then Strong: over the bar line too),
-     and from 85 up every rest shorter than half the bar (the left hand holds its notes instead of note-rest-note);
+     hand, simply lasts through it (15/16 + a 1/16 rest -> a whole note); when another note starts in the rest it
+     stays. From level 60 up Ease rests (easerests.py) also takes short rests while the other hand plays (Light,
+     then Strong at 75: over the bar line too), and from 90 up every rest shorter than half the bar (the left hand
+     holds its notes instead of note-rest-note);
   2. (60 up) a short note tied over the bar line into the same pitch (an early onset) starts on the downbeat;
   3. tied notes of one pitch inside a bar become one note (written again in plain values);
   4. the onsets of each voice move to a simple grid when a simple rhythm is close: every boundary between two
-     events may snap to the eighth / 16th (the beat at the top) within a tolerance, and a small search (dynamic
+     events may snap to the beat / eighth / 16th within a tolerance (growing with the level), and a small search (dynamic
      programming per voice and bar) picks the cheapest rhythm — cost = how far notes move + how odd the values are
      (double dots, ties, 16ths, values that are no written value) + weak onsets (+ syncopations). 7/8 + 1/8 -> 6/8 + 2/8;
   5. tuplets: a real triplet group (3:2, starting and ending on the eighth grid) is kept as it is; any other
@@ -18,29 +19,14 @@ the level the bigger the rests that go and the coarser the grid:
 Notes are never dropped (only a rest, or a tied-on bit at the start of a bar, may shrink to nothing), pitches and
 lyrics stay, every voice keeps its length so every bar stays full, ties are written again where a value is split.
 
-GET  /api/items/{id}/smooth                      -> {allowed: true} (every score with MusicXML)
-POST /api/items/{id}/smooth/preview  {level}     -> {xml, before, after, changed, sha, level}   (nothing saved;
-     before / after: stats() — rests, odd values, …)
-POST /api/items/{id}/smooth          {level, mode: 'this'|'new', sha?} -> saved like Fit lyrics (lyricsedit.py):
-     'this' keeps the file before in items/<folder>/.history/smooth-<ms>-<name> + an Activities 'musicxml' step;
-     'new' makes a new score in the same group, tagged "Smoothed" (Undo moves it to the Trash).
+The Simple piano menu (simplepiano.py) runs it with its slider, next to its other settings.
 """
-import shutil
 import xml.etree.ElementTree as ET
 from fractions import Fraction as Fr
-
-from fastapi import APIRouter, Body, Depends, HTTPException
-
-from .db import folder_path, get_item, now_ms, uid, write_item
-from .items import cfg, conn, item_dir, must_item
-from .sheetversion import refresh_staves
-from .undolog import _q, record_undo
 
 from . import easerests as er
 from .easerests import Ev, _beat, _head, _no_staccato, _put, _tie, _untie, _write_run, pieces
 
-router = APIRouter(prefix='/api')
-TAG = 'Smoothed'
 INF = float('inf')
 PLAIN = {Fr(4), Fr(3), Fr(2), Fr(3, 2), Fr(1), Fr(1, 2)}   # values that read at a glance
 FINE = {Fr(3, 4), Fr(1, 4)}                               # dotted eighth, 16th
@@ -459,90 +445,3 @@ def stats(text: str) -> dict:
                         tot = chains.pop(k)
                         if 'stop' in ty and tot not in PLAIN | {Fr(6), Fr(8)}: s['split'] += 1
     return s
-
-
-# ---------- API ----------
-
-def _xml_path(cf, it):
-    if it['kind'] != 'score' or not it.get('musicxml'): raise HTTPException(400, 'Not a score with MusicXML')
-    p = item_dir(cf, it) / it['musicxml']
-    if not p.is_file(): raise HTTPException(404, 'No MusicXML')
-    return p
-
-
-def _level(body) -> int:
-    try: v = int(body.get('level', 60))
-    except (TypeError, ValueError): raise HTTPException(400, 'level: 0 to 100')
-    if not 0 <= v <= 100: raise HTTPException(400, 'level: 0 to 100')
-    return v
-
-
-@router.get('/items/{item_id}/smooth')
-def can_smooth(item_id: str, c=Depends(conn)):
-    it = must_item(c, item_id)
-    ok = it.get('kind') == 'score' and bool(it.get('musicxml'))
-    return {'allowed': ok, 'why': None if ok else 'Not a score with MusicXML'}
-
-
-@router.post('/items/{item_id}/smooth/preview')
-def preview(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
-    from .lyricsedit import sha
-    it = must_item(c, item_id)
-    text = _xml_path(cf, it).read_text(encoding='utf-8')
-    lv = _level(body)
-    out, a, b = smooth(text, lv)
-    return {'xml': out, 'before': a, 'after': b, 'level': lv, 'changed': lv > 0 and a != b, 'sha': sha(text)}
-
-
-def keep(d, name):
-    (d / '.history').mkdir(exist_ok=True)
-    rel = f'.history/smooth-{now_ms()}-{name}'
-    n = 1
-    while (d / rel).exists(): rel = f'.history/smooth-{now_ms() + n}-{name}'; n += 1
-    shutil.copyfile(d / name, d / rel)
-    return rel
-
-
-@router.post('/items/{item_id}/smooth')
-def save(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
-    from .lyricsedit import sha
-    it = must_item(c, item_id)
-    p = _xml_path(cf, it)
-    text = p.read_text(encoding='utf-8')
-    if body.get('sha') and body['sha'] != sha(text):
-        raise HTTPException(409, 'This score was changed since the preview — open Smooth again')
-    lv = _level(body)
-    out, a, b = smooth(text, lv)
-    if lv == 0 or a == b: raise HTTPException(422, 'Nothing to smooth at this level')
-    what = f"{a['rests']} → {b['rests']} rests, {a['notes']} → {b['notes']} notes written (level {lv})"
-    if body.get('mode') == 'new':
-        t = now_ms()
-        new = {'id': uid('m'), 'kind': 'score', 'title': it['title'], 'artist': it.get('artist') or '',
-               'tags': [*[x for x in it.get('tags', []) if x != TAG], TAG], 'createdAt': t, 'updatedAt': t, 'originAt': t,
-               'version': it.get('version') or 'original', 'source': f'From the score {_q(it["title"])}, smoothed',
-               'groupId': it.get('groupId') or uid('g'), 'key': it.get('key') or '', 'bpm': it.get('bpm'), 'ai': it.get('ai') or 0,
-               'sourceUrl': it.get('sourceUrl') or ''}
-        if not it.get('groupId'): c.execute('UPDATE score SET group_id=? WHERE item_id=?', (new['groupId'], it['id']))
-        write_item(c, new, new=True)
-        d = folder_path(cf, new['folder'])
-        d.mkdir(parents=True, exist_ok=True)
-        (d / f'{new["folder"]}.musicxml').write_text(out, encoding='utf-8')
-        c.execute('UPDATE score SET musicxml=? WHERE item_id=?', (f'{new["folder"]}.musicxml', new['id']))
-        refresh_staves(c, cf, new['id'])
-        aid = record_undo(c, 'smooth', {'op': 'created', 'ids': [new['id']], 'titles': [new['title']]},
-                          f'Smoothed: {it["title"]}', f'New score, {what} (the score it came from is untouched)')
-        return {'ok': True, 'mode': 'new', 'item': get_item(c, new['id']), 'activity': aid, 'before': a, 'after': b}
-    d = p.parent
-    hist = keep(d, p.name)
-    orig = it.get('musicxmlOriginal')
-    if not orig:  # like note edits: the first change keeps the untouched file ("Revert")
-        orig = f'{it["folder"]} (original).musicxml'
-        if not (d / orig).exists(): shutil.copyfile(p, d / orig)
-    p.write_text(out, encoding='utf-8')
-    c.execute('UPDATE score SET musicxml=?, musicxml_original=? WHERE item_id=?', (p.name, orig, it['id']))
-    c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), it['id']))
-    refresh_staves(c, cf, it['id'])
-    aid = record_undo(c, 'smooth', {'op': 'musicxml', 'id': it['id'], 'title': it['title'], 'file': p.name, 'before': hist,
-                                    'beforeSha': sha(text), 'afterSha': sha(out), 'what': 'it was smoothed'},
-                      f'Smoothed: {it["title"]}', f'{what}; the score before is kept in {hist}')
-    return {'ok': True, 'mode': 'this', 'item': get_item(c, it['id']), 'activity': aid, 'history': hist, 'sha': sha(out), 'before': a, 'after': b}

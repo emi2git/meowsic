@@ -1,7 +1,7 @@
 """Smooth… (smoothrhythm.py): a 0–100 slider; odd values snap to a simple grid (7/8 + 1/8 → 6/8 + 2/8), a note lasts
 through a short rest when nothing else starts in it (15/16 + 1/16 → a whole note), rests in a row become one, odd
-tuplets go straight while real triplets stay, every bar stays full, ties right, pitches never change; the API
-(preview, save into this score with history + undo, save as new) works for every score."""
+tuplets go straight while real triplets stay, every bar stays full, ties right, pitches never change.
+The menu around it and the API: test_simplepiano.py."""
 import xml.etree.ElementTree as ET
 from fractions import Fraction as Fr
 
@@ -179,53 +179,3 @@ def test_ndp_like_bar_keeps_harmony_and_lyrics():
     assert out.count('<harmony>') == 1 and [e.text for e in ET.fromstring(out.encode()).iter('text')] == ['we', 'are']
     kids = [e.tag for e in ET.fromstring(out.encode()).find('part/measure')]
     assert kids.index('harmony') < [i for i, k in enumerate(kids) if k == 'note'][-2]
-
-
-# ---------- API ----------
-
-@pytest.fixture
-def item(client):
-    x = score([[n('C5', Fr(7, 2)), n('D5', Fr(1, 2))], [n('E5', Fr(15, 4)), n('R', Fr(1, 4))]], [[n('C3', 4, 2)], [n('G2', 4, 2)]])
-    return client.post('/api/items', json={'kind': 'score', 'title': 'Home NDP', 'musicxmlText': x, 'tags': ['NDP'],
-                                           'source': 'From the sheet “Home” (photo → score, beta)'}).json()
-
-
-def test_api_every_score_can_smooth(client, item):
-    assert client.get(f'/api/items/{item["id"]}/smooth').json()['allowed'] is True
-    ai = client.post('/api/items', json={'kind': 'score', 'title': 'AI', 'musicxmlText': score([[n('C5', 4)]]), 'ai': 1}).json()
-    assert client.get(f'/api/items/{ai["id"]}/smooth').json()['allowed'] is True
-
-
-def test_api_preview_save_this_and_undo(client, item, data):
-    i = item['id']
-    p0 = client.post(f'/api/items/{i}/smooth/preview', json={'level': 0}).json()
-    assert not p0['changed']
-    p = client.post(f'/api/items/{i}/smooth/preview', json={'level': 70}).json()
-    assert p['changed'] and p['after']['rests'] < p['before']['rests'] and full(p['xml'])
-    assert client.post(f'/api/items/{i}/smooth/preview', json={'level': 101}).status_code == 400
-    f = data / 'items' / item['folder'] / item['musicxml']
-    was = f.read_text()
-    assert client.post(f'/api/items/{i}/smooth', json={'level': 70, 'mode': 'this', 'sha': 'nope'}).status_code == 409
-    j = client.post(f'/api/items/{i}/smooth', json={'level': 70, 'mode': 'this', 'sha': p['sha']}).json()
-    assert f.read_text() == p['xml'] and (f.parent / j['history']).read_text() == was and '.history/smooth-' in j['history']
-    row = next(a for a in client.get('/api/activity').json() if a['id'] == j['activity'])
-    assert row['type'] == 'smooth' and row['action'] == 'undo'
-    assert client.post(f'/api/activity/{j["activity"]}/undo', json={}).status_code == 200
-    assert f.read_text() == was
-
-
-def test_api_save_as_new_version(client, item):
-    j = client.post(f'/api/items/{item["id"]}/smooth', json={'level': 100, 'mode': 'new'}).json()
-    new = j['item']
-    assert new['id'] != item['id'] and sr.TAG in new['tags'] and 'NDP' in new['tags']
-    assert new['groupId'] and client.get(f'/api/items/{item["id"]}').json()['groupId'] == new['groupId']
-    assert full(client.get(f'/api/items/{new["id"]}/musicxml').text)
-    assert client.get(f'/api/items/{item["id"]}/musicxml').text != client.get(f'/api/items/{new["id"]}/musicxml').text
-    assert client.post(f'/api/activity/{j["activity"]}/undo', json={}).status_code == 200
-    assert client.get(f'/api/items/{new["id"]}').json().get('deleted')
-
-
-def test_api_nothing_to_smooth(client):
-    it = client.post('/api/items', json={'kind': 'score', 'title': 'Plain', 'musicxmlText': score([[n('C5', 4)]])}).json()
-    assert client.post(f'/api/items/{it["id"]}/smooth', json={'level': 50}).status_code == 422
-    assert client.post(f'/api/items/{it["id"]}/easerests', json={'strength': 'light'}).status_code in (404, 405)
