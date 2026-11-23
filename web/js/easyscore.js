@@ -14,7 +14,7 @@ export const isAiScore = (it) => !!it.ai || /^meowsic ai$/i.test(String(it.sourc
 export const easyKey = (it) => `meowsic-easy-${it.id}`;
 export function easyOn(it) {
   try { const v = localStorage.getItem(easyKey(it)); if (v != null) return v === '1'; } catch {}
-  return isAiScore(it);
+  return false; // classic look by default for every score; the easy look is opt-in per score
 }
 export function setEasy(it, on) { try { localStorage.setItem(easyKey(it), on ? '1' : '0'); } catch {} }
 
