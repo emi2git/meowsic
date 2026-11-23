@@ -1,4 +1,4 @@
-// Clean up → Books → sheets against a test server (BASE, default :5190). Never the real library.
+// Manage library → Organize pages: split a book / a sheet into songs, against a test server (BASE, default :5190). Never the real library.
 // Makes (or reuses) the book "Booksplit test": 10 pages, each a colour + its big page number, so a
 // page can be recognised wherever it ends up. Marks 3 starts, reloads, makes the sheets, undoes.
 import puppeteer from 'puppeteer-core';
@@ -58,10 +58,8 @@ const pagesOf = (it) => page.evaluate(async (it, cols) => {
 check('pages recognisable by colour', (await pagesOf(before)).join() === '1,2,3,4,5,6,7,8,9,10', (await pagesOf(before)).join());
 
 // ---- Mac: mark three starts ----
-await page.evaluate(() => localStorage.setItem('meowsic-cu-tab', 'books'));
-await page.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(600);
-check('Books → sheets tab is on', await page.$eval('[data-tab="books"]', (e) => e.classList.contains('on')));
-await page.evaluate((id) => document.querySelector(`#bs-list li[data-id="${id}"]`)?.click(), book.id); await sleep(800);
+await page.goto(BASE + `#/manage?id=${book.id}`, { waitUntil: 'networkidle0' }); await sleep(900);
+check('Manage library → Organize pages tab is on; tabs are Organize pages + Trash only', (await page.$eval('.cu-tabs a.on', (e) => e.dataset.tab)) === 'organize' && (await page.$$eval('.cu-tabs a', (e) => e.map((x) => x.dataset.tab).join())) === 'organize,trash');
 check('book pages shown', (await page.$$('#bs-grid figure')).length === N);
 check('Make button off until a start is marked', await page.$eval('#bs-make', (e) => e.disabled));
 await page.click('#bs-grid figure[data-p="3"] .bs-pg'); await sleep(300);
@@ -93,7 +91,7 @@ let saved = (await api(`/books/${book.id}/split`)).starts;
 check('marks + titles saved on the Mac', JSON.stringify(saved) === JSON.stringify({ 3: 'Alpha', 6: 'Beta', 9: '' }), JSON.stringify(saved));
 const segs = await page.$$eval('.bs-seg', (e) => e.map((x) => x.textContent));
 check('segments shown', segs.join('|') === 'Stays in the book: pages 1–2|Sheet 1: pages 3–5 · Alpha|Sheet 2: pages 6–8 · Beta|Sheet 3: pages 9–10', segs.join('|'));
-check('list shows 3 marked', (await page.$eval(`#bs-list li[data-id="${book.id}"] small`, (e) => e.textContent)).includes('3 sheets marked'));
+check('list shows 3 marked', (await page.$eval(`#bs-list li[data-id="${book.id}"] small`, (e) => e.textContent)).includes('3 starts marked'));
 await page.screenshot({ path: 'booksplit-mac.png' });
 
 // ---- reload: marks kept ----
@@ -105,6 +103,7 @@ check('Make button says 3', (await page.$eval('#bs-make', (e) => e.textContent))
 
 // ---- make the sheets ----
 await page.click('#bs-make'); await sleep(400);
+await sleep(300);
 const conf = await page.$$eval('.bs-confirm li', (e) => e.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
 check('confirm lists the sheets', conf.join('|') === `Alpha pages 3–5 (3 p)|Beta pages 6–8 (3 p)|${TITLE} — p9 pages 9–10 (2 p)`, conf.join('|'));
 await page.click('.modal [data-ok]'); await sleep(2000);
@@ -136,8 +135,7 @@ await post(`/books/${book.id}/split`, { starts: {} });
 for (const [name, w, h, colsWant] of [['iPad landscape', 1366, 1024, [3, 5]], ['iPad portrait', 1024, 1366, [3, 5]], ['iPhone', 390, 844, [2, 2]]]) {
   const p = await newPage({ width: w, height: h, hasTouch: true, isMobile: true });
   await p.goto(BASE + '#/library', { waitUntil: 'networkidle0' });
-  await p.evaluate((id) => { localStorage.setItem('meowsic-cu-tab', 'books'); localStorage.setItem('meowsic-cu-book', id); }, book.id);
-  await p.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(1000);
+  await p.goto(BASE + `#/manage?id=${book.id}`, { waitUntil: 'networkidle0' }); await sleep(1000);
   if (!(await p.$('#bs-grid'))) { await p.tap(`#bs-list li[data-id="${book.id}"]`); await sleep(800); }
   const fit = await p.evaluate(() => {
     const se = document.scrollingElement, mk = document.querySelector('#bs-make').getBoundingClientRect();
@@ -155,7 +153,7 @@ for (const [name, w, h, colsWant] of [['iPad landscape', 1366, 1024, [3, 5]], ['
   check(`${name}: tap again unmarks`, !(await p.$eval('#bs-grid figure[data-p="4"]', (e) => e.classList.contains('start'))) && !('4' in (await api(`/books/${book.id}/split`)).starts));
   if (name === 'iPhone') {
     await p.tap('#bs-back'); await sleep(300);
-    check('iPhone: ‹ Books shows the list', await p.$eval('#bs-list', (e) => e.getBoundingClientRect().height > 50));
+    check('iPhone: ‹ All shows the list', await p.$eval('#bs-list', (e) => e.getBoundingClientRect().height > 50));
   }
   await p.close();
 }
@@ -187,19 +185,18 @@ for (const [name, w, h, colsWant] of [['iPad landscape', 1366, 1024, [3, 5]], ['
   if (probe.error && !probe.title) console.log('  skip title detection (Vision not available):', probe.error);
   else {
     check('API reads the title of page 2', probe.title === 'Moon River' && probe.confidence >= 0.5, JSON.stringify(probe));
-    await page.evaluate((id) => { localStorage.setItem('meowsic-cu-tab', 'books'); localStorage.setItem('meowsic-cu-book', id); }, tb.id);
-    await page.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
-    await page.evaluate((id) => document.querySelector(`#bs-list li[data-id="${id}"]`)?.click(), tb.id); await sleep(800);
+    await page.goto(BASE + `#/manage?id=${tb.id}`, { waitUntil: 'networkidle0' }); await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
     check('titles test book open', (await page.$$('#bs-grid figure')).length === 3);
     await page.click('#bs-grid figure[data-p="2"] .bs-pg');
     await page.waitForFunction(() => document.querySelector('#bs-grid figure[data-p="2"] input')?.value === 'Moon River', { timeout: 8000 }).catch(() => {});
     check('marking page 2 fills its title', await page.$eval('#bs-grid figure[data-p="2"] input', (e) => e.value) === 'Moon River');
-    check('“detected” hint shown', /detected/.test(await page.$eval('#bs-grid figure[data-p="2"] .bs-det', (e) => e.textContent)));
+    await page.waitForFunction(() => /detected/.test(document.querySelector('#bs-grid figure[data-p="2"] .bs-det')?.textContent || ''), { timeout: 8000 }).catch(() => {});  // the box may be filled from the suggestions first
+    check('“detected” hint shown',/detected/.test(await page.$eval('#bs-grid figure[data-p="2"] .bs-det', (e) => e.textContent)));
     await sleep(800);
     check('detected title saved on the Mac', (await api(`/books/${tb.id}/split`)).starts['2'] === 'Moon River');
     // you type first: your text wins
     await page.click('#bs-grid figure[data-p="3"] .bs-pg');
-    await page.evaluate(() => { const i = document.querySelector('#bs-grid figure[data-p="3"] input'); i.focus(); });
+    await page.evaluate(() => { const i = document.querySelector('#bs-grid figure[data-p="3"] input'); i.focus(); i.select(); });
     await page.keyboard.type('Mine'); await sleep(2500);
     check('typed title is not overwritten', await page.$eval('#bs-grid figure[data-p="3"] input', (e) => e.value) === 'Mine');
     // a page with no title: the hint says so, the box stays empty
@@ -226,7 +223,7 @@ for (const [name, w, h, colsWant] of [['iPad landscape', 1366, 1024, [3, 5]], ['
   await post('/items/purge', { ids: [tb.id] });
 }
 
-// ---- Manage library → Split songs: the same for any sheet (page 1 stays the first song) ----
+// ---- Organize pages on a sheet (not a book): page 1 stays the first song ----
 {
   const T3 = 'Split songs test';
   const old = (await api('/items?deleted=true')).concat(await api('/items')).filter((x) => x.title.startsWith(T3) || ['Second', 'Third'].includes(x.title) && x.artist === 'E2E');
@@ -252,11 +249,11 @@ for (const [name, w, h, colsWant] of [['iPad landscape', 1366, 1024, [3, 5]], ['
     }
     return out;
   }, it, cols6);
-  await page.evaluate((id) => { localStorage.setItem('meowsic-cu-tab', 'songsplit'); localStorage.setItem('meowsic-cu-songsplit', id); }, sh.id);
-  await page.goto(BASE + '#/manage', { waitUntil: 'networkidle0' }); await page.reload({ waitUntil: 'networkidle0' }); await sleep(900);
-  check('Split songs tab is on', await page.$eval('[data-tab="songsplit"]', (e) => e.classList.contains('on')));
-  if (!(await page.$('#bs-grid figure'))) { await page.evaluate((id) => document.querySelector(`#bs-list li[data-id="${id}"]`)?.click(), sh.id); await sleep(800); }
+  await page.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(500);
+  check('old #/cleanup goes to Organize pages', (await page.evaluate(() => location.hash)) === '#/manage');
+  await page.click('#og-find'); await page.keyboard.type(T3); await sleep(300);
   check('the sheet is listed', !!(await page.$(`#bs-list li[data-id="${sh.id}"]`)));
+  await page.click(`#bs-list li[data-id="${sh.id}"]`); await sleep(1200);
   check('its 6 pages shown', (await page.$$('#bs-grid figure')).length === 6);
   check('page 1 always starts song 1', await page.$eval('#bs-grid figure[data-p="1"]', (e) => e.classList.contains('start') && /Song 1/.test(e.textContent)));
   check('page 1 title box shows the sheet title', await page.$eval('#bs-grid figure[data-p="1"] input', (e) => e.placeholder) === T3);

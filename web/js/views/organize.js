@@ -32,8 +32,10 @@ export function tagsView(main) {
 }
 
 // ================= bin =================
-export function binView(main) {
-  main.innerHTML = `<header class="top"><h1>Trash</h1><span class="grow"></span><button class="danger-text" id="bn-empty">${icon('bin')}Empty Trash</button></header>
+// Manage library → Trash (#/manage/trash; #/bin and #/trash go there): embedded = drawn in that tab's body
+export function binView(main, { embedded = false } = {}) {
+  const empty = `<button class="danger-text" id="bn-empty">${icon('bin')}Empty Trash</button>`;
+  main.innerHTML = `${embedded ? `<div class="bn-bar"><span class="grow"></span>${empty}</div>` : `<header class="top"><h1>Trash</h1><span class="grow"></span>${empty}</header>`}
     <p class="pad muted">Items stay here until you delete them for good. Deleting for good also removes their page images and files from the Mac.</p><ul class="rows" id="bn"></ul>`;
   const draw = () => {
     const items = store.items({ deleted: true }).sort((a, b) => b.deletedAt - a.deletedAt);

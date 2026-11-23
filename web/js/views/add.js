@@ -320,7 +320,7 @@ export function addScoreView(main) {
 
 function jobsList(host) {
   const draw = () => {
-    const jobs = store.jobs().filter((j) => !j.dismissed && j.kind !== 'tags'); // auto-tag jobs show in their own review window
+    const jobs = store.jobs().filter((j) => !j.dismissed && j.kind !== 'tags' && j.kind !== 'organize'); // auto-tag jobs and Organize pages scans show in their own windows
     host.hidden = !jobs.length;
     host.innerHTML = `<h2 class="sub-h">In progress and done <a class="link small" href="#/activity">All activities ›</a></h2>` + jobs.map((j) => `
       <section class="job ${j.status}">

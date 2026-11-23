@@ -399,7 +399,7 @@ def item_thumb(item_id: str, page: int, w: int = 240, c=Depends(conn), cf=Depend
     if not src.is_file(): raise HTTPException(404, 'No such file')
     w = max(60, min(int(w), 800))
     st = src.stat()
-    out = cf.work_dir / 'thumbs' / f'{item_id}-{page}-{w}-{int(st.st_mtime)}-{st.st_size}.jpg'
+    out = cf.work_dir / 'thumbs' / f'{item_id}-{page}-{w}-{int(st.st_mtime)}-{st.st_size}-{st.st_ino}.jpg'  # inode: pages reordered keep size + mtime
     if not out.is_file():
         out.parent.mkdir(parents=True, exist_ok=True)
         try:

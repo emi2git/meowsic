@@ -24,6 +24,8 @@ Step ops (see record_undo for how they are written):
   suggest  {id, old, new, title}    name suggestion accepted -> renamed back (the suggestion opens again)
   script   {log}                    a one-off script's history log, replayed in reverse (changed items skipped)
   vocal    {id, title, before: {audio, bpm, history}, after: {audio, bpm}}  Make it sing -> the earlier take / none (voice.undo_vocal)
+  pages    {id, title, n, order, deleted, starts, after}  Organize pages: reordered / deleted -> back (deleted pages from .history)
+  reviewed {id, title, on}         Organize pages: "This is a complete song" -> the other way
   credit   {id, title, old: {artist|source}, new, files: [{file, history, sha}]}  credited to Meowsic -> back (creditfix.undo_step)
   musicxml {id, title, file, before, beforeSha, afterSha}  Fit lyrics saved into the score -> the file before, from .history (lyricsedit.undo_musicxml)
 Jobs (job table) are rolled back here too: a running one is stopped (cancelled), and what it made goes to the Trash.
@@ -42,15 +44,15 @@ from .undolog import FIELDS, GRACE_MS, _q, record_undo  # noqa: F401  (record_un
 
 router = APIRouter(prefix='/api')
 
-FORCE_OK = {'fields', 'crop', 'mark', 'later', 'trash', 'restore', 'created', 'vocal', 'credit', 'musicxml'}  # forcing these only overwrites a later edit of the same field
+FORCE_OK = {'fields', 'crop', 'mark', 'later', 'trash', 'restore', 'created', 'vocal', 'credit', 'musicxml', 'reviewed'}  # forcing these only overwrites a later edit of the same field
 JOB_MADE = ('transcribe', 'version', 'omr')  # job kinds whose result is a list of new item ids
 NOT_UNDOABLE = {  # types logged without rollback info: why
     'delete': 'Deleted for good — the files are gone, there is nothing to bring back.',
     'print': 'Printing changes nothing in the library.',
     'rollback': 'This is a rollback itself. Undo the change again from the library instead.',
-    'unbooksplit': 'This put a book back together already; make the sheets again in Manage library → Books.',
+    'unbooksplit': 'This put a book back together already; make the sheets again in Manage library → Organize pages.',
     'photo-unimport': 'This undid a From Photos import already; add the photos again from Add music → From Photos.',
-    'unsongsplit': 'This put a sheet back together already; split it again in Manage library → Split songs.',
+    'unsongsplit': 'This put a sheet back together already; split it again in Manage library → Organize pages.',
     'migrate': 'This one-off change kept no history log.',
     'tags-job': 'AI tag suggestions change nothing until you apply them.',
 }
@@ -76,6 +78,10 @@ def describe(step) -> str:
     if op == 'split': return f'Put pages {", ".join(map(str, step["take"]))} of {_q(step.get("newTitle", ""))} back into {_q(step.get("title", ""))}'
     if op == 'join': return f'Take {_q(step.get("otherTitle", ""))} out of {_q(step.get("title", ""))} again (back from the Trash)'
     if op == 'booksplit': return f'Put the pages of the new sheets back into the {"book" if step.get("books", True) else "sheet"} {_q(step.get("title", ""))}'
+    if op == 'pages':
+        gone = [x['page'] for x in step.get('deleted') or []]
+        return f'{_q(step.get("title", ""))}: ' + ', '.join((['pages back in their old order'] if step['order'] != sorted(step['order']) else []) + ([f'page{"s" if len(gone) != 1 else ""} {", ".join(map(str, gone))} back from .history'] if gone else []))
+    if op == 'reviewed': return f'{_q(step.get("title", ""))}: ' + ('show it in Recommended to check again' if step.get('on') else 'mark it a complete song again')
     if op == 'crop': return f'{_q(step.get("title", ""))} page {step["page"]}: ' + ('back to the original photo' if not step.get('before') else 'back to the crop before')
     if op == 'mark': return f'{"Mark" if step.get("before") else "Unmark"} {step["key"]} {"as fine" if step.get("before") else ""}'.strip()
     if op == 'later': return f'{"Leave" if step.get("before") else "Take the later mark off"} {step["key"]}{" for later" if step.get("before") else ""}'
@@ -373,6 +379,19 @@ def _credit(c, cf, s, mode):  # Scores credited to Meowsic -> back (creditfix.py
     return undo_step(c, cf, s, mode)
 
 
+def _pages(c, cf, s, mode):  # Organize pages: pages reordered / deleted -> back (pages.unarrange)
+    from .pages import unarrange
+    return unarrange(c, cf, s, mode)
+
+
+def _reviewed(c, cf, s, mode):  # Organize pages: "This is a complete song" -> back (organize.set_reviewed)
+    from .organize import is_reviewed, set_reviewed
+    what = _q(s.get('title', ''))
+    if is_reviewed(c, s['id']) != bool(s['on']): return [{'status': 'skip', 'what': what, 'why': 'already back'}]
+    if mode != 'check': set_reviewed(c, s['id'], not s['on'])
+    return [{'status': 'ok', 'what': what}]
+
+
 def _vocal(c, cf, s, mode):  # Make it sing -> the earlier take (voice.py)
     from .voice import undo_vocal
     return undo_vocal(c, cf, s, mode)
@@ -385,7 +404,7 @@ def _musicxml(c, cf, s, mode):  # Fit lyrics -> the MusicXML before (lyricsedit.
 
 OPS = {'fields': _fields, 'trash': _trash, 'restore': _untrash, 'created': _untrash, 'book': _book, 'split': _split,
        'join': _join, 'booksplit': _booksplit, 'crop': _crop, 'mark': _mark, 'later': _later, 'suggest': _suggest, 'script': _script, 'photoimport': _photoimport,
-       'vocal': _vocal, 'credit': _credit, 'musicxml': _musicxml}
+       'vocal': _vocal, 'credit': _credit, 'musicxml': _musicxml, 'pages': _pages, 'reviewed': _reviewed}
 
 
 # ---------- 24 hours to undo, then Final ----------

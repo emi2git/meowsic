@@ -385,7 +385,8 @@ await page.$eval('.modal input', (e) => (e.value = 'Jazz standards'));
 await page.click('.modal .primary'); await sleep(300);
 d = await db();
 check('tag renamed everywhere', d.tags.includes('Jazz standards') && !d.tags.includes('Jazz') && d.items.some((x) => x.tags.includes('Jazz standards')));
-await go('#/bin');
+await go('#/bin'); await sleep(300);
+check('old #/bin opens Manage library → Trash', (await page.evaluate(() => location.hash)) === '#/manage/trash' && (await text('.cu-tabs a.on')).startsWith('Trash') && (await text('h1')) === 'Manage library');
 const bin0 = await count('#bn .row');
 await page.click('#bn [data-act="restore"]'); await sleep(300);
 check('restore from bin', (await count('#bn .row')) === bin0 - 1);
@@ -423,7 +424,7 @@ check('Settings has no old-app import or mock reset', !/Bring in the old apps|Re
 await go('#/developer'); await sleep(200);
 check('Developer page is the feedback box (old-app note gone), no mock data card', (await count('#fb-text')) === 1 && !/Bring in the old apps/.test(await text('#main')) && !/mock/i.test(await text('#main')));
 check('Developer in the left bar', (await text('#side')).includes('Developer'));
-check('left bar says Trash and Manage', /Trash/.test(await text('#side')) && /Utilities/i.test(await text('#side')) && !/\bBin\b/.test(await text('#side')));
+check('left bar: Manage library, no Trash of its own (it is a Manage library tab)', /Manage library/.test(await text('#side')) && !/Trash/.test(await text('#side')) && /Utilities/i.test(await text('#side')) && !/\bBin\b/.test(await text('#side')));
 console.log('Make tags');
 await go('#/tags');
 check('Tags page: Create tag + Generate tags buttons', /Create tag/.test(await text('.top')) && /Generate tags/.test(await text('.top')));

@@ -9,7 +9,7 @@ import { $, esc, ago, sheet, toast } from '../ui.js';
 const WHAT = { transcribe: 'Score from recording', version: 'Make another version', omr: 'Score from photo', tags: 'AI tag suggestions',
   'add-sheet': 'Add sheets', 'add-chords': 'Add chords', bin: 'Moved to Trash', print: 'Printed', 'make-tags': 'Generate tags', restore: 'Restored',
   delete: 'Deleted for good', import: 'Import', edit: 'Edited', 'tag-rename': 'Tag renamed', 'tag-delete': 'Tag deleted',
-  split: 'Split', join: 'Joined', book: 'Made a book', unbook: 'Made a sheet', booksplit: 'Book → sheets', unbooksplit: 'Sheets → book', songsplit: 'Split songs', unsongsplit: 'Songs put back',
+  split: 'Split', join: 'Joined', book: 'Made a book', unbook: 'Made a sheet', booksplit: 'Book → sheets', unbooksplit: 'Sheets → book', songsplit: 'Split songs', unsongsplit: 'Songs put back', pages: 'Organize pages', reviewed: 'Complete song', unreviewed: 'Check again', organize: 'Organize pages scan',
   trim: 'Trimmed', 'cleanup-marks': 'Clean up marks', cleanup: 'Clean up', suggest: 'Name suggestion', 'ai-score': 'AI music',
   'import-photos': 'From Photos', 'photo-import': 'From Photos', 'photo-unimport': 'From Photos undone', migrate: 'One-off change', rename: 'Renamed', rollback: 'Undo', change: 'Change', 'lyrics-fit': 'Fit lyrics', metafill: 'Song info filled' };
 const what = (a) => (isJob(a) ? WHAT[a.kind || a.type] : a.type === 'version' ? 'Version set' : a.type === 'tags' ? 'Tags' : WHAT[a.type]) || a.type;

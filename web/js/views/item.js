@@ -86,12 +86,13 @@ export function itemView(main, { parts }) {
     else view.setSize(view.size + d * 2);
   };
   document.addEventListener('keydown', zoomKey);
-  let lastFiles = (it.pageFiles || []).join('|');
+  const filesKey = () => (it.pageFiles || []).join('|') + '#' + (it.pages || 0) + '#' + (it.pageFiles?.length ? it.updatedAt : '');
+  let lastFiles = filesKey();
   const off = store.on(() => {
     if (!store.get(it.id) || it.deleted) return go(HOME);
     $('#it-title', main).textContent = it.title;
-    // page files renamed (title change) or regrouped on the Mac: draw the pages again from the new names
-    const pf = (it.pageFiles || []).join('|');
+    // page files renamed (title change), regrouped, reordered or deleted on the Mac (Organize pages): draw the pages again
+    const pf = filesKey();
     if (pf !== lastFiles) { lastFiles = pf; view?.redraw?.(); }
   });
   const opened = Date.now();

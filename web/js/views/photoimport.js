@@ -3,7 +3,7 @@
 // a suggested crop) and proposes where each song starts. Here you check that:
 //  · the photos in order (capture time), songs as coloured bands with an editable title each
 //  · tap a photo: a new song starts here (again: not) · ‹ › or drag: move a photo · ✕: not a sheet
-//  · Crop pages… (like Manage library: suggested box, the last box carries over, Frame 1 / 2) — or later
+//  · Crop pages… (suggested box, the last box carries over, Frame 1 / 2) — or later
 //  · Add N sheets → Undo removes them again and the photos are new again
 import { store } from '../store.js';
 import { go } from '../app.js';
@@ -278,7 +278,7 @@ export function photoImportView(main) {
     show();
   };
 
-  // ---------- 4. crop each page (like Manage library: boxes are on the photo; the photo is kept) ----------
+  // ---------- 4. crop each page (boxes are on the photo; the photo is kept) ----------
   const cropIds = () => live();
   const startBox = (id) => {
     const p = P(id), sug = p.trim || p.box, c = S.carry;
@@ -304,7 +304,7 @@ export function photoImportView(main) {
       <div class="cu-frames">${[1, 2].map((n) => `<span class="cu-fr"><button data-fr="${n}" class="ghost" ${S.frames[n] ? '' : 'disabled'} title="${S.frames[n] ? `Use Frame ${n} (${n})` : `Frame ${n} not saved yet — ⤓ saves the box`}">Frame ${n}<small>${frameText(S.frames[n])}</small></button><button data-frs="${n}" class="ghost cu-frsave" title="Save box as Frame ${n} (⇧${n})" aria-label="Save box as Frame ${n}">⤓</button></span>`).join('')}</div>
       <div class="cu-act"><span class="muted small cu-hint"><b class="cu-from"></b>${P(id).trim ? ` · found: ${esc(P(id).trim.reasons.join(', '))}` : ''} · drag the red edges, or draw a new box</span><span class="grow"></span>
         <button id="pi-whole" class="big" title="Keep the whole photo (F)">Whole page</button>
-        <button id="pi-later" class="big" title="Crop later in Manage library (L)">Later</button>
+        <button id="pi-later" class="big" title="Skip cropping this page (L)">Later</button>
         <button id="pi-doit" class="primary big" title="Crop and go on (Enter)">Crop &amp; next</button></div>`;
     place();
     body.querySelector('.cu-strip button.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -390,7 +390,7 @@ export function photoImportView(main) {
     const nc = sg.reduce((n, g) => n + g.ids.filter((id) => S.crops[id]).length, 0);
     const m = modal(`<h2>Add ${plural(sg.length, 'sheet')}?</h2>
       <ol class="bs-confirm">${sg.map((g) => `<li class="seg-${g.k % SEGS}"><b>${esc(g.title || 'Untitled')}</b> <span class="muted">${plural(g.ids.length, 'page')}${g.ids.some((id) => S.crops[id]) ? ` · ${g.ids.filter((id) => S.crops[id]).length} cropped` : ''}</span></li>`).join('')}</ol>
-      <p class="muted small">${nc ? `${plural(nc, 'page')} will be cropped (the photo is kept — Original photo brings it back). ` : ''}Pages not cropped can be cropped later in Manage library. Undo removes these sheets again.</p>
+      <p class="muted small">${nc ? `${plural(nc, 'page')} will be cropped (the photo is kept — Original photo brings it back). ` : ''}Pages not cropped stay as they are (reorder, split or delete pages in Manage library → Organize pages). Undo removes these sheets again.</p>
       <div class="modal-actions"><button data-close>Cancel</button><button class="primary" data-ok>Add ${plural(sg.length, 'sheet')}</button></div>`);
     m.el.querySelector('[data-ok]').onclick = async (e) => {
       e.target.disabled = true;
