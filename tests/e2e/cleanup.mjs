@@ -1,6 +1,7 @@
-// Clean up page against the temp server :5190 ("Cleanup test" = 8 real screenshot pages of different songs + odd title)
+// Clean up page against the temp server :5190, or BASE=http://localhost:5202/ ("Cleanup test" = 8 real screenshot
+// pages of different songs + odd title; at least one sheet must be a book — books never show in Clean up)
 import puppeteer from 'puppeteer-core';
-const BASE = 'http://localhost:5190/';
+const BASE = process.env.BASE || 'http://localhost:5190/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });
 const page = await b.newPage(); await page.setViewport({ width: 1440, height: 900 });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message)); page.on('console', (m) => m.type() === 'error' && errs.push(m.text() + ' ' + (m.location()?.url || '')));
@@ -184,17 +185,73 @@ await page.screenshot({ path: 'cleanup-3.png' });
   check('…and can then be deleted for good', gone === 404, gone);
   for (const x of await api('/items')) await post('/cleanup/sort', { id: x.id, decision: null });
 }
-// iPad Pro: everything fits the screen (no page scroll; the action buttons are on screen)
-for (const [w, h] of [[1366, 1024], [1024, 1366]]) {
+// ---------- books are nowhere in Clean up ----------
+{
+  const its = await api('/items'), books = its.filter((x) => x.kind === 'sheet' && x.book), sheetsN = its.filter((x) => x.kind === 'sheet' && !x.book && !x.deleted).length;
+  check('test data has a book', books.length > 0);
+  const bookIds = books.map((x) => x.id);
+  const d = await api('/cleanup');
+  check('API: no books in songs or titles', !d.songs.some((x) => bookIds.includes(x.id)) && !d.titles.some((x) => bookIds.includes(x.id)));
+  await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
+  await page.keyboard.press('1'); await sleep(500);
+  await page.click('[data-show="all"]'); await sleep(300);
+  check('Go through sheets: All counts only sheets', +(await page.$eval('[data-show="all"] i', (e) => e.textContent)) === sheetsN, sheetsN);
+  const seen = [];
+  for (let i = 0; i < sheetsN + 2; i++) { seen.push(await page.$eval('.sv-title b', (e) => e.textContent)); await page.click('#sv-next'); await sleep(200); }
+  check('Go through sheets: no book shown', !books.some((x) => seen.includes(x.title)) && !/Book ·/.test(await page.$eval('.sv-title small', (e) => e.textContent)), seen.join(' | '));
+  await page.keyboard.press('2'); await sleep(500); await page.click('[data-f="all"]'); await sleep(300);
+  const fixIds = await page.$$eval('#cu-list li', (e) => e.map((x) => x.dataset.id));
+  check('Fix pages: no book listed', fixIds.length === sheetsN && !fixIds.some((x) => bookIds.includes(x)), fixIds.join());
+  await page.keyboard.press('3'); await sleep(400);
+  check('Titles: no book listed', !(await page.$$eval('.cu-trow', (e) => e.map((x) => x.dataset.id))).some((x) => bookIds.includes(x)));
+}
+// ---------- note for Claude ----------
+{
+  await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
+  await page.keyboard.press('1'); await sleep(500);
+  const nid = await page.$eval('#cu-note', (e) => e.dataset.id), t1 = await page.$eval('.sv-title b', (e) => e.textContent);
+  await page.click('#cu-note'); await page.keyboard.type('dk split after page 3'); await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowRight');
+  await sleep(1000);
+  const notes = await api('/cleanup/notes');
+  check('typing a note saves it', notes.some((x) => x.id === nid && x.text === 'dk split after page 3' && x.title === t1), JSON.stringify(notes));
+  check('…shows Saved', await page.$eval('#cu-note-st', (e) => e.classList.contains('on') && /Saved/.test(e.textContent)));
+  check('typing d / k / arrows in the note marks nothing and stays on the sheet', !Object.keys((await api('/cleanup/sort')).decisions).length && (await page.$eval('.sv-title b', (e) => e.textContent)) === t1);
+  await page.keyboard.press('Escape'); await sleep(100);
+  check('Esc leaves the note box', await page.evaluate(() => document.activeElement?.id !== 'cu-note'));
+  await page.keyboard.press('k'); await sleep(800);
+  check('…then K works again', (await api('/cleanup/sort')).decisions[nid] === 'keep');
+  await post('/cleanup/sort', { id: nid, decision: null });
+  // typed then moved on at once: still saved
+  await page.click('#sv-next'); await sleep(300);
+  const nid2 = await page.$eval('#cu-note', (e) => e.dataset.id);
+  await page.click('#cu-note'); await page.keyboard.type('rename to Moon River'); await page.click('#sv-next'); await sleep(800);
+  check('moving on right away still saves', (await api('/cleanup/notes')).some((x) => x.id === nid2 && x.text === 'rename to Moon River'));
+  await post('/cleanup/notes', { id: nid2, text: '' });
+  await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
+  await page.keyboard.press('1'); await sleep(500);
+  await page.click('[data-show="note"]'); await sleep(300);
+  check('With a note filter: count and sheet', +(await page.$eval('[data-show="note"] i', (e) => e.textContent)) === 1 && (await page.$eval('#cu-note', (e) => e.dataset.id)) === nid);
+  check('note comes back after reload', (await page.$eval('#cu-note', (e) => e.value)) === 'dk split after page 3');
+  await page.keyboard.press('2'); await sleep(500); await page.click('[data-f="all"]'); await sleep(300);
+  check('Fix pages marks the sheet with a note ✎', await page.$eval(`#cu-list li[data-id="${nid}"]`, (e) => !!e.querySelector('.cu-pen')) && !(await page.$$eval('#cu-list li .cu-pen', (e) => e.length > 1)));
+  await page.evaluate((id) => document.querySelector(`#cu-list li[data-id="${id}"]`)?.click(), nid); await sleep(400);
+  check('Fix pages shows the note', (await page.$eval('.cu-bar #cu-note', (e) => e.value)) === 'dk split after page 3');
+  const pi = await page.$eval('.cu-strip button.on', (e) => +e.dataset.p), up0 = (await api('/items/' + nid)).updatedAt;
+  await page.click('#cu-note'); await page.keyboard.press('End'); await page.keyboard.type(' ft'); await sleep(1000);
+  check('Fix pages: typing saves, t / f do nothing', (await api('/cleanup/notes')).find((x) => x.id === nid)?.text === 'dk split after page 3 ft'
+    && (await page.$eval('.cu-strip button.on', (e) => +e.dataset.p)) === pi && (await api('/items/' + nid)).updatedAt === up0);
+}
+// iPad Pro + iPhone: everything fits the screen (no page scroll; the note box and action buttons are on screen)
+for (const [w, h] of [[1366, 1024], [1024, 1366], [390, 844]]) {
   const q = await b.newPage(); await q.setViewport({ width: w, height: h, hasTouch: true, isMobile: true });
   await q.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(1200);
   for (const t of ['1', '2']) {
     await q.keyboard.press(t); await sleep(900);
     const fit = await q.evaluate(() => {
-      const m = document.querySelector('#main'), btns = [...document.querySelectorAll('#sv-del, #sv-keep, #cu-trim, #cu-fine')];
-      return { scroll: m.scrollHeight <= m.clientHeight + 1, side: getComputedStyle(document.querySelector('.side')).display, onScreen: btns.length > 0 && btns.every((x) => { const r = x.getBoundingClientRect(); return r.bottom <= innerHeight && r.top >= 0 && r.width > 0; }) };
+      const m = document.querySelector('#main'), btns = [...document.querySelectorAll('#sv-del, #sv-keep, #cu-trim, #cu-fine, #cu-note')];
+      return { scroll: m.scrollHeight <= m.clientHeight + 1, side: getComputedStyle(document.querySelector('.side')).display, note: !!document.querySelector('#cu-note'), onScreen: btns.length > 0 && btns.every((x) => { const r = x.getBoundingClientRect(); return r.bottom <= innerHeight && r.top >= 0 && r.width > 0 && r.right <= innerWidth + 1 && x.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); }) };
     });
-    check(`iPad ${w}×${h} tab ${t}: fits, buttons on screen, no left bar`, fit.scroll && fit.onScreen && fit.side === 'none', JSON.stringify(fit));
+    check(`${w < 600 ? 'iPhone' : 'iPad'} ${w}×${h} tab ${t}: fits, note box + buttons on screen, no left bar`, fit.scroll && fit.onScreen && fit.note && fit.side === 'none', JSON.stringify(fit));
     await q.screenshot({ path: `cleanup-ipad-${w}-${t}.png` });
   }
   await q.close();
@@ -206,5 +263,6 @@ await page.evaluate(() => { location.hash = '#/library'; }); await sleep(500);
 const t0 = (await api('/items/' + sh.id)).updatedAt;
 await page.keyboard.press('Enter'); await page.keyboard.press('g'); await sleep(1000);
 check('keys do nothing after leaving Clean up', (await api('/items/' + sh.id)).updatedAt === t0 && (await page.evaluate(() => location.hash)) === '#/library');
+for (const x of await api('/cleanup/notes')) await post('/cleanup/notes', { id: x.id, text: '' });
 console.log(`\n${pass} passed, ${fail} failed`); console.log(errs.length ? 'errors:\n' + errs.join('\n') : 'no page errors');
 await b.close();

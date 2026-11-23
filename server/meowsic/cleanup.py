@@ -150,32 +150,34 @@ def cleanup_state(request: Request, id: str | None = None, c=Depends(conn), cf=D
     with _lock: data = _load(cf)
     if data.get('v') != CACHE_V: data['pages'] = {}
     ok = set(data.get('ok', []))
-    items = {r[0]: {'id': r[0], 'title': r[1], 'kind': r[2], 'folder': r[3], 'book': bool(r[4]), 'pages': []}
-             for r in c.execute('SELECT id, title, kind, folder, (SELECT book FROM sheet WHERE item_id=item.id) FROM item WHERE deleted_at IS NULL' + (' AND id=?' if id else ''), (id,) if id else ())}
+    # only sheets: books (scanned songbooks) are left out everywhere — songs, titles, counts and the scan
+    items = {r[0]: {'id': r[0], 'title': r[1], 'kind': r[2], 'folder': r[3], 'pages': []}
+             for r in c.execute("SELECT id, title, kind, folder FROM item WHERE deleted_at IS NULL AND kind = 'sheet'"
+                                ' AND NOT COALESCE((SELECT book FROM sheet WHERE item_id = item.id), 0)' + (' AND id=?' if id else ''), (id,) if id else ())}
+    notes = data.get('notes', {})
     missing = False
-    for iid, page, file, folder in _pages(c):
+    for iid, page, file, folder in _pages(c, books=False):
         if iid not in items: continue
         key = f'{iid}:{page}'
-        book = items[iid]['book']
-        ent = None if book else data['pages'].get(key)  # books never need trimming: no suggestions, no scan
-        if not ent and not book: missing = True
+        ent = data['pages'].get(key)
+        if not ent: missing = True
         res = (ent or [0, None])[1] or {}
         n = len(_snaps(folder_path(cf, folder), page))
-        skip = book or key in ok
+        skip = key in ok
         items[iid]['pages'].append({'page': page, 'file': file, 'trim': None if skip else res.get('trim'),
-                                    'dots': res.get('dots'), 'box': None if skip else res.get('box'), 'trims': n, 'scanned': book or bool(ent)})
+                                    'dots': res.get('dots'), 'box': None if skip else res.get('box'), 'trims': n, 'scanned': bool(ent)})
     songs, odd = [], []
     for it in items.values():
         why = odd_title(it['title'], it['kind'])
         if why and f'title:{it["id"]}' not in ok: odd.append({'id': it['id'], 'title': it['title'], 'kind': it['kind'], 'why': why})
-        if it['kind'] != 'sheet': continue
         issues = []
         if not it['pages']: issues.append({'kind': 'empty', 'text': 'no pages'})
         nt = sum(1 for p in it['pages'] if p['trim'])
         if nt: issues.append({'kind': 'trim', 'text': f"{nt} page{'s' if nt > 1 else ''} to trim"})
-        if not it['book']: issues += [{'kind': k, 'text': t} for k, t in dot_issues(it['pages'])]  # a book holds many songs: grouping checks don't apply
+        issues += [{'kind': k, 'text': t} for k, t in dot_issues(it['pages'])]
         if why and f'title:{it["id"]}' not in ok: issues.append({'kind': 'title', 'text': f'title: {why}'})
-        songs.append({'id': it['id'], 'title': it['title'], 'book': it['book'], 'pages': it['pages'], 'issues': issues,
+        songs.append({'id': it['id'], 'title': it['title'], 'book': False, 'pages': it['pages'], 'issues': issues,
+                      'note': (notes.get(it['id']) or {}).get('text', ''),
                       'reviewed': f'song:{it["id"]}' in ok, 'trimmed': sum(p['trims'] > 0 for p in it['pages'])})
     if missing and not _scan['running']:
         start_scan(request.app)  # pages not looked at yet
@@ -235,6 +237,32 @@ def sort_set(body: dict = Body(...), cf=Depends(cfg)):
             else: d.pop(body['id'], None)
         _save(cf, data)
         return {'decisions': d}
+
+
+@router.get('/cleanup/notes')
+def notes_get(c=Depends(conn), cf=Depends(cfg)):
+    """Notes for Claude, newest first: [{id, title, text, at}] (title = the item's current title)."""
+    with _lock: notes = _load(cf).get('notes', {})
+    out = []
+    for iid, n in notes.items():
+        if not (n.get('text') or '').strip(): continue
+        r = c.execute('SELECT title FROM item WHERE id=?', (iid,)).fetchone()
+        out.append({'id': iid, 'title': r[0] if r else '', 'text': n['text'], 'at': n.get('at', 0)})
+    return sorted(out, key=lambda x: -x['at'])
+
+
+@router.post('/cleanup/notes')
+def notes_set(body: dict = Body(...), cf=Depends(cfg)):
+    """{id, text}: what should happen to that sheet, for Claude to do later. Empty text removes it."""
+    iid, text = body.get('id'), (body.get('text') or '').strip()
+    if not iid: raise HTTPException(400, 'No id')
+    with _lock:
+        data = _load(cf)
+        notes = data.setdefault('notes', {})
+        if text: notes[iid] = {'text': text, 'at': now_ms()}
+        else: notes.pop(iid, None)
+        _save(cf, data)
+    return {'id': iid, 'text': text}
 
 
 @router.post('/items/{item_id}/pages/{page}/trim')

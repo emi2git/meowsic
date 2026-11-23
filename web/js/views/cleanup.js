@@ -4,6 +4,8 @@
 //  · Fix pages — what the Mac found per song (screen junk to trim, pages grouped wrongly): trim each page
 //    (suggested box or your own), split, rename, delete.
 //  · Titles — titles that look like file names or typos.
+// Only sheets — books are left out everywhere. Each sheet can carry a short note for Claude (what should
+// happen to it); it saves as you type.
 // Every action can be undone (Undo button, U or Z); the original photo of a trimmed page is always kept.
 import { store } from '../store.js';
 import { go } from '../app.js';
@@ -53,7 +55,7 @@ export function cleanupView(main) {
   }
   let tab0 = 'sort'; try { tab0 = localStorage.getItem('meowsic-cu-tab') || 'sort'; } catch {}
   const st = { tab: tab0, filter: 'look', songs: [], titles: [], sid: null, pi: 0, ti: 0, scan: null, crop: null, undo: [], busy: false, renaming: false,
-    sort: { dec: {}, id: null, show: 'todo', summary: false } };
+    sort: { dec: {}, id: null, show: 'todo', summary: false }, notes: {}, noteDue: null };
   main.innerHTML = `<header class="top cu-top">
       <a class="icon-btn back cu-back" href="#/library" aria-label="Back to the library">‹ Library</a>
       <h1>Clean up</h1>
@@ -75,9 +77,11 @@ export function cleanupView(main) {
   const load = async () => {
     const [d, so] = await Promise.all([api('GET', '/cleanup'), api('GET', '/cleanup/sort')]);
     st.scan = d.scan; st.songs = d.songs; st.titles = d.titles; st.sort.dec = so.decisions;
+    for (const s of d.songs) if (!(s.id in st.notes)) st.notes[s.id] = s.note || ''; // what is typed here always wins
     if (!song()) { st.sid = shown()[0]?.id || null; st.pi = 0; }
     st.ti = Math.min(st.ti, Math.max(0, st.titles.length - 1));
-    if (st.tab === 'sort' && !st.sort.summary && body.dataset.sid && body.dataset.sid === st.sort.id) { drawHead(); drawSort(false); } else draw();
+    if (document.activeElement?.id === 'cu-note') drawHead(); // typing a note: don't redraw under the cursor
+    else if (st.tab === 'sort' && !st.sort.summary && body.dataset.sid && body.dataset.sid === st.sort.id) { drawHead(); drawSort(false); } else draw();
     if (d.scan.running) setTimeout(() => body.isConnected && !st.busy && load(), 6000);
   };
   // refresh one song after a change (the Mac looks at the page again)
@@ -104,6 +108,7 @@ export function cleanupView(main) {
     : `<span class="cu-issue ok">${s.reviewed ? 'Done' : 'Nothing found'}</span>`);
 
   const draw = () => {
+    flushNote();
     drawHead();
     try { localStorage.setItem('meowsic-cu-tab', st.tab); } catch {}
     body.className = 'cu ' + st.tab;
@@ -124,11 +129,11 @@ export function cleanupView(main) {
     const ver = it?.updatedAt || 0;
     body.innerHTML = `<div class="cu-side">${filt}
       <ol class="cu-list" id="cu-list">${list.map((x) => `<li class="${x.id === st.sid ? 'on' : ''} ${isGood(x) ? 'good' : x.issues.some((i) => i.kind !== 'trim' && i.kind !== 'title') ? 'bad' : 'look'}" data-id="${x.id}">
-        <b>${esc(store.get(x.id)?.title || x.title)}</b><small>${x.pages.length} p · ${esc(songLine(x))}</small></li>`).join('')}</ol></div>
+        <b>${hasNote(x.id) ? '<span class="cu-pen" title="Has a note for Claude">✎</span> ' : ''}${esc(store.get(x.id)?.title || x.title)}</b><small>${x.pages.length} p · ${esc(songLine(x))}</small></li>`).join('')}</ol></div>
       <section class="cu-main">
         <div class="cu-bar">
           <input id="cu-title" value="${esc(it?.title || s.title)}" aria-label="Title — tap to rename" readonly title="Tap to rename (R)">
-          <span class="grow"></span>
+          ${noteBox(s.id)}
           <button id="cu-songmore" class="ghost">Song ▾</button>
         </div>
         <div class="cu-issues">${chips(s)}${s.issues.some((i) => ['mixed', 'extra', 'twice', 'order', 'incomplete'].includes(i.kind)) ? '<span class="muted small">To fix grouping: Song ▾ → Split into two songs, or Delete.</span>' : ''}</div>
@@ -168,6 +173,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
       { label: 'Delete this song', icon: 'bin', danger: true, run: delSong },
     ]);
     $('#cu-title', body).onclick = () => rename();
+    wireNote(s.id);
     const ci = $('.cu-img', body); if (ci) ci.onpointerdown = drag;
   };
 
@@ -344,23 +350,57 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     inp.onblur = () => done(true);
   };
 
+  // ---------- note for Claude: saves as you type (600 ms), on blur and before moving on; never drops text ----------
+  const hasNote = (id) => !!st.notes[id]?.trim();
+  const noteBox = (id) => `<div class="cu-note"><textarea id="cu-note" rows="2" maxlength="2000" enterkeyhint="done" aria-label="Note for Claude"
+      placeholder="Note for Claude — what should happen to this sheet?">${esc(st.notes[id] || '')}</textarea><span class="cu-note-st" id="cu-note-st" aria-live="polite"></span></div>`;
+  const noteSaved = (id, ok) => {
+    const el = $('#cu-note-st', body);
+    if (!el || body.querySelector('#cu-note')?.dataset.id !== id) return;
+    el.textContent = ok ? 'Saved' : 'Not saved — will retry';
+    el.classList.toggle('bad', !ok); el.classList.add('on');
+    clearTimeout(el._t); if (ok) el._t = setTimeout(() => el.classList.remove('on'), 1500);
+  };
+  const flushNote = () => {
+    const due = st.noteDue; if (!due) return;
+    clearTimeout(due.timer); st.noteDue = null;
+    const { id } = due, text = st.notes[id] || '';
+    fetch('/api/cleanup/notes', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, text }) })
+      .then((r) => { if (!r.ok) throw 0; noteSaved(id, true); })
+      .catch(() => { if (!st.noteDue) st.noteDue = { id, timer: setTimeout(flushNote, 5000) }; noteSaved(id, false); });
+  };
+  const wireNote = (id) => {
+    const ta = $('#cu-note', body); if (!ta) return;
+    ta.dataset.id = id;
+    ta.oninput = () => {
+      st.notes[id] = ta.value;
+      if (st.noteDue && st.noteDue.id !== id) flushNote();
+      clearTimeout(st.noteDue?.timer); st.noteDue = { id, timer: setTimeout(flushNote, 600) };
+      const f = body.querySelector('.sv-show [data-show="note"] i'); if (f) f.textContent = st.songs.filter((x) => hasNote(x.id)).length;
+    };
+    ta.onblur = flushNote;
+    ta.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Escape' || (e.key === 'Enter' && !e.shiftKey)) { e.preventDefault(); ta.blur(); } };
+  };
+  addEventListener('pagehide', flushNote);
+  addEventListener('hashchange', flushNote, { once: true });
+
   // ---------- Go through sheets: Delete / Keep, one sheet at a time ----------
-  const sheets = () => st.songs; // every sheet and book, A–Z (the Mac's order)
-  const sortList = () => sheets().filter((x) => st.sort.show === 'all' || (st.sort.show === 'todo' ? !st.sort.dec[x.id] : st.sort.dec[x.id] === st.sort.show));
+  const sheets = () => st.songs; // every sheet (no books), A–Z (the Mac's order)
+  const sortList = () => sheets().filter((x) => st.sort.show === 'all' || (st.sort.show === 'note' ? hasNote(x.id) : st.sort.show === 'todo' ? !st.sort.dec[x.id] : st.sort.dec[x.id] === st.sort.show));
   const counts = () => { const v = Object.values(st.sort.dec); return { del: v.filter((x) => x === 'delete').length, keep: v.filter((x) => x === 'keep').length }; };
   const drawSort = (force = true) => {
+    if (force) flushNote();
     if (st.sort.summary) return drawSummary();
     const all = sheets(), list = sortList();
     if (!st.sort.id || !all.some((x) => x.id === st.sort.id)) st.sort.id = list[0]?.id || all[0]?.id || null;
     const s = all.find((x) => x.id === st.sort.id), it = s && store.get(s.id), n = counts();
     const pos = all.findIndex((x) => x.id === st.sort.id);
-    const showBtns = [['todo', 'Not decided', all.length - n.del - n.keep], ['delete', 'To delete', n.del], ['keep', 'Kept', n.keep], ['all', 'All', all.length]]
+    const showBtns = [['todo', 'Not decided', all.length - n.del - n.keep], ['delete', 'To delete', n.del], ['keep', 'Kept', n.keep], ['note', 'With a note', all.filter((x) => hasNote(x.id)).length], ['all', 'All', all.length]]
       .map(([k, l, c]) => `<button data-show="${k}" class="${st.sort.show === k ? 'on' : ''}">${l} <i>${c}</i></button>`).join('');
     if (!force && body.dataset.sid === st.sort.id) { const f = body.querySelector('.sv-show'); if (f) f.innerHTML = showBtns; return; }
     body.dataset.sid = st.sort.id || '';
     if (!s) { body.innerHTML = `<div class="sv"><div class="sv-top"><div class="cu-filter sv-show">${showBtns}</div></div><p class="pad muted">${st.scan?.running ? 'Checking pages…' : 'No sheets here.'}</p></div>`; return wireSort(); }
     const dec = st.sort.dec[s.id];
-    const kind = it?.book ? 'Book' : 'Sheet';
     body.innerHTML = `<div class="sv">
       <div class="sv-top">
         <div class="cu-filter sv-show">${showBtns}</div>
@@ -370,8 +410,9 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
       <div class="sv-head">
         <button id="sv-prev" class="ghost big" aria-label="Previous sheet">‹</button>
         <div class="sv-title"><b>${esc(it?.title || s.title)}</b>
-          <small>${kind} · ${s.pages.length} page${s.pages.length === 1 ? '' : 's'} · ${pos + 1} of ${all.length}${dec ? ` · <span class="sv-dec ${dec}">${dec === 'delete' ? 'marked to delete' : 'kept'}</span>` : ''}</small>
-          <div class="cu-issues">${chips(s)}</div></div>
+          <small>Sheet · ${s.pages.length} page${s.pages.length === 1 ? '' : 's'} · ${pos + 1} of ${all.length}${dec ? ` · <span class="sv-dec ${dec}">${dec === 'delete' ? 'marked to delete' : 'kept'}</span>` : ''}</small>
+          <div class="cu-issues">${chips(s)}</div>
+          ${noteBox(s.id)}</div>
         <button id="sv-next" class="ghost big" aria-label="Next sheet">›</button>
       </div>
       <div class="sv-pages" id="sv-pages">${s.pages.length ? s.pages.map((p, k) => `<figure><img src="/api/items/${encodeURIComponent(s.id)}/thumb/${p.page}?w=1000&v=${it?.updatedAt || 0}" alt="Page ${p.page}" ${k ? 'loading="lazy"' : 'fetchpriority="high"'}><figcaption>${p.page} / ${s.pages.length}</figcaption></figure>`).join('') : '<p class="pad muted">No pages.</p>'}</div>
@@ -382,6 +423,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     wireSort();
   };
   const wireSort = () => {
+    if (st.sort.id) wireNote(st.sort.id);
     body.querySelector('.sv-show').onclick = (e) => { const b = e.target.closest('[data-show]'); if (b) { st.sort.show = b.dataset.show; st.sort.id = sortList()[0]?.id || null; drawSort(); } };
     $('#sv-finish', body)?.addEventListener('click', () => { st.sort.summary = true; drawSort(); });
     $('#sv-prev', body)?.addEventListener('click', () => sortStep(-1));

@@ -50,8 +50,7 @@ def test_sort_decisions(client):
 
 
 def test_books_get_no_trim(client, app, monkeypatch):
-    """Books never need trimming: no 'trim' issue, no per-page trim/box, the scan skips their pages.
-    Odd titles still count for books."""
+    """Clean up is sheets only: the scan skips book pages and books are not in songs or odd titles."""
     from meowsic import cleanup
     seen = []
 
@@ -70,8 +69,30 @@ def test_books_get_no_trim(client, app, monkeypatch):
     assert not d['scan']['running']  # book pages do not count as 'not looked at yet'
     by = {s['title']: s for s in d['songs']}
     assert [i['kind'] for i in by['Plain Song']['issues']] == ['trim'] and by['Plain Song']['pages'][0]['trim']
-    b = by['Big Songbook']
-    assert b['book'] and b['issues'] == [] and len(b['pages']) == 3
-    assert all(p['trim'] is None and p['box'] is None and p['scanned'] for p in b['pages'])
-    assert [i['kind'] for i in by['IMG_1234']['issues']] == ['title']  # odd title still flagged on a book
-    assert any(t['title'] == 'IMG_1234' for t in d['titles'])
+    # Clean up shows only sheets: books are nowhere in it (songs, odd titles, single-song lookups)
+    assert set(by) == {'Plain Song'}
+    assert not any(t['id'] in (book['id'], odd['id']) for t in d['titles'])
+    assert client.get(f'/api/cleanup?id={book["id"]}').json()['songs'] == []
+
+
+def test_notes(client):
+    a, b = make(client, 'Moon Song', ['red']), make(client, 'Star Song', ['blue'])
+    assert client.get('/api/cleanup/notes').json() == []
+    client.post('/api/cleanup/notes', json={'id': a['id'], 'text': 'split after page 3'})
+    client.post('/api/cleanup/notes', json={'id': b['id'], 'text': '  rename to Moon River '})
+    n = client.get('/api/cleanup/notes').json()
+    assert [(x['id'], x['title'], x['text']) for x in n] == [(b['id'], 'Star Song', 'rename to Moon River'), (a['id'], 'Moon Song', 'split after page 3')]
+    assert n[0]['at'] >= n[1]['at']
+    by = {s['id']: s for s in client.get('/api/cleanup').json()['songs']}
+    assert by[a['id']]['note'] == 'split after page 3'
+    # the current title, after a rename
+    client.patch(f'/api/items/{a["id"]}', json={'title': 'Moon Song Renamed'})
+    assert next(x for x in client.get('/api/cleanup/notes').json() if x['id'] == a['id'])['title'] == 'Moon Song Renamed'
+    # editing replaces; empty text removes it; other cleanup state stays
+    client.post('/api/cleanup/sort', json={'id': a['id'], 'decision': 'keep'})
+    client.post('/api/cleanup/notes', json={'id': a['id'], 'text': 'from the Disney book'})
+    assert next(x for x in client.get('/api/cleanup/notes').json() if x['id'] == a['id'])['text'] == 'from the Disney book'
+    client.post('/api/cleanup/notes', json={'id': a['id'], 'text': '   '})
+    assert [x['id'] for x in client.get('/api/cleanup/notes').json()] == [b['id']]
+    assert client.get('/api/cleanup/sort').json()['decisions'] == {a['id']: 'keep'}
+    assert client.post('/api/cleanup/notes', json={'text': 'x'}).status_code == 400
