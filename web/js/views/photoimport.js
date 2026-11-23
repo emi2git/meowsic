@@ -9,6 +9,7 @@ import { store } from '../store.js';
 import { go } from '../app.js';
 import { isDesktop } from '../device.js';
 import { $, esc, toast, sheet as modal } from '../ui.js';
+import { cropStage, framesBar, boxOf, isFull, full } from '../cropbox.js';  // the one crop box (also Organize pages)
 
 const SEGS = 6;
 const POLL = 700;
@@ -19,9 +20,6 @@ const api = async (method, path, body) => {
   return data;
 };
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
-const full = () => ({ top: 0, bottom: 1, left: 0, right: 1 });
-const isFull = (b) => !b || (b.top <= 0.001 && b.bottom >= 0.999 && b.left <= 0.001 && b.right >= 0.999);
-const frameText = (b) => b ? `top ${Math.round(b.top * 100)}% · bottom ${Math.round(b.bottom * 100)}%` + (b.left > 0.001 || b.right < 0.999 ? ` · left ${Math.round(b.left * 100)}% · right ${Math.round(b.right * 100)}%` : '') : 'not saved';
 const when = (ms) => (ms ? new Date(ms).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
 
 // kept while the app is open: going back to the album keeps your arrangement (also after an Undo)
@@ -292,21 +290,19 @@ export function photoImportView(main) {
     if (!ids.length) return showPreview();
     ui.ci = Math.max(0, Math.min(ui.ci, ids.length - 1));
     const id = ids[ui.ci], sg = songs(), si = songOf(id, sg);
-    if (!S.frames) S.frames = await api('GET', '/cleanup/frames').catch(() => ({ 1: null, 2: null }));
-    ui.crop = { id, ...startBox(id) };
+    ui.crop = { id };
     body.className = 'pi crop';
     body.innerHTML = `<div class="pi-bar"><button id="pi-done-crop" class="ghost">‹ Songs</button>
         <div class="pi-sum"><b>${esc(sg[si]?.title || 'Untitled')}</b><small class="muted">Page ${sg[si].ids.indexOf(id) + 1} of ${sg[si].ids.length} · photo ${ui.ci + 1} of ${ids.length}</small></div>
         <span class="grow"></span><button id="pi-add2" class="primary">Add ${plural(sg.length, 'sheet')}</button></div>
       <div class="cu-strip pi-strip">${ids.map((x, k) => `<button class="${k === ui.ci ? 'on' : ''}" data-k="${k}"><img src="${thumb(x, 160)}" alt="" loading="lazy"><span>${k + 1}${x in S.crops ? (S.crops[x] ? ' · ✂' : ' · whole') : ''}</span></button>`).join('')}</div>
-      <div class="cu-stage" id="pi-stage"><div class="cu-img"><img id="pi-img" src="${thumb(id, 1000)}" alt="" draggable="false"><div class="cu-shade"></div>
-        <div class="cu-box"><i data-e="top"></i><i data-e="bottom"></i><i data-e="left"></i><i data-e="right"></i><i data-e="top left"></i><i data-e="top right"></i><i data-e="bottom left"></i><i data-e="bottom right"></i></div></div></div>
-      <div class="cu-frames">${[1, 2].map((n) => `<span class="cu-fr"><button data-fr="${n}" class="ghost" ${S.frames[n] ? '' : 'disabled'} title="${S.frames[n] ? `Use Frame ${n} (${n})` : `Frame ${n} not saved yet — ⤓ saves the box`}">Frame ${n}<small>${frameText(S.frames[n])}</small></button><button data-frs="${n}" class="ghost cu-frsave" title="Save box as Frame ${n} (⇧${n})" aria-label="Save box as Frame ${n}">⤓</button></span>`).join('')}</div>
+      <div class="cu-stage" id="pi-stage"></div><div id="pi-frames"></div>
       <div class="cu-act"><span class="muted small cu-hint"><b class="cu-from"></b>${P(id).trim ? ` · found: ${esc(P(id).trim.reasons.join(', '))}` : ''} · drag the red edges, or draw a new box</span><span class="grow"></span>
         <button id="pi-whole" class="big" title="Keep the whole photo (F)">Whole page</button>
         <button id="pi-later" class="big" title="Skip cropping this page (L)">Later</button>
         <button id="pi-doit" class="primary big" title="Crop and go on (Enter)">Crop &amp; next</button></div>`;
-    place();
+    const sb = startBox(id);
+    ui.stage = cropStage($('#pi-stage', body), { src: thumb(id, 1000), box: sb, from: sb.from, imgId: 'pi-img', onChange: (_, f) => { const el = $('.cu-from', body); if (el) el.textContent = f; } });
     body.querySelector('.cu-strip button.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     $('#pi-done-crop', body).onclick = showPreview;
     $('#pi-add2', body).onclick = () => confirmAdd();
@@ -314,52 +310,11 @@ export function photoImportView(main) {
     $('#pi-doit', body).onclick = cropNext;
     $('#pi-whole', body).onclick = () => { S.crops[ui.crop.id] = null; nextPage(); };
     $('#pi-later', body).onclick = () => { delete S.crops[ui.crop.id]; nextPage(); };
-    body.querySelector('.cu-frames').onclick = (e) => { const a = e.target.closest('[data-fr]'), sv = e.target.closest('[data-frs]'); if (a) useFrame(+a.dataset.fr); else if (sv) saveFrame(+sv.dataset.frs); };
-    body.querySelector('.cu-img').onpointerdown = drag;
+    ui.frames = await framesBar($('#pi-frames', body), () => ui.stage);
   };
-  const place = () => {
-    const c = ui.crop, box = $('.cu-img', body); if (!box || !c) return;
-    for (const k of ['top', 'bottom', 'left', 'right']) box.style.setProperty('--' + k[0], c[k] * 100 + '%');
-    const f = $('.cu-from', body); if (f) f.textContent = c.from;
-  };
-  const drag = (e) => {
-    const img = $('#pi-img', body), r = img.getBoundingClientRect();
-    const at = (ev) => [Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height))];
-    const edges = e.target.dataset?.e?.split(' ');
-    const [x0, y0] = at(e), c = ui.crop;
-    e.preventDefault();
-    const mv = (ev) => {
-      const [x, y] = at(ev);
-      if (edges) {
-        for (const ed of edges) {
-          if (ed === 'top') c.top = Math.min(y, c.bottom - 0.1);
-          if (ed === 'bottom') c.bottom = Math.max(y, c.top + 0.1);
-          if (ed === 'left') c.left = Math.min(x, c.right - 0.1);
-          if (ed === 'right') c.right = Math.max(x, c.left + 0.1);
-        }
-      } else if (Math.abs(x - x0) > 0.02 || Math.abs(y - y0) > 0.02) {
-        Object.assign(c, { top: Math.min(y, y0), bottom: Math.max(y, y0), left: Math.min(x, x0), right: Math.max(x, x0) });
-      }
-      c.from = 'Your box'; place();
-    };
-    const up = () => {
-      removeEventListener('pointermove', mv); removeEventListener('pointerup', up);
-      if (c.bottom - c.top < 0.2 || c.right - c.left < 0.2) { Object.assign(c, full(), { from: 'Whole page' }); place(); toast('Box too small — whole page'); }
-    };
-    addEventListener('pointermove', mv); addEventListener('pointerup', up);
-  };
-  const nudge = (edge, d) => {
-    const c = ui.crop; if (!c) return;
-    if (edge === 'top') c.top = Math.min(c.bottom - 0.2, Math.max(0, c.top + d));
-    if (edge === 'bottom') c.bottom = Math.max(c.top + 0.2, Math.min(1, c.bottom + d));
-    if (edge === 'left') c.left = Math.min(c.right - 0.2, Math.max(0, c.left + d));
-    if (edge === 'right') c.right = Math.max(c.left + 0.2, Math.min(1, c.right + d));
-    c.from = 'Your box'; place();
-  };
-  const boxOf = (c) => ({ top: +c.top.toFixed(4), bottom: +c.bottom.toFixed(4), left: +c.left.toFixed(4), right: +c.right.toFixed(4) });
   const cropNext = () => {
-    const c = ui.crop; if (!c) return;
-    const b = boxOf(c);
+    const c = ui.crop; if (!c || !ui.stage) return;
+    const b = boxOf(ui.stage.box);
     S.crops[c.id] = isFull(b) ? null : b;
     if (!isFull(b)) S.carry = { id: c.id, box: b };  // the next page starts with this box
     nextPage();
@@ -370,18 +325,7 @@ export function photoImportView(main) {
     toast('Every page looked at — add the sheets when you are ready');
     showPreview();
   };
-  const useFrame = (n) => {
-    const f = S.frames[n];
-    if (!f) return toast(`Frame ${n} is not saved yet — ⤓ (or ⇧${n}) saves the box`);
-    ui.crop = { ...ui.crop, ...f, from: `Frame ${n}` }; place();
-  };
-  const saveFrame = async (n) => {
-    try {
-      S.frames = await api('POST', '/cleanup/frames', { n, box: boxOf(ui.crop) });
-      toast(`Saved as Frame ${n}: ${frameText(S.frames[n])}`);
-      const keep = { ...ui.crop }; await showCrop(); ui.crop = keep; place();
-    } catch (e) { toast(e.message); }
-  };
+  const nudge = (edge, d) => ui.stage?.nudge(edge, d);
 
   // ---------- 5. add the sheets / undo ----------
   const confirmAdd = () => {
@@ -436,12 +380,12 @@ export function photoImportView(main) {
       return;
     }
     if (body.classList.contains('crop')) {
-      if (e.code === 'Digit1' || e.code === 'Digit2') { e.preventDefault(); const n = +e.code.slice(-1); return e.shiftKey ? saveFrame(n) : useFrame(n); }
+      if (e.code === 'Digit1' || e.code === 'Digit2') { e.preventDefault(); const n = +e.code.slice(-1); return e.shiftKey ? ui.frames?.save(n) : ui.frames?.use(n); }
       const a = { Enter: cropNext, t: cropNext, f: () => { S.crops[ui.crop.id] = null; nextPage(); }, l: () => { delete S.crops[ui.crop.id]; nextPage(); },
         ArrowRight: () => { ui.ci = Math.min(cropIds().length - 1, ui.ci + 1); showCrop(); }, ArrowLeft: () => { ui.ci = Math.max(0, ui.ci - 1); showCrop(); },
         ArrowUp: () => nudge(e.shiftKey ? 'bottom' : 'top', -0.005), ArrowDown: () => nudge(e.shiftKey ? 'bottom' : 'top', 0.005),
-        x: () => { const p = P(ui.crop.id), sg = p.trim || p.box; if (sg) { ui.crop = { ...ui.crop, ...full(), ...sg, from: 'Suggested' }; place(); } },
-        c: () => { ui.crop = { ...ui.crop, ...full(), from: 'Whole page' }; place(); }, Escape: showPreview }[k];
+        x: () => { const p = P(ui.crop.id), sg = p.trim || p.box; if (sg) ui.stage.set({ ...full(), top: sg.top, bottom: sg.bottom, left: sg.left ?? 0, right: sg.right ?? 1 }, 'Suggested'); },
+        c: () => ui.stage.set(full(), 'Whole page'), Escape: showPreview }[k];
       if (a) { e.preventDefault(); a(); }
       return;
     }

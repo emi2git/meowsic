@@ -209,15 +209,6 @@ for (const [name, w, h, colsWant] of [['iPad landscape', 1366, 1024, [3, 5]], ['
     await page.reload({ waitUntil: 'networkidle0' }); await sleep(500);
     await page.waitForFunction(() => document.querySelector('#bs-grid figure[data-p="3"] input')?.value === 'Yesterday', { timeout: 8000 }).catch(() => {});
     check('empty marked start is filled on open', await page.$eval('#bs-grid figure[data-p="3"] input', (e) => e.value) === 'Yesterday');
-    // Split… in Clean up → Fix pages prefills from the first page that moves
-    const sp = await page.evaluate(async (id) => {
-      const { titleBox } = await import('/js/title-detect.js');
-      const i = document.createElement('input'), h = document.createElement('small');
-      await titleBox(i, h, id, 'X (part 2)')(2);
-      const a = i.value; await titleBox(i, h, id, 'X (part 2)')(1);
-      return [a, i.value, h.textContent];
-    }, tb.id);
-    check('split title box: detected / fallback', sp[0] === 'Moon River' && sp[1] === 'X (part 2)' && /couldn/.test(sp[2]), sp.join(' | '));
   }
   await post(`/books/${tb.id}/split`, { starts: {} });
   await post('/items/purge', { ids: [tb.id] });

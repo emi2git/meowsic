@@ -476,6 +476,25 @@ def _render(d: Path, file, steps):
     else: shutil.copy2(orig, d / file)
 
 
+@router.get('/items/{item_id}/crops')
+def page_crops(item_id: str, c=Depends(conn), cf=Depends(cfg)):
+    """Organize pages → Crop, any sheet or book: per page its crop of the original photo (None = whole), how
+    many crops it has had, and the box the page-edge scan suggests (on the original), if any."""
+    it = must_item(c, item_id)
+    d = folder_path(cf, it['folder'])
+    scans = cs.scan_all(c)
+    out = []
+    for page, file in c.execute('SELECT page, file FROM sheet_page WHERE item_id=? ORDER BY page', (item_id,)).fetchall():
+        steps = _steps(d, page)
+        crop = _crop_of(steps)
+        res = ((scans.get(f'{item_id}:{page}') or [0, None])[1] or {})
+        sug = res.get('trim') or res.get('box')
+        if sug and crop: sug = {k: round(v, 4) for k, v in _compose(crop, {**FULL, **{k: sug[k] for k in ('top', 'bottom')}}).items()}
+        elif sug: sug = {k: sug.get(k, FULL[k]) for k in FULL}
+        out.append({'page': page, 'crop': crop, 'trims': len(_stack(steps)), 'suggest': sug})
+    return {'pages': out}
+
+
 @router.get('/items/{item_id}/pages/{page}/original')
 def page_original(item_id: str, page: int, c=Depends(conn), cf=Depends(cfg)):
     """The original photo of a page: the oldest kept version if it was trimmed, else the page file."""

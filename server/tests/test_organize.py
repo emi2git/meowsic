@@ -167,3 +167,41 @@ def test_base_title():
     assert base_title('Moon River part 2') == ('moon river', 2)
     assert base_title('Songbook — p6') == ('songbook', 6)
     assert base_title('Yesterday')[1] is None
+
+
+def test_crops_follow_their_page(client):
+    it = make(client, 'Cropped', COLS[:3])
+    box = {'top': 0.1, 'bottom': 0.9, 'left': 0.0, 'right': 1.0}
+    client.post(f'/api/items/{it["id"]}/pages/2/trim', json=box)
+    cr = client.get(f'/api/items/{it["id"]}/crops').json()['pages']
+    assert [p['crop'] is not None for p in cr] == [False, True, False] and cr[1]['trims'] == 1
+    # re-crop: always from the original (the crop is of the original photo, not of the cropped file)
+    client.post(f'/api/items/{it["id"]}/pages/2/trim', json={**box, 'top': 0.2})
+    assert client.get(f'/api/items/{it["id"]}/crops').json()['pages'][1]['crop']['top'] == 0.2
+    # the page moves: its crop history moves with it, and the original is still there
+    r = client.post(f'/api/items/{it["id"]}/pages/2/move', json={'to': 1}).json()
+    cr = client.get(f'/api/items/{it["id"]}/crops').json()['pages']
+    assert cr[0]['crop']['top'] == 0.2 and cr[0]['trims'] == 2 and cr[1]['crop'] is None
+    assert client.get(f'/api/items/{it["id"]}/pages/1/original').status_code == 200
+    undo(client, r['activity'])
+    cr = client.get(f'/api/items/{it["id"]}/crops').json()['pages']
+    assert cr[1]['crop']['top'] == 0.2 and cr[0]['crop'] is None  # back on page 2 with its history
+    client.post(f'/api/items/{it["id"]}/pages/2/untrim', json={})
+    assert client.get(f'/api/items/{it["id"]}/crops').json()['pages'][1]['crop']['top'] == 0.1  # undo one crop
+
+
+def test_crop_after_the_daily_clean_up(client, data):
+    """24 h after a crop the daily clean-up removes the page's .history: the cropped file is the original then."""
+    it = make(client, 'Old crop', COLS[:2])
+    client.post(f'/api/items/{it["id"]}/pages/1/trim', json={'top': 0.1, 'bottom': 0.9, 'left': 0, 'right': 1})
+    for f in (data / 'items' / it['folder'] / '.history').glob('p1-*'): f.unlink()
+    cr = client.get(f'/api/items/{it["id"]}/crops').json()['pages']
+    assert cr[0]['crop'] is None and cr[0]['trims'] == 0
+    assert client.get(f'/api/items/{it["id"]}/pages/1/original').status_code == 200  # the page file itself
+    assert client.post(f'/api/items/{it["id"]}/pages/1/trim', json={'top': 0.2, 'bottom': 1, 'left': 0, 'right': 1}).status_code == 200
+    assert client.get(f'/api/items/{it["id"]}/crops').json()['pages'][0]['trims'] == 1
+    # a deleted page whose copy was cleaned up: Undo says so instead of breaking
+    r = client.post(f'/api/items/{it["id"]}/pages/2/delete').json()
+    for f in (data / 'items' / it['folder'] / '.history').glob('deleted-*'): f.unlink()
+    u = client.post(f'/api/activity/{r["activity"]}/undo', json={})
+    assert u.status_code == 409 and 'missing' in u.text

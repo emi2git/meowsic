@@ -6,6 +6,8 @@
 //  · reorder drag a page (touch: hold, then drag; Mac: drag), or its ‹ › buttons; a page can move into the
 //            song before / after it (song starts stay on their pages)
 //  · delete  ✕ on a page: it moves to items/<folder>/.history/ (never deleted for good); the last page → Trash
+//  · crop    ✂ on a page (or C): the ORIGINAL photo with the box; re-crops from the original, the box carries to
+//            the next page, Frame 1 / 2 (cropbox.js — the only crop UI); every crop kept in .history, undoable
 // Every change goes to the Mac at once and gets an Activities row; Undo here rolls that row back.
 // Recommended to check: Refresh runs a scan on the Mac (a job, with progress) that lists fishy sheets and books
 // with a reason each, most likely first. "This is a complete song" hides one from every scan (undoable;
@@ -14,18 +16,21 @@ import { store } from '../store.js';
 import { isDesktop, isNarrow, isTouch } from '../device.js';
 import { $, esc, toast, ago, sheet as modal, confirmSheet } from '../ui.js';
 import { binView } from './organize.js';
+import { cropStage, framesBar, boxOf, isFull, full } from '../cropbox.js';
 
 const KEYS = [
   ['← → ↑ ↓', 'Move between pages'],
   ['S / Enter', 'A new song starts here (again: not)'],
   ['⇧← / ⇧→', 'Move the page left / right'],
   ['Delete', 'Delete the page (kept in history; Undo brings it back)'],
+  ['C', 'Crop the page (in the crop: Enter = crop & next, ↑↓ / ⌥←→ move the edges, ⇧ the other edge, 1 / 2 frames, ⇧1 / ⇧2 save them)'],
   ['Space', 'View the page large'],
   ['U / Z', 'Undo'],
 ];
 const SEGS = 6; // colours for the songs (seg-0 … seg-5), then they repeat
 const KIND = { several: 'Several songs?', merge: 'One song in parts?', order: 'Page order?', duplicate: 'Same page twice?', blank: 'Blank page?' };
 const LIST_MAX = 300;
+let CARRY = null;  // the last crop box set (any sheet): the next page starts with it
 const UNDO = [];  // Undo here outlives the view: open a sheet, come back, Undo still works (the Mac keeps the real history)
 
 const api = async (method, path, body) => {
@@ -39,8 +44,8 @@ const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // the header: Manage library with its two tabs (links, so Back / reload keep the tab)
-const head = (tab, right = '') => `<header class="top cu-top">
-      <a class="icon-btn back cu-back" href="#/library" aria-label="Back to the library">‹ Library</a>
+const head = (tab, right = '', back = null) => `<header class="top cu-top">
+      ${back ? `<a class="icon-btn back cu-back to-item" href="#/item/${encodeURIComponent(back.id)}" aria-label="Back to ${esc(back.title)}">‹ ${esc(back.title)}</a>` : '<a class="icon-btn back cu-back" href="#/library" aria-label="Back to the library">‹ Library</a>'}
       <h1>Manage library</h1>
       <nav class="cu-tabs" aria-label="Manage library">
         <a href="#/manage" data-tab="organize" class="${tab === 'organize' ? 'on' : ''}" ${tab === 'organize' ? 'aria-current="page"' : ''}>Organize pages</a>
@@ -62,8 +67,9 @@ export function cleanupView(main, { parts = [], q } = {}) {
   if (!id0) { try { id0 = localStorage.getItem('meowsic-org-id') || localStorage.getItem('meowsic-cu-songsplit'); } catch {} }
   const bs = { items: null, scan: null, job: null, id: id0, book: null, starts: {}, focus: 1, list: !id0 || (isNarrow() && !q?.get?.('id')), saving: {}, loading: false,
     q: Promise.resolve(), det: {}, sug: null, find: '', hidden: false, undo: UNDO, busy: false, drag: null, alive: true };
+  const backTo = q?.get?.('back') === 'item' && q.get('id') ? { id: q.get('id'), title: store.get(q.get('id'))?.title || 'Back' } : null;  // opened from a sheet: Back goes there
   main.innerHTML = head('organize', `<button id="cu-undo" class="cu-undo" disabled title="Undo (U)">↶ Undo</button>
-      <button id="cu-help" class="icon-btn" aria-label="Help" title="Help">?</button>`) + '<div class="cu organize" id="cu"></div>';
+      <button id="cu-help" class="icon-btn" aria-label="Help" title="Help">?</button>`, backTo) + '<div class="cu organize" id="cu"></div>';
   const body = $('#cu', main);
   const it = () => bs.items?.find((b) => b.id === bs.id);
   const SH = () => !(bs.book?.book ?? it()?.book);          // a sheet (page 1 starts song 1) or a book
@@ -224,6 +230,7 @@ export function cleanupView(main, { parts = [], q } = {}) {
     <button class="bs-pg" data-p="${k + 1}" aria-label="Page ${k + 1}"><img src="/api/items/${encodeURIComponent(b.id)}/thumb/${k + 1}?w=500&v=${b.updatedAt || 0}" alt="" loading="lazy" draggable="false"><span class="bs-flag"></span></button>
     <button class="bs-zoom" data-z="${k + 1}" aria-label="View page ${k + 1} large" title="View large (Space)">⤢</button>
     <button class="og-del" data-del="${k + 1}" aria-label="Delete page ${k + 1}" title="Delete this page (kept in history)">✕</button>
+    <button class="og-crop" data-crop="${k + 1}" aria-label="Crop page ${k + 1}" title="Crop (C)">✂</button>
     <figcaption><button class="og-mv" data-mv="-1" data-at="${k + 1}" aria-label="Move page ${k + 1} left" title="Move left" ${k === 0 ? 'disabled' : ''}>‹</button>
       <span class="bs-n">${k + 1}</span><span class="bs-t"></span>
       <button class="og-mv" data-mv="1" data-at="${k + 1}" aria-label="Move page ${k + 1} right" title="Move right" ${k + 1 === b.pages ? 'disabled' : ''}>›</button></figcaption></figure>`;
@@ -259,6 +266,7 @@ export function cleanupView(main, { parts = [], q } = {}) {
       if (e.target.closest('input')) return;
       if (bs.dragged) { bs.dragged = false; return; }
       const del = e.target.closest('[data-del]'); if (del) return delPage(+del.dataset.del);
+      const cr = e.target.closest('[data-crop]'); if (cr) { bs.focus = +cr.dataset.crop; paint(); return cropPage(); }
       const mv = e.target.closest('[data-mv]'); if (mv) return movePage(+mv.dataset.at, +mv.dataset.at + +mv.dataset.mv);
       const z = e.target.closest('[data-z]'); if (z) { bs.focus = +z.dataset.z; paint(); return large(); }
       const p = e.target.closest('.bs-pg'); if (p) { bs.focus = +p.dataset.p; toggle(bs.focus); }
@@ -559,7 +567,7 @@ export function cleanupView(main, { parts = [], q } = {}) {
     const b = bs.book; if (!b) return;
     const m = modal(`<div class="bs-large"><img id="bs-big" alt=""></div>
       <div class="modal-actions bs-large-act"><button id="bs-lp" aria-label="Previous page">‹</button><span id="bs-lt" class="grow"></span>
-        <button id="bs-lm"></button><button id="bs-ln" aria-label="Next page">›</button><button class="primary" data-close>Close</button></div>`,
+        <button id="bs-lm"></button><button id="bs-lc">✂ Crop</button><button id="bs-ln" aria-label="Next page">›</button><button class="primary" data-close>Close</button></div>`,
     { wide: true, onClose: () => { removeEventListener('keydown', key, true); paint(); focusFig(); } });
     m.el.classList.add('bs-modal');
     const show = () => {
@@ -571,6 +579,7 @@ export function cleanupView(main, { parts = [], q } = {}) {
     const step = (d) => { bs.focus = Math.max(1, Math.min(b.pages, bs.focus + d)); show(); };
     const flip = async () => { await toggle(bs.focus); show(); };
     $('#bs-lp', m.el).onclick = () => step(-1); $('#bs-ln', m.el).onclick = () => step(1); $('#bs-lm', m.el).onclick = flip;
+    $('#bs-lc', m.el).onclick = () => { m.close(); cropPage(); };
     const key = (e) => {
       if (!m.el.isConnected) return removeEventListener('keydown', key, true);
       const a = { ArrowLeft: () => step(-1), ArrowRight: () => step(1), ArrowUp: () => step(-1), ArrowDown: () => step(1), s: flip, Enter: flip, ' ': m.close }[e.key.length === 1 ? e.key.toLowerCase() : e.key];
@@ -583,6 +592,75 @@ export function cleanupView(main, { parts = [], q } = {}) {
     big.onpointerdown = (e) => { x0 = e.clientX; };
     big.onpointerup = (e) => { if (x0 != null && Math.abs(e.clientX - x0) > 50) step(e.clientX < x0 ? 1 : -1); x0 = null; };
     show();
+  };
+
+  // ---------- crop: the original photo with the box (cropbox.js); the Mac cuts it from the original ----------
+  const cropPage = async () => {
+    const b = bs.book; if (!b) return;
+    await flushAll(); await bs.q;
+    const id = b.id;
+    let info = null, stage = null, changed = false, ver = b.updatedAt || 0, working = false;
+    try { info = (await api('GET', `/items/${encodeURIComponent(id)}/crops`)).pages; } catch (e) { return toast(e.message); }
+    const m = modal(`<div class="og-crop-top"><b id="cr-t"></b><span class="muted small" id="cr-from"></span></div>
+      <div class="cu-stage og-cstage" id="cr-stage"></div><div id="cr-frames"></div>
+      <div class="modal-actions og-crop-act"><button id="cr-prev" aria-label="Previous page" title="Previous page">‹</button><button id="cr-next" aria-label="Next page" title="Next page">›</button>
+        <span class="grow"></span><button id="cr-orig" class="ghost" title="Back to the photo as it came in (kept 24 hours after a crop)">Original photo</button><button id="cr-whole" title="Whole page (W)">Whole page</button>
+        <button data-close>Close</button><button id="cr-ok" class="primary" title="Crop this page">Crop</button><button id="cr-oknext" class="primary" title="Crop and go to the next page (Enter)">Crop &amp; next</button></div>`,
+    { wide: true, onClose: () => { removeEventListener('keydown', key, true); if (changed) { bs.book = null; draw(); } else { paint(); focusFig(); } } });
+    m.el.classList.add('og-crop-modal');
+    const show = () => {
+      const p = bs.focus, pi = info[p - 1];
+      const [box, from] = pi.crop ? [pi.crop, 'Cropped'] : CARRY ? [CARRY, 'Same as the last crop'] : pi.suggest ? [pi.suggest, 'Suggested'] : [full(), 'Whole page'];
+      stage = cropStage($('#cr-stage', m.el), { src: `/api/items/${encodeURIComponent(id)}/pages/${p}/original?v=${ver}`, box, from, onChange: (_, f) => { $('#cr-from', m.el).textContent = f; } });
+      $('#cr-t', m.el).textContent = `Page ${p} of ${info.length}${pi.trims ? ' · cropped' : ''}`;
+      $('#cr-orig', m.el).hidden = !pi.trims;
+      $('#cr-prev', m.el).disabled = p <= 1; $('#cr-next', m.el).disabled = p >= info.length;
+    };
+    const step = (d) => { bs.focus = Math.max(1, Math.min(info.length, bs.focus + d)); show(); };
+    const same = (a, c) => a && c && ['top', 'bottom', 'left', 'right'].every((k) => Math.abs(a[k] - c[k]) < 0.0005);
+    const after = async (item) => {
+      store.putItem(item); ver = item.updatedAt; changed = true;
+      info = (await api('GET', `/items/${encodeURIComponent(id)}/crops`)).pages;
+    };
+    const apply = async (next) => {
+      if (working) return;
+      working = true;
+      try {
+        const p = bs.focus, pi = info[p - 1], box = boxOf(stage.box), prev = pi.crop;
+        if (isFull(box)) {
+          if (prev) {  // the whole photo again: back to the original (Undo crops it like before)
+            await after(await api('POST', `/items/${encodeURIComponent(id)}/pages/${p}/untrim`, { all: true }));
+            bs.undo.push({ label: `whole page ${p}`, run: async () => store.putItem(await api('POST', `/items/${encodeURIComponent(id)}/pages/${p}/trim`, prev)) });
+            toast(`Page ${p}: the whole photo`);
+          }
+        } else if (!same(prev, box)) {
+          await after(await api('POST', `/items/${encodeURIComponent(id)}/pages/${p}/trim`, box));
+          CARRY = box;
+          bs.undo.push({ label: `crop page ${p}`, run: async () => store.putItem(await api('POST', `/items/${encodeURIComponent(id)}/pages/${p}/untrim`, {})) });
+          toast(`Page ${p} cropped — the photo is kept`);
+        }
+        drawHead();
+        if (next && p < info.length) step(1); else if (next) m.close(); else show();
+      } catch (e) { toast(e.message); } finally { working = false; }
+    };
+    $('#cr-prev', m.el).onclick = () => step(-1); $('#cr-next', m.el).onclick = () => step(1);
+    $('#cr-ok', m.el).onclick = () => apply(false); $('#cr-oknext', m.el).onclick = () => apply(true);
+    $('#cr-whole', m.el).onclick = () => stage.set(full(), 'Whole page');
+    $('#cr-orig', m.el).onclick = () => { stage.set(full(), 'Original photo'); apply(false); };
+    show();
+    const fr = await framesBar($('#cr-frames', m.el), () => stage);
+    const key = (e) => {
+      if (!m.el.isConnected) return removeEventListener('keydown', key, true);
+      if (e.metaKey || e.ctrlKey) return;
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      if (e.code === 'Digit1' || e.code === 'Digit2') { e.preventDefault(); e.stopPropagation(); const n = +e.code.slice(-1); return e.shiftKey ? fr.save(n) : fr.use(n); }
+      const a = e.altKey ? { ArrowLeft: () => stage.nudge(e.shiftKey ? 'right' : 'left', -0.005), ArrowRight: () => stage.nudge(e.shiftKey ? 'right' : 'left', 0.005) }[k]
+        : { ArrowUp: () => stage.nudge(e.shiftKey ? 'bottom' : 'top', -0.005), ArrowDown: () => stage.nudge(e.shiftKey ? 'bottom' : 'top', 0.005),
+          ArrowLeft: () => step(-1), ArrowRight: () => step(1), Enter: () => apply(true), w: () => stage.set(full(), 'Whole page') }[k];
+      if (!a) return;
+      e.preventDefault(); e.stopPropagation(); a();
+    };
+    addEventListener('keydown', key, true);
   };
 
   // ---------- make the sheets ----------
@@ -614,7 +692,7 @@ export function cleanupView(main, { parts = [], q } = {}) {
 
   // ---------- keys (Mac) ----------
   const help = () => modal(`<h2>Organize pages</h2><p class="muted small">Split a sheet where a new song starts, merge songs, reorder and delete pages. Everything can be undone; deleted pages are kept in the sheet’s history.</p>
-    ${isDesktop() ? `<table class="cu-keys">${KEYS.map(([k, d]) => `<tr><td><kbd>${k}</kbd></td><td>${d}</td></tr>`).join('')}</table>` : '<p class="small">Tap a page to mark a new song; hold a page, then drag it to move it; ✕ deletes a page.</p>'}
+    ${isDesktop() ? `<table class="cu-keys">${KEYS.map(([k, d]) => `<tr><td><kbd>${k}</kbd></td><td>${d}</td></tr>`).join('')}</table>` : '<p class="small">Tap a page to mark a new song; hold a page, then drag it to move it; ✕ deletes a page; ✂ crops it.</p>'}
     <div class="modal-actions"><button class="primary" data-close>OK</button></div>`);
   const cols = () => { const g = $('#bs-grid', body); return g ? getComputedStyle(g).gridTemplateColumns.split(' ').length : 1; };
   const move = (d) => { if (!bs.book) return; bs.focus = Math.max(1, Math.min(bs.book.pages, bs.focus + d)); paint(); focusFig(); };
@@ -626,7 +704,7 @@ export function cleanupView(main, { parts = [], q } = {}) {
       ArrowRight: () => (e.shiftKey ? movePage(bs.focus, bs.focus + 1) : move(1)), ArrowLeft: () => (e.shiftKey ? movePage(bs.focus, bs.focus - 1) : move(-1)),
       ArrowDown: () => move(cols()), ArrowUp: () => move(-cols()),
       s: () => bs.book && toggle(bs.focus), Enter: () => bs.book && toggle(bs.focus), ' ': large,
-      Delete: () => bs.book && delPage(bs.focus), Backspace: () => bs.book && delPage(bs.focus),
+      Delete: () => bs.book && delPage(bs.focus), Backspace: () => bs.book && delPage(bs.focus), c: () => bs.book && cropPage(),
       u: undo, z: undo, '?': help,
     }[k.length === 1 ? k.toLowerCase() : k];
     if (!a || (e.metaKey && k.toLowerCase() !== 'z') || e.ctrlKey || e.altKey) return;

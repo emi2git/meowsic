@@ -1431,3 +1431,17 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .cu.trash { display: block; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 .bn-bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px 0; }
 @media (max-width: 760px) { .cu-tabs a { padding: 6px 12px; font-size: 14px; min-height: 36px; } .cu-top h1 { font-size: 20px; } }
+/* Organize pages → Crop (cropbox.js): ✂ on each page (under ✕), the crop sheet with the original photo */
+.og-crop { position: absolute; right: 12px; top: 106px; width: 36px; height: 36px; min-height: 0; padding: 0; border-radius: 50%; font-size: 16px; background: rgba(255, 255, 255, .92); color: #222; border: 1px solid rgba(0, 0, 0, .15); z-index: 2; }
+.bs-grid figure.start .og-crop { top: 110px; }
+:root:is([data-device="phone"], [data-device="tablet"]) .og-crop { width: 40px; height: 40px; top: 110px; }
+@media (max-width: 760px) { .og-crop { width: 36px !important; height: 36px !important; top: 94px !important; right: 8px; } }
+.og-crop-modal { width: min(1100px, 96vw); max-width: 96vw; }
+.og-crop-top { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+.og-cstage { height: calc(100dvh - 300px); min-height: 280px; border-radius: 8px; }
+.og-crop-modal .cu-frames { padding: 8px 0 0; }
+.og-crop-act { flex-wrap: wrap; align-items: center; row-gap: 8px; }
+.og-crop-act .grow { flex: 1; }
+.og-crop-act [hidden] { display: none; }
+@media (max-width: 760px) { .og-cstage { height: calc(100dvh - 380px); } .og-crop-act button { flex: 1 1 auto; min-width: 0; padding: 0 10px; } .og-crop-act .grow { display: none; } }
+.cu-back.to-item { display: inline-flex; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }  /* opened from a sheet (Edit pages): Back to it, on the Mac too */

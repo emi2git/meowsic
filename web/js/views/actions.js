@@ -105,7 +105,8 @@ export function itemActions(anchor, id, { viewer = false, info, tools = [], expo
     [{ label: 'Rename…', icon: 'edit', run: () => rename(id) }, { label: 'Edit tags…', icon: 'tag', run: () => editTags(id) },
       ...(['sheet', 'chords'].includes(store.get(id)?.kind) ? [{ label: `Version: ${verLabel(store.get(id)) || 'Lead / Piano / Duet'}…`, icon: 'score', run: () => versionMenu(anchor, id) },
         { label: `Key: ${store.get(id).key || 'not set'}…`, icon: 'edit', run: () => editKey(id) }] : [])],
-    tools,
+    // pages (split, merge, reorder, delete, crop) are edited in one place: Manage library → Organize pages
+    [...(store.mode === 'server' && store.get(id)?.kind === 'sheet' && store.get(id)?.pageFiles?.length ? [{ label: 'Edit pages…', icon: 'edit', run: () => go(`#/manage?id=${encodeURIComponent(id)}&back=item`) }] : []), ...tools],
     [{ label: 'Print…', icon: 'print', run: () => go(`#/print?item=${id}`) }, ...exports],
     [{ label: 'Move to Trash', icon: 'bin', danger: true, run: () => binItems(id) }],
   );

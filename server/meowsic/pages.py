@@ -165,7 +165,7 @@ def arrange_pages(c, cf, item_id, order: list[int]):
     d = folder_path(cf, it['folder'])
     h = d / '.history'
     h.mkdir(parents=True, exist_ok=True)
-    tag = uuid.uuid4().hex[:8]
+    tag = f'{now_ms()}x{uuid.uuid4().hex[:6]}'  # the time in the name: the daily clean-up keeps it 24 h (and while Undo can use it)
     deleted = []
     by = {r['page']: r for r in rows}
     for p in gone:

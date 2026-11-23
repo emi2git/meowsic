@@ -58,12 +58,12 @@ const order = (id) => mac.evaluate(async (id, cols) => {
 const deletedInHistory = () => {
   if (!DATA) return null;
   const d = path.join(DATA, 'items', sh.folder, '.history');
-  return fs.existsSync(d) ? fs.readdirSync(d).filter((f) => f.startsWith('deleted-')).length : 0;
+  return fs.existsSync(d) ? fs.readdirSync(d).filter((f) => /^deleted-[0-9a-fx]+-p[0-9]+\.[a-z]+$/.test(f)).length : 0;  // the page photos (not their crop history)
 };
 check('test sheet pages in order', (await order(sh.id)) === '1,2,3,4,5,6');
 
 const open = async (p, id) => {
-  await p.goto(BASE + `#/manage?id=${id}`, { waitUntil: 'networkidle0' }); await sleep(1200);
+  await p.goto(BASE + `#/manage?id=${id}`, { waitUntil: 'networkidle2', timeout: 60000 }); await sleep(1500);  // the Mac may still be reading page titles
   await p.waitForSelector('#bs-grid figure', { timeout: 8000 }).catch(() => {});
 };
 const figCount = (p) => p.$$eval('#bs-grid figure', (e) => e.length);
@@ -134,6 +134,38 @@ for (const [name, vp] of [['mac', { width: 1440, height: 900 }], ['ipad', { widt
   }
   await undoBtn(p);
   check(`${name}: undo the drag (order and song start back)`, (await order(sh.id)) === '1,2,3,4,5,6' && JSON.stringify((await api(`/sheets/${sh.id}/split`)).starts) === JSON.stringify({ 4: 'Second' }), await order(sh.id));
+  // ---- crop page 2: the original with the box, Crop & next carries the box, Undo ----
+  await p.$eval('#bs-grid figure[data-p="2"]', (e) => e.scrollIntoView({ block: 'center' })); await sleep(200);
+  await tapOrClick('#bs-grid figure[data-p="2"] .og-crop'); await sleep(1200);
+  check(`${name}: ✂ opens the crop on the original photo`, /\/pages\/2\/original/.test(await p.$eval('#cr-stage img', (e) => e.src).catch(() => '')));
+  const ir = await p.$eval('#cr-stage img', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  const A = [ir.x + ir.w * 0.15, ir.y + ir.h * 0.12], B = [ir.x + ir.w * 0.85, ir.y + ir.h * 0.8];
+  if (!touch) { await p.mouse.move(...A); await p.mouse.down(); for (let k = 1; k <= 8; k++) await p.mouse.move(A[0] + (B[0] - A[0]) * k / 8, A[1] + (B[1] - A[1]) * k / 8); await p.mouse.up(); }
+  else {
+    const cdp = await p.target().createCDPSession();
+    const tp = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+    await tp('touchStart', ...A); for (let k = 1; k <= 8; k++) await tp('touchMove', A[0] + (B[0] - A[0]) * k / 8, A[1] + (B[1] - A[1]) * k / 8); await tp('touchEnd'); await cdp.detach();
+  }
+  await sleep(200);
+  check(`${name}: drawing a box`, (await p.$eval('#cr-from', (e) => e.textContent)) === 'Your box');
+  await tapOrClick('#cr-oknext'); await sleep(2000);
+  let crops = (await api(`/items/${sh.id}/crops`)).pages;
+  check(`${name}: page 2 cropped on the Mac (box of the original)`, crops[1].crop && Math.abs(crops[1].crop.top - 0.12) < 0.03 && Math.abs(crops[1].crop.right - 0.85) < 0.03, JSON.stringify(crops[1]));
+  check(`${name}: Crop & next → page 3 starts with the same box`, /Page 3/.test(await p.$eval('#cr-t', (e) => e.textContent)) && (await p.$eval('#cr-from', (e) => e.textContent)) === 'Same as the last crop');
+  await p.screenshot({ path: path.join(SHOTS, `organize-crop-${name}.png`) });
+  if (name === 'mac') {
+    await p.click('#cr-frames [data-frs="1"]'); await sleep(800);
+    check('mac: ⤓ saves Frame 1', !(await p.$eval('#cr-frames [data-fr="1"]', (e) => e.disabled)));
+    await p.click('#cr-whole'); await sleep(100);
+    await p.click('#cr-frames [data-fr="1"]'); await sleep(100);
+    check('mac: Frame 1 puts the box back', (await p.$eval('#cr-from', (e) => e.textContent)) === 'Frame 1');
+  }
+  await tapOrClick('.og-crop-modal [data-close]'); await sleep(1500);
+  check(`${name}: the page tile shows the crop (new thumbnail)`, (await p.$eval('#bs-grid figure[data-p="2"] img', (e) => e.src)).includes(`v=${(await api('/items/' + sh.id)).updatedAt}`));
+  check(`${name}: Undo offers the crop`, /crop page 2/.test(await p.$eval('#cu-undo', (e) => e.textContent)));
+  await undoBtn(p);
+  crops = (await api(`/items/${sh.id}/crops`)).pages;
+  check(`${name}: Undo takes the crop off (the original stays in .history)`, !crops[1].crop && crops[1].trims === 0, JSON.stringify(crops[1]));
   if (name === 'iphone') {
     await p.tap('#bs-back'); await sleep(400);
     check('iphone: ‹ All shows Recommended to check and the list', await p.$eval('#og-side', (e) => e.getBoundingClientRect().height > 200));
@@ -141,6 +173,18 @@ for (const [name, vp] of [['mac', { width: 1440, height: 900 }], ['ipad', { widt
   }
   if (name !== 'mac') await p.close();
 }
+
+// ---- the sheet view: Edit pages… opens this sheet in Organize pages; Back returns to the sheet ----
+console.log('mac: Edit pages from the sheet');
+await mac.goto(BASE + `#/item/${sh.id}`, { waitUntil: 'networkidle0' }); await mac.reload({ waitUntil: 'networkidle0' }); await sleep(1200);
+await mac.waitForSelector('#it-more', { timeout: 8000 }); await mac.$eval('#it-more', (e) => e.click()); await sleep(400);
+const menuItems = await mac.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
+check('item menu has Edit pages…, no Split… / Join…', menuItems.includes('Edit pages…') && !menuItems.some((x) => /^(Split|Join)…$/.test(x)), menuItems.join('|'));
+await mac.evaluate(() => [...document.querySelectorAll('.menu button')].find((b) => b.textContent.trim() === 'Edit pages…').click()); await sleep(1500);
+check('Edit pages opens this sheet in Organize pages', (await mac.evaluate(() => location.hash)).startsWith(`#/manage?id=${sh.id}`) && (await mac.$eval('#bs-grid', (e) => e.dataset.id)) === sh.id);
+check('Back says the sheet', (await mac.$eval('.cu-back', (e) => e.textContent)).includes(T));
+await mac.$eval('.cu-back', (e) => e.click()); await sleep(1000);
+check('Back returns to the sheet', (await mac.evaluate(() => location.hash)) === `#/item/${sh.id}`);
 
 // ---- Mac: Refresh → Recommended to check → merge, complete song, Show hidden ----
 console.log('mac: Recommended to check');
