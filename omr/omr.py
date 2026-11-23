@@ -142,13 +142,13 @@ def note_positions(xml_path):
     return out
 
 
-def staves(png):
-    """[(top, bottom, line gap)] of every five-line staff on the page."""
+def staves(png, cut=128):
+    """[(top, bottom, line gap)] of every five-line staff on the page. cut: how dark a line pixel is (0–255)."""
     import numpy as np
     from PIL import Image
     g = np.asarray(Image.open(png).convert('L'), dtype=np.int16)
     h, w = g.shape
-    hard = (g < 128).sum(axis=1)
+    hard = (g < cut).sum(axis=1)
     dark = ((255 - g) / 255).sum(axis=1)  # grey, anti-aliased lines too (a thin line can fall across two pixel rows)
     rows = np.flatnonzero((hard > 0.4 * w) | (dark > 0.3 * w))
     lines = []
@@ -165,6 +165,272 @@ def staves(png):
             out.append((ys[i], ys[i + 4], sum(gaps) / 4)); i += 5
         else: i += 1
     return out
+
+
+def _ink(png, st):
+    """(ink, ink without staff lines) as 0/1 arrays; what crosses a staff line (ink right above and below) stays."""
+    import numpy as np
+    from PIL import Image
+    ink = (np.asarray(Image.open(png).convert('L')) < 150).astype(np.uint8)
+    H = ink.shape[0]
+    clean = ink.copy()
+    for top, bot, gp in st:
+        for k in range(5):
+            y = top + k * gp
+            r0, r1 = max(0, int(y - 2)), min(H - 1, int(y + 2) + 1)
+            keep = (ink[max(0, r0 - 1)] > 0) & (ink[r1] > 0)
+            clean[r0:r1, ~keep] = 0
+    return ink, clean
+
+
+def page_arcs(png, st=None):
+    """Ties and slurs printed on the page: thin curved strokes near a staff, once staff lines, stems, note heads and
+    beams are taken off. [{staff, x0, y0, x1, y1, xm, ym, under}] (image pixels; x0 < x1; ym = the curve's middle)."""
+    import cv2
+    import numpy as np
+    st = (staves(png) or staves(png, 200)) if st is None else st
+    if not st: return []
+    gap = float(np.median([s[2] for s in st]))
+    ink, clean = _ink(png, st)
+    k = max(3, int(round(0.45 * gap)))  # thick ink (note heads, beams) and stems / bar lines off
+    thick = cv2.dilate(cv2.morphologyEx(clean, cv2.MORPH_OPEN, np.ones((k, k), np.uint8)), np.ones((3, 3), np.uint8))
+    tall = cv2.dilate(cv2.morphologyEx(ink, cv2.MORPH_OPEN, np.ones((int(1.6 * gap), 1), np.uint8)), np.ones((1, 3), np.uint8))
+    thin = clean & (1 - thick) & (1 - tall)
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(thin, connectivity=8)
+    pieces = []  # thin strokes: (staff, xs, ys) of their middle line, absolute pixels
+    for i in range(1, n):
+        x, y, w, h, area = map(int, stats[i])
+        if w < 0.6 * gap or h > 0.5 * w + 0.6 * gap: continue
+        cy = y + h / 2
+        si = min(range(len(st)), key=lambda j: max(0, st[j][0] - cy, cy - st[j][1]))
+        top, bot, _ = st[si]
+        if not (top - 3 * gap <= cy <= bot + 2.6 * gap): continue  # not a lyric line or chord name
+        m = lab[y:y + h, x:x + w] == i
+        cols = m.any(0)
+        if cols.mean() < 0.85: continue  # one stroke, not dots or letters side by side
+        cnt = m.sum(0)
+        if cnt.max() > 0.6 * gap or np.median(cnt[cols]) > 0.35 * gap: continue  # thin all along (no bracket hooks)
+        xs = np.flatnonzero(cols)
+        pieces.append([si, x + xs, y + np.array([np.flatnonzero(m[:, c]).mean() for c in xs])])
+    # an arc cut by a stem or a bar line it crosses: its pieces join up (end of one near the start of the next)
+    pieces.sort(key=lambda q: (q[0], q[1][0]))
+    arcs = []
+    for q in pieces:
+        for a_ in arcs:
+            if a_[0] != q[0]: continue
+            dx = q[1][0] - a_[1][-1]
+            if 0 < dx <= 0.8 * gap and abs(q[2][0] - a_[2][-1]) <= 0.25 * gap + 0.12 * dx + 1:
+                a_[1] = np.concatenate([a_[1], q[1]]); a_[2] = np.concatenate([a_[2], q[2]]); break
+        else:
+            arcs.append(list(q))
+    out = []
+    for si, xs, ys in arcs:
+        w = xs[-1] - xs[0] + 1
+        h = ys.max() - ys.min()
+        if w < 1.4 * gap or h > 0.5 * w + 0.6 * gap or (np.diff(xs) > 1).sum() > 0 and len(xs) < 0.7 * w: continue
+        u = (xs - xs[0]).astype(float)
+        a, b, c = np.polyfit(u, ys, 2)
+        if np.sqrt(np.mean((ys - (a * u * u + b * u + c)) ** 2)) > 0.12 * gap + 0.6: continue  # a smooth curve
+        y0, y1 = float(ys[:3].mean()), float(ys[-3:].mean())
+        mid = int(np.argmin(np.abs(xs - (xs[0] + xs[-1]) / 2)))
+        ym = float(ys[max(0, mid - 2): mid + 3].mean())
+        sag = ym - (y0 + y1) / 2
+        if abs(sag) < max(1.5, 0.18 * gap) or a * sag >= 0: continue  # bends one way (an extender or a beam is straight)
+        out.append({'staff': si, 'x0': int(xs[0]), 'y0': round(y0, 1), 'x1': int(xs[-1]), 'y1': round(y1, 1),
+                    'xm': int(xs[mid]), 'ym': round(ym, 1), 'under': bool(sag > 0)})
+    return sorted(out, key=lambda q: (q['staff'], q['x0']))
+
+
+def _head_y(n, p, bot, gap):
+    """Where pitch p's note head sits on a staff whose bottom line is at y = bot."""
+    cl = n.getContextByClass(m21.clef.Clef)
+    low = getattr(cl, 'lowestLine', None) or 31
+    return bot - (p.diatonicNoteNum - low) * gap / 2
+
+
+def _sequence(part):
+    """The part's notes / chords in playing order, each with its measure index and voice: [(mi, offset, voice, note)]."""
+    out = []
+    for mi, meas in enumerate(part.getElementsByClass(m21.stream.Measure)):
+        for n in real_notes(meas):
+            v = n.activeSite.id if isinstance(n.activeSite, m21.stream.Voice) else ''
+            out.append((mi, round(float(n.getOffsetInHierarchy(meas)), 3), str(v), n))
+    out.sort(key=lambda q: (q[0], q[1]))
+    return out
+
+
+def _next_in_voice(seq, k):
+    v = seq[k][2]
+    return next((j for j in range(k + 1, len(seq)) if seq[j][2] == v or not v or not seq[j][2]), None)
+
+
+def _common(n1, n2):
+    """Pitches two notes / chords share (by sound)."""
+    b = {p.ps for p in n2.pitches}
+    return [p for p in n1.pitches if p.ps in b]
+
+
+def tie(n1, n2, near_y=None, head_y=None):
+    """Tie n1 to n2 (the pitches they share; one pitch of a chord: the one nearest the arc). False if they share none."""
+    common = _common(n1, n2)
+    if not common: return False
+    if isinstance(n1, m21.chord.Chord) and len(common) < len(n1.pitches) and near_y is not None and head_y:
+        common = [min(common, key=lambda p: abs(head_y(p) - near_y))]
+    for n, kind in ((n1, 'start'), (n2, 'stop')):
+        for p in common:
+            old = n.getTie(p) if isinstance(n, m21.chord.Chord) else n.tie
+            t = old.type if old is not None else None
+            new = kind if t in (None, kind) else 'continue'
+            if isinstance(n, m21.chord.Chord): n.setTie(m21.tie.Tie(new), p)
+            else: n.tie = m21.tie.Tie(new)
+    return True
+
+
+def tied(n1, n2):
+    t1 = n1.tie if not isinstance(n1, m21.chord.Chord) else next((n1.getTie(p) for p in n1.pitches if n1.getTie(p)), None)
+    return t1 is not None and t1.type in ('start', 'continue') and bool(_common(n1, n2))
+
+
+def slur(part, n1, n2):
+    """A slur from n1 to n2 in part, unless one is there already."""
+    for sp in part.spanners.getElementsByClass(m21.spanner.Slur):
+        if sp.isFirst(n1) and sp.isLast(n2): return False
+    part.insert(0, m21.spanner.Slur(n1, n2))
+    return True
+
+
+def slurs_to_ties(part):
+    """A slur over just two notes in a row with the same pitch is a tie (homr reads a tie as a slur now and then)."""
+    seq = _sequence(part)
+    at = {id(q[3]): k for k, q in enumerate(seq)}
+    done = 0
+    for sp in list(part.spanners.getElementsByClass(m21.spanner.Slur)):
+        el = sp.getSpannedElements()
+        if len(el) != 2 or id(el[0]) not in at or id(el[1]) not in at: continue
+        k = at[id(el[0])]
+        if _next_in_voice(seq, k) == at[id(el[1])] and {p.ps for p in el[0].pitches} == {p.ps for p in el[1].pitches}:
+            tie(el[0], el[1]); part.remove(sp); done += 1
+    return done
+
+
+def place_arcs(h, png, xml_path, page_no, report):
+    """Ties and slurs seen on the page image (page_arcs) put on homr's notes: an arc between two notes in a row with the
+    same pitch is a tie (they play as one note), any other arc a slur. Returns the note a tie runs off the page from
+    (the next page's first note gets it), or None."""
+    import numpy as np
+    parts = list(h.parts)
+    if not parts: return None
+    st = staves(png) or staves(png, 200)
+    arcs = page_arcs(png, st)
+    if not arcs: return None
+    gap = float(np.median([s[2] for s in st]))
+    _, clean = _ink(png, st)
+    W = clean.shape[1]
+    pos = note_positions(xml_path)
+    grand = len(parts) > 1 and isinstance(parts[0], m21.stream.PartStaff)
+    seqs = [_sequence(p) for p in parts]
+    # every note on the page: its part, place in the part's sequence, page staff, head x and y
+    heads = []
+    used = set()
+    for mi, off, sn, x, y in pos:
+        pi = (int(sn) - 1 if grand else 0)
+        if pi >= len(parts): continue
+        seq = seqs[pi]
+        k = next((j for j, q in enumerate(seq) if q[0] == mi and abs(q[1] - off) < 0.02 and (pi, j) not in used), None)
+        if k is None: continue
+        used.add((pi, k))
+        n = seq[k][3]
+        si = min(range(len(st)), key=lambda j: abs((st[j][0] + st[j][1]) / 2 - y))
+        top, bot, _ = st[si]
+        hy = _head_y(n, max(n.pitches, key=lambda p: p.ps), bot, gap)
+        # homr's position is rough: the head is the inkiest spot on its line nearby
+        y0, y1 = int(max(0, hy - 0.45 * gap)), int(hy + 0.45 * gap) + 1
+        x0, x1 = int(max(0, x - 2.5 * gap)), int(min(W, x + 2.5 * gap))
+        hx = x
+        if x1 - x0 > 2 * gap and y1 < clean.shape[0]:
+            colsum = clean[y0:y1, x0:x1].sum(0).astype(float)
+            w = max(3, int(1.2 * gap))
+            run = np.convolve(colsum, np.ones(w), 'valid')
+            if run.size and run.max() > 0.2 * w * (y1 - y0):
+                best = np.flatnonzero(run >= 0.97 * run.max())
+                c = best[np.argmin(np.abs(best + w / 2 + x0 - x))]
+                hx = x0 + c + w / 2
+        heads.append({'pi': pi, 'k': k, 'staff': si, 'x': float(hx), 'y': hy, 'bot': bot})
+    out_tie, added = None, {'ties': 0, 'slurs': 0}
+    for a in arcs:
+        mine = sorted((q for q in heads if q['staff'] == a['staff']), key=lambda q: q['x'])
+        if not mine: continue
+        pi = mine[0]['pi']
+        seq = seqs[pi]
+        mine = [q for q in mine if q['pi'] == pi]
+        near = lambda x: min(mine, key=lambda q: abs(q['x'] - x))
+        first, last = mine[0], mine[-1]
+        open_left = a['x0'] < first['x'] - 0.5 * gap
+        open_right = a['x1'] > last['x'] + 2.5 * gap
+        if open_left and open_right: continue
+        if open_left:  # the end of a tie from the line before
+            q2 = near(a['x1'])
+            if abs(q2['x'] - a['x1']) > 3 * gap or q2['k'] == 0: continue
+            k1 = q2['k'] - 1
+            while k1 >= 0 and seq[k1][2] != seq[q2['k']][2]: k1 -= 1
+            if k1 < 0: continue
+            n1, n2 = seq[k1][3], seq[q2['k']][3]
+            if not tied(n1, n2) and tie(n1, n2): added['ties'] += 1
+            continue
+        q1 = near(a['x0'] - 0.3 * gap)
+        if abs(q1['x'] - a['x0']) > 3 * gap: continue
+        hy1 = q1['y']
+        if open_right:  # a tie running to the next line (or page)
+            if abs(a['y0'] - hy1) > 2 * gap: continue
+            k2 = _next_in_voice(seq, q1['k'])
+            n1 = seq[q1['k']][3]
+            if k2 is None: out_tie = n1; continue
+            n2 = seq[k2][3]
+            if not tied(n1, n2) and tie(n1, n2): added['ties'] += 1
+            continue
+        q2 = near(a['x1'] + 0.3 * gap)
+        if q2['k'] <= q1['k'] or abs(q2['x'] - a['x1']) > 3 * gap: continue
+        n1, n2 = seq[q1['k']][3], seq[q2['k']][3]
+        if _next_in_voice(seq, q1['k']) == q2['k'] and _common(n1, n2):
+            if abs(a['y0'] - hy1) > 2 * gap: continue
+            if not tied(n1, n2) and tie(n1, n2, a['y0'], lambda p: _head_y(n1, p, q1['bot'], gap)): added['ties'] += 1
+        elif slur(parts[pi], n1, n2): added['slurs'] += 1
+    if added['ties'] or added['slurs']: report.setdefault('arcs', []).append({'page': page_no, **added})
+    return out_tie
+
+
+def audiveris_arcs(hm, am, pairs, part):
+    """Ties and slurs Audiveris read, put on homr's notes with the same onset and pitch (bars matched by `pairs`)."""
+    def find(meas, off, ps):
+        return next((n for n in real_notes(meas) if abs(float(n.getOffsetInHierarchy(meas)) - off) < 0.02 and ps & {p.ps for p in n.pitches}), None)
+    seq = _sequence(part)
+    at = {id(q[3]): k for k, q in enumerate(seq)}
+    ref = {}  # Audiveris note → the homr note at the same place
+    for i, j in pairs.items():
+        for n in real_notes(am[j]):
+            hn = find(hm[i], float(n.getOffsetInHierarchy(am[j])), {p.ps for p in n.pitches})
+            if hn is not None: ref[id(n)] = hn
+    added = {'ties': 0, 'slurs': 0}
+    for i, j in pairs.items():
+        for n in real_notes(am[j]):
+            hn = ref.get(id(n))
+            if hn is None or id(hn) not in at: continue
+            t = n.tie if not isinstance(n, m21.chord.Chord) else next((n.getTie(p) for p in n.pitches if n.getTie(p)), None)
+            if t is not None and t.type in ('start', 'continue'):
+                k2 = _next_in_voice(seq, at[id(hn)])
+                if k2 is not None and not tied(hn, seq[k2][3]) and tie(hn, seq[k2][3]): added['ties'] += 1
+    src = am[0].getContextByClass(m21.stream.Part) if am else None
+    for sp in (src.spanners.getElementsByClass(m21.spanner.Slur) if src is not None else []):
+        el = sp.getSpannedElements()
+        if len(el) < 2: continue
+        n1, n2 = ref.get(id(el[0])), ref.get(id(el[-1]))
+        if n1 is None or n2 is None or n1 is n2: continue
+        k1, k2 = at.get(id(n1)), at.get(id(n2))
+        if k1 is None or k2 is None or k2 <= k1: continue
+        if _next_in_voice(seq, k1) == k2 and _common(n1, n2):
+            if not tied(n1, n2) and tie(n1, n2): added['ties'] += 1
+        elif slur(part, n1, n2): added['slurs'] += 1
+    return added
 
 
 def ocr(img):
@@ -487,19 +753,28 @@ def take_bar(dst, src):
             dst.insert(float(e.offset), x)
 
 
-def merge_page(h, a, page_no, report, chords=None, words=None, empty=None):
-    """Copy lyrics + chord names from Audiveris (a) onto homr (h); mark bars that disagree."""
+def merge_page(h, a, page_no, report, chords=None, words=None, empty=None, png=None, carry=None):
+    """Copy lyrics + chord names from Audiveris (a) onto homr (h); mark bars that disagree. Ties and slurs: homr's,
+    Audiveris', and the arcs seen on the page image (png). carry['tie_out']: a note tied over to the next page."""
     hp = top_part(h)
     hm = list(hp.getElementsByClass(m21.stream.Measure)) if hp else []
     if isinstance(hp, m21.stream.PartStaff) or not hm:
         hm = list(h.parts[0].getElementsByClass(m21.stream.Measure))
     am = list(top_part(a).getElementsByClass(m21.stream.Measure)) if a is not None and a.parts else []
     pairs = align(hm, am) if am else {}
+    # for "bars to check": where each bar is on the page, and the other reader's notes for it
+    import copy
+    boxes = bar_boxes(png, Path(png).with_suffix('.musicxml'), len(hm)) if png is not None else {}
+    for i, meas in enumerate(hm):
+        meas.meowsicPage, meas.meowsicBox = page_no, boxes.get(i)
+        meas.meowsicAlt = [('audiveris', copy.deepcopy(am[pairs[i]]))] if i in pairs and not isinstance(hp, m21.stream.PartStaff) else []
+        meas.meowsicWant = bar_len(meas)
     # a homr bar that doesn't add up, where Audiveris read the same bar so it does (and found at least as many
     # notes): Audiveris' notes are taken (homr misreads a beamed run or drops a tied note now and then)
     for i, j in (pairs.items() if not isinstance(hp, m21.stream.PartStaff) else []):
         if i == 0 or not layers_full(am[j]) or layers_full(hm[i]): continue
         if len(real_notes(am[j])) < len(real_notes(hm[i])) or not real_notes(am[j]): continue
+        hm[i].meowsicAlt = [('homr', copy.deepcopy(hm[i]))]
         take_bar(hm[i], am[j])
         report.setdefault('taken', []).append({'page': page_no, 'bar': i + 1})
     # lyrics read from the page image come first; Audiveris only fills gaps in bars that have words
@@ -565,6 +840,17 @@ def merge_page(h, a, page_no, report, chords=None, words=None, empty=None):
                 hm[mi].insert(off, cs)
             except Exception:
                 report['notes'].append(f'page {page_no}: chord name “{tok}” not understood')
+    # ties and slurs (connection arcs): homr's, then Audiveris', then what the page image shows
+    for part in h.parts: slurs_to_ties(part)
+    if am and pairs and hp is not None:
+        got = audiveris_arcs(hm, am, pairs, hp)
+        if got['ties'] or got['slurs']: report.setdefault('arcsAudiveris', []).append({'page': page_no, **got})
+    if png is not None:
+        try:
+            n = place_arcs(h, png, Path(png).with_suffix('.musicxml'), page_no, report)
+            if carry is not None: carry['tie_out'] = n
+        except Exception as e:
+            report['notes'].append(f'page {page_no}: ties / slurs: {e}')
     drop_empty_bars(h, page_no, report, empty or set())
     return h
 
@@ -738,6 +1024,136 @@ def bars_full(score):
     return bad
 
 
+def bar_boxes(png, xml_path, nbars):
+    """{homr bar index: [x0, y0, x1, y1]}: where each bar is printed on the page (image pixels), from homr's note
+    positions, the staves and the bar lines between them."""
+    import numpy as np
+    try:
+        st = staves(png)
+        pos = note_positions(xml_path)
+    except Exception:
+        return {}
+    st = st or staves(png, 200)  # faint (grey, enlarged) staff lines
+    if not st or not pos: return {}
+    gap = float(np.median([s[2] for s in st]))
+    ink, _ = _ink(png, st)
+    H, W = ink.shape
+    def staff_of(y): return min(range(len(st)), key=lambda j: abs((st[j][0] + st[j][1]) / 2 - y))
+    def bar_lines(si):  # columns inked the whole staff height
+        top, bot, _ = st[si]
+        col = ink[int(top):int(bot) + 1].mean(0)
+        xs = np.flatnonzero(col >= 0.92)
+        out = []
+        for x in xs:
+            if out and x - out[-1][1] <= 2: out[-1][1] = x
+            else: out.append([x, x])
+        return [(a + b) / 2 for a, b in out if b - a <= 0.6 * gap]
+    def ends(si):  # where the staff lines start and stop
+        xs = np.flatnonzero(ink[int(round(st[si][0]))])
+        return (float(xs[0]), float(xs[-1])) if xs.size else (0.0, float(W))
+    by = {}
+    for mi, off, sn, x, y in pos:
+        by.setdefault(mi, []).append((x, staff_of(y)))
+    lines = {}
+    out = {}
+    bars = sorted(by)
+    for k, mi in enumerate(bars):
+        xs = [q[0] for q in by[mi]]
+        sis = sorted({q[1] for q in by[mi]})
+        si = sis[0]
+        xs = [q[0] for q in by[mi] if q[1] == si] or xs
+        if si not in lines: lines[si] = bar_lines(si)
+        left_end, right_end = ends(si)
+        prev = by[bars[k - 1]] if k and min(q[1] for q in by[bars[k - 1]]) == si else None  # the bar before, on this line
+        nxt = by[bars[k + 1]] if k + 1 < len(bars) and min(q[1] for q in by[bars[k + 1]]) == si else None
+        lo = max(q[0] for q in prev) if prev else left_end
+        hi = min(q[0] for q in nxt) if nxt else right_end
+        cand_l = [b for b in lines[si] if lo - gap <= b <= min(xs)]
+        cand_r = [b for b in lines[si] if max(xs) <= b <= hi + gap]
+        x0 = max(cand_l) if cand_l else (lo + min(xs)) / 2 if lo != left_end else left_end
+        x1 = min(cand_r) if cand_r else (hi + max(xs)) / 2 if hi != right_end else right_end
+        top = st[si][0]
+        bot = st[sis[-1]][1]
+        nxt_top = next((t for t, b, g in st if t > bot + gap), H)
+        out[mi] = [int(max(0, x0 - 0.3 * gap)), int(max(0, top - 4 * gap)), int(min(W, x1 + 0.3 * gap)), int(min(H, bot + 4.5 * gap, nxt_top - 4 * gap) if nxt_top < H else min(H, bot + 4.5 * gap))]
+    return {mi: b for mi, b in out.items() if mi < nbars}
+
+
+REASONS = (  # what was done to a bar → a short plain reason for "bars to check"
+    ('three notes made a triplet', 'triplet added to make the bar add up'),
+    ('split into voices', 'bar was too long — split into 2 voices'),
+    ('rest added', 'rest added to fill the bar'),
+    ('missing dot', 'dot added to make the bar add up'),
+    ('shortened', 'bar was too long — last notes shortened'),
+    ('empty', 'empty bar — whole-bar rest added'),
+    ('pickup', 'short first bar — rest added in front'),
+)
+
+
+def plain_reason(fix):
+    return next((r for k, r in REASONS if k in fix), fix)
+
+
+def alt_xml(meas, number, want):
+    """Another reader's notes for a bar as a MusicXML <measure> (made to add up to `want` quarters; no words)."""
+    import copy
+    import xml.etree.ElementTree as ET
+    m = copy.deepcopy(meas)
+    for e in list(m.recurse().getElementsByClass((m21.harmony.ChordSymbol, m21.expressions.TextExpression, m21.spanner.Spanner))):
+        m.remove(e, recurse=True)
+    for n in m.recurse().notes: n.lyrics = []
+    for c in _layers(m): _fill(c, want, False, m)
+    one_voice_each(m)
+    m.number = number
+    s = m21.stream.Score(); p = m21.stream.Part(); p.append(m); s.append(p)
+    root = ET.fromstring(m21.musicxml.m21ToXml.GeneralObjectExporter(s).parse())
+    x = root.find('.//measure')
+    for at in x.findall('attributes'):  # only the note lengths' unit; clef / key / time stay the score's own
+        for ch in list(at):
+            if ch.tag != 'divisions': at.remove(ch)
+    for ch in list(x):
+        if ch.tag not in ('attributes', 'note', 'backup', 'forward'): x.remove(ch)
+    x.attrib = {'number': str(number)}
+    for e in x.iter():  # the other reader's page layout means nothing here
+        for k in ('default-x', 'default-y', 'relative-x', 'relative-y', 'width'): e.attrib.pop(k, None)
+    return ET.tostring(x, encoding='unicode')
+
+
+def check_sheet(score, report, merged, pngs):
+    """check.json: for every bar to check, why (plain words), where it is printed (page + box in image pixels) and
+    the other reader's notes for it (a MusicXML <measure> the app can put in instead)."""
+    from PIL import Image
+    page_bars = [len(top_part(m).getElementsByClass(m21.stream.Measure)) for m in merged]
+    first = [sum(page_bars[:k]) for k in range(len(page_bars))]
+    why = {}
+    for c in report['check']:
+        if c['page'] - 1 < len(first): why.setdefault(first[c['page'] - 1] + c['bar'], []).extend(c['why'])
+    for t in report.get('taken', []):
+        why.setdefault(first[t['page'] - 1] + t['bar'], []).append("notes taken from the second reader (homr's didn't add up)")
+    for t in report.get('filled', []):
+        if t['part'] == 1 and not t['fix'].startswith('pickup'):
+            why.setdefault(t['bar'], []).extend(plain_reason(f) for f in t['fix'].split('; '))
+    bars = list(score.parts[0].getElementsByClass(m21.stream.Measure))
+    out = []
+    for b in report['unsure']:
+        if not 0 < b <= len(bars): continue
+        meas = bars[b - 1]
+        alts = []
+        for src, am in getattr(meas, 'meowsicAlt', None) or []:
+            try:
+                alts.append({'id': src, 'label': {'audiveris': 'Second reader (Audiveris)', 'homr': 'First reader (homr)'}[src],
+                             'musicxml': alt_xml(am, b, getattr(meas, 'meowsicWant', None) or bar_len(meas))})
+            except Exception as e:
+                report['notes'].append(f'bar {b}: other reading not kept ({e})')
+        reasons = list(dict.fromkeys(why.get(b) or ['marked to check']))
+        box = getattr(meas, 'meowsicBox', None)
+        out.append({'bar': b, 'page': getattr(meas, 'meowsicPage', None), 'box': box, 'reasons': reasons, 'alternatives': alts})
+    pages = []
+    for k, p in enumerate(pngs, 1):
+        with Image.open(p) as im: pages.append({'page': k, 'file': p.name, 'width': im.width, 'height': im.height})
+    return {'version': 1, 'pages': pages, 'bars': out}
+
+
 def unsure_bars(report, page_bars):
     """Score bar numbers (1-based, all pages joined) to check: readers disagreed, or the bar was changed to add up."""
     first = [sum(page_bars[:k]) for k in range(len(page_bars))]
@@ -763,6 +1179,8 @@ def join(scores, title):
             if pi >= len(base.parts): break
             for meas in part.getElementsByClass(m21.stream.Measure):
                 base.parts[pi].append(meas)
+            for sp in part.spanners:  # slurs etc. live in the part, not in its bars
+                base.parts[pi].insert(0, sp)
     for pi, part in enumerate(base.parts):
         for k, meas in enumerate(part.getElementsByClass(m21.stream.Measure), 1):
             meas.number = k
@@ -808,19 +1226,30 @@ def main():
     for p in pngs:
         try: words.append(lyric_words(p, p.with_suffix('.musicxml'), a.first_verse))
         except Exception as e: words.append(None); report['notes'].append(f'words: {e}')
-    merged = [merge_page(h, aud.get(p.stem), k, report, ch, wd, empty_bars(p.with_suffix('.musicxml')))
-              for k, (h, p, ch, wd) in enumerate(zip(homr, pngs, chords, words), 1)]
+    carries = [{} for _ in pngs]
+    merged = [merge_page(h, aud.get(p.stem), k, report, ch, wd, empty_bars(p.with_suffix('.musicxml')), p, cr)
+              for k, (h, p, ch, wd, cr) in enumerate(zip(homr, pngs, chords, words, carries), 1)]
+    for k, cr in enumerate(carries[:-1]):  # a tie running off a page ends on the next page's first note
+        n1 = cr.get('tie_out')
+        nxt = merged[k + 1].parts
+        if n1 is None or not nxt: continue
+        first = next((q[3] for q in _sequence(nxt[0])), None)
+        if first is not None and not tied(n1, first) and tie(n1, first): report.setdefault('arcs', []).append({'page': k + 2, 'ties': 1, 'slurs': 0})
     score = join(merged, a.title)
     report['bars'] = len(score.parts[0].getElementsByClass(m21.stream.Measure))
     report['filled'] = fill_bars(score)  # every bar adds up to its time signature (the check marks stay)
     report['notFull'] = bars_full(score)
     report['unsure'] = unsure_bars(report, [len(top_part(m).getElementsByClass(m21.stream.Measure)) for m in merged])
     report['lyrics'] = sum(1 for n in score.recurse().notes if n.lyrics)
+    report['ties'] = sum(1 for n in score.recurse().notes if not isinstance(n, m21.harmony.ChordSymbol) and n.tie is not None and n.tie.type == 'start')
+    report['slurs'] = len(score.recurse().getElementsByClass(m21.spanner.Slur))
     score.write('musicxml', fp=str(out / 'score.musicxml'))
     x = (out / 'score.musicxml').read_text()
     x = __import__('re').sub(r'<creator type="composer">Music21</creator>\s*', '', x)
     x = mark_unsure(x, report['unsure'])
     (out / 'score.musicxml').write_text(x)
+    try: (out / 'check.json').write_text(json.dumps(check_sheet(score, report, merged, pngs), ensure_ascii=False, indent=1))
+    except Exception as e: report['notes'].append(f'check.json: {e}')
     (out / 'report.json').write_text(json.dumps(report, indent=1))
     say('done', f"{report['bars']} bars, {len(report['check'])} to check", report=report)
 

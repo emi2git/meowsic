@@ -1,0 +1,263 @@
+"""Bars to check of a score made from a sheet ("Make it a score", omr/omr.py).
+
+omr.py writes check.json beside the score; the job keeps it in the score's folder as "<folder> check.json" with the
+pages it read as "<folder> check p<k>.jpg" (the bar boxes are in those images' pixels):
+
+  {version: 1, sheetId, pages: [{page, file, width, height}],
+   bars: [{bar, page, box: [x0, y0, x1, y1] | null, reasons: ["the two readers disagree", ...],
+           alternatives: [{id: "audiveris" | "homr", label, musicxml: "<measure number=..>…</measure>"}]}],
+   decisions: [{bar, action: "ok" | "use", alt, at}]}   (a log; nothing in it is ever removed)
+
+A bar is still open while its number is in the score's <miscellaneous-field name="meowsic-check-bars">, so an
+Activities undo (the MusicXML before, from .history) opens it again by itself.
+
+GET  /api/items/{id}/check  → the above + open, url per page, sha of the score
+POST /api/items/{id}/check  {bar, action: "ok" | "use", alt?: id, sha?, act?} → the bar marked fine, or the other
+     reading put in (its notes; the bar keeps its chord names, words — by order — and marks). Logged with Undo.
+"""
+import json
+import math
+import re
+import shutil
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+from fastapi import APIRouter, Body, Depends, HTTPException
+
+from .db import now_ms
+from .items import cfg, conn, item_dir, must_item, safe_file
+from .lyricsedit import _head, _xml_path, sha
+from .sheetversion import refresh_staves
+from .undolog import record_undo
+
+router = APIRouter(prefix='/api')
+FIELD = 'meowsic-check-bars'
+
+
+def check_file(d: Path, folder: str) -> Path | None:
+    p = d / f'{folder} check.json'
+    if p.is_file(): return p
+    return next(iter(sorted(d.glob('* check.json'))), None)
+
+
+def page_file(d: Path, folder: str, k: int) -> Path | None:
+    p = d / f'{folder} check p{k}.jpg'
+    if p.is_file(): return p
+    return next(iter(sorted(d.glob(f'* check p{k}.jpg'))), None)
+
+
+def keep_check(d: Path, folder: str, src_dir: Path, sheet_id: str | None = None):
+    """Called by the omr job: src_dir/check.json and the pages it names → the score's folder."""
+    src = src_dir / 'check.json'
+    if not src.is_file(): return None
+    data = json.loads(src.read_text(encoding='utf-8'))
+    from PIL import Image
+    for pg in data.get('pages', []):
+        f = src_dir / pg.get('file', '')
+        if not f.is_file(): continue
+        name = f'{folder} check p{pg["page"]}.jpg'
+        with Image.open(f) as im: im.convert('RGB').save(d / name, quality=85)
+        pg['file'] = name
+    data['sheetId'] = sheet_id
+    data.setdefault('decisions', [])
+    p = d / f'{folder} check.json'
+    p.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+    return p
+
+
+def open_bars(text: str) -> list[int]:
+    m = re.search(rf'<miscellaneous-field name="{FIELD}">([^<]*)<', text)
+    return [int(x) for x in m.group(1).split()] if m else []
+
+
+# ---------- changing one bar ----------
+
+def _measure(part, bar):
+    return next((m for m in part.findall('measure') if m.get('number') == str(bar)), None)
+
+
+def _divisions_at(part, meas):
+    div = 1
+    for m in part.findall('measure'):
+        for at in m.findall('attributes'):
+            if at.findtext('divisions'): div = int(at.findtext('divisions'))
+        if m is meas: break
+    return div
+
+
+def _timed(meas):
+    """[(element, onset in divisions)] of what sits in the bar, walking notes / backup / forward."""
+    t = last = 0
+    out = []
+    for e in meas:
+        if e.tag == 'backup': t -= int(e.findtext('duration') or 0)
+        elif e.tag == 'forward': t += int(e.findtext('duration') or 0)
+        elif e.tag == 'note':
+            d = int(e.findtext('duration') or 0)
+            if e.find('chord') is not None: out.append((e, last)); continue
+            out.append((e, t)); last = t
+            if e.find('grace') is None: t += d
+        else: out.append((e, t))
+    return out
+
+
+def _unmark(meas):
+    """The red "⚠ check" text above the bar goes."""
+    for e in list(meas.findall('direction')):
+        if any('⚠' in (w.text or '') for w in e.iter('words')): meas.remove(e)
+
+
+def _drop_from_field(root, bar):
+    for f in root.iter('miscellaneous-field'):
+        if f.get('name') == FIELD:
+            left = [x for x in (f.text or '').split() if x != str(bar)]
+            f.text = ' '.join(left)
+            if not left:
+                misc = next((m for m in root.iter('miscellaneous') if f in list(m)), None)
+                if misc is not None:
+                    misc.remove(f)
+                    if not len(misc):
+                        ident = next((i for i in root.iter('identification') if misc in list(i)), None)
+                        if ident is not None: ident.remove(misc)
+
+
+def use_alternative(part, meas, alt_xml: str):
+    """Put the other reading's notes into meas; the bar keeps its attributes, chord names, marks and words."""
+    alt = ET.fromstring(alt_xml)
+    cur = _divisions_at(part, meas)
+    ad = next((int(a.findtext('divisions')) for a in alt.findall('attributes') if a.findtext('divisions')), cur)
+    new = [e for e in alt if e.tag in ('note', 'backup', 'forward')]
+    durs = [e.find('duration') for e in new if e.find('duration') is not None]
+    unit = cur
+    if any((int(d.text) * cur) % ad for d in durs):  # the score's unit can't hold these lengths: a finer one for this bar
+        unit = cur * ad // math.gcd(cur, ad)
+    for d in durs: d.text = str(int(d.text) * unit // ad)
+    old = _timed(meas)
+    words = [[ly for ly in e.findall('lyric')] for e, _ in old if e.tag == 'note' and e.find('rest') is None and e.find('chord') is None]
+    lead = [e for e, t in old if e.tag == 'attributes' and t == 0]
+    others = [(e, t * unit // cur) for e, t in old if e.tag not in ('note', 'backup', 'forward') and e not in lead and e.tag != 'barline']
+    bars = [e for e in meas if e.tag == 'barline']
+    for e in list(meas): meas.remove(e)
+    if unit != cur:  # this bar counts in a finer unit; the next bar goes back to the score's
+        at = lead[0] if lead else ET.Element('attributes')
+        dv = at.find('divisions')
+        if dv is None: dv = ET.Element('divisions'); at.insert(0, dv)
+        dv.text = str(unit)
+        if not lead: lead = [at]
+        nxt = _next_measure(part, meas)
+        if nxt is not None:
+            a2 = next((a for a in nxt.findall('attributes')), None)
+            if a2 is None or a2.find('divisions') is None:
+                a2 = a2 if a2 is not None else ET.Element('attributes')
+                dv2 = ET.Element('divisions'); dv2.text = str(cur); a2.insert(0, dv2)
+                if a2 not in list(nxt): nxt.insert(0, a2)
+    left = [b for b in bars if b.get('location') == 'left']
+    for e in left + lead: meas.append(e)
+    # notes of the first voice in order, with the chord names / marks at their onsets put just before them
+    t, k, wi = 0, 0, 0
+    pending = sorted(others, key=lambda q: q[1])
+    in_first = True
+    for e in new:
+        if e.tag == 'backup': in_first = False
+        if in_first and e.tag == 'note' and e.find('chord') is None:
+            while pending and pending[0][1] <= t: meas.append(pending.pop(0)[0])
+        if e.tag == 'note' and in_first and e.find('rest') is None and e.find('chord') is None and wi < len(words):
+            for ly in e.findall('lyric'): e.remove(ly)
+            for ly in words[wi]: e.append(ly)
+            wi += 1
+        meas.append(e)
+        if in_first and e.tag == 'note' and e.find('chord') is None and e.find('grace') is None: t += int(e.findtext('duration') or 0)
+        if in_first and e.tag == 'forward': t += int(e.findtext('duration') or 0)
+    for e, _ in pending: meas.append(e)
+    for b in bars:
+        if b.get('location') != 'left': meas.append(b)
+
+
+def _next_measure(part, meas):
+    ms = part.findall('measure')
+    i = next((k for k, m in enumerate(ms) if m is meas), None)
+    return ms[i + 1] if i is not None and i + 1 < len(ms) else None
+
+
+def apply_check(text: str, bar: int, action: str, alt_xml: str | None = None) -> str:
+    root = ET.fromstring(text.encode('utf-8'))
+    for part in root.findall('part'):
+        meas = _measure(part, bar)
+        if meas is None: continue
+        _unmark(meas)
+        if action == 'use' and part is root.find('part'): use_alternative(part, meas, alt_xml)
+    _drop_from_field(root, bar)
+    return _head(text) + ET.tostring(root, encoding='unicode') + '\n'
+
+
+# ---------- API ----------
+
+def _load(cf, it):
+    d = item_dir(cf, it)
+    p = check_file(d, it['folder'])
+    if not p: raise HTTPException(404, 'This score has no bars to check')
+    return d, p, json.loads(p.read_text(encoding='utf-8'))
+
+
+@router.get('/items/{item_id}/check')
+def get_check(item_id: str, c=Depends(conn), cf=Depends(cfg)):
+    it = must_item(c, item_id)
+    d, _, data = _load(cf, it)
+    text = _xml_path(cf, it).read_text(encoding='utf-8')
+    still = set(open_bars(text))
+    for pg in data.get('pages', []):
+        f = page_file(d, it['folder'], pg['page'])
+        pg['url'] = f'/api/items/{item_id}/file/{f.name}' if f else None
+    last = {}
+    for x in data.get('decisions', []): last[x['bar']] = x
+    for b in data.get('bars', []):
+        b['open'] = b['bar'] in still
+        b['decision'] = last.get(b['bar']) if not b['open'] else None
+    data['open'] = sorted(still)
+    data['sha'] = sha(text)
+    return data
+
+
+def _keep(d: Path, name: str) -> str:
+    (d / '.history').mkdir(exist_ok=True)
+    rel = f'.history/check-{now_ms()}-{name}'
+    while (d / rel).exists(): rel = f'.history/check-{now_ms() + 1}-{name}'
+    shutil.copyfile(d / name, d / rel)
+    return rel
+
+
+@router.post('/items/{item_id}/check')
+def post_check(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
+    it = must_item(c, item_id)
+    d, cp, data = _load(cf, it)
+    try: bar = int(body.get('bar'))
+    except (TypeError, ValueError): raise HTTPException(400, 'bar (a number) is required')
+    action = body.get('action')
+    if action not in ('ok', 'use'): raise HTTPException(400, 'action is ok or use')
+    entry = next((b for b in data.get('bars', []) if b['bar'] == bar), None)
+    p = _xml_path(cf, it)
+    text = p.read_text(encoding='utf-8')
+    if body.get('sha') and body['sha'] != sha(text): raise HTTPException(409, 'This score was changed since — open the check again')
+    if bar not in open_bars(text): raise HTTPException(409, f'Bar {bar} is not waiting for a check')
+    alt = None
+    if action == 'use':
+        alt = next((a for a in (entry or {}).get('alternatives', []) if a['id'] == body.get('alt')), None)
+        if not alt: raise HTTPException(400, 'No such other reading for this bar')
+    out = apply_check(text, bar, action, alt['musicxml'] if alt else None)
+    hist = _keep(d, p.name)
+    orig = it.get('musicxmlOriginal')
+    if not orig:  # like note edits: the first change keeps the untouched file ("Revert")
+        orig = f'{it["folder"]} (original).musicxml'
+        if not (d / orig).exists(): shutil.copyfile(p, d / orig)
+    p.write_text(out, encoding='utf-8')
+    c.execute('UPDATE score SET musicxml=?, musicxml_original=? WHERE item_id=?', (p.name, orig, it['id']))
+    c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), it['id']))
+    refresh_staves(c, cf, it['id'])
+    data.setdefault('decisions', []).append({'bar': bar, 'action': action, 'alt': alt['id'] if alt else None, 'at': now_ms()})
+    cp.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
+    what = f'bar {bar}: ' + ('marked OK' if action == 'ok' else f'{alt["label"]} put in')
+    aid = record_undo(c, body.get('act') or 'bar-check',
+                      {'op': 'musicxml', 'id': it['id'], 'title': it['title'], 'file': p.name, 'before': hist,
+                       'beforeSha': sha(text), 'afterSha': sha(out), 'what': 'bar check'},
+                      f'Checked a bar: {it["title"]}', f'{what}; the score before is kept in {hist}')
+    return {'ok': True, 'activity': aid, 'history': hist, 'sha': sha(out), 'open': open_bars(out)}

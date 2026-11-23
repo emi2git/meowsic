@@ -12,6 +12,8 @@ Used by the server job kind `omr` (sheet ⋯ → "Make a score (beta)…"), and 
 | Words | Apple Vision under each top staff (Vietnamese + English), syllables from hyphens; each line of words is a verse (`<lyric number="1">`, `2`, …). Audiveris fills gaps (its Tesseract reads eng, + vie when `vie.traineddata` is in its tessdata) |
 | Bars marked "⚠ check" | the two readers disagree, or the bar didn't add up to the time signature |
 | Full bars | every bar is then made to add up (pickup: rest in front; short: missing dot or a rest; long: shortened; empty: whole rest) — `report.json` `filled` lists each change |
+| Ties and slurs | homr's (a "slur" over two same notes in a row becomes a tie), Audiveris' (matched by onset + pitch), then the arcs on the page image (`page_arcs`: thin curved strokes once staff lines / stems / heads are off; pieces cut by a stem or bar line join up). Arc between two notes in a row with the same pitch = tie (plays as one note), else slur; a tie running to the next line / page is joined there. `report.json` `arcs`, `ties`, `slurs` |
+| Bars to check | `check.json`: per bar the plain reason(s), the page + box (image pixels of `page<k>.png`) and the other reader's `<measure>` (made full). The job keeps it as `<folder> check.json` + `<folder> check p<k>.jpg`; `GET/POST /api/items/{id}/check` (server/meowsic/barcheck.py) |
 
 Setup: `python3.12 -m venv .venv && .venv/bin/pip install homr onnxruntime music21 pyobjc-framework-Vision`,
 `.venv/bin/homr --init`, then move the `.onnx` files to `~/ai/models/homr` and symlink them back.
