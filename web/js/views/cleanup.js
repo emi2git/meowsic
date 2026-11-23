@@ -10,6 +10,7 @@
 import { store } from '../store.js';
 import { go } from '../app.js';
 import { $, esc, toast, menu, sheet as modal, confirmSheet } from '../ui.js';
+import { makeBooks, BOOK_KEYS } from './cleanup-books.js';
 
 const KEYS = {
   sort: [
@@ -33,6 +34,7 @@ const KEYS = {
     ['U / Z', 'Undo'],
   ],
   titles: [['Enter / R', 'Rename'], ['F', 'Title is fine'], ['↑ ↓', 'Next / previous'], ['U / Z', 'Undo']],
+  books: BOOK_KEYS,
 };
 // what the Mac found, in plain words
 const ISSUE = { trim: 'Screen junk to trim', mixed: 'Pages from different songs', incomplete: 'Pages missing', extra: 'Extra pages',
@@ -62,13 +64,15 @@ export function cleanupView(main) {
       <div class="cu-tabs" role="tablist">
         <button data-tab="sort">Go through sheets</button>
         <button data-tab="songs">Fix pages <i id="cu-nf"></i></button>
-        <button data-tab="titles">Titles <i id="cu-nt"></i></button></div>
+        <button data-tab="titles">Titles <i id="cu-nt"></i></button>
+        <button data-tab="books">Books → sheets</button></div>
       <span class="grow"></span>
       <span class="muted small" id="cu-scan"></span>
       <button id="cu-undo" class="cu-undo" disabled title="Undo (U)">↶ Undo</button>
       <button id="cu-more" class="icon-btn" aria-label="More" title="More">⋯</button></header>
     <div class="cu" id="cu"></div>`;
   const body = $('#cu', main);
+  const books = makeBooks({ body, st, busy: (f) => busy(f), undo: () => undo(), help: () => help(), drawHead: () => drawHead(), tab: (t) => { st.tab = t; draw(); } });
 
   const shown = () => st.songs.filter((s) => (st.filter === 'all' ? true : st.filter === 'good' ? isGood(s) : !isGood(s)));
   const song = () => st.songs.find((s) => s.id === st.sid);
@@ -113,6 +117,7 @@ export function cleanupView(main) {
     try { localStorage.setItem('meowsic-cu-tab', st.tab); } catch {}
     body.className = 'cu ' + st.tab;
     if (st.tab === 'titles') return drawTitles();
+    if (st.tab === 'books') return books.draw();
     if (st.tab === 'sort') return drawSort();
     const list = shown();
     const filt = `<div class="cu-filter">${FILTERS.map(([k, l]) => `<button data-f="${k}" class="${st.filter === k ? 'on' : ''}">${l} <i>${{ look: st.songs.filter((s) => !isGood(s)).length, good: st.songs.filter(isGood).length, all: st.songs.length }[k]}</i></button>`).join('')}</div>`;
@@ -552,6 +557,7 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
     if (!main.isConnected || !location.hash.startsWith('#/cleanup') || !body.isConnected) return removeEventListener('keydown', onKey);
     if (st.renaming || document.querySelector('.modal') || e.target.matches?.('input:not([readonly]), textarea')) return;
     const k = e.key, songs = st.tab === 'songs';
+    if (st.tab === 'books') return books.onKey(e);
     if (st.tab === 'sort') {
       const a = { d: () => decide('delete'), Delete: () => decide('delete'), Backspace: () => decide('delete'), k: () => decide('keep'), Enter: () => decide('keep'),
         ArrowRight: () => sortStep(1), ArrowLeft: () => sortStep(-1), z: undo, u: undo, '?': help,
