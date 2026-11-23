@@ -1076,3 +1076,8 @@ label .bs-det { display: block; font-weight: 400; margin-top: 2px; }
 .img-failed img.img-fail { visibility: hidden; }
 .img-failed::after { content: attr(data-fail); position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 12px; background: var(--bg2); color: var(--ink2); font-size: 14px; font-weight: 600; line-height: 1.35; overflow: hidden; border-radius: inherit; z-index: 1; pointer-events: none; }
 .cu-strip .img-failed::after, .cu-pick .img-failed::after { font-size: 10px; padding: 4px; }
+/* library language toggle: All (dim earth) → Vietnamese (star) → World (earth); quiet, round, icon only */
+.lang-btn { width: 36px; height: 36px; min-height: 0; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+.lang-btn .ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.lang-btn[data-lang="all"] { opacity: .45; }
+.lang-btn.on { color: var(--acc-text); background: var(--acc-soft); }

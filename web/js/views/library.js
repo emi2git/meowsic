@@ -43,6 +43,17 @@ const PAGE = 50; // rows per page on the Mac (the list scrolls)
 // (measured after drawing: header, table heading, pager, row height — book rows with covers are
 // taller), swipe left / right for the next / previous page. `per` is the last measured count;
 // `key` is the view (type + tags) the page number belongs to, so coming back from an item keeps it.
+// All → Vietnamese → World (everything not Vietnamese); remembered on this device
+const LANG_NEXT = { all: 'vi', vi: 'world', world: 'all' };
+const VI_CHARS = /[ăâđêôơưĂÂĐÊÔƠƯạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/;
+const isVi = (it) => it.tags.includes('Vietnamese') || VI_CHARS.test(it.title || '');
+const LANG_ICON = {
+  vi: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.2l2.2 5.1 5.5.4-4.2 3.6 1.3 5.4L12 15.8l-4.8 2.9 1.3-5.4-4.2-3.6 5.5-.4z"/></svg>',
+  world: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.5 7.5c2 .5 3 1.8 2.5 3.5s1 2.5 2.5 3-1 3.5.5 5M14 3.4c-.5 1.6.5 2.6 2 3s2 2 1.5 3.5 1.5 2.5 3.4 2.4"/></svg>',
+};
+LANG_ICON.all = LANG_ICON.world;
+const LANG_TITLE = { all: 'All songs (tap: Vietnamese only)', vi: 'Vietnamese only (tap: world songs)', world: 'World songs only (tap: all)' };
+let lang = 'all'; try { lang = localStorage.getItem('meowsic-lang') || 'all'; } catch {}
 const state = { q: '', sort: 'added', dir: 1, select: false, sel: new Set(), page: 1, anchor: null, per: 0, key: null };
 try { state.sort = localStorage.getItem('meowsic-sort') || 'added'; } catch {}
 
@@ -73,6 +84,7 @@ export function libraryView(main, { q }) {
       <button class="chip-btn" id="lib-sort" hidden aria-haspopup="menu">Sort: ${SORTS[state.sort][0]} ▾</button>
     
       <label class="search">${icon('search')}<input type="search" id="lib-q" placeholder="Search titles, artists, tags" value="${esc(state.q)}" aria-label="Search"></label>
+      <button class="icon-btn lang-btn ${lang !== 'all' ? 'on' : ''}" id="lib-lang" data-lang="${lang}" title="${LANG_TITLE[lang]}" aria-label="${LANG_TITLE[lang]}">${LANG_ICON[lang]}</button>
       <button class="icon-btn tag-btn ${tags.length ? 'on' : ''}" id="lib-tag" title="Filter by tag" aria-label="Filter by tag">${iconOn('tag')}</button>
       <button class="icon-btn touch-only" id="lib-select">Select</button>
     </header>
@@ -82,7 +94,7 @@ export function libraryView(main, { q }) {
 
   const draw = (again = true) => {
     const words = fold(state.q).split(/\s+/).filter(Boolean);
-    let list = store.items().filter((it) => (!kind || kindOf(it) === kind) && tags.every((t) => it.tags.includes(t)));
+    let list = store.items().filter((it) => (!kind || kindOf(it) === kind) && tags.every((t) => it.tags.includes(t)) && (lang === 'all' || (lang === 'vi') === isVi(it)));
     if (words.length) list = list.filter((it) => { const hay = fold([it.title, it.artist, ...it.tags, KIND[kindOf(it)].label].join(' ')); return words.every((w) => hay.includes(w)); });
     list.sort(SORTS[state.sort][1]);
     if (state.dir < 0) list.reverse();
@@ -193,6 +205,12 @@ export function libraryView(main, { q }) {
 
   main.querySelector('.seg').onclick = (e) => { const b = e.target.closest('[data-kind]'); if (b) { state.page = 1; setQ('kind', b.dataset.kind); } };
   $('#lib-tag', main).onclick = (e) => tagFilter(e.currentTarget, tags, setTags);
+  $('#lib-lang', main).onclick = (e) => {
+    lang = LANG_NEXT[lang]; try { localStorage.setItem('meowsic-lang', lang); } catch {}
+    const btn = e.currentTarget; btn.dataset.lang = lang; btn.classList.toggle('on', lang !== 'all');
+    btn.title = btn.ariaLabel = LANG_TITLE[lang]; btn.innerHTML = LANG_ICON[lang];
+    state.page = 1; draw();
+  };
   main.querySelectorAll('[data-untag]').forEach((b) => (b.onclick = () => setTags(tags.filter((t) => t !== b.dataset.untag))));
   $('#lib-tags-clear', main)?.addEventListener('click', () => setTags([]));
   $('#lib-sort', main).onclick = (e) => menu(e.currentTarget, Object.entries(SORTS).map(([k, [l]]) => ({
