@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS item (
   kind        TEXT NOT NULL CHECK (kind IN ('sheet','chords','score')),
   title       TEXT NOT NULL,
   artist      TEXT NOT NULL DEFAULT '',
+  album       TEXT NOT NULL DEFAULT '',     -- the show / movie / collection: Frozen, Les Misérables, Carnival of the Animals ('' = not known)
   created_at  INTEGER NOT NULL,              -- ms since epoch
   updated_at  INTEGER NOT NULL,
   deleted_at  INTEGER,                        -- set = in Trash
@@ -47,6 +48,7 @@ CREATE TABLE IF NOT EXISTS chord_chart (      -- kind = 'chords'
   url       TEXT NOT NULL DEFAULT '',
   key       TEXT NOT NULL DEFAULT '',
   capo      INTEGER NOT NULL DEFAULT 0,
+  version   TEXT NOT NULL DEFAULT '',         -- 'lead' | 'piano' | 'duet' like a sheet; '' = not known
   text      TEXT NOT NULL                     -- ChordPro: "[C]Twinkle [F]little…", {c: Verse}
 );
 

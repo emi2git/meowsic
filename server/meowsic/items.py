@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 from .sheetversion import refresh_staves
 from .undolog import edit_detail, edit_title, fields_step, record_undo
-from .db import AI_SOURCE, OLD_CREDITS, credit_xml, BOOKS, KIND_COLS, SCORE_VERSIONS, SHEET_VERSIONS, book_folder, ensure_tags, folder_base, folder_path, get_item, item_json, log_event, now_ms, folder_name, rebase, uid, write_item
+from .db import AI_SOURCE, NOT_ARTIST, OLD_CREDITS, credit_xml, score_byline, BOOKS, KIND_COLS, SCORE_VERSIONS, SHEET_VERSIONS, book_folder, ensure_tags, folder_base, folder_path, get_item, item_json, log_event, now_ms, folder_name, rebase, uid, write_item
 
 router = APIRouter(prefix='/api')
 
@@ -92,10 +92,10 @@ def create_item(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
         body['ai'] = 1 if body.get('ai') else 0  # AI music: a score Claude composed (set once, here)
         if body['ai'] and body.get('source', '') in ('', 'Composed by Claude'): body['source'] = AI_SOURCE
         if body.get('source') in OLD_CREDITS: body['source'] = AI_SOURCE  # 'Meowsic AI' -> 'Meowsic'
-        if body.get('artist') in OLD_CREDITS or (body['ai'] and not str(body.get('artist') or '').strip()): body['artist'] = AI_SOURCE
-        if text is not None: text = credit_xml(text)  # composer: Meowsic
+        if str(body.get('artist') or '').strip() in NOT_ARTIST: body['artist'] = ''  # the artist is the song's real one, never Meowsic
+        if text is not None: text = credit_xml(text, str(body.get('artist') or ''), score_byline(body.get('source', ''), body['ai']))
     else: body.pop('ai', None)
-    if kind != 'chords' and 'version' in body: body['version'] = check_version(kind, body['version'])
+    if 'version' in body: body['version'] = check_version(kind, body['version'])
     it = {'tags': [], 'createdAt': t, 'updatedAt': t, **{k: v for k, v in body.items() if k not in ('folder', 'musicxmlText')},
           'id': want if ok else uid(prefix), 'kind': kind}
     write_item(c, it, new=True)
@@ -111,9 +111,9 @@ def create_item(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
 
 
 def check_version(kind, v):
-    """Sheets: 'lead' | 'piano' | 'duet' | '' (any case, 'Lead' too). Scores: their own versions. Chord charts have none."""
+    """Sheets and chord charts: 'lead' | 'piano' | 'duet' | '' (any case, 'Lead' too). Scores: their own versions."""
     v = (v or '').strip().lower() if isinstance(v, str) or v is None else v
-    allowed = {'sheet': SHEET_VERSIONS, 'score': SCORE_VERSIONS}.get(kind, ())
+    allowed = {'sheet': SHEET_VERSIONS, 'chords': SHEET_VERSIONS, 'score': SCORE_VERSIONS}.get(kind, ())
     if v not in allowed:
         raise HTTPException(400, f'version must be one of {", ".join(repr(x) for x in allowed)}' if allowed else f'a {kind} item has no version')
     return v
@@ -121,14 +121,14 @@ def check_version(kind, v):
 
 @router.post('/items/version')
 def set_versions(body: dict = Body(...), c=Depends(conn)):
-    """Many sheets at once: {ids, version}. Scores and chord charts are skipped (a score's version is its arrangement)."""
+    """Many sheets / chord charts at once: {ids, version}. Scores are skipped (a score's version is its arrangement)."""
     v = check_version('sheet', body.get('version'))
     done, skipped, steps = [], 0, []
     for item_id in body.get('ids') or []:
         it = get_item(c, item_id)
-        if not it or it['kind'] != 'sheet': skipped += 1; continue
+        if not it or it['kind'] not in ('sheet', 'chords'): skipped += 1; continue
         if (st := fields_step(it, {'version': v})): steps.append(st)
-        write_item(c, {'id': item_id, 'kind': 'sheet', 'version': v, 'updatedAt': now_ms()}, new=False)
+        write_item(c, {'id': item_id, 'kind': it['kind'], 'version': v, 'updatedAt': now_ms()}, new=False)
         done.append(get_item(c, item_id))
     if steps: record_undo(c, 'version', steps, edit_title, f'version → {v.title() or "none"}')
     return {'count': len(done), 'skipped': skipped, 'items': done}
@@ -141,6 +141,8 @@ def update_item(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depend
     if 'version' in patch:
         patch['version'] = check_version(it['kind'], patch['version'])
     if 'key' in patch: patch['key'] = str(patch['key'] or '').strip()
+    for k in ('artist', 'album'):
+        if k in patch: patch[k] = ' '.join(str(patch[k] or '').split())[:200]
     if (st := fields_step(it, patch)):  # Activities: rename / tags / key / version edits (quick edits in a row make one row)
         record_undo(c, 'edit', st, edit_title, edit_detail, group='edit', window=3000)
     write_item(c, {**patch, 'id': item_id, 'kind': it['kind'], 'updatedAt': now_ms()}, new=False)

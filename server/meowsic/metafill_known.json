@@ -1,0 +1,1461 @@
+{
+ "_": "Well-known songs for the one-time song info fill (metafill.py). Keys are titles folded (no accents, lower case, no punctuation, a bracketed part or ' - …' tail tried both with and without). Only what is certain; anything else is left empty and listed for review. 'only_if_artist': used only when the item's artist is one of these (an empty one does not count); 'only_tags': only when the item has one of these tags. 'fix': {field: [wrong values]} that are clearly wrong and replaced (never when the field was set by hand in the app).",
+ "albums_by_tag": {
+  "Les Miserables": "Les Misérables",
+  "Frozen": "Frozen",
+  "Phantom of the opera": "The Phantom of the Opera",
+  "Sunset Boulevard": "Sunset Boulevard",
+  "Miss Saigon": "Miss Saigon",
+  "Matilda": "Matilda the Musical"
+ },
+ "tag_album_unless_known": [
+  "Frozen"
+ ],
+ "songs": {
+  "a dream is a wish your heart makes": {
+   "artist": "Mack David, Al Hoffman & Jerry Livingston",
+   "album": "Cinderella"
+  },
+  "a heart full of love": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Les Misérables"
+  },
+  "a holly jolly christmas": {
+   "artist": "Johnny Marks"
+  },
+  "a little bit of you": {
+   "artist": "Kristen Anderson-Lopez & Robert Lopez",
+   "album": "Frozen"
+  },
+  "a little fall of rain": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Les Misérables"
+  },
+  "a million dreams": {
+   "artist": "Benj Pasek & Justin Paul",
+   "album": "The Greatest Showman",
+   "fix": {
+    "artist": [
+     "Claude-Michel Schönberg"
+    ]
+   }
+  },
+  "a thousand years": {
+   "artist": "Christina Perri",
+   "album": "The Twilight Saga: Breaking Dawn – Part 1"
+  },
+  "a time for us": {
+   "artist": "Nino Rota",
+   "album": "Romeo and Juliet"
+  },
+  "a town with an ocean view": {
+   "artist": "Joe Hisaishi",
+   "album": "Kiki's Delivery Service"
+  },
+  "a whole new world": {
+   "artist": "Alan Menken",
+   "album": "Aladdin",
+   "fix": {
+    "artist": [
+     "Disney"
+    ]
+   }
+  },
+  "all i ask of you": {
+   "artist": "Andrew Lloyd Webber",
+   "album": "The Phantom of the Opera"
+  },
+  "all i want for christmas is you": {
+   "artist": "Mariah Carey",
+   "album": "Merry Christmas"
+  },
+  "all the pretty little horses": {
+   "artist": "Traditional"
+  },
+  "almost there": {
+   "artist": "Randy Newman",
+   "album": "The Princess and the Frog"
+  },
+  "angel of music": {
+   "artist": "Andrew Lloyd Webber",
+   "album": "The Phantom of the Opera"
+  },
+  "angels we have heard on high": {
+   "artist": "Traditional"
+  },
+  "animal cracker in my soup": {
+   "artist": "Ray Henderson",
+   "album": "Curly Top"
+  },
+  "any dream will do": {
+   "artist": "Andrew Lloyd Webber",
+   "album": "Joseph and the Amazing Technicolor Dreamcoat"
+  },
+  "aquarium": {
+   "artist": "Camille Saint-Saëns",
+   "album": "Carnival of the Animals"
+  },
+  "are you lonesome tonight": {
+   "artist": "Elvis Presley"
+  },
+  "as if we never said goodbye": {
+   "artist": "Andrew Lloyd Webber",
+   "album": "Sunset Boulevard"
+  },
+  "at last": {
+   "artist": "Etta James",
+   "album": "At Last!"
+  },
+  "at the end of the day": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Les Misérables"
+  },
+  "aura lee": {
+   "artist": "George R. Poulton"
+  },
+  "autumn in my heart": {
+   "album": "Autumn in My Heart"
+  },
+  "away in a manger": {
+   "artist": "William J. Kirkpatrick"
+  },
+  "baby mine": {
+   "artist": "Frank Churchill",
+   "album": "Dumbo"
+  },
+  "baby shark": {
+   "artist": "Pinkfong"
+  },
+  "ballydesmond polka no 1": {
+   "artist": "Traditional"
+  },
+  "be our guest": {
+   "artist": "Alan Menken",
+   "album": "Beauty and the Beast"
+  },
+  "beautiful in white": {
+   "artist": "Shane Filan",
+   "album": "Love Always"
+  },
+  "beauty and the beast": {
+   "artist": "Alan Menken",
+   "album": "Beauty and the Beast"
+  },
+  "believe": {
+   "artist": "Glen Ballard & Alan Silvestri",
+   "album": "The Polar Express",
+   "only_tags": [
+    "Christmas"
+   ]
+  },
+  "bella ciao": {
+   "artist": "Traditional"
+  },
+  "belle": {
+   "artist": "Alan Menken",
+   "album": "Beauty and the Beast"
+  },
+  "beyond the sea": {
+   "artist": "Charles Trenet"
+  },
+  "blue christmas": {
+   "artist": "Elvis Presley",
+   "album": "Elvis' Christmas Album"
+  },
+  "bohemian rhapsody": {
+   "artist": "Queen",
+   "album": "A Night at the Opera"
+  },
+  "both sides now": {
+   "artist": "Joni Mitchell",
+   "album": "Clouds"
+  },
+  "boulevard of broken dreams": {
+   "artist": "Green Day",
+   "album": "American Idiot"
+  },
+  "bridgerton": {
+   "album": "Bridgerton"
+  },
+  "bring him home": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Les Misérables",
+   "fix": {
+    "artist": [
+     "Les Miserables",
+     "Les Misérables"
+    ]
+   }
+  },
+  "bui doi": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Miss Saigon"
+  },
+  "bundle of joy": {
+   "artist": "Michael Giacchino",
+   "album": "Inside Out"
+  },
+  "can can": {
+   "artist": "Jacques Offenbach",
+   "album": "Orpheus in the Underworld"
+  },
+  "can you feel the love tonight": {
+   "artist": "Elton John",
+   "album": "The Lion King"
+  },
+  "canon in c": {
+   "artist": "Johann Pachelbel"
+  },
+  "canon in c major": {
+   "artist": "Johann Pachelbel"
+  },
+  "canon in d": {
+   "artist": "Johann Pachelbel"
+  },
+  "carnival of the animal aviary": {
+   "artist": "Camille Saint-Saëns",
+   "album": "Carnival of the Animals"
+  },
+  "carnival of the animals elephant": {
+   "artist": "Camille Saint-Saëns",
+   "album": "Carnival of the Animals"
+  },
+  "carnival of the animals": {
+   "artist": "Camille Saint-Saëns",
+   "album": "Carnival of the Animals"
+  },
+  "carnival of the animals elephants": {
+   "artist": "Camille Saint-Saëns",
+   "album": "Carnival of the Animals"
+  },
+  "carnival of the animals lion": {
+   "artist": "Camille Saint-Saëns",
+   "album": "Carnival of the Animals"
+  },
+  "carnival of the animals the aquarium": {
+   "artist": "Camille Saint-Saëns",
+   "album": "Carnival of the Animals"
+  },
+  "carnival of the animals tortoise": {
+   "artist": "Camille Saint-Saëns",
+   "album": "Carnival of the Animals"
+  },
+  "castle on a cloud": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Les Misérables"
+  },
+  "chopin nocturne op 9 no 2": {
+   "artist": "Frédéric Chopin",
+   "album": "Nocturnes, Op. 9"
+  },
+  "choral fantasy": {
+   "artist": "Ludwig van Beethoven"
+  },
+  "cinema paradiso": {
+   "artist": "Ennio Morricone",
+   "album": "Cinema Paradiso"
+  },
+  "circle of life": {
+   "artist": "Elton John",
+   "album": "The Lion King"
+  },
+  "city of stars": {
+   "artist": "Justin Hurwitz",
+   "album": "La La Land"
+  },
+  "clementi sonatina": {
+   "artist": "Muzio Clementi",
+   "album": "Sonatinas, Op. 36"
+  },
+  "close to you": {
+   "artist": "Burt Bacharach",
+   "album": "Close to You"
+  },
+  "they long to be close to you": {
+   "artist": "Burt Bacharach",
+   "album": "Close to You"
+  },
+  "colors of the wind": {
+   "artist": "Alan Menken",
+   "album": "Pocahontas"
+  },
+  "comme toi": {
+   "artist": "Jean-Jacques Goldman",
+   "album": "Quand la musique est bonne"
+  },
+  "comptine dun autre ete": {
+   "artist": "Yann Tiersen",
+   "album": "Amélie"
+  },
+  "copacabana": {
+   "artist": "Barry Manilow",
+   "album": "Even Now"
+  },
+  "coppelia waltz": {
+   "artist": "Léo Delibes",
+   "album": "Coppélia",
+   "fix": {
+    "artist": [
+     "Pyotr Ilyich Tchaikovsky"
+    ]
+   }
+  },
+  "waltz from coppelia": {
+   "artist": "Léo Delibes",
+   "album": "Coppélia",
+   "fix": {
+    "artist": [
+     "Pyotr Ilyich Tchaikovsky"
+    ]
+   }
+  },
+  "count on me singapore": {
+   "artist": "Hugh Harrison",
+   "album": "NDP songs"
+  },
+  "we are singapore": {
+   "artist": "Hugh Harrison",
+   "album": "NDP songs"
+  },
+  "we are singapore ndp": {
+   "artist": "Hugh Harrison",
+   "album": "NDP songs"
+  },
+  "home ndp": {
+   "artist": "Dick Lee",
+   "album": "NDP songs"
+  },
+  "home": {
+   "artist": "Dick Lee",
+   "album": "NDP songs",
+   "only_if_artist": [
+    "Dick Lee"
+   ]
+  },
+  "cruella de vil": {
+   "artist": "Mel Leven",
+   "album": "101 Dalmatians"
+  },
+  "con gi dep hon": {
+   "album": "Mưa Đỏ"
+  },
+  "co chang trai viet len cay": {
+   "album": "Mắt Biếc"
+  },
+  "tu do": {
+   "album": "Mắt Biếc"
+  },
+  "dance monkey": {
+   "artist": "Tones and I",
+   "album": "The Kids Are Coming"
+  },
+  "dance of the sugar plum fairy": {
+   "artist": "Pyotr Ilyich Tchaikovsky",
+   "album": "The Nutcracker"
+  },
+  "waltz of the flowers": {
+   "artist": "Pyotr Ilyich Tchaikovsky",
+   "album": "The Nutcracker"
+  },
+  "dangerous to dream": {
+   "artist": "Kristen Anderson-Lopez & Robert Lopez",
+   "album": "Frozen"
+  },
+  "monster": {
+   "artist": "Kristen Anderson-Lopez & Robert Lopez",
+   "album": "Frozen",
+   "only_tags": [
+    "Frozen"
+   ]
+  },
+  "love is an open door": {
+   "artist": "Kristen Anderson-Lopez & Robert Lopez",
+   "album": "Frozen"
+  },
+  "let it go": {
+   "artist": "Kristen Anderson-Lopez & Robert Lopez",
+   "album": "Frozen"
+  },
+  "do you want to build a snowman": {
+   "artist": "Kristen Anderson-Lopez & Robert Lopez",
+   "album": "Frozen"
+  },
+  "for the first time in forever": {
+   "artist": "Kristen Anderson-Lopez & Robert Lopez",
+   "album": "Frozen"
+  },
+  "reindeers are better than people": {
+   "artist": "Kristen Anderson-Lopez & Robert Lopez",
+   "album": "Frozen"
+  },
+  "reindeer s are better than people": {
+   "artist": "Kristen Anderson-Lopez & Robert Lopez",
+   "album": "Frozen"
+  },
+  "into the unknown": {
+   "artist": "Kristen Anderson-Lopez & Robert Lopez",
+   "album": "Frozen II"
+  },
+  "danny boy": {
+   "artist": "Frederic Weatherly"
+  },
+  "dark eyes": {
+   "artist": "Traditional"
+  },
+  "defying gravity": {
+   "artist": "Stephen Schwartz",
+   "album": "Wicked"
+  },
+  "do re mi": {
+   "artist": "Richard Rodgers",
+   "album": "The Sound of Music"
+  },
+  "edelweiss": {
+   "artist": "Richard Rodgers",
+   "album": "The Sound of Music"
+  },
+  "my favorite things": {
+   "artist": "Richard Rodgers",
+   "album": "The Sound of Music"
+  },
+  "sixteen going on seventeen": {
+   "artist": "Richard Rodgers",
+   "album": "The Sound of Music"
+  },
+  "16 going on 17": {
+   "artist": "Richard Rodgers",
+   "album": "The Sound of Music"
+  },
+  "the sound of music": {
+   "artist": "Richard Rodgers",
+   "album": "The Sound of Music"
+  },
+  "dobru noc": {
+   "artist": "Traditional"
+  },
+  "dont cry for me argentina": {
+   "artist": "Andrew Lloyd Webber",
+   "album": "Evita"
+  },
+  "donna donna": {
+   "artist": "Sholom Secunda"
+  },
+  "doraemon no uta": {
+   "artist": "Shunsuke Kikuchi",
+   "album": "Doraemon"
+  },
+  "drink with me": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Les Misérables"
+  },
+  "empty chairs at empty tables": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Les Misérables"
+  },
+  "in my life": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Les Misérables",
+   "only_tags": [
+    "Les Miserables"
+   ]
+  },
+  "master of the house": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Les Misérables"
+  },
+  "on my own": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Les Misérables"
+  },
+  "one day more": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Les Misérables",
+   "fix": {
+    "artist": [
+     "Les Miserables",
+     "Les Misérables"
+    ]
+   }
+  },
+  "stars": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Les Misérables"
+  },
+  "who am i": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Les Misérables"
+  },
+  "i dreamed a dream": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Les Misérables",
+   "fix": {
+    "artist": [
+     "Les Miserables",
+     "Les Misérables"
+    ]
+   }
+  },
+  "do you hear the people sing": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Les Misérables"
+  },
+  "em di giua bien vang": {
+   "artist": "Nguyễn Văn Tý"
+  },
+  "endless love": {
+   "artist": "Lionel Richie",
+   "album": "Endless Love"
+  },
+  "english air greensleeves": {
+   "artist": "Traditional"
+  },
+  "greensleeves": {
+   "artist": "Traditional"
+  },
+  "et si tu nexistais pas": {
+   "artist": "Joe Dassin",
+   "album": "Le Jardin du Luxembourg"
+  },
+  "etude no 3": {
+   "artist": "Frédéric Chopin",
+   "album": "Études, Op. 10"
+  },
+  "tristesse": {
+   "artist": "Frédéric Chopin",
+   "album": "Études, Op. 10"
+  },
+  "evrybody wants to be a cat": {
+   "artist": "Floyd Huddleston & Al Rinker",
+   "album": "The Aristocats"
+  },
+  "fear of the dark": {
+   "artist": "Iron Maiden",
+   "album": "Fear of the Dark"
+  },
+  "feliz navidad": {
+   "artist": "José Feliciano",
+   "album": "Feliz Navidad"
+  },
+  "fight song": {
+   "artist": "Rachel Platten",
+   "album": "Wildfire"
+  },
+  "firework": {
+   "artist": "Katy Perry",
+   "album": "Teenage Dream"
+  },
+  "roar": {
+   "artist": "Katy Perry",
+   "album": "Prism"
+  },
+  "five little ducks": {
+   "artist": "Traditional"
+  },
+  "flowers": {
+   "artist": "Miley Cyrus",
+   "album": "Endless Summer Vacation"
+  },
+  "fly me to the moon": {
+   "artist": "Bart Howard"
+  },
+  "frosty the snow man": {
+   "artist": "Steve Nelson & Jack Rollins"
+  },
+  "frosty the snowman": {
+   "artist": "Steve Nelson & Jack Rollins"
+  },
+  "fur elise": {
+   "artist": "Ludwig van Beethoven"
+  },
+  "gake no ue no ponyo": {
+   "artist": "Joe Hisaishi",
+   "album": "Ponyo"
+  },
+  "game of thrones": {
+   "artist": "Ramin Djawadi",
+   "album": "Game of Thrones"
+  },
+  "genas birthday song": {
+   "artist": "Vladimir Shainsky",
+   "album": "Cheburashka"
+  },
+  "go the distance": {
+   "artist": "Alan Menken",
+   "album": "Hercules"
+  },
+  "hakuna matata": {
+   "artist": "Elton John",
+   "album": "The Lion King"
+  },
+  "i just cant wait to be king": {
+   "artist": "Elton John",
+   "album": "The Lion King"
+  },
+  "hallelujah": {
+   "artist": "Leonard Cohen",
+   "album": "Various Positions",
+   "fix": {
+    "artist": [
+     "Kristen Anderson-Lopez & Robert Lopez"
+    ]
+   }
+  },
+  "let it be": {
+   "artist": "The Beatles",
+   "album": "Let It Be",
+   "fix": {
+    "artist": [
+     "Kristen Anderson-Lopez & Robert Lopez"
+    ]
+   }
+  },
+  "happy birthday to you": {
+   "artist": "Mildred J. Hill & Patty Hill"
+  },
+  "happy working song": {
+   "artist": "Alan Menken",
+   "album": "Enchanted"
+  },
+  "so close": {
+   "artist": "Alan Menken",
+   "album": "Enchanted"
+  },
+  "thats how you know": {
+   "artist": "Alan Menken",
+   "album": "Enchanted"
+  },
+  "true loves kiss": {
+   "artist": "Alan Menken",
+   "album": "Enchanted"
+  },
+  "happy xmas": {
+   "artist": "John Lennon"
+  },
+  "hark the herald angels sing": {
+   "artist": "Felix Mendelssohn"
+  },
+  "have yourself a merry little christmas": {
+   "artist": "Hugh Martin & Ralph Blane",
+   "album": "Meet Me in St. Louis"
+  },
+  "hes a pirate": {
+   "artist": "Klaus Badelt",
+   "album": "Pirates of the Caribbean"
+  },
+  "heal the world": {
+   "artist": "Michael Jackson",
+   "album": "Dangerous"
+  },
+  "heart and soul": {
+   "artist": "Hoagy Carmichael"
+  },
+  "hedwigs theme": {
+   "artist": "John Williams",
+   "album": "Harry Potter"
+  },
+  "hello": {
+   "artist": "Adele",
+   "album": "25",
+   "only_if_artist": [
+    "Adele"
+   ]
+  },
+  "hey there delilah": {
+   "artist": "Plain White T's",
+   "album": "All That We Needed"
+  },
+  "how far ill go": {
+   "artist": "Lin-Manuel Miranda",
+   "album": "Moana"
+  },
+  "hush little baby": {
+   "artist": "Traditional"
+  },
+  "i believe i can fly": {
+   "artist": "R. Kelly",
+   "album": "Space Jam"
+  },
+  "i dont know my name": {
+   "artist": "Grace VanderWaal",
+   "album": "Perfectly Imperfect"
+  },
+  "i have a dream": {
+   "artist": "ABBA",
+   "album": "Mamma Mia!"
+  },
+  "i saw mommy kissing santa claus": {
+   "artist": "Tommie Connor"
+  },
+  "i see the light": {
+   "artist": "Alan Menken",
+   "album": "Tangled"
+  },
+  "i want a hippopotamus for christmas": {
+   "artist": "John Rox"
+  },
+  "i will always love you": {
+   "artist": "Dolly Parton",
+   "album": "Jolene"
+  },
+  "id give my life for you": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Miss Saigon"
+  },
+  "sun and moon": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Miss Saigon"
+  },
+  "the movie in my mind": {
+   "artist": "Claude-Michel Schönberg",
+   "album": "Miss Saigon"
+  },
+  "if i were a boy": {
+   "artist": "Beyoncé",
+   "album": "I Am... Sasha Fierce"
+  },
+  "if we hold on together": {
+   "artist": "James Horner & Will Jennings",
+   "album": "The Land Before Time"
+  },
+  "imagine": {
+   "artist": "John Lennon",
+   "album": "Imagine"
+  },
+  "in the hall of the mountain king": {
+   "artist": "Edvard Grieg",
+   "album": "Peer Gynt"
+  },
+  "inside out": {
+   "artist": "Michael Giacchino",
+   "album": "Inside Out",
+   "only_tags": [
+    "Disney"
+   ]
+  },
+  "it came upon the midnight clear": {
+   "artist": "Richard Storrs Willis"
+  },
+  "its a small world": {
+   "artist": "Sherman Brothers"
+  },
+  "its beginning to look like christmas": {
+   "artist": "Meredith Willson"
+  },
+  "its the hard knock life": {
+   "artist": "Charles Strouse",
+   "album": "Annie",
+   "fix": {
+    "artist": [
+     "Randy Newman"
+    ]
+   }
+  },
+  "maybe": {
+   "artist": "Charles Strouse",
+   "album": "Annie",
+   "only_tags": [
+    "Musical"
+   ]
+  },
+  "tomorrow": {
+   "artist": "Charles Strouse",
+   "album": "Annie",
+   "only_tags": [
+    "Musical"
+   ]
+  },
+  "ivanovich danube waves": {
+   "artist": "Iosif Ivanovici"
+  },
+  "wave of the danube": {
+   "artist": "Iosif Ivanovici"
+  },
+  "waves of the danube": {
+   "artist": "Iosif Ivanovici"
+  },
+  "jar of hearts": {
+   "artist": "Christina Perri",
+   "album": "Lovestrong"
+  },
+  "jesus loves me": {
+   "artist": "William Bradbury"
+  },
+  "just the way you are": {
+   "artist": "Bruno Mars",
+   "album": "Doo-Wops & Hooligans"
+  },
+  "killing me softly with his song": {
+   "artist": "Roberta Flack",
+   "album": "Killing Me Softly"
+  },
+  "kiss the girl": {
+   "artist": "Alan Menken",
+   "album": "The Little Mermaid"
+  },
+  "part of your world": {
+   "artist": "Alan Menken",
+   "album": "The Little Mermaid"
+  },
+  "oart of your world": {
+   "artist": "Alan Menken",
+   "album": "The Little Mermaid"
+  },
+  "under the sea": {
+   "artist": "Alan Menken",
+   "album": "The Little Mermaid"
+  },
+  "kiss the rain": {
+   "artist": "Yiruma",
+   "album": "From the Yellow Room"
+  },
+  "river flows in you": {
+   "artist": "Yiruma",
+   "album": "First Love",
+   "fix": {
+    "artist": [
+     "Paul Anka"
+    ]
+   }
+  },
+  "korobeiniki": {
+   "artist": "Traditional",
+   "album": "Tetris"
+  },
+  "tetris korobeiniki": {
+   "artist": "Traditional",
+   "album": "Tetris"
+  },
+  "tetris theme": {
+   "artist": "Traditional",
+   "album": "Tetris"
+  },
+  "tetris theme song": {
+   "artist": "Traditional",
+   "album": "Tetris"
+  },
+  "la maritza": {
+   "artist": "Sylvie Vartan",
+   "album": "La Maritza"
+  },
+  "la tarara": {
+   "artist": "Traditional"
+  },
+  "la vie en rose": {
+   "artist": "Édith Piaf"
+  },
+  "laputa ly version": {
+   "artist": "Joe Hisaishi",
+   "album": "Castle in the Sky"
+  },
+  "laputa main theme in am": {
+   "artist": "Joe Hisaishi",
+   "album": "Castle in the Sky"
+  },
+  "lava": {
+   "artist": "James Ford Murphy",
+   "album": "Lava"
+  },
+  "le festin": {
+   "artist": "Michael Giacchino",
+   "album": "Ratatouille"
+  },
+  "leise rieselt der schnee": {
+   "artist": "Eduard Ebel"
+  },
+  "let it snow let it snow let it snow": {
+   "artist": "Jule Styne & Sammy Cahn"
+  },
+  "little wonders": {
+   "artist": "Rob Thomas",
+   "album": "Meet the Robinsons"
+  },
+  "lullaby": {
+   "artist": "Johannes Brahms",
+   "only_tags": [
+    "Classical"
+   ]
+  },
+  "malaguena": {
+   "artist": "Ernesto Lecuona",
+   "album": "Andalucía Suite"
+  },
+  "mariage damour": {
+   "artist": "Paul de Senneville"
+  },
+  "married life": {
+   "artist": "Michael Giacchino",
+   "album": "Up"
+  },
+  "may it be": {
+   "artist": "Enya",
+   "album": "The Lord of the Rings: The Fellowship of the Ring"
+  },
+  "mia sebastians theme": {
+   "artist": "Justin Hurwitz",
+   "album": "La La Land"
+  },
+  "minuet in g major": {
+   "artist": "Christian Petzold",
+   "album": "Notebook for Anna Magdalena Bach"
+  },
+  "mo li hua": {
+   "artist": "Traditional"
+  },
+  "moon river": {
+   "artist": "Henry Mancini",
+   "album": "Breakfast at Tiffany's"
+  },
+  "mozart sonata in c": {
+   "artist": "Wolfgang Amadeus Mozart"
+  },
+  "music of the night": {
+   "artist": "Andrew Lloyd Webber",
+   "album": "The Phantom of the Opera"
+  },
+  "the music of the night": {
+   "artist": "Andrew Lloyd Webber",
+   "album": "The Phantom of the Opera"
+  },
+  "phantom of the opera": {
+   "artist": "Andrew Lloyd Webber",
+   "album": "The Phantom of the Opera"
+  },
+  "the phantom of the opera": {
+   "artist": "Andrew Lloyd Webber",
+   "album": "The Phantom of the Opera"
+  },
+  "think of me": {
+   "artist": "Andrew Lloyd Webber",
+   "album": "The Phantom of the Opera"
+  },
+  "wishing you were somehow here again": {
+   "artist": "Andrew Lloyd Webber",
+   "album": "The Phantom of the Opera"
+  },
+  "my heart will go on": {
+   "artist": "James Horner",
+   "album": "Titanic"
+  },
+  "theme from titanic": {
+   "artist": "James Horner",
+   "album": "Titanic"
+  },
+  "my love westlife": {
+   "artist": "Westlife",
+   "album": "Coast to Coast"
+  },
+  "my love": {
+   "artist": "Westlife",
+   "album": "Coast to Coast",
+   "only_if_artist": [
+    "Westlife"
+   ]
+  },
+  "my memory": {
+   "artist": "Ryu",
+   "album": "Winter Sonata"
+  },
+  "my way": {
+   "artist": "Paul Anka",
+   "album": "My Way"
+  },
+  "na wojtusia z popielnika": {
+   "artist": "Traditional"
+  },
+  "naughty": {
+   "artist": "Tim Minchin",
+   "album": "Matilda the Musical"
+  },
+  "naughty matilda": {
+   "album": "Matilda the Musical"
+  },
+  "when i grow up": {
+   "artist": "Tim Minchin",
+   "album": "Matilda the Musical"
+  },
+  "never enough": {
+   "artist": "Benj Pasek & Justin Paul",
+   "album": "The Greatest Showman"
+  },
+  "this is me": {
+   "artist": "Benj Pasek & Justin Paul",
+   "album": "The Greatest Showman"
+  },
+  "nocturne op 9 no 2": {
+   "artist": "Frédéric Chopin",
+   "album": "Nocturnes, Op. 9"
+  },
+  "nothing gonna change my love for you": {
+   "artist": "George Benson",
+   "album": "20/20"
+  },
+  "o christmas tree": {
+   "artist": "Traditional"
+  },
+  "o holy night": {
+   "artist": "Adolphe Adam"
+  },
+  "o sole mio": {
+   "artist": "Eduardo di Capua"
+  },
+  "ode to joy": {
+   "artist": "Ludwig van Beethoven",
+   "album": "Symphony No. 9"
+  },
+  "oh my darling clementine": {
+   "artist": "Traditional"
+  },
+  "clementine": {
+   "artist": "Traditional"
+  },
+  "once upon a december": {
+   "artist": "Stephen Flaherty",
+   "album": "Anastasia"
+  },
+  "one summers day": {
+   "artist": "Joe Hisaishi",
+   "album": "Spirited Away"
+  },
+  "spirited away always and again": {
+   "artist": "Joe Hisaishi",
+   "album": "Spirited Away"
+  },
+  "over the rainbow": {
+   "artist": "Harold Arlen",
+   "album": "The Wizard of Oz"
+  },
+  "somewhere over the rainbow": {
+   "artist": "Harold Arlen",
+   "album": "The Wizard of Oz"
+  },
+  "perfect": {
+   "artist": "Ed Sheeran",
+   "album": "÷ (Divide)"
+  },
+  "que sera sera": {
+   "artist": "Doris Day",
+   "album": "The Man Who Knew Too Much"
+  },
+  "reflection": {
+   "artist": "Matthew Wilder",
+   "album": "Mulan"
+  },
+  "rocket science easy piano duets": {
+   "album": "Rocket Science Easy Piano Duets"
+  },
+  "rock a bye baby": {
+   "artist": "Traditional"
+  },
+  "rolling in the deep": {
+   "artist": "Adele",
+   "album": "21"
+  },
+  "rudolph the red nosed reindeer": {
+   "artist": "Johnny Marks"
+  },
+  "sakura": {
+   "artist": "Traditional"
+  },
+  "santa baby": {
+   "artist": "Eartha Kitt"
+  },
+  "santa lucia": {
+   "artist": "Teodoro Cottrau"
+  },
+  "santiana": {
+   "artist": "Traditional"
+  },
+  "schindlers list": {
+   "artist": "John Williams",
+   "album": "Schindler's List"
+  },
+  "se essa rua fosse minha": {
+   "artist": "Traditional"
+  },
+  "shell be coming round the mountain": {
+   "artist": "Traditional"
+  },
+  "singin in the rain": {
+   "artist": "Nacio Herb Brown",
+   "album": "Singin' in the Rain"
+  },
+  "skip to my lou": {
+   "artist": "Traditional"
+  },
+  "something there": {
+   "artist": "Alan Menken",
+   "album": "Beauty and the Beast"
+  },
+  "something just like this": {
+   "artist": "The Chainsmokers & Coldplay",
+   "album": "Memories...Do Not Open"
+  },
+  "somewhere only we know": {
+   "artist": "Keane",
+   "album": "Hopes and Fears"
+  },
+  "somewhere out there": {
+   "artist": "James Horner",
+   "album": "An American Tail"
+  },
+  "song from a secret garden": {
+   "artist": "Rolf Løvland",
+   "album": "Songs from a Secret Garden"
+  },
+  "space oddity": {
+   "artist": "David Bowie",
+   "album": "Space Oddity"
+  },
+  "speak softly love": {
+   "artist": "Nino Rota",
+   "album": "The Godfather"
+  },
+  "stand by me": {
+   "artist": "Ben E. King",
+   "album": "Don't Play That Song!"
+  },
+  "sunset boulevard": {
+   "artist": "Andrew Lloyd Webber",
+   "album": "Sunset Boulevard"
+  },
+  "surrender": {
+   "artist": "Andrew Lloyd Webber",
+   "album": "Sunset Boulevard"
+  },
+  "the perfect year": {
+   "artist": "Andrew Lloyd Webber",
+   "album": "Sunset Boulevard"
+  },
+  "with one look": {
+   "artist": "Andrew Lloyd Webber",
+   "album": "Sunset Boulevard"
+  },
+  "super mario theme song": {
+   "artist": "Koji Kondo",
+   "album": "Super Mario Bros."
+  },
+  "supercalifragilisticexpialidocious": {
+   "artist": "Sherman Brothers",
+   "album": "Mary Poppins"
+  },
+  "surface pressure": {
+   "artist": "Lin-Manuel Miranda",
+   "album": "Encanto"
+  },
+  "we dont talk about bruno": {
+   "artist": "Lin-Manuel Miranda",
+   "album": "Encanto"
+  },
+  "swan lake": {
+   "artist": "Pyotr Ilyich Tchaikovsky",
+   "album": "Swan Lake"
+  },
+  "theme from swan lake": {
+   "artist": "Pyotr Ilyich Tchaikovsky",
+   "album": "Swan Lake"
+  },
+  "swanee river": {
+   "artist": "Stephen Foster"
+  },
+  "take me home country roads": {
+   "artist": "John Denver",
+   "album": "Poems, Prayers & Promises"
+  },
+  "the bare necessities": {
+   "artist": "Terry Gilkyson",
+   "album": "The Jungle Book"
+  },
+  "the christmas song": {
+   "artist": "Mel Tormé & Bob Wells"
+  },
+  "the entertainer": {
+   "artist": "Scott Joplin"
+  },
+  "the hanging tree": {
+   "artist": "James Newton Howard",
+   "album": "The Hunger Games: Mockingjay – Part 1"
+  },
+  "the heart asks pleasure first": {
+   "artist": "Michael Nyman",
+   "album": "The Piano"
+  },
+  "the house of the rising sun": {
+   "artist": "Traditional"
+  },
+  "the little drummer boy": {
+   "artist": "Katherine K. Davis"
+  },
+  "the pink panther": {
+   "artist": "Henry Mancini",
+   "album": "The Pink Panther"
+  },
+  "the polar express": {
+   "artist": "Alan Silvestri",
+   "album": "The Polar Express"
+  },
+  "when christmas comes to town": {
+   "artist": "Glen Ballard & Alan Silvestri",
+   "album": "The Polar Express"
+  },
+  "the sound of silence": {
+   "artist": "Simon & Garfunkel",
+   "album": "Sounds of Silence",
+   "fix": {
+    "artist": [
+     "Christina Perri"
+    ]
+   }
+  },
+  "three little birds": {
+   "artist": "Bob Marley & The Wailers",
+   "album": "Exodus",
+   "fix": {
+    "artist": [
+     "Christina Perri"
+    ]
+   }
+  },
+  "the swan": {
+   "artist": "Camille Saint-Saëns",
+   "album": "Carnival of the Animals"
+  },
+  "the way you look tonight": {
+   "artist": "Jerome Kern",
+   "album": "Swing Time"
+  },
+  "the wayfaring stranger": {
+   "artist": "Traditional"
+  },
+  "this land is your land": {
+   "artist": "Woody Guthrie"
+  },
+  "thula baba thula sana": {
+   "artist": "Traditional"
+  },
+  "thang tu la loi noi doi cua em": {
+   "album": "Your Lie in April"
+  },
+  "time in a bottle": {
+   "artist": "Jim Croce",
+   "album": "You Don't Mess Around with Jim"
+  },
+  "top of the world": {
+   "artist": "Carpenters",
+   "album": "A Song for You"
+  },
+  "try everything": {
+   "artist": "Shakira",
+   "album": "Zootopia"
+  },
+  "turkish march": {
+   "artist": "Wolfgang Amadeus Mozart",
+   "album": "Piano Sonata No. 11"
+  },
+  "un poco loco": {
+   "artist": "Germaine Franco & Adrian Molina",
+   "album": "Coco"
+  },
+  "until i found you": {
+   "artist": "Stephen Sanchez",
+   "album": "Easy on My Eyes"
+  },
+  "uranus the magician": {
+   "artist": "Gustav Holst",
+   "album": "The Planets"
+  },
+  "vieni sul mar": {
+   "artist": "Traditional"
+  },
+  "viva la vida": {
+   "artist": "Coldplay",
+   "album": "Viva la Vida or Death and All His Friends"
+  },
+  "we are the world": {
+   "artist": "Lionel Richie & Michael Jackson",
+   "album": "We Are the World"
+  },
+  "were all in this together": {
+   "artist": "Matthew Gerrard & Robbie Nevil",
+   "album": "High School Musical"
+  },
+  "what a wonderful world": {
+   "artist": "Louis Armstrong",
+   "album": "What a Wonderful World"
+  },
+  "what a wonderful world louis armstrong": {
+   "artist": "Louis Armstrong",
+   "album": "What a Wonderful World"
+  },
+  "when you wish upon a star": {
+   "artist": "Leigh Harline",
+   "album": "Pinocchio"
+  },
+  "where are you christmas": {
+   "artist": "James Horner",
+   "album": "How the Grinch Stole Christmas"
+  },
+  "white christmas": {
+   "artist": "Irving Berlin",
+   "album": "Holiday Inn"
+  },
+  "wild mountain thyme": {
+   "artist": "Traditional"
+  },
+  "yellow submarine": {
+   "artist": "The Beatles",
+   "album": "Revolver"
+  },
+  "yesterday": {
+   "artist": "The Beatles",
+   "album": "Help!"
+  },
+  "yesterday once more": {
+   "artist": "Carpenters",
+   "album": "Now & Then"
+  },
+  "yesterday when i was young": {
+   "artist": "Charles Aznavour"
+  },
+  "you are my sunshine": {
+   "artist": "Jimmie Davis",
+   "fix": {
+    "artist": [
+     "Folk Songs"
+    ]
+   }
+  },
+  "you are so beautiful": {
+   "artist": "Joe Cocker",
+   "album": "I Can Stand a Little Rain"
+  },
+  "you got a friend in me": {
+   "artist": "Randy Newman",
+   "album": "Toy Story"
+  },
+  "youve got a friend in me": {
+   "artist": "Randy Newman",
+   "album": "Toy Story"
+  },
+  "you raise me up": {
+   "artist": "Secret Garden",
+   "album": "Once in a Red Moon"
+  },
+  "you will be found": {
+   "artist": "Benj Pasek & Justin Paul",
+   "album": "Dear Evan Hansen"
+  },
+  "youve got a friend": {
+   "artist": "Carole King",
+   "album": "Tapestry"
+  },
+  "прекрасное далёко": {
+   "artist": "Евгений Крылатов",
+   "album": "Гостья из будущего"
+  },
+  "прекрасное далеко": {
+   "artist": "Евгений Крылатов",
+   "album": "Гостья из будущего"
+  },
+  "jellicle songs for jellicle cats": {
+   "artist": "Andrew Lloyd Webber",
+   "album": "Cats"
+  },
+  "tim ve": {
+   "album": "Cha Tôi, Người Ở Lại"
+  },
+  "everything i do i do it for you": {
+   "artist": "Bryan Adams",
+   "album": "Robin Hood: Prince of Thieves"
+  },
+  "hey jude": {
+   "artist": "The Beatles"
+  },
+  "sway": {
+   "artist": "Pablo Beltrán Ruiz"
+  },
+  "jingle bell rock": {
+   "artist": "Bobby Helms"
+  },
+  "pretty little baby": {
+   "artist": "Connie Francis"
+  },
+  "put your head on my shoulder": {
+   "artist": "Paul Anka"
+  },
+  "she": {
+   "artist": "Charles Aznavour"
+  },
+  "proud of you": {
+   "artist": "Fiona Fung"
+  },
+  "dream a little dream of me": {
+   "artist": "The Mamas & the Papas"
+  },
+  "bao gio biet tuong tu": {
+   "artist": "Phạm Duy & Ngọc Chánh"
+  },
+  "ai ve song tuong": {
+   "artist": "Thông Đạt"
+  },
+  "twinkle twinkle little star": {
+   "artist": "Traditional"
+  },
+  "mary had a little lamb": {
+   "artist": "Traditional"
+  },
+  "row row row your boat": {
+   "artist": "Traditional"
+  },
+  "old macdonald had a farm": {
+   "artist": "Traditional"
+  },
+  "the wheels on the bus": {
+   "artist": "Verna Hills"
+  },
+  "jingle bells": {
+   "artist": "James Lord Pierpont"
+  },
+  "silent night": {
+   "artist": "Franz Xaver Gruber"
+  },
+  "we wish you a merry christmas": {
+   "artist": "Traditional"
+  },
+  "deck the halls": {
+   "artist": "Traditional"
+  },
+  "auld lang syne": {
+   "artist": "Traditional"
+  },
+  "amazing grace": {
+   "artist": "John Newton"
+  },
+  "when the saints go marching in": {
+   "artist": "Traditional"
+  },
+  "yankee doodle": {
+   "artist": "Traditional"
+  },
+  "my bonnie lies over the ocean": {
+   "artist": "Traditional"
+  },
+  "frere jacques": {
+   "artist": "Traditional"
+  },
+  "kia con buom vang": {
+   "artist": "Traditional"
+  },
+  "sakura sakura": {
+   "artist": "Traditional"
+  },
+  "majulah singapura": {
+   "artist": "Zubir Said"
+  },
+  "tien quan ca": {
+   "artist": "Văn Cao"
+  },
+  "joy to the world": {
+   "artist": "George Frideric Handel"
+  }
+ }
+}

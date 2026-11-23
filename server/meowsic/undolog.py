@@ -10,7 +10,7 @@ import re
 
 from .db import now_ms, quiet_now, uid
 
-FIELDS = ('title', 'artist', 'key', 'version', 'tags')
+FIELDS = ('title', 'artist', 'album', 'key', 'version', 'tags')
 GRACE_MS = 24 * 3600 * 1000  # Undo is open for 24 hours; then the activity is Final (dailycleanup.py)
 
 

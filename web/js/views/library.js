@@ -18,26 +18,22 @@ const SORTS = {
   pages: ['Pages', (a, b) => (a.pages || 0) - (b.pages || 0) || a.title.localeCompare(b.title)],
   key: ['Key', (a, b) => (a.key || '').localeCompare(b.key || '') || a.title.localeCompare(b.title)],
   version: ['Version', (a, b) => (verLabel(a) || '\uffff').localeCompare(verLabel(b) || '\uffff') || a.title.localeCompare(b.title)],
-  tag: ['Tag', (a, b) => (mainTag(a) || '\uffff').localeCompare(mainTag(b) || '\uffff') || a.title.localeCompare(b.title)],
+  album: ['Album', (a, b) => (a.album || '\uffff').localeCompare(b.album || '\uffff') || a.title.localeCompare(b.title)],
 };
 // table columns (Mac / iPad); clicking a heading sorts, clicking it again reverses
 // [sort key, heading, class]. Type is left out when a type is already picked in the left bar.
 // columns per view: [sort key, heading, class]
-const C = { title: ['title', 'Title', 'c-title'], artist: ['artist', 'Artist', 'c-artist'], type: ['kind', 'Type', 'c-type'], version: ['version', 'Version', 'c-ver'],
-  tag: ['tag', 'Tag', 'c-tag'], pages: ['pages', 'Pages', 'c-pages'], key: ['key', 'Key', 'c-key'], added: ['added', 'Added', 'c-when'] };
+const C = { title: ['title', 'Title', 'c-title'], artist: ['artist', 'Artist', 'c-artist'], album: ['album', 'Album', 'c-album'], type: ['kind', 'Type', 'c-type'],
+  version: ['version', 'Version', 'c-ver'], pages: ['pages', 'Pages', 'c-pages'], key: ['key', 'Key', 'c-key'], added: ['added', 'Added', 'c-when'] };
+// No tags in any list (they stay on the items: the tag filter and search use them, Info shows and edits them).
+// Album (the show / movie / collection) is a Mac column; iPad / iPhone keep the list compact (app.css, touch section).
 const COLS_BY = {
-  '': [C.title, C.artist, C.version, C.type, C.tag, C.key, C.added],
-  sheet: [C.title, C.artist, C.version, C.tag, C.key, C.pages, C.added],
-  book: [C.title, C.artist, C.version, C.tag, C.pages, C.added],
-  chords: [C.title, C.artist, C.tag, C.key, C.added],
-  score: [C.title, C.artist, C.version, C.tag, C.key, C.added],
+  '': [C.title, C.artist, C.album, C.version, C.type, C.key, C.added],
+  sheet: [C.title, C.artist, C.album, C.version, C.key, C.pages, C.added],
+  book: [C.title, C.artist, C.album, C.version, C.pages, C.added],
+  chords: [C.title, C.artist, C.album, C.version, C.key, C.added],
+  score: [C.title, C.artist, C.album, C.version, C.key, C.added],
 };
-// The one tag worth showing in the list: the most specific one (a musical, a movie, a set like
-// "Piano recital"), not genre, language or version tags.
-const GENERIC = new Set(['Musical', 'Disney', 'Movie', 'Anime', 'Pop', 'Rock', 'Ballad', 'Jazz', 'Folk', 'Country', 'Classical', 'Christmas', 'Children',
-  'English', 'Vietnamese', 'Chinese', 'Russian', 'Korea', 'Japan', 'Singapore', 'Original', 'Piano + vocals', 'Lead sheet', 'Piano duet',
-  'Piano accompaniment', 'Piano clear', 'Piano easy', 'Piano pro', 'Printed', 'Never printed']);
-export const mainTag = (it) => it.tags.find((t) => !GENERIC.has(t)) || '';
 const PAGE = 50; // rows per page on the Mac (the list scrolls)
 // iPad / iPhone: the page never scrolls; a page of the list = as many rows as fit on the screen
 // (measured after drawing: header, table heading, pager, row height — book rows with covers are
@@ -88,7 +84,7 @@ export function libraryView(main, { q }) {
       ${tags.length > 1 ? `<button class="link clear-tags" id="lib-tags-clear">Clear all</button>` : ''}
       ${tags.length ? `<a class="icon-btn btn" href="#/print?tags=${encodeURIComponent(tags.join(','))}">Print all</a>` : ''}
 
-      <label class="search">${icon('search')}<input type="search" id="lib-q" placeholder="Search titles, artists, tags" value="${esc(state.q)}" aria-label="Search" enterkeyhint="search"><button type="button" class="search-x" id="lib-q-x" aria-label="Clear search" title="Clear search" ${state.q ? '' : 'hidden'}>×</button></label>
+      <label class="search">${icon('search')}<input type="search" id="lib-q" placeholder="Search titles, artists, albums, tags" value="${esc(state.q)}" aria-label="Search" enterkeyhint="search"><button type="button" class="search-x" id="lib-q-x" aria-label="Clear search" title="Clear search" ${state.q ? '' : 'hidden'}>×</button></label>
       <button class="icon-btn lang-btn ${lang === 'vi' ? 'on' : ''}" id="lib-lang" data-lang="${lang}" title="${LANG_TITLE[lang]}" aria-label="${LANG_TITLE[lang]}">${LANG_ICON[lang]}</button>
       <button class="icon-btn tag-btn ${tags.length ? 'on' : ''}" id="lib-tag" title="Filter by tag" aria-label="Filter by tag">${iconOn('tag')}</button>
       <button class="icon-btn touch-only" id="lib-select">Select</button>
@@ -100,7 +96,7 @@ export function libraryView(main, { q }) {
   const draw = (again = true) => {
     const words = fold(state.q).split(/\s+/).filter(Boolean);
     let list = store.items().filter((it) => (!kind || kindOf(it) === kind) && tags.every((t) => it.tags.includes(t)) && (lang !== 'vi' || isVi(it)));
-    if (words.length) list = list.filter((it) => { const hay = fold([it.title, it.artist, ...it.tags, KIND[kindOf(it)].label, verLabel(it), it.kind === 'chords' ? '' : it.key || '', keyShort(it.key), it.kind === 'score' ? VERSIONS[it.version] || '' : ''].join(' ')); return words.every((w) => hay.includes(w)); });
+    if (words.length) list = list.filter((it) => { const hay = fold([it.title, it.artist, it.album || '', ...it.tags, KIND[kindOf(it)].label, verLabel(it), it.kind === 'chords' ? '' : it.key || '', keyShort(it.key), it.kind === 'score' ? VERSIONS[it.version] || '' : ''].join(' ')); return words.every((w) => hay.includes(w)); });
     list.sort(SORTS[state.sort][1]);
     if (state.dir < 0) list.reverse();
     const rows = $('#lib-rows', main);
@@ -120,8 +116,8 @@ export function libraryView(main, { q }) {
         const arrow = (k) => (state.sort !== k ? '' : (k === 'added') === (state.dir > 0) ? ' ▼' : ' ▲');
         const cols = COLS_BY[kind] || COLS_BY[''];
         const cell = {
-          'c-title': (it) => (kind === 'book' ? `<span class="cover">${store.thumbUrl(it, 1, 160) ? `<img src="${store.thumbUrl(it, 1, 160)}" alt="" loading="lazy">` : ''}</span>` : '') + esc(it.title), 'c-artist': (it) => esc(it.artist || ''), 'c-type': (it) => badge(it), 'c-ver': (it) => (verLabel(it) ? `<span title="${esc(verDetail(it) || verLabel(it))}">${esc(verLabel(it))}</span>` : ''),
-          'c-tag': (it) => (mainTag(it) ? `<span class="tagchip">${esc(mainTag(it))}</span>` : ''), 'c-pages': (it) => (it.pages ? `${it.pages}<span class="pg-u"> p</span>` : ''), 'c-key': (it) => esc(keyShort(it.key)), 'c-when': (it) => ago(it.createdAt),
+          'c-title': (it) => (kind === 'book' ? `<span class="cover">${store.thumbUrl(it, 1, 160) ? `<img src="${store.thumbUrl(it, 1, 160)}" alt="" loading="lazy">` : ''}</span>` : '') + esc(it.title), 'c-artist': (it) => esc(it.artist || ''), 'c-album': (it) => esc(it.album || ''), 'c-type': (it) => badge(it), 'c-ver': (it) => (verLabel(it) ? `<span title="${esc(verDetail(it) || verLabel(it))}">${esc(verLabel(it))}</span>` : ''),
+          'c-pages': (it) => (it.pages ? `${it.pages}<span class="pg-u"> p</span>` : ''), 'c-key': (it) => esc(keyShort(it.key)), 'c-when': (it) => ago(it.createdAt),
         };
         rows.innerHTML = `<table class="lib-table ${kind ? 'one-kind' : ''} ${selecting() ? 'selecting' : ''}"><thead><tr><th class="c-pick"></th>${cols.map(([k, l, c]) =>
           `<th class="${c}">${k ? `<button class="th-sort ${state.sort === k ? 'on' : ''}" data-sort="${k}">${l}${arrow(k)}</button>` : l}${c === 'c-title'

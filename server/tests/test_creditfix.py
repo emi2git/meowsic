@@ -1,4 +1,4 @@
-"""creditfix: every score credited to "Meowsic" (artist, source, MusicXML composer), history kept, undoable."""
+"""creditfix: old "Meowsic AI" credits go (artist emptied, source Meowsic, MusicXML "Made by Meowsic"), history kept, undoable."""
 import json
 import sqlite3
 
@@ -25,10 +25,10 @@ def test_credit_run_and_undo(client, data):
     r = creditfix.run(data, log=lambda *a: None)
     assert r['items'] == 1 and r['files'] == 1 and r['activities'] == 1
     it = client.get(f'/api/items/{ai["id"]}').json()
-    assert (it['artist'], it['source']) == ('Meowsic', 'Meowsic')
+    assert (it['artist'], it['source']) == ('', 'Meowsic')
     assert client.get(f'/api/items/{song["id"]}').json()['artist'] == 'Les Miserables'
     f = data / 'items' / ai['folder'] / ai['musicxml']
-    assert '<creator type="composer">Meowsic</creator>' in f.read_text() and 'Meowsic AI' not in f.read_text()
+    assert '<creator type="arranger">Made by Meowsic</creator>' in f.read_text() and '<creator type="composer">' not in f.read_text() and 'Meowsic AI' not in f.read_text()
     kept = list((f.parent / '.history').glob('credit-*'))
     assert len(kept) == 1 and kept[0].read_text() == OLD
     log = json.loads(open(r['log']).read())

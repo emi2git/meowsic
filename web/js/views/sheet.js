@@ -4,7 +4,6 @@ import { $, esc, icon, iconOn, toast, sheet as modal, confirmSheet } from '../ui
 import { sheetUrl } from '../sheet-art.js';
 import { InkLayer, inkToolbar } from './annotate.js';
 import { go } from '../app.js';
-import { bookToggle } from './actions.js';
 import { titleBox } from '../title-detect.js';
 import { attachSwipe, backToLibrary } from '../swipe.js';
 import { isTouch, isDesktop } from '../device.js';
@@ -240,7 +239,6 @@ export function sheetExtraMenu(it, view) {
     { label: 'Split…', icon: 'split', run: () => splitAt(it, view.page) },
     { label: 'Join…', icon: 'merge', run: () => mergeInto(it) },
     ...(store.mode === 'server' ? [{ label: 'Make a score (beta)…', icon: 'wave', run: () => makeScore(it) }] : []),
-    ...bookToggle(it),
   ];
 }
 

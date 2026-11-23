@@ -1,9 +1,10 @@
-"""Every score is credited to "Meowsic" (one-off, safe to run again: does nothing once done).
+"""Scores' Meowsic credits (one-off, safe to run again: does nothing once done). Since Nov 2026 the Artist is the
+song's real artist (metafill.py put those back) and the MusicXML says what Meowsic did ("Transcribed by Meowsic").
 
 For each score item (the Trash too):
-  artist   'Meowsic AI' or empty      -> 'Meowsic'   (a song's real artist, e.g. "Les Miserables", stays)
+  artist   'Meowsic AI'               -> ''          (never Meowsic; a song's real artist stays)
   source   'Meowsic AI' (or an AI piece's empty one) -> 'Meowsic'
-  MusicXML (musicxml, musicxml_original): one <creator type="composer">Meowsic</creator> (db.credit_xml)
+  MusicXML (musicxml, musicxml_original): composer = the real artist it has, + arranger "… by Meowsic" (db.credit_xml)
 Old activity texts that name "Meowsic AI" read "Meowsic".
 History: each changed file is first copied to items/<folder>/.history/credit-<ts>-<file>; every change goes to
 <data>/history/credit-meowsic-<ts>.json (never removed); one Activities row, undoable (op 'credit', undo.py).
@@ -17,7 +18,7 @@ import shutil
 import time
 from pathlib import Path
 
-from .db import AI_SOURCE, OLD_CREDITS, Config, connect, credit_xml, folder_path, log_event, now_ms
+from .db import AI_SOURCE, OLD_CREDITS, Config, connect, credit_xml, score_byline, folder_path, log_event, now_ms
 
 XML_COLS = ('musicxml', 'musicxml_original')
 
@@ -32,7 +33,7 @@ def plan(c, cf):
                         FROM item i JOIN score s ON s.item_id = i.id ORDER BY i.created_at""").fetchall()
     for r in rows:
         old, new = {}, {}
-        if (r['artist'] or '').strip() in ('', *OLD_CREDITS): old['artist'], new['artist'] = r['artist'], AI_SOURCE
+        if (r['artist'] or '').strip() in OLD_CREDITS: old['artist'], new['artist'] = r['artist'], ''  # the artist is the song's real one, never Meowsic
         if r['source'] in OLD_CREDITS or (r['ai'] and not (r['source'] or '').strip()): old['source'], new['source'] = r['source'], AI_SOURCE
         files = []
         d = folder_path(cf, r['folder']) if r['folder'] else None
@@ -41,7 +42,7 @@ def plan(c, cf):
             p = d / r[col]
             try: x = p.read_text(encoding='utf-8')
             except (OSError, UnicodeDecodeError): continue
-            y = credit_xml(x)
+            y = credit_xml(x, None, score_byline(r['source'], r['ai']))
             if y != x: files.append({'col': col, 'file': r[col], 'path': p, 'text': y})
         if old or files:
             out.append({'id': r['id'], 'title': r['title'], 'folder': r['folder'], 'old': old, 'new': new, 'files': files})

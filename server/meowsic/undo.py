@@ -10,7 +10,7 @@ Before anything changes every step is checked: 'ok', 'skip' (already the way it 
 {force: true} goes ahead only when every conflicting step is safe to force (FORCE_OK).
 
 Step ops (see record_undo for how they are written):
-  fields   {id, title, old: {title|artist|key|version|tags}, new: {...}}  PATCH, bulk tags / versions, tag rename / delete
+  fields   {id, title, old: {title|artist|album|key|version|tags}, new: {...}}  PATCH, bulk tags / versions, tag rename / delete
   trash    {ids, titles}            moved to the Trash  -> restore
   restore  {ids, titles}            back from the Trash -> Trash again
   created  {ids, titles}            new items (AI score, job results, Photos imports) -> Trash

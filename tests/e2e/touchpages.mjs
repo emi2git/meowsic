@@ -144,7 +144,7 @@ for (const [name, w, h] of [['ipad-port', 1032, 1376], ['ipad-land', 1376, 1032]
   let s = await st();
   check('AI score: default zoom 100%', s.zoom === '100%', s.zoom);
   check('AI score: note names off by default (classic look)', s.on === false && s.letters === 0 && s.kbds === 0, JSON.stringify(s));
-  check('AI score: OSMD draws the title and "Meowsic" as composer', s.title.includes(ai.title) && s.title.includes('Meowsic') && !s.title.join(' ').includes('Meowsic AI'), s.title.slice(0, 5).join(' | '));
+  check('AI score: OSMD draws the title and "Made by Meowsic"', s.title.includes(ai.title) && s.title.includes('Meowsic') && !s.title.join(' ').includes('Meowsic AI'), s.title.slice(0, 5).join(' | '));
   await p.screenshot({ path: `${OUT}/pages-mac-ai-classic.png` });
   await p.click('#sc-names'); await sleep(1500);
   s = await st();

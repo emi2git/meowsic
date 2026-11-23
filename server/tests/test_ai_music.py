@@ -11,9 +11,9 @@ XML = '<?xml version="1.0"?><score-partwise version="3.1"><part-list/></score-pa
 def test_ai_score_create(client, data):
     it = client.post('/api/items', json={'kind': 'score', 'title': 'Little Tune', 'version': 'original', 'ai': True,
                                          'tags': ['AI music'], 'source': 'Meowsic AI', 'musicxmlText': XML}).json()
-    assert it['id'].startswith('m-') and it['ai'] == 1 and it['tags'] == ['AI music'] and it['source'] == 'Meowsic' and it['artist'] == 'Meowsic'  # the old name 'Meowsic AI' comes in as 'Meowsic'
+    assert it['id'].startswith('m-') and it['ai'] == 1 and it['tags'] == ['AI music'] and it['source'] == 'Meowsic' and it['artist'] == ''  # the old name 'Meowsic AI' comes in as 'Meowsic'; the artist is never Meowsic
     assert it['musicxml'] == f'{it["folder"]}.musicxml'
-    assert (data / 'items' / it['folder'] / it['musicxml']).read_text() == XML.replace('<part-list/>', '<identification><creator type="composer">Meowsic</creator></identification><part-list/>')
+    assert (data / 'items' / it['folder'] / it['musicxml']).read_text() == XML.replace('<part-list/>', '<identification><creator type="arranger">Made by Meowsic</creator></identification><part-list/>')
     plain = client.post('/api/items', json={'kind': 'score', 'title': 'Plain'}).json()
     assert plain['ai'] == 0
     assert [x['ai'] for x in client.get('/api/items?kind=score').json()] == [0, 1]
