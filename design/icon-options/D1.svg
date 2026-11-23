@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#6B3FA0"/>
+  <circle cx="512" cy="530" r="410" fill="#7748B2"/>
+  <g stroke="#2B1446" stroke-width="22" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M318 370 L345 170 L482 292 Z" fill="#FFC83D"/>
+    <path d="M706 370 L679 170 L542 292 Z" fill="#FFC83D"/>
+    <path d="M368 300 L374 226 L432 280 Z" fill="#FF9EBB" stroke="none"/>
+    <path d="M656 300 L650 226 L592 280 Z" fill="#FF9EBB" stroke="none"/>
+    <ellipse cx="512" cy="440" rx="225" ry="175" fill="#FFC83D"/>
+  </g>
+  <ellipse cx="383" cy="478" rx="34" ry="18" fill="#FF9EBB"/>
+  <ellipse cx="641" cy="478" rx="34" ry="18" fill="#FF9EBB"/>
+  <ellipse cx="440" cy="418" rx="27" ry="35" fill="#2B1446"/>
+  <ellipse cx="584" cy="418" rx="27" ry="35" fill="#2B1446"/>
+  <circle cx="449" cy="405" r="10" fill="#fff"/>
+  <circle cx="593" cy="405" r="10" fill="#fff"/>
+  <path d="M494 456 L530 456 L512 476 Z" fill="#FF7FA6" stroke="#2B1446" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M512 476 q -16 26 -40 10 M512 476 q 16 26 40 10" fill="none" stroke="#2B1446" stroke-width="11" stroke-linecap="round"/>
+  <rect x="232" y="520" width="560" height="350" rx="30" fill="#FFF8EA" stroke="#2B1446" stroke-width="22"/>
+  <g stroke="#C4AEE2" stroke-width="9">
+    <path d="M282 610 H742 M282 650 H742 M282 690 H742 M282 730 H742 M282 770 H742"/>
+  </g>
+  <g fill="#2B1446">
+    <ellipse cx="350" cy="770" rx="30" ry="22" transform="rotate(-20 350 770)"/>
+    <ellipse cx="462" cy="730" rx="30" ry="22" transform="rotate(-20 462 730)"/>
+    <rect x="365" y="645" width="14" height="125"/>
+    <rect x="477" y="630" width="14" height="100"/>
+    <path d="M365 640 L491 622 L491 650 L365 668 Z"/>
+    <ellipse cx="600" cy="710" rx="30" ry="22" transform="rotate(-20 600 710)"/>
+    <rect x="615" y="610" width="14" height="100"/>
+    <path d="M629 610 q 40 30 30 85 q -8 -40 -30 -45 Z"/>
+  </g>
+  <ellipse cx="702" cy="750" rx="30" ry="22" transform="rotate(-20 702 750)" fill="none" stroke="#2B1446" stroke-width="12"/>
+  <rect x="721" y="650" width="13" height="95" fill="#2B1446"/>
+  <g stroke="#2B1446" stroke-width="22" fill="#FFC83D">
+    <ellipse cx="398" cy="525" rx="66" ry="48"/>
+    <ellipse cx="626" cy="525" rx="66" ry="48"/>
+  </g>
+  <g stroke="#2B1446" stroke-width="9" stroke-linecap="round">
+    <path d="M378 548 v-22 M418 548 v-22 M606 548 v-22 M646 548 v-22"/>
+  </g>
+</svg>

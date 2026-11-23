@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#7046AA"/>
+  <g stroke="#2A1442" stroke-width="24" stroke-linejoin="round" stroke-linecap="round">
+    <!-- ears -->
+    <path d="M300 420 L280 175 L455 300 Z" fill="#FFC83D"/>
+    <path d="M724 420 L744 175 L569 300 Z" fill="#FFC83D"/>
+    <path d="M318 370 L308 240 L405 310 Z" fill="#FF9EB5" stroke="none"/>
+    <path d="M706 370 L716 240 L619 310 Z" fill="#FF9EB5" stroke="none"/>
+    <!-- head -->
+    <ellipse cx="512" cy="480" rx="270" ry="215" fill="#FFC83D"/>
+    <!-- keyboard -->
+    <rect x="152" y="610" width="720" height="260" rx="36" fill="#FFFFFF"/>
+  </g>
+  <g stroke="#2A1442" stroke-width="16" stroke-linecap="round">
+    <line x1="255" y1="625" x2="255" y2="858"/>
+    <line x1="358" y1="625" x2="358" y2="858"/>
+    <line x1="461" y1="625" x2="461" y2="858"/>
+    <line x1="563" y1="625" x2="563" y2="858"/>
+    <line x1="666" y1="625" x2="666" y2="858"/>
+    <line x1="769" y1="625" x2="769" y2="858"/>
+  </g>
+  <g fill="#2A1442">
+    <rect x="225" y="610" width="60" height="150" rx="12"/>
+    <rect x="328" y="610" width="60" height="150" rx="12"/>
+    <rect x="533" y="610" width="60" height="150" rx="12"/>
+    <rect x="636" y="610" width="60" height="150" rx="12"/>
+    <rect x="739" y="610" width="60" height="150" rx="12"/>
+  </g>
+  <!-- face -->
+  <g fill="#2A1442">
+    <ellipse cx="410" cy="470" rx="34" ry="46"/>
+    <ellipse cx="614" cy="470" rx="34" ry="46"/>
+  </g>
+  <circle cx="422" cy="454" r="12" fill="#fff"/>
+  <circle cx="626" cy="454" r="12" fill="#fff"/>
+  <path d="M492 532 L532 532 L512 556 Z" fill="#FF7FA0" stroke="#2A1442" stroke-width="10" stroke-linejoin="round"/>
+  <path d="M512 556 Q512 584 482 584 M512 556 Q512 584 542 584" fill="none" stroke="#2A1442" stroke-width="14" stroke-linecap="round"/>
+  <ellipse cx="340" cy="540" rx="36" ry="20" fill="#FF9EB5"/>
+  <ellipse cx="684" cy="540" rx="36" ry="20" fill="#FF9EB5"/>
+  <!-- paws on keys -->
+  <g stroke="#2A1442" stroke-width="24" fill="#FFC83D">
+    <ellipse cx="365" cy="640" rx="80" ry="58"/>
+    <ellipse cx="659" cy="640" rx="80" ry="58"/>
+  </g>
+  <g stroke="#2A1442" stroke-width="12" stroke-linecap="round">
+    <line x1="340" y1="672" x2="340" y2="650"/><line x1="390" y1="672" x2="390" y2="650"/>
+    <line x1="634" y1="672" x2="634" y2="650"/><line x1="684" y1="672" x2="684" y2="650"/>
+  </g>
+</svg>

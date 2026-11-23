@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <clipPath id="m"><path d="M282 560 Q512 600 742 560 Q712 800 512 800 Q312 800 282 560 Z"/></clipPath>
+  </defs>
+  <rect width="1024" height="1024" fill="#7046AA"/>
+  <g transform="translate(512 525) scale(0.86) translate(-512 -505)">
+  <g stroke="#2A1442" stroke-width="26" stroke-linejoin="round">
+    <path d="M190 470 L170 130 L420 250 Z" fill="#FFC83D"/>
+    <path d="M834 470 L854 130 L604 250 Z" fill="#FFC83D"/>
+    <path d="M512 210 C770 210 880 360 880 540 C880 760 720 880 512 880 C304 880 144 760 144 540 C144 360 254 210 512 210 Z" fill="#FFC83D"/>
+  </g>
+  <path d="M215 300 L205 190 L320 250 Z" fill="#FF9EB5"/>
+  <path d="M809 300 L819 190 L704 250 Z" fill="#FF9EB5"/>
+  <!-- eyes: happy arcs -->
+  <g fill="none" stroke="#2A1442" stroke-width="34" stroke-linecap="round">
+    <path d="M320 440 Q375 375 430 440"/>
+    <path d="M594 440 Q649 375 704 440"/>
+  </g>
+  <ellipse cx="265" cy="530" rx="44" ry="26" fill="#FF9EB5"/>
+  <ellipse cx="759" cy="530" rx="44" ry="26" fill="#FF9EB5"/>
+  <path d="M478 482 L546 482 L512 522 Z" fill="#FF7FA0" stroke="#2A1442" stroke-width="12" stroke-linejoin="round"/>
+  <!-- keyboard smile -->
+  <g clip-path="url(#m)">
+    <rect x="250" y="540" width="520" height="300" fill="#fff"/>
+    <g stroke="#2A1442" stroke-width="14">
+      <line x1="356" y1="560" x2="356" y2="820"/>
+      <line x1="434" y1="560" x2="434" y2="820"/>
+      <line x1="512" y1="560" x2="512" y2="820"/>
+      <line x1="590" y1="560" x2="590" y2="820"/>
+      <line x1="668" y1="560" x2="668" y2="820"/>
+    </g>
+    <g fill="#2A1442">
+      <rect x="331" y="540" width="50" height="130" rx="10"/>
+      <rect x="409" y="540" width="50" height="130" rx="10"/>
+      <rect x="565" y="540" width="50" height="130" rx="10"/>
+      <rect x="643" y="540" width="50" height="130" rx="10"/>
+    </g>
+  </g>
+  <path d="M282 560 Q512 600 742 560 Q712 800 512 800 Q312 800 282 560 Z" fill="none" stroke="#2A1442" stroke-width="24" stroke-linejoin="round"/>
+  <!-- whiskers -->
+  <g stroke="#2A1442" stroke-width="16" stroke-linecap="round">
+    <line x1="60" y1="500" x2="180" y2="520"/>
+    <line x1="64" y1="590" x2="180" y2="575"/>
+    <line x1="964" y1="500" x2="844" y2="520"/>
+    <line x1="960" y1="590" x2="844" y2="575"/>
+  </g>
+</g>
+</svg>

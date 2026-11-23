@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+<rect width="1024" height="1024" fill="#6B3FA0"/>
+<rect y="640" width="1024" height="384" fill="#7B4BB7"/>
+<g stroke="#2E1650" stroke-width="24" stroke-linejoin="round">
+<path d="M290,450 L305,200 L450,320 Z" fill="#FFC83D"/>
+<path d="M574,320 L719,200 L734,450 Z" fill="#FFC83D"/>
+<ellipse cx="512" cy="480" rx="260" ry="210" fill="#FFC83D"/>
+</g>
+<path d="M318,250 L326,380 L405,330 Z" fill="#FF8FB1"/><path d="M706,250 L698,380 L619,330 Z" fill="#FF8FB1"/>
+<ellipse cx="420" cy="455" rx="34" ry="44" fill="#2E1650"/><ellipse cx="604" cy="455" rx="34" ry="44" fill="#2E1650"/>
+<circle cx="432" cy="440" r="12" fill="#fff"/><circle cx="616" cy="440" r="12" fill="#fff"/>
+<path d="M492,515 L532,515 L512,538 Z" fill="#FF6F9C" stroke="#2E1650" stroke-width="8" stroke-linejoin="round"/>
+<g stroke="#2E1650" stroke-width="24" stroke-linejoin="round">
+<rect x="190" y="570" width="644" height="340" rx="36" fill="#fff"/>
+</g>
+<g stroke="#B9A3D6" stroke-width="10"><line x1="240" y1="650" x2="784" y2="650"/><line x1="240" y1="700" x2="784" y2="700"/><line x1="240" y1="750" x2="784" y2="750"/><line x1="240" y1="800" x2="784" y2="800"/><line x1="240" y1="850" x2="784" y2="850"/></g>
+<g fill="#6B3FA0">
+<ellipse cx="300" cy="800" rx="30" ry="23" transform="rotate(-20 300 800)"/><rect x="316" y="672" width="13" height="126"/>
+<ellipse cx="560" cy="775" rx="30" ry="23" transform="rotate(-20 560 775)"/><ellipse cx="700" cy="725" rx="30" ry="23" transform="rotate(-20 700 725)"/>
+<rect x="576" y="672" width="13" height="101"/><rect x="716" y="672" width="13" height="51"/><rect x="576" y="660" width="153" height="28"/>
+<ellipse cx="440" cy="750" rx="30" ry="23" transform="rotate(-20 440 750)"/><rect x="456" y="652" width="13" height="96"/>
+</g>
+<g stroke="#2E1650" stroke-width="22" stroke-linejoin="round">
+<path d="M318,600 C318,520 470,520 470,600 Z" fill="#FFC83D"/><path d="M554,600 C554,520 706,520 706,600 Z" fill="#FFC83D"/>
+</g>
+<path d="M368,600 v-22 M420,600 v-22 M604,600 v-22 M656,600 v-22" stroke="#2E1650" stroke-width="12" stroke-linecap="round"/>
+</svg>

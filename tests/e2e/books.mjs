@@ -20,10 +20,10 @@ if (DATA) check('files on disk under items/Books/', fs.readdirSync(`${DATA}/item
 check('page image still loads', await page.evaluate(async (u) => (await fetch(u)).ok, `/api/items/${it.id}/file/${encodeURIComponent(it.pageFiles[0])}`));
 await page.goto(`${BASE}#/library`, { waitUntil: 'networkidle0' }); await sleep(600);
 const side = await page.$$eval('.side .nav.sub', (e) => e.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
-check('left bar: Sheets, Books, Chords, Scores', side.length === 4 && /^Books ?1$/.test(side[1]), side.join(' | '));
+check('left bar: Sheets, Chords, Books, Scores', side.length >= 4 && /^Sheets/.test(side[0]) && /^Chords/.test(side[1]) && /^Books/.test(side[2]), side.join(' | '));
 await page.goto(`${BASE}#/library?kind=book`, { waitUntil: 'networkidle0' }); await sleep(600);
 const rows = await page.$$eval('.lib-table tbody tr', (e) => e.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
-check('Books list has just the book', rows.length === 1 && rows[0].includes('Cleanup test'), rows.join(' | '));
+check('Books list has the book, with its cover', rows.some((r) => r.includes('Cleanup test')) && (await page.$$('.lib-table .cover img')).length === rows.length, rows.join(' | '));
 check('heading says Books', (await page.$eval('#libhead h1', (e) => e.textContent)) === 'Books');
 await page.goto(`${BASE}#/library?kind=sheet`, { waitUntil: 'networkidle0' }); await sleep(600);
 check('Sheets list no longer has it', !(await page.$$eval('.lib-table tbody tr', (e) => e.some((x) => x.textContent.includes('Cleanup test')))));

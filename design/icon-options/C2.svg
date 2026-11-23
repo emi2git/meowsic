@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+<rect width="1024" height="1024" fill="#6B3FA0"/>
+<circle cx="512" cy="540" r="400" fill="#7B4BB7"/>
+<g transform="translate(-30 30) rotate(-14 512 600)"><g stroke="#2B1745" stroke-width="52" stroke-linejoin="round" fill="#2B1745"><path d="M236 470 L282 168 L470 330 Z"/><path d="M788 470 L742 168 L554 330 Z"/><ellipse cx="512" cy="590" rx="318" ry="262"/></g>
+<g fill="#FFC83D"><path d="M236 470 L282 168 L470 330 Z"/><path d="M788 470 L742 168 L554 330 Z"/></g>
+<g fill="#FF8FAB"><path d="M282 420 L304 240 L410 335 Z"/><path d="M742 420 L720 240 L614 335 Z"/></g>
+<g fill="#FFC83D"><ellipse cx="512" cy="590" rx="318" ry="262"/></g><ellipse cx="400" cy="560" rx="54" ry="66" fill="#2B1745"/><circle cx="386" cy="538" r="19" fill="#fff"/><ellipse cx="624" cy="560" rx="54" ry="66" fill="#2B1745"/><circle cx="610" cy="538" r="19" fill="#fff"/><g fill="#FF9EB5"><ellipse cx="312" cy="670" rx="44" ry="26"/><ellipse cx="712" cy="670" rx="44" ry="26"/></g><path d="M482 626 Q512 616 542 626 Q544 632 516 656 Q512 659 508 656 Q480 632 482 626 Z" fill="#FF8FAB" stroke="#2B1745" stroke-width="10" stroke-linejoin="round"/><path d="M458 668 Q512 678 566 668 Q560 730 512 730 Q464 730 458 668 Z" fill="#7A2244" stroke="#2B1745" stroke-width="14" stroke-linejoin="round"/><path d="M482 724 Q512 686 542 724 Z" fill="#FF8FAB"/><g stroke="#2B1745" stroke-width="14" stroke-linecap="round" fill="none"><path d="M250 614 L130 584"/><path d="M774 614 L894 584"/><path d="M250 656 L130 656"/><path d="M774 656 L894 656"/><path d="M250 698 L130 728"/><path d="M774 698 L894 728"/></g></g><g transform="translate(800 300) rotate(12) scale(0.82)" stroke="#2B1745" stroke-width="18" stroke-linejoin="round" stroke-linecap="round">
+<path d="M28 -10 L28 -190 Q60 -150 100 -130 Q120 -110 110 -70" fill="none" stroke="#2B1745" stroke-width="56"/>
+<ellipse cx="0" cy="0" rx="46" ry="34" transform="rotate(-22)" fill="#2B1745" stroke-width="56"/>
+<path d="M28 -10 L28 -190 Q60 -150 100 -130 Q120 -110 110 -70" fill="none" stroke="#FFC83D" stroke-width="22"/>
+<ellipse cx="0" cy="0" rx="46" ry="34" transform="rotate(-22)" fill="#FFC83D" stroke="none"/>
+</g>
+</svg>

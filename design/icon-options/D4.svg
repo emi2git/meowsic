@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#6B3FA0"/>
+  <ellipse cx="512" cy="840" rx="330" ry="40" fill="#5E3590"/>
+  <g stroke="#2B1446" stroke-width="22" stroke-linejoin="round" stroke-linecap="round">
+    <ellipse cx="520" cy="620" rx="295" ry="215" fill="#FFC83D"/>
+  </g>
+  <path d="M650 430 q 26 50 4 104 M740 462 q 26 46 6 96 M808 520 q 18 36 4 74" fill="none" stroke="#F0A030" stroke-width="26" stroke-linecap="round"/>
+  <path d="M800 640 C 800 830 560 870 390 795" fill="none" stroke="#2B1446" stroke-width="112" stroke-linecap="round"/>
+  <path d="M800 640 C 800 830 560 870 390 795" fill="none" stroke="#FFC83D" stroke-width="68" stroke-linecap="round"/>
+  <path d="M440 815 q -10 -14 -6 -36 M480 828 q -10 -16 -6 -38" fill="none" stroke="#F0A030" stroke-width="20" stroke-linecap="round"/>
+  <g stroke="#2B1446" stroke-width="22" stroke-linejoin="round">
+    <path d="M298 545 L270 395 L385 470 Z" fill="#FFC83D"/>
+    <path d="M415 465 L478 345 L512 495 Z" fill="#FFC83D"/>
+    <ellipse cx="395" cy="590" rx="150" ry="125" fill="#FFC83D"/>
+  </g>
+  <path d="M305 495 L290 430 L345 470 Z M440 465 L470 400 L486 470 Z" fill="#FF9EBB"/>
+  <ellipse cx="315" cy="635" rx="28" ry="15" fill="#FF9EBB"/>
+  <ellipse cx="475" cy="635" rx="28" ry="15" fill="#FF9EBB"/>
+  <path d="M318 590 q 26 24 52 0 M420 590 q 26 24 52 0" fill="none" stroke="#2B1446" stroke-width="14" stroke-linecap="round"/>
+  <path d="M379 625 L411 625 L395 643 Z" fill="#FF7FA6" stroke="#2B1446" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M395 643 q -13 20 -32 8 M395 643 q 13 20 32 8" fill="none" stroke="#2B1446" stroke-width="10" stroke-linecap="round"/>
+  <g transform="translate(115 55) scale(0.88)">
+  <g fill="#FFFFFF" stroke="#2B1446" stroke-width="16" stroke-linejoin="round">
+    <path d="M598 260 L620 260 L620 370 L598 370 Z"/>
+    <ellipse cx="585" cy="375" rx="38" ry="28" transform="rotate(-20 585 375)"/>
+    <path d="M690 160 L716 160 L716 310 L690 310 Z M840 130 L866 130 L866 280 L840 280 Z"/>
+    <path d="M690 130 L866 100 L866 150 L690 180 Z"/>
+    <ellipse cx="675" cy="315" rx="48" ry="36" transform="rotate(-20 675 315)"/>
+    <ellipse cx="825" cy="285" rx="48" ry="36" transform="rotate(-20 825 285)"/>
+  </g>
+  <g fill="#FFFFFF"><rect x="600" y="270" width="18" height="96"/><rect x="692" y="170" width="22" height="130"/><rect x="842" y="140" width="22" height="130"/></g>
+</g>
+</svg>

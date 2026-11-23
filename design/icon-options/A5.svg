@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#7046AA"/>
+  <!-- keys -->
+  <g stroke="#2A1442" stroke-width="22" stroke-linejoin="round">
+    <path d="M112 560 L912 560 L912 860 Q912 900 872 900 L152 900 Q112 900 112 860 Z" fill="#fff"/>
+  </g>
+  <!-- pressed key tinted -->
+  <rect x="432" y="571" width="160" height="318" fill="#FFE58A"/>
+  <g stroke="#2A1442" stroke-width="16">
+    <line x1="272" y1="571" x2="272" y2="889"/><line x1="432" y1="571" x2="432" y2="889"/>
+    <line x1="592" y1="571" x2="592" y2="889"/><line x1="752" y1="571" x2="752" y2="889"/>
+  </g>
+  <g fill="#2A1442">
+    <rect x="230" y="560" width="84" height="190" rx="14"/>
+    <rect x="390" y="560" width="84" height="190" rx="14"/>
+    <rect x="710" y="560" width="84" height="190" rx="14"/>
+  </g>
+  <!-- arm + paw -->
+  <g stroke="#2A1442" stroke-width="26" stroke-linejoin="round" fill="#FFC83D">
+    <path d="M392 -40 L392 480 L632 480 L632 -40 Z"/>
+    <path d="M512 330 C640 330 690 420 690 520 C690 640 610 700 512 700 C414 700 334 640 334 520 C334 420 384 330 512 330 Z"/>
+  </g>
+  <!-- stripes on arm -->
+  <g stroke="#E8A21C" stroke-width="24" stroke-linecap="round">
+    <line x1="424" y1="140" x2="600" y2="140"/>
+    <line x1="424" y1="225" x2="600" y2="225"/>
+  </g>
+  <!-- beans -->
+  <g fill="#FF8FAB">
+    <path d="M512 520 C580 520 620 570 620 610 C620 650 570 660 512 660 C454 660 404 650 404 610 C404 570 444 520 512 520 Z"/>
+    <ellipse cx="400" cy="480" rx="34" ry="44" transform="rotate(-25 400 480)"/>
+    <ellipse cx="470" cy="420" rx="34" ry="46" transform="rotate(-8 470 420)"/>
+    <ellipse cx="554" cy="420" rx="34" ry="46" transform="rotate(8 554 420)"/>
+    <ellipse cx="624" cy="480" rx="34" ry="44" transform="rotate(25 624 480)"/>
+  </g>
+  <!-- bounce lines -->
+  <g stroke="#FFD447" stroke-width="22" stroke-linecap="round">
+    <line x1="270" y1="470" x2="200" y2="420"/>
+    <line x1="250" y1="540" x2="170" y2="530"/>
+    <line x1="754" y1="470" x2="824" y2="420"/>
+    <line x1="774" y1="540" x2="854" y2="530"/>
+  </g>
+  <!-- notes -->
+  <g fill="#fff">
+    <path d="M200 160 h20 v150 h-20z"/><ellipse cx="180" cy="315" rx="40" ry="30" transform="rotate(-20 180 315)"/>
+    <path d="M220 160 q60 20 50 90 q-10 -40 -50 -40z"/>
+    <path d="M810 180 h20 v130 h-20z"/><ellipse cx="790" cy="315" rx="40" ry="30" transform="rotate(-20 790 315)"/>
+    <path d="M830 180 q60 20 50 90 q-10 -40 -50 -40z"/>
+  </g>
+</svg>

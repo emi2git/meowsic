@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#6B3FA0"/>
+  <rect x="-20" y="560" width="1064" height="40" fill="#2B1446"/>
+  <g stroke="#2B1446" stroke-width="18" fill="#FFFFFF">
+    <rect x="-40" y="590" width="150" height="460"/>
+    <rect x="110" y="590" width="150" height="460"/>
+    <rect x="410" y="590" width="150" height="460"/>
+    <rect x="560" y="590" width="150" height="460"/>
+    <rect x="710" y="590" width="150" height="460"/>
+    <rect x="860" y="590" width="150" height="460"/>
+    <rect x="260" y="604" width="150" height="460" fill="#FFE08A"/>
+  </g>
+  <g fill="#2B1446">
+    <rect x="65" y="590" width="90" height="200" rx="12"/>
+    <rect x="215" y="590" width="90" height="200" rx="12"/>
+    <rect x="515" y="590" width="90" height="200" rx="12"/>
+    <rect x="665" y="590" width="90" height="200" rx="12"/>
+    <rect x="815" y="590" width="90" height="200" rx="12"/>
+  </g>
+  <g transform="rotate(-24 335 780)">
+  <g stroke="#2B1446" stroke-width="44" fill="#2B1446" stroke-linejoin="round">
+    <rect x="248" y="-40" width="174" height="720"/>
+    <ellipse cx="335" cy="715" rx="122" ry="100"/>
+    <circle cx="272" cy="790" r="42"/><circle cx="335" cy="808" r="44"/><circle cx="398" cy="790" r="42"/>
+  </g>
+  <g fill="#FFC83D">
+    <rect x="248" y="-40" width="174" height="720"/>
+    <ellipse cx="335" cy="715" rx="122" ry="100"/>
+    <circle cx="272" cy="790" r="42"/><circle cx="335" cy="808" r="44"/><circle cx="398" cy="790" r="42"/>
+  </g>
+  <g fill="none" stroke="#F0A030" stroke-width="28" stroke-linecap="round">
+    <path d="M280 170 Q335 192 390 170 M280 290 Q335 312 390 290 M280 410 Q335 432 390 410"/>
+  </g>
+  <g fill="none" stroke="#2B1446" stroke-width="12" stroke-linecap="round">
+    <path d="M300 760 q 4 28 -2 46 M370 760 q -4 28 2 46"/>
+  </g>
+  </g>
+  <g stroke="#FFFFFF" stroke-width="0" stroke-linecap="round">
+    <path d="M120 470 L80 440 M150 420 L130 375"/>
+  </g>
+  <!-- notes -->
+  <g fill="#FFFFFF" stroke="#2B1446" stroke-width="20" stroke-linejoin="round">
+    <path d="M668 438 L668 230 L862 186 L862 394" fill="none" stroke-width="0"/>
+    <path d="M650 240 L690 240 L690 450 L650 450 Z M820 196 L860 196 L860 410 L820 410 Z"/>
+    <path d="M650 200 L860 156 L860 226 L650 270 Z"/>
+    <ellipse cx="625" cy="460" rx="64" ry="48" transform="rotate(-20 625 460)"/>
+    <ellipse cx="795" cy="420" rx="64" ry="48" transform="rotate(-20 795 420)"/>
+  </g>
+  <g fill="#FFFFFF">
+    <rect x="652" y="250" width="36" height="190"/><rect x="822" y="210" width="36" height="190"/>
+  </g>
+</svg>

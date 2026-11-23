@@ -1,6 +1,6 @@
 // Meowsic offline: the app shell is cached so the library opens without the Mac; API answers and
 // page / score files are cached as they are viewed and served from cache when the Mac is away.
-const SHELL = 'meowsic-shell-v1', DATA = 'meowsic-data-v1';
+const SHELL = 'meowsic-shell-v2', DATA = 'meowsic-data-v1';
 const SHELL_FILES = ['./', 'index.html', 'css/app.css', 'manifest.webmanifest', 'icon.svg', 'icon-180.png', 'icon-512.png', 'vendor/osmd.min.js'];
 
 self.addEventListener('install', (e) => e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES)).then(() => self.skipWaiting())));

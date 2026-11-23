@@ -26,3 +26,4 @@ migrate/.venv/
 *.safetensors
 *.gguf
 models--*/
+.claude/

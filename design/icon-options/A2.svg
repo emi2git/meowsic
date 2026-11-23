@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#7046AA"/>
+  <!-- keyboard strip -->
+  <g stroke="#2A1442" stroke-width="24" stroke-linejoin="round">
+    <rect x="120" y="680" width="784" height="200" rx="32" fill="#fff"/>
+  </g>
+  <g stroke="#2A1442" stroke-width="14">
+    <line x1="232" y1="692" x2="232" y2="868"/><line x1="344" y1="692" x2="344" y2="868"/>
+    <line x1="456" y1="692" x2="456" y2="868"/><line x1="568" y1="692" x2="568" y2="868"/>
+    <line x1="680" y1="692" x2="680" y2="868"/><line x1="792" y1="692" x2="792" y2="868"/>
+  </g>
+  <g fill="#2A1442">
+    <rect x="204" y="680" width="56" height="110" rx="10"/>
+    <rect x="316" y="680" width="56" height="110" rx="10"/>
+    <rect x="540" y="680" width="56" height="110" rx="10"/>
+    <rect x="652" y="680" width="56" height="110" rx="10"/>
+    <rect x="764" y="680" width="56" height="110" rx="10"/>
+  </g>
+  <!-- pressed key highlight under front paw -->
+  
+  <g stroke="#2A1442" stroke-width="24" stroke-linejoin="round" stroke-linecap="round" fill="#FFC83D">
+    <!-- tail as a curl -->
+    <path d="M790 620 C880 610 890 470 840 410 C810 370 760 380 765 430" fill="none" stroke="#2A1442" stroke-width="72"/>
+    <path d="M790 620 C880 610 890 470 840 410 C810 370 760 380 765 430" fill="none" stroke="#FFC83D" stroke-width="36"/>
+    <!-- body (loaf on keys) -->
+    <path d="M330 690 L330 560 C330 470 420 420 560 420 C720 420 800 490 800 600 L800 690 Z"/>
+    <!-- ears -->
+    <path d="M240 330 L230 170 L345 245 Z"/>
+    <path d="M470 330 L480 170 L365 245 Z"/>
+    <!-- head -->
+    <circle cx="355" cy="380" r="150"/>
+  </g>
+  <path d="M255 290 L250 210 L310 250 Z" fill="#FF9EB5"/>
+  <path d="M455 290 L460 210 L400 250 Z" fill="#FF9EB5"/>
+  <g stroke="#2A1442" stroke-width="24" fill="#FFC83D">
+    <ellipse cx="300" cy="690" rx="66" ry="46"/>
+    <ellipse cx="420" cy="690" rx="66" ry="46"/>
+  </g>
+  <g stroke="#2A1442" stroke-width="11" stroke-linecap="round">
+    <line x1="282" y1="714" x2="282" y2="696"/><line x1="318" y1="714" x2="318" y2="696"/>
+    <line x1="402" y1="714" x2="402" y2="696"/><line x1="438" y1="714" x2="438" y2="696"/>
+  </g>
+  <!-- stripes on body -->
+  <g stroke="#E8A21C" stroke-width="22" stroke-linecap="round" fill="none">
+    <path d="M610 440 Q596 480 616 520"/>
+    <path d="M690 450 Q674 490 694 530"/>
+  </g>
+  <g fill="#2A1442">
+    <ellipse cx="300" cy="375" rx="24" ry="34"/>
+    <ellipse cx="410" cy="375" rx="24" ry="34"/>
+  </g>
+  <circle cx="308" cy="362" r="9" fill="#fff"/><circle cx="418" cy="362" r="9" fill="#fff"/>
+  <ellipse cx="262" cy="430" rx="26" ry="15" fill="#FF9EB5"/>
+  <ellipse cx="448" cy="430" rx="26" ry="15" fill="#FF9EB5"/>
+  <path d="M338 418 L372 418 L355 438 Z" fill="#FF7FA0" stroke="#2A1442" stroke-width="10" stroke-linejoin="round"/>
+  <path d="M355 438 Q355 460 333 460 M355 438 Q355 460 377 460" fill="none" stroke="#2A1442" stroke-width="12" stroke-linecap="round"/>
+  <!-- music note -->
+  <g fill="#fff" stroke="#2A1442" stroke-width="16" stroke-linejoin="round">
+    <path d="M560 180 L560 330" fill="none" stroke="#fff" stroke-width="22"/>
+    <path d="M560 180 L660 150 L660 300" fill="none" stroke="#fff" stroke-width="22" stroke-linecap="round"/>
+    <ellipse cx="530" cy="335" rx="42" ry="32" transform="rotate(-20 530 335)" stroke="none"/>
+    <ellipse cx="630" cy="305" rx="42" ry="32" transform="rotate(-20 630 305)" stroke="none"/>
+  </g>
+</svg>
