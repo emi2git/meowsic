@@ -43,14 +43,15 @@ export function itemView(main, { parts }) {
 
   const body = $('#it-body', main), bar = $('#it-bar', main);
   let view, offBar;
+  // "Page n of N": sheets, and scores / chord charts shown as pages on iPad / iPhone
+  $('.viewer', main).addEventListener('pagechange', (e) => {
+    const { show, pages } = e.detail;
+    const el = $('#pageno', main);
+    if (el) el.textContent = `Page ${show.join('–')} of ${pages}`;
+  });
   if (it.kind === 'sheet') {
     view = sheetBody(body, it);
     sheetToolbar(bar, it, view);
-    $('.viewer', main).addEventListener('pagechange', (e) => {
-      const { show, pages } = e.detail;
-      const el = $('#pageno', main);
-      if (el) el.textContent = `Page ${show.join('–')} of ${pages}`;
-    });
     view.goTo(1);
   } else if (it.kind === 'chords') {
     view = chordsBody(body, it);

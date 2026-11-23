@@ -9,7 +9,8 @@ import { scoreEditor } from './scoreeditor.js';
 import { InkLayer } from './annotate.js';
 import { attachSwipe, flipBy } from '../swipe.js';
 import { isTouch, isNarrow } from '../device.js';
-import { easyOn, setEasy, creditOf, chordsOf, drawNoteLetters, easyHeaderHtml } from '../easyscore.js';
+import { easyOn, setEasy, classicXml, hasChordSymbols, drawNoteLetters, drawKeyboardRow, KBD_ROOM } from '../easyscore.js';
+import { paginate, pageOfY, showPage, pagerInput } from '../pager.js';
 
 let osmdReady;
 export function loadOsmd() {
@@ -33,24 +34,27 @@ export function scoreBody(root, it, { perform = false } = {}) {
   const loadReal = async () => {
     const r = await fetch(`/api/items/${encodeURIComponent(it.id)}/musicxml`);
     if (!r.ok) throw new Error('Could not load this score from the Mac.');
-    xmlText = await r.text();
+    xmlText = classicXml(await r.text(), it);
     info = xmlInfo(xmlText);
     tune = { title: it.title, bpm: info.bpm, beats: info.beats, measures: [], real: true };
   };
   const version = it.version || 'original';
-  // "super easy piano" look: title + keyboard chord diagrams + credit on top, letters in the noteheads
+  // note names (toggle, off by default): letters in the noteheads + keyboard chord diagrams under the title
   let easy = easyOn(it);
+  // iPad / iPhone: no scrolling; the score is cut into screen-high pages, turned like a sheet's
+  const paged = isTouch() && !perform;
+  let pages = [], page = 0, stopOff = 0;
 
   // each score reopens the way you left it: key (transpose), tempo and zoom are saved on the entry
   // iPad / iPhone keep their own zoom (this device only): a Mac zoom would overflow an iPhone
-  const zDef = () => (perform ? 1.25 : 1) * (isNarrow() ? 0.62 : 1) * (easy ? 1.5 : 1);
+  const zDef = () => (perform ? 1.25 : 1) * (isNarrow() ? 0.62 : 1);
   const zLocal = isTouch(), zKey = `meowsic-zoom-${it.id}`;
   let zoom = zDef();
   if (zLocal) { try { zoom = +localStorage.getItem(zKey) || zoom; } catch {} } else zoom = it.zoom || zoom;
   let osmd, player, stops = [], bar, ink = null, inkTool = null;
 
-  root.innerHTML = `<div class="score-wrap ${perform ? 'perform' : ''}"><div class="score-paper" id="paper"><div id="easyhead"></div><div id="osmd"></div></div></div>`;
-  const paper = $('#paper', root);
+  root.innerHTML = `<div class="score-wrap ${perform ? 'perform' : ''} ${paged ? 'paged' : ''}"><div class="score-paper" id="paper"><div class="score-clip" id="clip"><div class="score-sheet" id="sheet"><div id="osmd"></div></div></div></div></div>`;
+  const paper = $('#paper', root), clip = $('#clip', root), sheet = $('#sheet', root);
 
   // melody notes (first staff) get data-bar / data-note so a click can select them
   let picked = null;
@@ -85,9 +89,10 @@ export function scoreBody(root, it, { perform = false } = {}) {
     bar = document.createElement('div');
     bar.className = 'playbar';
     (el.parentElement || $('#osmd', root)).append(bar);
+    stopOff = bar.parentElement.getBoundingClientRect().top - sheet.getBoundingClientRect().top;
   };
 
-  const place = (q) => {
+  const place = (q, follow = true) => {
     if (!stops.length || !bar) return;
     if (!player?.playing && q <= 0) { bar.style.display = 'none'; return; }
     let i = stops.findIndex((s) => s.q > q) - 1;
@@ -98,36 +103,83 @@ export function scoreBody(root, it, { perform = false } = {}) {
     bar.style.display = 'block';
     bar.style.transform = `translate(${x}px, ${a.top}px)`;
     bar.style.height = a.h + 'px';
+    // paged: the page follows the line (turns when it moves past the page's last line)
+    if (paged && follow && pages.length) { const k = pageOfY(pages, a.top + stopOff + a.h / 2); if (k !== page) goPage(k); }
     const host = root.closest('.scroll-host');
-    if (host && player?.playing) {
+    if (!paged && host && player?.playing) {
       const top = a.top + paper.offsetTop, view = host.scrollTop;
       if (top < view + 40 || top + a.h > view + host.clientHeight - 40) host.scrollTo({ top: Math.max(0, top - 80) });
     }
     root.dispatchEvent(new CustomEvent('tick', { detail: { q }, bubbles: true }));
   };
 
-  // after every layout: letters in the noteheads and the header (chords follow transpose)
+  // after every layout: letters in the noteheads, keyboard diagrams under the title (chords follow transpose)
   const decorate = () => {
-    const head = $('#easyhead', root);
     paper.classList.toggle('easy', easy);
-    if (!easy) { head.innerHTML = ''; return; }
-    drawNoteLetters(osmd);
-    head.innerHTML = easyHeaderHtml({ title: it.title, credit: (real ? creditOf(xmlText) : '') || (it.source === 'Meowsic AI' || it.ai ? 'Meowsic AI' : it.artist || ''), chords: chordsOf(osmd), scale: isNarrow() ? 0.8 : Math.max(1, (zoom / 1.5) * 1.25) });
+    if (!easy) return;
+    drawNoteLetters(osmd, { minPx: isNarrow() ? 7.5 : 0 }); // iPhone: heads grow a little so the letters stay readable
+    const svg = $('#osmd svg', root);
+    if (svg) drawKeyboardRow(osmd, svg, { title: osmd.Sheet?.TitleString || it.title });
   };
-  const relayout = () => { osmd.render(); decorate(); tagNotes(); measureStops(); place(player.now()); ink?.fit(); };
+
+  // ---- pages (iPad / iPhone) ----
+  // one block per system: from halfway after the system before to halfway before the next, so
+  // chord names above and lyrics below stay with their staves; page 1 also holds the title
+  const systemBlocks = () => {
+    const svg = $('#osmd svg', root);
+    if (!svg) return [];
+    const sr = sheet.getBoundingClientRect(), vr = svg.getBoundingClientRect();
+    const vb = (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number);
+    const unit = (vb[2] ? vr.width / vb[2] : zoom) * 10; // px per OSMD unit
+    const off = vr.top - sr.top;
+    const sys = [];
+    for (const pg of osmd.GraphicSheet?.MusicPages || []) for (const ms of pg.MusicSystems || []) {
+      const ps = ms.PositionAndShape, y = ps.AbsolutePosition.y;
+      sys.push({ top: off + (y + ps.BorderMarginTop) * unit, bottom: off + (y + ps.BorderMarginBottom) * unit });
+    }
+    sys.sort((a, b) => a.top - b.top);
+    const end = sheet.scrollHeight;
+    return sys.map((s, i) => ({
+      top: i ? (sys[i - 1].bottom + s.top) / 2 : 0,
+      bottom: i < sys.length - 1 ? (s.bottom + sys[i + 1].top) / 2 : Math.max(s.bottom + 12, Math.min(end, s.bottom + 40)),
+    }));
+  };
+  const goPage = (k) => {
+    if (!pages.length) return;
+    page = Math.max(0, Math.min(pages.length - 1, k));
+    showPage(sheet, clip, pages[page]);
+    root.dispatchEvent(new CustomEvent('pagechange', { detail: { page: page + 1, show: [page + 1], pages: pages.length }, bubbles: true }));
+  };
+  const repaginate = () => {
+    if (!paged) return;
+    const anchor = pages[page]?.first ?? 0;
+    sheet.style.transform = '';
+    const blocks = systemBlocks();
+    pages = blocks.length ? paginate(blocks, paper.clientHeight) : [{ start: 0, end: paper.clientHeight, first: 0, last: 0 }];
+    const k = pages.findIndex((p) => anchor >= p.first && anchor <= p.last);
+    goPage(k < 0 ? 0 : k);
+  };
+  const pageStops = () => (!paged || !pages.length ? stops : stops.filter((s) => { const y = s.top + stopOff + s.h / 2; return y >= pages[page].start && y < pages[page].end; }));
+  const afterLayout = (follow) => {
+    decorate(); tagNotes(); measureStops(); repaginate();
+    place(player?.now() || 0, follow);
+    ink?.fit();
+  };
+  const relayout = () => { osmd.render(); afterLayout(!!player?.playing); };
 
   const render = async () => {
     await loadOsmd();
     const O = window.opensheetmusicdisplay;
     $('#osmd', root).innerHTML = '';
     osmd = new O.OpenSheetMusicDisplay($('#osmd', root), {
-      autoResize: false, backend: 'svg', drawTitle: !easy, drawMetronomeMarks: !easy, drawSubtitle: false, drawComposer: false, drawPartNames: version === 'vocal',
+      autoResize: false, backend: 'svg', drawTitle: true, drawMetronomeMarks: true, drawSubtitle: false, drawComposer: true, drawPartNames: version === 'vocal',
       drawPartAbbreviations: false, drawMeasureNumbersOnlyAtSystemStart: true, followCursor: false,
     });
     const r = osmd.EngravingRules;
-    r.MinNoteDistance = easy ? 2.6 : 2.0; r.ChordSymbolXSpacing = 1.5; r.LyricsHeight = 1.8;
-    if (easy) { r.DefaultFontFamily = 'Helvetica Neue, Helvetica, Arial, sans-serif'; r.PageTopMargin = 2; r.InstantaneousTempoTextHeight = 1.7; r.UnknownTextHeight = 1.7; }
-    await osmd.load(real ? xmlText : musicXml({ ...tune, title: it.title }, version));
+    r.MinNoteDistance = 2.0; r.ChordSymbolXSpacing = 1.5; r.LyricsHeight = 1.8;
+    const xml = real ? xmlText : musicXml({ ...tune, title: it.title }, version);
+    if (easy && hasChordSymbols(xml)) r.TitleBottomDistance += KBD_ROOM; // room for the keyboard diagrams
+    await osmd.load(xml);
     osmd.zoom = zoom;
     if (it.transpose) {
       osmd.TransposeCalculator = new O.TransposeCalculator();
@@ -135,12 +187,9 @@ export function scoreBody(root, it, { perform = false } = {}) {
       osmd.updateGraphic();
     }
     osmd.render();
-    decorate();
-    tagNotes();
-    measureStops();
     ink?.destroy();
-    ink = new InkLayer(paper, it.id, `score-${version}`);
-    place(player?.posQ || 0);
+    ink = new InkLayer(sheet, it.id, `score-${version}`);
+    afterLayout(true);
     if (!player?.posQ) bar.style.display = 'none';
   };
 
@@ -164,7 +213,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     const r = $('#osmd', root).getBoundingClientRect();
     const host = bar?.parentElement?.getBoundingClientRect() || r;
     const x = cx - host.left, y = cy - host.top;
-    const line = stops.filter((s) => y >= s.top - 30 && y <= s.top + s.h + 30);
+    const line = pageStops().filter((s) => y >= s.top - 30 && y <= s.top + s.h + 30);
     if (!line.length) return -1;
     const st = line.reduce((b, s) => (s.x <= x + 6 && s.x > b.x ? s : b), line[0]);
     let acc = 0;
@@ -177,12 +226,13 @@ export function scoreBody(root, it, { perform = false } = {}) {
     if (!host || !stops.length) return null;
     const r = host.getBoundingClientRect(), x = cx - r.left, y = cy - r.top;
     let best = null, bd = Infinity;
-    for (const st of stops) {
+    const near = pageStops();
+    for (const st of near) {
       const d = y < st.top ? st.top - y : y > st.top + st.h ? y - st.top - st.h : 0;
       if (d < bd) { bd = d; best = st.top; }
     }
     if (bd > 80) return null;
-    const line = stops.filter((st) => st.top === best).sort((a, b) => a.x - b.x || a.q - b.q);
+    const line = near.filter((st) => st.top === best).sort((a, b) => a.x - b.x || a.q - b.q);
     if (x <= line[0].x) return line[0].q;
     for (let i = 0; i < line.length - 1; i++) {
       const a = line[i], b = line[i + 1];
@@ -225,11 +275,13 @@ export function scoreBody(root, it, { perform = false } = {}) {
   };
   paper.addEventListener('pointerup', endDrag);
   paper.addEventListener('pointercancel', endDrag);
-  // iPad / iPhone: swipe left / right = a screen down / up; swipe up at the end = back to the library
+  // iPad / iPhone: pages like a sheet — swipe left / right or tap the page's left / right edge
+  // turns, swipe up / down = back to the library; a tap elsewhere on the music moves the line
   const scroller = () => root.closest('.scroll-host');
-  const offSwipe = perform ? () => {} : attachSwipe(root, { scroller, upAtEnd: true,
-    canStart: () => !busy() && !drag && Date.now() - dragEnd > 300,
-    onLeft: () => flipBy(scroller(), 1), onRight: () => flipBy(scroller(), -1) });
+  const canSwipe = () => !busy() && !drag && Date.now() - dragEnd > 300;
+  const offSwipe = !paged ? (perform ? () => {} : attachSwipe(root, { scroller, upAtEnd: true, canStart: canSwipe,
+    onLeft: () => flipBy(scroller(), 1), onRight: () => flipBy(scroller(), -1) }))
+    : pagerInput(paper, { next: () => goPage(page + 1), prev: () => goPage(page - 1), canStart: (e) => canSwipe() && e?.target !== bar, edge: 0.14 });
 
   let selBox = null;
   const showBar = (i) => {
@@ -274,8 +326,11 @@ export function scoreBody(root, it, { perform = false } = {}) {
     zoomReset() { this.setZoom(zDef()); },
     setZoom(z) { zoom = Math.max(0.6, Math.min(2, Math.round(z * 100) / 100)); if (zLocal) { try { localStorage.setItem(zKey, zoom); } catch {} } else store.update(it.id, { zoom }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zoom; relayout(); },
     get easy() { return easy; },
-    async setEasy(on) { easy = !!on; setEasy(it, easy); await render(); },
+    async setEasy(on) { easy = !!on; setEasy(it, easy); root.dispatchEvent(new CustomEvent('easychange', { bubbles: true })); await render(); },
     get zoom() { return zoom; },
+    get page() { return page + 1; }, get pages() { return pages.length; },
+    get pageLabel() { return paged && pages.length ? `Page ${page + 1} of ${pages.length}` : ''; },
+    goTo(n) { goPage(n - 1); },
     setTool(t) { inkTool = t; ink?.setTool(t); },
     undo() { ink?.undo(); }, clear() { ink?.clear(); },
     xml() { return real ? xmlText : musicXml({ ...tune, title: it.title }, version); },
@@ -304,7 +359,7 @@ export function scoreToolbar(bar, it, view) {
   const t = view.tune;
   const secs = (q) => (q / (t.bpm * view.player.rate)) * 60;
   const total = view.totalQ;
-  bar.innerHTML = `
+  bar.innerHTML = `${view.pageLabel ? `<span class="pageno" id="pageno">${view.pageLabel}</span>` : ''}
     <div class="transport">
       <button class="play" id="sc-play" aria-label="Play">Play</button>
       <input type="range" id="sc-pos" min="0" max="${total}" step="0.25" value="0" aria-label="Position">
@@ -313,7 +368,8 @@ export function scoreToolbar(bar, it, view) {
     <div class="stepper" aria-label="Tempo" title="Tempo"><button id="sc-slow" aria-label="Slower">−</button><span id="sc-rate">${Math.round(t.bpm * view.player.rate)} bpm</span><button id="sc-fast" aria-label="Faster">+</button></div>
     <div class="stepper" aria-label="Transpose"><button id="sc-tdown" aria-label="Transpose down">♭</button><span id="sc-tval">${it.transpose ? (it.transpose > 0 ? '+' : '') + it.transpose : '0'}</span><button id="sc-tup" aria-label="Transpose up">♯</button></div>
     <div class="stepper zoom" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out" title="Zoom out (−)">${iconOn('zoomout')}</button><button id="sc-zreset" class="zreset" title="Reset zoom (0)">${Math.round(view.zoom * 100)}%</button><button id="sc-zin" aria-label="Zoom in" title="Zoom in (+)">${iconOn('zoomin')}</button></div>
-    <button class="icon-btn" id="sc-edit" title="Edit notes" aria-label="Edit notes">${iconOn('edit')}</button>`;
+    <button class="icon-btn" id="sc-edit" title="Edit notes" aria-label="Edit notes">${iconOn('edit')}</button>
+    <button class="nn-toggle ${view.easy ? 'on' : ''}" id="sc-names" aria-pressed="${view.easy}" title="Note names in noteheads" aria-label="Note names in noteheads">A B C</button>`;
 
   const p = () => view.player;
   const playBtn = $('#sc-play', bar);
@@ -343,6 +399,10 @@ export function scoreToolbar(bar, it, view) {
   $('#sc-zout', bar).onclick = () => { view.setZoom(view.zoom - 0.15); zl(); };
   $('#sc-zin', bar).onclick = () => { view.setZoom(view.zoom + 0.15); zl(); };
   $('#sc-zreset', bar).onclick = () => { view.zoomReset(); zl(); };
+  const names = $('#sc-names', bar);
+  const nl = () => { names.classList.toggle('on', view.easy); names.setAttribute('aria-pressed', String(view.easy)); };
+  names.onclick = async () => { await view.setEasy(!view.easy); nl(); };
+  bar.closest('.viewer')?.addEventListener('easychange', nl);
   $('#sc-edit', bar).onclick = (e) => scoreEditor(view, it, bar.closest('.viewer'), e.currentTarget);
   bar.closest('.viewer')?.addEventListener('zoomchange', zl);
   const onSpace = (e) => { if (e.key === ' ' && !e.target.closest('input,select,textarea,button')) { e.preventDefault(); playBtn.click(); } };

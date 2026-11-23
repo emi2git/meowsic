@@ -1,5 +1,5 @@
-// Score: drag / tap the orange line, Play starts there. iPad / iPhone: swipe left / right flips a
-// screen on chords and scores, swipe up at the end goes back, swipe up mid-scroll does not; sheets:
+// Score: drag / tap the orange line, Play starts there. iPad / iPhone: chords and scores are pages
+// (no scrolling), swipe left / right turns, swipe up = back; dragging the line does not turn; sheets:
 // swipe up or down = back. Runs on the preview (mock data): PREVIEW=http://localhost:5181
 import puppeteer from 'puppeteer-core';
 const ORIGIN = process.env.PREVIEW || 'http://localhost:5181';
@@ -51,45 +51,44 @@ await open(t, chords.id);
 // the sample charts are short: make this one long enough to scroll on a phone (preview data only)
 await t.evaluate(async (id) => { const { store } = await import('/js/store.js'); const it = store.get(id); store.update(id, { text: Array(8).fill(it.text).join('\n') }); }, chords.id); await sleep(500);
 const host = () => t.$eval('#it-body', (e) => ({ top: e.scrollTop, h: e.clientHeight, max: e.scrollHeight - e.clientHeight }));
-let h0 = await host();
-check('chords scroll on a phone', h0.max > 300, JSON.stringify(h0));
+const pg = async () => { const m = /Page (\d+) of (\d+)/.exec(await t.$eval('#pageno', (e) => e.textContent).catch(() => '')) || []; return { n: +m[1] || 0, of: +m[2] || 0 }; };
+// iPad / iPhone: chord charts and scores are pages (no scrolling); swipe left / right turns
+let h0 = await host(), p0 = await pg();
+check('chords: pages, nothing scrolls on a phone', h0.max <= 1 && p0.n === 1 && p0.of > 1, JSON.stringify([h0, p0]));
 await swipe(t, 300, 500, 80, 510);
-let h1 = await host();
-check('chords: swipe left = one screen down', Math.abs(h1.top - (h0.h - 60)) < 30, JSON.stringify(h1));
+check('chords: swipe left = next page', (await pg()).n === 2, JSON.stringify(await pg()));
 await swipe(t, 300, 500, 80, 510);
 await swipe(t, 80, 500, 300, 505);
-const h2 = await host();
-check('chords: swipe right = one screen up', Math.abs(h2.top - h1.top) < 30, `${h1.top} vs ${h2.top}`);
-await t.evaluate(() => { document.querySelector('#it-body').scrollTop = 40; }); await sleep(200);
+check('chords: swipe right = previous page', (await pg()).n === 2, JSON.stringify(await pg()));
 await swipe(t, 200, 700, 200, 450);
-check('chords: swipe up mid-way just scrolls (stays)', (await hash(t)).startsWith('#/item/'), await hash(t));
-await t.evaluate(() => { const e = document.querySelector('#it-body'); e.scrollTop = e.scrollHeight; }); await sleep(300);
-await swipe(t, 200, 700, 200, 450);
-check('chords: swipe up at the end = back to the library', (await hash(t)) === '#/library', await hash(t));
+check('chords: swipe up = back to the library', (await hash(t)) === '#/library', await hash(t));
 
 await open(t, score.id, 3500);
-h0 = await host();
-await swipe(t, 330, 600, 90, 610);
-h1 = await host();
-check('score: swipe left = one screen down', h0.max < 50 || Math.abs(h1.top - Math.min(h0.max, h0.h - 60)) < 30, JSON.stringify([h0, h1]));
-await t.evaluate(() => { document.querySelector('#it-body').scrollTop = 0; }); await sleep(300);
-// put the line somewhere, then drag it sideways with a finger: moves the line, no page flip
-const sys2 = await t.$$eval('#osmd svg g.staffline, #osmd svg .vf-stave', (e) => e.map((g) => { const r = g.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }).filter((r) => r.w > 100 && r.y > 120));
-await t.touchscreen.tap(sys2[0].x + 40, sys2[0].y + sys2[0].h / 2); await sleep(400);
+h0 = await host(); p0 = await pg();
+check('score: pages, nothing scrolls on a phone', h0.max <= 1 && p0.n === 1 && p0.of >= 1, JSON.stringify([h0, p0]));
+if (p0.of > 1) {
+  await swipe(t, 330, 600, 90, 610);
+  check('score: swipe left = next page', (await pg()).n === 2, JSON.stringify(await pg()));
+  await swipe(t, 90, 600, 330, 610);
+}
+// put the line somewhere, then drag it sideways with a finger: moves the line, no page turn
+const sys2 = await t.$$eval('#osmd svg g.staffline, #osmd svg .vf-stave', (e) => e.map((g) => { const r = g.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; }).filter((r) => r.w > 100 && r.y > 120 && r.y < innerHeight - 60));
+await t.touchscreen.tap(sys2[0].x + sys2[0].w * 0.3, sys2[0].y + sys2[0].h / 2); await sleep(400);
 const tq = await pos(t);
+check('score: tap on the music moves the line', tq > 0, tq);
 const tb = await t.$eval('.playbar', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
-const before = (await host()).top;
+const before = await pg();
 await swipe(t, tb.x, tb.y, Math.min(370, tb.x + 160), tb.y);
 check('score: finger drag of the line moves it', (await pos(t)) > tq, `${tq} → ${await pos(t)}`);
-check('score: …and does not flip the page', Math.abs((await host()).top - before) < 5, `${before} → ${(await host()).top}`);
+check('score: …and does not turn the page', (await pg()).n === before.n, `${before.n} → ${(await pg()).n}`);
 check('score: still on the score', (await hash(t)).startsWith('#/item/'));
 
 await open(t, sheet.id);
-const pg = await t.$eval('.pages', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
-await swipe(t, pg.x, pg.y - 150, pg.x, pg.y + 150);
+const pgc = await t.$eval('.pages', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+await swipe(t, pgc.x, pgc.y - 150, pgc.x, pgc.y + 150);
 check('sheet: swipe down = back to the library', (await hash(t)).startsWith('#/library'), await hash(t));
 await open(t, sheet.id);
-await swipe(t, pg.x, pg.y + 150, pg.x, pg.y - 150);
+await swipe(t, pgc.x, pgc.y + 150, pgc.x, pgc.y - 150);
 check('sheet: swipe up = back to the library', (await hash(t)) === '#/library', await hash(t));
 
 console.log(`\n${pass} passed, ${fail} failed`); console.log(errs.length ? 'errors:\n' + errs.join('\n') : 'no page errors');
