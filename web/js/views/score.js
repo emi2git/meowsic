@@ -188,7 +188,14 @@ export function scoreBody(root, it, { perform = false } = {}) {
     r.MinNoteDistance = 2.0; r.ChordSymbolXSpacing = 1.5; r.LyricsHeight = 1.8;
     // markings with empty text (e.g. a bare tempo <words/>) crash OSMD's reader — drop them; the tempo lives on the item anyway
     const tidyXml = (x) => x.replace(/<direction(?:\s[^>]*)?>\s*<direction-type>\s*<words\s*\/>\s*<\/direction-type>[\s\S]*?<\/direction>/g, '');
-    const xml = tidyXml(real ? xmlText : musicXml({ ...tune, title: it.title }, version));
+    // every score is credited to Meowsic AI (the song's own artist stays in the library's Artist column)
+    const credit = (x) => {
+      const c = '<creator type="composer">Meowsic AI</creator>';
+      x = x.replace(/<creator\b[^>]*>[\s\S]*?<\/creator>|<creator\b[^>]*\/>/g, '');
+      if (/<identification>/.test(x)) return x.replace(/<identification>/, '<identification>' + c);
+      return x.replace(/(<part-list>)/, '<identification>' + c + '</identification>$1');
+    };
+    const xml = credit(tidyXml(real ? xmlText : musicXml({ ...tune, title: it.title }, version)));
     if (easy && hasChordSymbols(xml)) r.TitleBottomDistance += KBD_ROOM; // room for the keyboard diagrams
     await osmd.load(xml);
     osmd.zoom = zoom;

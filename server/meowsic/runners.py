@@ -47,6 +47,19 @@ def dispatch(ctx: JobContext):
 
 # ---------- saving results as items ----------
 
+def credit_meowsic(path):
+    """Every score Meowsic makes is credited to "Meowsic AI" (the song's artist stays in the item's Artist)."""
+    import re
+    try:
+        x = Path(path).read_text(encoding='utf-8')
+    except (OSError, UnicodeDecodeError):
+        return
+    x = re.sub(r'<creator\b[^>]*>[\s\S]*?</creator>|<creator\b[^>]*/>', '', x)
+    c = '<creator type="composer">Meowsic AI</creator>'
+    x = x.replace('<identification>', '<identification>' + c, 1) if '<identification>' in x else x.replace('<part-list>', '<identification>' + c + '</identification><part-list>', 1)
+    Path(path).write_text(x, encoding='utf-8')
+
+
 def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), group_id=None, key='', bpm=None, ai=0, source_url=''):
     """outs: [(version, musicxml, mid|None, pdf|None, {key, bpm})] -> one score item each, in one transaction.
     Files: items/<id> <title>/<id> <title>.musicxml|.mid|.pdf. Returns the new item ids."""
@@ -69,6 +82,7 @@ def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), gr
                 if src and Path(src).is_file():
                     names[col] = it['folder'] + ext
                     shutil.copyfile(src, d / names[col])
+                    if col == 'musicxml': credit_meowsic(d / names[col])
             c.execute(f'UPDATE score SET {",".join(f"{k}=?" for k in names)} WHERE item_id=?', [*names.values(), it['id']])
         c.commit()
     except BaseException:
