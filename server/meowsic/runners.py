@@ -307,6 +307,33 @@ def snapshot(ev, v):
     return (v, d / 'score.musicxml', d / 'score.mid', (d / 'score.pdf') if pdf_on() else None, extra)
 
 
+def chord_finder() -> str:
+    """'new' (chordfind.py: plain, smoothed chord names) unless MEOWSIC_CHORDS=old keeps the pipeline's own symbols."""
+    return 'old' if os.environ.get('MEOWSIC_CHORDS', 'new').strip().lower() == 'old' else 'new'
+
+
+def rechord(out, work: Path):
+    """One snapshot with its chord symbols worked out again by chordfind (notes untouched); the PDF is
+    drawn again so it shows the same chords. With MEOWSIC_CHORDS=old: the snapshot as it is."""
+    if chord_finder() == 'old': return out
+    from .chordfind import rechord_xml
+    v, xml, mid, pdf, extra = out
+    try:
+        r = rechord_xml(Path(xml).read_bytes())
+    except Exception as e:  # never lose a transcription over its chord names
+        log.warning('chord finder failed on %s (%s): keeping the pipeline chords', xml, e)
+        return out
+    d = work / 'chords'
+    d.mkdir(parents=True, exist_ok=True)
+    nx = d / f'{v}.musicxml'
+    nx.write_bytes(r.xml)
+    if pdf and Path(pdf).is_file():
+        np_ = d / f'{v}.pdf'
+        if arrange.render_pdf(nx, np_): pdf = np_
+        else: log.warning('could not redraw the %s PDF: it shows the pipeline chords', v)
+    return (v, nx, mid, pdf, extra)
+
+
 def transcribe_runner(ctx: JobContext):
     job, p = ctx.job, ctx.params
     outputs = [v for v in dict.fromkeys(OLD_NAMES.get(v, v) for v in job['outputs'] or ['original']) if v in VERSION_TAGS]
@@ -323,16 +350,21 @@ def transcribe_runner(ctx: JobContext):
     ctx.update(stage=0, progress=0, msg='Reading ' + ('the audio file' if src == up else src))
     opts = {'lyrics': 'auto'}
     made = run_driver(ctx, work, src, runs, opts, prog)
-    outs = [snapshot(made[v], v) for v in direct]
+    done = {}
+
+    def snap(v):  # each pipeline version once, with its chords tidied (chordfind)
+        if v not in done: done[v] = rechord(snapshot(made[v], v), work)
+        return done[v]
+    outs = [snap(v) for v in direct]
     if arranged:
         ev = made['original']
-        base = snapshot(ev, 'original')[1]
+        base = snap('original')[1]
         if ev.get('has_vocals'):  # the tune is the singing: arrange from the piano + vocals sheet
             if 'vocal' not in made: made.update(run_driver(ctx, work, src, ['vocal'], opts, prog))
-            base = snapshot(made['vocal'], 'vocal')[1]
+            base = snap('vocal')[1]
         ctx.update(stage=5, progress=0)
         outs += arrange_versions(ctx, base, arranged, work / 'arranged', title=job['title'], artist=p.get('artist', ''),
-                                 stage_arrange=5, stage_write=5, stage_pdf=6, piano_xml=snapshot(ev, 'original')[1])
+                                 stage_arrange=5, stage_write=5, stage_pdf=6, piano_xml=snap('original')[1])
     ctx.update(stage=6, progress=1, msg=f'{STAGES[6]} — done' if 6 not in prog.logged else None)
     outs.sort(key=lambda o: outputs.index(o[0]))
     key = next((o[4]['key'] for o in outs if o[4].get('key')), '')

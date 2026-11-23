@@ -114,6 +114,33 @@ class Tune:
         return spans
 
     def _guess_chords(self, sc):
+        """No chord symbols in the score: work them out from the notes (chordfind.py; MEOWSIC_CHORDS=old: the
+        old per-half-bar triad guess)."""
+        import os
+        if os.environ.get('MEOWSIC_CHORDS', 'new').strip().lower() != 'old':
+            return self._find_chords(sc)
+        return self._guess_chords_old(sc)
+
+    def _find_chords(self, sc):
+        from music21 import meter
+        from . import chordfind as cf
+        notes = [cf.Note(float(Fraction(n.offset).limit_denominator(96) + self.shift), float(n.quarterLength), p.midi,
+                         not (n.tie and n.tie.type in ('stop', 'continue')))
+                 for n in sc.flatten().notes for p in n.pitches if n.quarterLength and not n.duration.isGrace]
+        bars = []
+        for (bo, bl), start in zip(self.bars, self.bar_starts()):
+            ts = [r for o, r in self.times if o <= bo] or [self.times[0][1]]
+            t = meter.TimeSignature(ts[-1])
+            bars.append(cf.Bar(float(start), float(bl if start else bl + self.shift), t.numerator, t.denominator))
+        fifths = self.keys[0][1] if self.keys else None
+        out = []
+        for c in cf.find_chords(notes, bars, fifths):
+            pcs = [(c.root + i) % 12 for i in ((0, 4, 7, 10) if c.quality == '7' else cf.QUALITIES[c.quality])]
+            fig = c.name[0] + c.name[1:].replace('b', '-', 1) if c.name[1:2] == 'b' else c.name  # music21: B-, not Bb
+            out.append((_q(Fraction(c.at).limit_denominator(96)), c.root, pcs, fig, c.root))
+        return out
+
+    def _guess_chords_old(self, sc):
         """Best major/minor triad for each half bar, by note length (bass notes count double)."""
         notes = [(Fraction(n.offset).limit_denominator(96) + self.shift, Fraction(n.quarterLength).limit_denominator(96), p.midi)
                  for n in sc.flatten().notes for p in n.pitches if n.quarterLength]
