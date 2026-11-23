@@ -385,7 +385,7 @@ function generateVersions(it) {
   ok.onclick = () => {
     const outputs = [...pick];
     store.addJob({ gen: true, fromItemId: it.id, title: it.title, artist: it.artist, tags: it.tags.filter((t) => !Object.values(VERSIONS).includes(t)), tune: it.tune, key: it.key,
-      source: `From the score “${it.title}”`, outputs, output: outputs.map((v) => VERSIONS[v]).join(' + ') });
+      source: `From the score “${it.title}”`, sourceUrl: it.sourceUrl || '', outputs, output: outputs.map((v) => VERSIONS[v]).join(' + ') });
     s.close();
     toast(`Making ${outputs.map((v) => VERSIONS[v]).join(', ')} — progress is in Add → Score`);
   };

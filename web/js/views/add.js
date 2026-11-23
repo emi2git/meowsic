@@ -1,6 +1,6 @@
 // Adding music: sheet photos / PDFs (with grouping review), chord search, score from audio.
 import { store } from '../store.js';
-import { $, esc, icon, toast, tagPicker, sheet as modal, CAT, ago } from '../ui.js';
+import { $, esc, icon, toast, platformOf, tagPicker, sheet as modal, CAT, ago } from '../ui.js';
 import { go } from '../app.js';
 import { CHORD_CHARTS, SEARCH_EXTRA, TUNES } from '../mock.js';
 import { parseChordPro, linesHtml, diagramsHtml } from '../chordchart.js';
@@ -325,7 +325,7 @@ export function addScoreView(main) {
     const title = $('#sf-title', main).value.trim() || 'Untitled song';
     if (store.mode === 'server' && f.src === 'file') { // the audio file goes to the Mac with the job
       store.uploadJob(f.fileObj, { title, outputs: [...f.outputs], source: 'Audio file · ' + f.file });
-    } else store.addJob({ url: f.src === 'yt' ? url : undefined, title, source: f.src === 'yt' ? 'YouTube · ' + url.replace(/^https?:\/\/(www\.)?/, '') : 'Audio file · ' + f.file, outputs: [...f.outputs], output: [...f.outputs].map((v) => VERSIONS[v]).join(' + ') });
+    } else store.addJob({ url: f.src === 'yt' ? url : undefined, title, source: f.src === 'yt' ? platformOf(url) : 'Audio file · ' + f.file, outputs: [...f.outputs], output: [...f.outputs].map((v) => VERSIONS[v]).join(' + ') });
     e.target.reset();
     $('#sf-fname', main).textContent = 'MP3, M4A, WAV or a video';
     f.file = null;
@@ -376,7 +376,7 @@ export function tickJobs() {
       if (stage >= stagesOf(j).length) {
         const tune = j.tune || tunes[Math.floor(Math.random() * tunes.length)];
         const made = (j.outputs || ['original']).map((version) => store.add({ kind: 'score', title: j.title, artist: j.artist || '', tags: [VERSIONS[version], ...(j.tags || [])], tune, version,
-          source: j.source, key: j.key || 'C major', bpm: TUNES[tune].bpm, transpose: 0 }));
+          source: j.source, sourceUrl: j.sourceUrl || j.url || '', key: j.key || 'C major', bpm: TUNES[tune].bpm, transpose: 0 }));
         store.updateJob(j.id, { status: 'done', stage, progress: 1, doneAt: Date.now(), items: made.map((x) => ({ id: x.id, version: x.version })), msg: `Done — added ${made.map((x) => VERSIONS[x.version]).join(', ')}` }, { quiet: false });
         toast(made.length > 1 ? `${made.length} new versions of ${j.title} are ready` : `${VERSIONS[made[0].version]} of ${j.title} is ready`, { label: 'Open', run: () => go(`#/item/${made[0].id}`) });
       } else store.updateJob(j.id, stage !== j.stage ? { stage, progress, msg: `${stagesOf(j)[j.stage]} — done` } : { stage, progress });

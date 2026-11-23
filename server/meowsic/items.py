@@ -14,7 +14,7 @@ from pathlib import Path
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 
-from .db import BOOKS, KIND_COLS, book_folder, ensure_tags, folder_base, folder_path, get_item, item_json, log_event, now_ms, folder_name, rebase, uid, write_item
+from .db import AI_SOURCE, BOOKS, KIND_COLS, book_folder, ensure_tags, folder_base, folder_path, get_item, item_json, log_event, now_ms, folder_name, rebase, uid, write_item
 
 router = APIRouter(prefix='/api')
 
@@ -79,7 +79,9 @@ def create_item(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
     ok = re.fullmatch(prefix + r'-[a-z0-9]{3,16}', want) and not c.execute('SELECT 1 FROM item WHERE id=?', (want,)).fetchone()
     text = body.get('musicxmlText')
     if kind == 'chords': body.setdefault('originAt', t)  # fetch / paste time
-    if kind == 'score': body['ai'] = 1 if body.get('ai') else 0  # AI music: a score Claude composed (set once, here)
+    if kind == 'score':
+        body['ai'] = 1 if body.get('ai') else 0  # AI music: a score Claude composed (set once, here)
+        if body['ai'] and body.get('source', '') in ('', 'Composed by Claude'): body['source'] = AI_SOURCE
     else: body.pop('ai', None)
     it = {'tags': [], 'createdAt': t, 'updatedAt': t, **{k: v for k, v in body.items() if k not in ('folder', 'musicxmlText')},
           'id': want if ok else uid(prefix), 'kind': kind}

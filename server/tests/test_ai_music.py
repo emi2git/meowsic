@@ -10,8 +10,8 @@ XML = '<?xml version="1.0"?><score-partwise version="3.1"><part-list/></score-pa
 
 def test_ai_score_create(client, data):
     it = client.post('/api/items', json={'kind': 'score', 'title': 'Little Tune', 'version': 'original', 'ai': True,
-                                         'tags': ['AI music'], 'source': 'Composed by Claude', 'musicxmlText': XML}).json()
-    assert it['id'].startswith('m-') and it['ai'] == 1 and it['tags'] == ['AI music'] and it['source'] == 'Composed by Claude'
+                                         'tags': ['AI music'], 'source': 'Meowsic AI', 'musicxmlText': XML}).json()
+    assert it['id'].startswith('m-') and it['ai'] == 1 and it['tags'] == ['AI music'] and it['source'] == 'Meowsic AI'
     assert it['musicxml'] == f'{it["folder"]}.musicxml'
     assert (data / 'items' / it['folder'] / it['musicxml']).read_text() == XML
     plain = client.post('/api/items', json={'kind': 'score', 'title': 'Plain'}).json()

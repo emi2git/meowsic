@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, UploadFile
 
-from .db import connect, job_json, now_ms, uid
+from .db import connect, job_json, now_ms, platform_of, uid
 from .items import conn
 
 router = APIRouter(prefix='/api')
@@ -141,8 +141,12 @@ def create_job(request: Request, body: dict = Body(...)):
     kind = body.get('kind') or ('version' if body.get('gen') else 'transcribe')
     if kind not in ('transcribe', 'version', 'omr') or not body.get('title'):
         raise HTTPException(400, 'kind (transcribe|version|omr) and title are required')
-    return start_job(request.app, kind, body['title'], body.get('source', ''), body.get('outputs', []),
-                     {k: body[k] for k in PARAMS if body.get(k) not in (None, '')})
+    params, source = {k: body[k] for k in PARAMS if body.get(k) not in (None, '')}, body.get('source', '')
+    if kind == 'transcribe':  # keep the full original link; the source shown is just the platform ('YouTube' / 'Facebook')
+        from .runners import link_of
+        url = params.get('url') or link_of({'source': source}, {})
+        if url: params['url'], source = url, platform_of(url)
+    return start_job(request.app, kind, body['title'], source, body.get('outputs', []), params)
 
 
 def _outputs(v: str) -> list:

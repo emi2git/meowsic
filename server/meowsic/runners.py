@@ -21,7 +21,7 @@ from pathlib import Path
 
 from . import arrange
 from .arrange import VERSION_TAGS
-from .db import connect, folder_path, get_item, now_ms, uid, write_item
+from .db import connect, folder_path, get_item, now_ms, platform_of, uid, write_item
 from .jobs import Cancelled, JobContext
 
 log = logging.getLogger('meowsic')
@@ -47,7 +47,7 @@ def dispatch(ctx: JobContext):
 
 # ---------- saving results as items ----------
 
-def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), group_id=None, key='', bpm=None, ai=0):
+def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), group_id=None, key='', bpm=None, ai=0, source_url=''):
     """outs: [(version, musicxml, mid|None, pdf|None, {key, bpm})] -> one score item each, in one transaction.
     Files: items/<id> <title>/<id> <title>.musicxml|.mid|.pdf. Returns the new item ids."""
     cfg, t, made = ctx.cfg, now_ms(), []
@@ -59,7 +59,7 @@ def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), gr
             it = {'id': uid('m'), 'kind': 'score', 'title': title, 'artist': artist or '',
                   'tags': [VERSION_TAGS[v], *[x for x in tags if x not in VERSION_TAGS.values()]],
                   'createdAt': t, 'updatedAt': t, 'originAt': t, 'version': v, 'source': source, 'groupId': gid,
-                  'key': extra.get('key') or key or '', 'bpm': extra.get('bpm') or bpm, 'ai': 1 if ai else 0}
+                  'key': extra.get('key') or key or '', 'bpm': extra.get('bpm') or bpm, 'ai': 1 if ai else 0, 'sourceUrl': source_url or ''}
             write_item(c, it, new=True)
             d = folder_path(cfg, it['folder'])
             d.mkdir(parents=True, exist_ok=True)
@@ -144,7 +144,7 @@ def version_runner(ctx: JobContext):
     tags = p['tags'] if isinstance(p.get('tags'), list) else src['tags']
     ids = save_outputs(ctx, outs, title=job['title'], source=job['source'] or f'From the score “{src["title"]}”',
                        artist=p.get('artist', src['artist']), tags=tags, group_id=src.get('groupId'),
-                       key=src.get('key', ''), bpm=src.get('bpm'), ai=src.get('ai'))
+                       key=src.get('key', ''), bpm=src.get('bpm'), ai=src.get('ai'), source_url=src.get('sourceUrl') or '')
     if pdf_on(): ctx.update(msg=f'{GEN_STAGES[3]} — done')
     finish(ctx, ids, want)
 
@@ -337,6 +337,7 @@ def transcribe_runner(ctx: JobContext):
     outs.sort(key=lambda o: outputs.index(o[0]))
     key = next((o[4]['key'] for o in outs if o[4].get('key')), '')
     bpm = next((o[4]['bpm'] for o in outs if o[4].get('bpm')), None)
-    ids = save_outputs(ctx, outs, title=job['title'], source=job['source'] or ('Audio file' if src == up else src),
-                       artist=p.get('artist', ''), tags=p.get('tags') or [], key=key, bpm=bpm)
+    link = '' if src == up else (p.get('url') or src)
+    ids = save_outputs(ctx, outs, title=job['title'], source=job['source'] or ('Audio file' if src == up else platform_of(src)),
+                       artist=p.get('artist', ''), tags=p.get('tags') or [], key=key, bpm=bpm, source_url=link)
     finish(ctx, ids, [o[0] for o in outs])
