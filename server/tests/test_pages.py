@@ -41,8 +41,13 @@ def test_page_by_number_survives_rename(client):
     assert Image.open(io.BytesIO(r.content)).convert('RGB').getpixel((1, 1)) == (0, 128, 0)
     assert client.get(url, headers={'If-None-Match': r.headers['etag']}).status_code == 304
     renamed = client.patch(f'/api/items/{it["id"]}', json={'title': 'Stable renamed'}).json()
-    assert renamed['pageFiles'] != it['pageFiles']
-    assert client.get(f'/api/items/{it["id"]}/file/{it["pageFiles"][1]}').status_code == 404  # old name gone
+    assert renamed['pageFiles'] == it['pageFiles'] == [f'{it["id"]} 1.png', f'{it["id"]} 2.png']  # named by id: nothing moves
+    assert client.get(url, headers={'If-None-Match': r.headers['etag']}).status_code == 304
+    # a book is named after its title: renaming it moves the files, the page URL still works
+    book = client.post('/api/items/book', json={'ids': [it['id']], 'book': True}).json()['items'][0]
+    renamed = client.patch(f'/api/items/{it["id"]}', json={'title': 'Stable book'}).json()
+    assert renamed['pageFiles'] != book['pageFiles'] and renamed['folder'] == 'Books/Stable book'
+    assert client.get(f'/api/items/{it["id"]}/file/{book["pageFiles"][1]}').status_code == 404  # old name gone
     r2 = client.get(url)
     assert r2.status_code == 200 and r2.headers['etag'] != r.headers['etag']
     assert Image.open(io.BytesIO(r2.content)).convert('RGB').getpixel((1, 1)) == (0, 128, 0)

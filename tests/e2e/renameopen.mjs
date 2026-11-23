@@ -16,7 +16,7 @@ await page.goto(BASE + '#/item/' + it.id, { waitUntil: 'networkidle0' }); await 
 await page.evaluate(async (id) => { const { store } = await import('/js/store.js'); store.update(id, { title: 'Renamed: Lion' }); }, it.id);
 await sleep(1500);
 const files = await page.evaluate(async (id) => { const { store } = await import('/js/store.js'); return store.get(id).pageFiles; }, it.id);
-check('the app takes the new file names from the Mac', files.every((f) => f.includes('Renamed- Lion')), files.join(','));
+check('a rename keeps the file names (named by id)', files.join(',') === it.pageFiles.join(',') && files.every((f) => f.startsWith(it.id + ' ')), files.join(','));
 const img = await page.$eval('.page img', (e) => ({ ok: e.complete && e.naturalWidth > 0, src: e.getAttribute('src') }));
 check('the open page still shows after the rename', img.ok && img.src.includes('/pages/1?'), JSON.stringify(img));
 await page.evaluate(() => document.querySelector('.turn-strip.next')?.click() || dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' })));

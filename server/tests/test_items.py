@@ -102,21 +102,21 @@ def test_activity_log(client):
 def test_score_musicxml(client, data):
     it = client.post('/api/items', json={'kind': 'score', 'title': 'Ode', 'version': 'lead', 'musicxmlText': '<score>v1</score>'}).json()
     i = it['id']
-    assert i.startswith('m-') and it['folder'] == f'{i} Ode' and it['musicxml'] == f'{i} Ode.musicxml'
+    assert i.startswith('m-') and it['folder'] == i and it['musicxml'] == f'{i}.musicxml'
     assert client.get(f'/api/items/{i}/musicxml').text == '<score>v1</score>'
     assert client.post(f'/api/items/{i}/musicxml/revert').status_code == 409
     client.put(f'/api/items/{i}/musicxml', content='<score>v2</score>')
     client.put(f'/api/items/{i}/musicxml', content='<score>v3</score>')
     assert client.get(f'/api/items/{i}/musicxml').text == '<score>v3</score>'
     assert client.get(f'/api/items/{i}/musicxml?original=true').text == '<score>v1</score>'
-    assert client.get(f'/api/items/{i}').json()['musicxmlOriginal'] == f'{i} Ode (original).musicxml'
+    assert client.get(f'/api/items/{i}').json()['musicxmlOriginal'] == f'{i} (original).musicxml'
     client.post(f'/api/items/{i}/musicxml/revert')
-    assert client.get(f'/api/items/{i}/file/{i} Ode.musicxml').text == '<score>v1</score>'
-    # a title change renames the folder and both files
+    assert client.get(f'/api/items/{i}/file/{i}.musicxml').text == '<score>v1</score>'
+    # a title change moves nothing: folder and files are named by id
     client.patch(f'/api/items/{i}', json={'title': 'Ode to Joy'})
     it = client.get(f'/api/items/{i}').json()
-    assert (it['folder'], it['musicxml'], it['musicxmlOriginal']) == (f'{i} Ode to Joy', f'{i} Ode to Joy.musicxml', f'{i} Ode to Joy (original).musicxml')
-    assert sorted(p.name for p in (data / 'items' / it['folder']).iterdir()) == [f'{i} Ode to Joy (original).musicxml', f'{i} Ode to Joy.musicxml']
+    assert it['title'] == 'Ode to Joy' and (it['folder'], it['musicxml'], it['musicxmlOriginal']) == (i, f'{i}.musicxml', f'{i} (original).musicxml')
+    assert sorted(p.name for p in (data / 'items' / i).iterdir()) == [f'{i} (original).musicxml', f'{i}.musicxml']
     assert client.get(f'/api/items/{i}/musicxml').text == '<score>v1</score>'
 
 
@@ -143,13 +143,10 @@ def test_client_supplied_id(client):
 
 def test_folder_names(client):
     from meowsic.db import folder_name
-    assert folder_name('s-1', '  ..AC/DC: Live  ') == 's-1 AC-DC- Live'
-    assert folder_name('s-1', 'Bèo Dạt Mây Trôi') == 's-1 Bèo Dạt Mây Trôi'
-    assert folder_name('s-1', 'x' * 300) == 's-1 ' + 'x' * 100
-    assert folder_name('s-1', '...') == 's-1'
+    assert folder_name('s-1', '  ..AC/DC: Live  ') == 's-1' and folder_name('s-1', 'Bèo Dạt Mây Trôi') == 's-1'
     a = client.post('/api/items', json={'kind': 'sheet', 'title': 'Memory'}).json()
     b = client.post('/api/items', json={'kind': 'sheet', 'title': 'Memory'}).json()
-    assert a['folder'] == f"{a['id']} Memory" and b['folder'] == f"{b['id']} Memory" and a['folder'] != b['folder']
+    assert a['folder'] == a['id'] and b['folder'] == b['id'] and a['folder'] != b['folder']
 
 
 def test_old_db_gets_folder_column(tmp_path):

@@ -32,7 +32,7 @@ check('All music shows a Book badge', await page.$$eval('.lib-table tbody tr', (
 await page.goto(`${BASE}#/item/${sh.id}`, { waitUntil: 'networkidle0' }); await sleep(800);
 check('book ⋯ offers going back to a sheet', await pick('Not a book')); await sleep(1200);
 it = await api('/items/' + sh.id);
-check('back to a sheet, folder <id> <title>', it.book === 0 && it.folder === `${sh.id} Cleanup test`, it.folder);
+check('back to a sheet, folder <id>', it.book === 0 && it.folder === sh.id, it.folder);
 if (DATA) check('Books/ folder emptied', !fs.existsSync(`${DATA}/items/Books/Cleanup test`));
 await page.screenshot({ path: 'books.png' });
 console.log(`\n${pass} passed, ${fail} failed`); console.log(errs.length ? 'errors:\n' + errs.join('\n') : 'no page errors');

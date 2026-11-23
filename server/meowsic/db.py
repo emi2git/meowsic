@@ -77,7 +77,23 @@ def init_db(cfg: Config):
         c.executescript(f'BEGIN; ALTER TABLE job RENAME TO job_old; {create} INSERT INTO job({cols}) SELECT {cols} FROM job_old; DROP TABLE job_old; COMMIT;')
     migrate_sources(c)
     c.commit()
+    migrate_cleanup_json(cfg, c)
     c.close()
+
+
+def migrate_cleanup_json(cfg: Config, c):
+    """Clean up state used to live in work/cleanup.json: copy it into the tables once, keep the file renamed."""
+    from .cleanstate import import_json
+    try: n = import_json(c, cfg.work_dir / 'cleanup.json')
+    except Exception as e:  # a broken file stays where it is; the tables start empty
+        c.rollback()
+        log_event(c, 'migrate', 'Clean up state', f'work/cleanup.json not imported: {e}')
+        c.commit()
+        return
+    if n:
+        log_event(c, 'migrate', 'Clean up state', f'work/cleanup.json → database (kept as work/{n.pop("file")}): '
+                  + ', '.join(f'{v} {k}' for k, v in n.items() if v))
+        c.commit()
 
 
 YOUTUBE = {'youtube.com', 'youtu.be', 'm.youtube.com', 'music.youtube.com', 'youtube-nocookie.com'}
@@ -127,14 +143,14 @@ def migrate_sources(c):
                   f'AI Studio tag removed from {tagged} item(s)')
 
 
-# ---------- item folders: items/<folder>/, named after the title ----------
+# ---------- item folders: items/<id>/ (books: items/Books/<book name>/) ----------
 
-def folder_name(item_id: str, title: str) -> str:
-    """'<id> <title>': title with '/' and ':' as '-', no leading dots, Unicode kept, cut to 100 chars.
-    The id keeps names unique, so no '(2)' suffixes."""
-    t = ''.join(ch for ch in unicodedata.normalize('NFC', title or '') if ch >= ' ')
-    t = t.replace('/', '-').replace(':', '-').strip().lstrip('.').strip()[:100].strip()
-    return f'{item_id} {t}' if t else item_id
+def folder_name(item_id: str, title: str = '') -> str:
+    """A sheet's or score's folder is its id: items/<id>/ with files '<id> <n>.jpg', '<id>.musicxml'…,
+    so a rename never moves a file. (Older items may still have '<id> <title>' folders: they keep working,
+    and server/scripts/migrate_id_folders.py moves them to the id scheme.) Books are named after the
+    title instead: see book_folder."""
+    return item_id
 
 
 BOOKS = 'Books'  # books live in items/Books/<book name>/, their pages are '<book name> <n>.<ext>'
@@ -233,7 +249,7 @@ def ensure_tags(c, tags):
 
 def write_item(c, it: dict, *, new: bool):
     """Insert or update one item from its JSON shape (only the keys present are written on update).
-    New sheets and scores get the folder '<id> <title>'."""
+    New sheets and scores get the folder '<id>'."""
     kind = it['kind']
     if new and kind != 'chords' and not it.get('folder'):
         it['folder'] = folder_name(it['id'], it['title'])

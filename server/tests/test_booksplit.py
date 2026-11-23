@@ -1,5 +1,6 @@
 """Books → sheets: marks are saved, make-sheets moves page ranges into new sheets, unmake puts them back."""
 import json
+import sqlite3
 
 from test_pages import color_of, png
 
@@ -26,8 +27,8 @@ def test_marks_saved(client, data):
     assert g['starts'] == {'4': 'Song A', '8': ''} and g['pages'] == 10
     lst = client.get('/api/books/split').json()['books']
     assert [x['id'] for x in lst] == [b['id']] and lst[0]['starts'] == {'4': 'Song A', '8': ''}
-    saved = json.loads((data / 'work' / 'cleanup.json').read_text())
-    assert saved['booksplit'][b['id']]['starts'] == {'4': 'Song A', '8': ''}
+    rows = sqlite3.connect(data / 'meowsic.db').execute('SELECT page, title FROM book_split_mark WHERE book_id=? ORDER BY page', (b['id'],)).fetchall()
+    assert rows == [(4, 'Song A'), (8, '')]
     # replace all at once
     assert client.post(f'/api/books/{b["id"]}/split', json={'starts': {'9': 'X'}}).json()['starts'] == {'9': 'X'}
 
@@ -58,7 +59,7 @@ def test_make_three_and_unmake(client):
     assert colors(client, sheets[1]) == [COLORS[5], COLORS[6], COLORS[7]]
     assert colors(client, sheets[2]) == [COLORS[8], COLORS[9]]
     for s in sheets:
-        assert s['folder'] == f'{s["id"]} {s["title"]}' and s['pageFiles'] == [f'{s["folder"]} {k}.png' for k in range(1, s['pages'] + 1)]
+        assert s['folder'] == s['id'] and s['pageFiles'] == [f'{s["folder"]} {k}.png' for k in range(1, s['pages'] + 1)]
     assert client.get(f'/api/items/{sheets[1]["id"]}/annotations/1').json()[0]['pts'] == [[0.1, 0.2]]
     assert book['pages'] == 2 and not book['deleted'] and colors(client, book) == [COLORS[0], COLORS[1]]
     assert book['pageFiles'] == before['pageFiles'][:2]

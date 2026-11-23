@@ -108,11 +108,11 @@ FILE_COLS = ('musicxml', 'musicxml_original', 'midi', 'pdf')
 
 
 def rename_folder(c, cf, it, title):
-    """Title changed: rename items/<folder>/ and the title-named files in it, then the db rows.
-    Any failure undoes the renames done so far and keeps the old names."""
-    old = it['folder']
-    new = book_folder(cf, title, own=old) if it.get('book') else folder_name(it['id'], title)
-    move_folder(c, cf, it, new)
+    """Title changed. Sheets and scores live in items/<id>/, so nothing moves (an old '<id> <title>' folder
+    keeps its name too, until migrate_id_folders.py). Books are named after their title: items/Books/<title>/
+    and the files in it are renamed; any failure undoes the renames done so far and keeps the old names."""
+    if not it.get('book'): return
+    move_folder(c, cf, it, book_folder(cf, title, own=it['folder']))
 
 
 def move_folder(c, cf, it, new):
@@ -341,7 +341,8 @@ def item_thumb(item_id: str, page: int, w: int = 240, c=Depends(conn), cf=Depend
 
 
 # ---------- sheet upload ----------
-# Files are named after the folder: "s-7k2p9qa Memory 1.jpg", "… Memory 2.png", "… Memory.pdf", "… Memory (2).pdf"
+# Files are named after the folder: "s-7k2p9qa 1.jpg", "s-7k2p9qa 2.png", "s-7k2p9qa.pdf", "s-7k2p9qa (2).pdf"
+# (a book's: "<book name> 1.jpg"…)
 
 def exif_date(data: bytes):
     """EXIF DateTimeOriginal (local time) as ms, or None."""
@@ -429,7 +430,7 @@ async def upload_sheet(files: list[UploadFile] = File(...), title: str = Form(''
     return {'item': get_item(c, it['id']), 'skipped': skipped}
 
 
-# ---------- score MusicXML ("<Folder>.musicxml", "<Folder> (original).musicxml") ----------
+# ---------- score MusicXML ("<id>.musicxml", "<id> (original).musicxml") ----------
 
 def score_paths(c, cf, item_id):
     it = must_item(c, item_id)

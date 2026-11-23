@@ -53,14 +53,10 @@ def _relayout(c, cf, item_id, pages: list[dict]):
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), item_id))
 
 
-def _forget_items(cf, *ids):
-    from . import cleanup
-    with cleanup._lock:
-        data = cleanup._load(cf)
-        for i in ids:
-            for k in [k for k in data['pages'] if k.startswith(i + ':')]: data['pages'].pop(k)
-        data['ok'] = [k for k in data.get('ok', []) if not any(k.startswith(i + ':') for i in ids)]
-        cleanup._save(cf, data)
+def _forget_items(c, *ids):
+    """Pages moved: their Clean up scans and page marks no longer fit."""
+    from .cleanstate import forget_items
+    forget_items(c, *ids)
 
 
 def _sheet(c, item_id):
@@ -85,7 +81,7 @@ def split(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)
     _relayout(c, cf, new['id'], [r for r in rows if r['page'] in take])
     _relayout(c, cf, item_id, [r for r in _rows(c, item_id)])
     log_event(c, 'split', it['title'], f'pages {", ".join(map(str, take))} → “{title}”')
-    _forget_items(cf, item_id, new['id'])
+    _forget_items(c, item_id, new['id'])
     return {'item': get_item(c, item_id), 'new': get_item(c, new['id'])}
 
 
@@ -100,7 +96,7 @@ def join(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg))
         c.execute('INSERT OR IGNORE INTO item_tag(item_id, tag) VALUES (?,?)', (item_id, tag))
     c.execute('UPDATE item SET deleted_at=? WHERE id=?', (now_ms(), other['id']))
     log_event(c, 'join', it['title'], f'+ “{other["title"]}”')
-    _forget_items(cf, item_id, other['id'])
+    _forget_items(c, item_id, other['id'])
     return {'item': get_item(c, item_id)}
 
 

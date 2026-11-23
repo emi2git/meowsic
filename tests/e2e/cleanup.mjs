@@ -204,7 +204,7 @@ await page.keyboard.press('Escape'); await sleep(200);
   check('typing in a suggestion box triggers no shortcuts', (await page.$eval(ti, (e) => e.value)) === 'Moon River Edited fzr' && (await api('/items/' + mr.id)).title === 'Moon River');
   await page.click(`${row} [data-use]`); await sleep(1500);
   const it1 = await api('/items/' + mr.id);
-  check('Use this renames with the edited title + artist', it1.title === 'Moon River Edited fzr' && it1.artist === 'Henry Mancini' && it1.folder.includes('Moon River Edited fzr'), JSON.stringify([it1.title, it1.artist, it1.folder]));
+  check('Use this renames with the edited title + artist (the folder does not move)', it1.title === 'Moon River Edited fzr' && it1.artist === 'Henry Mancini' && it1.folder === mr.folder, JSON.stringify([it1.title, it1.artist, it1.folder]));
   check('accepted suggestion leaves the list', !(await page.$(row)));
   if (process.env.DATA) {
     const fs = await import('node:fs');

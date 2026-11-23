@@ -1,12 +1,13 @@
 """Clean-up: find sheet pages with screen junk (trim.py) and songs with odd titles; trim pages with undo.
 
-Scan results are cached in work/cleanup.json (by file and its modified time), so only new or changed
-pages are looked at again. Every trim keeps the page as it was in items/<folder>/.history/, so undo
+Scan results are cached in the page_scan table (by file and its modified time), so only new or changed
+pages are looked at again; marks, later, frames, decisions, notes and suggestions are tables too (cleanstate.py). Every trim keeps the page as it was in items/<folder>/.history/, so undo
 can put it back, all the way to the original.
 """
 import json
 import re
 import shutil
+import sqlite3
 import threading
 import time
 from pathlib import Path
@@ -14,6 +15,7 @@ from pathlib import Path
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
+from . import cleanstate as cs
 from . import trim
 from .db import folder_path, get_item, now_ms
 from .items import cfg, conn, must_item, update_item
@@ -21,23 +23,6 @@ from .items import cfg, conn, must_item, update_item
 router = APIRouter(prefix='/api')
 _lock = threading.Lock()
 _scan = {'running': False, 'done': 0, 'total': 0, 'started': 0}
-
-
-def _cache_file(cf) -> Path:
-    d = cf.data / 'work'
-    d.mkdir(exist_ok=True)
-    return d / 'cleanup.json'
-
-
-def _load(cf) -> dict:
-    try: return json.loads(_cache_file(cf).read_text())
-    except Exception: return {'pages': {}, 'ok': []}
-
-
-def _save(cf, data):
-    tmp = _cache_file(cf).with_suffix('.tmp')
-    tmp.write_text(json.dumps(data))
-    tmp.replace(_cache_file(cf))
 
 
 def _pages(c, books=True):
@@ -49,7 +34,7 @@ def _pages(c, books=True):
                      + ' ORDER BY i.created_at DESC, p.page').fetchall()
 
 
-CACHE_V = 3
+CACHE_V = cs.CACHE_V
 
 
 def _snaps(d: Path, page) -> list[Path]:
@@ -69,23 +54,24 @@ def _run_scan(app):
     cf = app.state.cfg
     try:
         c = app.state.connect()
-        try: rows = _pages(c, books=False)
+        try:
+            rows = _pages(c, books=False)
+            have = cs.scan_all(c)
+            _scan.update(total=len(rows), done=0)
+            for k, (iid, page, file, folder) in enumerate(rows):
+                d = cf.items_dir / folder
+                try: mt = int((d / file).stat().st_mtime)
+                except OSError: _scan['done'] = k + 1; continue
+                old = have.get(f'{iid}:{page}')
+                if not old or old[0] != mt or old[2] != file:
+                    res = _analyze(d, page, file)
+                    try:
+                        cs.scan_put(c, iid, page, mt, res, file)
+                        c.commit()
+                    except sqlite3.Error:  # the item went meanwhile (purged): nothing to keep
+                        c.rollback()
+                _scan['done'] = k + 1
         finally: c.close()
-        with _lock: data = _load(cf)
-        if data.get('v') != CACHE_V: data['pages'] = {}
-        _scan.update(total=len(rows), done=0)
-        for k, (iid, page, file, folder) in enumerate(rows):
-            d = cf.items_dir / folder
-            key = f'{iid}:{page}'
-            try: mt = int((d / file).stat().st_mtime)
-            except OSError: _scan['done'] = k + 1; continue
-            old = data['pages'].get(key)
-            if not old or old[0] != mt or old[2] != file:
-                data['pages'][key] = [mt, _analyze(d, page, file), file]
-            _scan['done'] = k + 1
-            if k % 200 == 0:
-                with _lock: _save(cf, {**_load(cf), 'v': CACHE_V, 'pages': data['pages']})
-        with _lock: _save(cf, {**_load(cf), 'v': CACHE_V, 'pages': data['pages']})
     finally:
         _scan['running'] = False
 
@@ -162,20 +148,19 @@ def song_state(pages, issues, reviewed=False) -> str:
 @router.get('/cleanup')
 def cleanup_state(request: Request, id: str | None = None, c=Depends(conn), cf=Depends(cfg)):
     """Every sheet song with its pages and issues, plus odd titles. ?id= = just that song."""
-    with _lock: data = _load(cf)
-    if data.get('v') != CACHE_V: data['pages'] = {}
-    ok = set(data.get('ok', []))
-    later = set(data.get('later', []))
+    scans = cs.scan_all(c)
+    ok = cs.marks(c)
+    later = cs.later_keys(c)
     # only sheets: books (scanned songbooks) are left out everywhere — songs, titles, counts and the scan
     items = {r[0]: {'id': r[0], 'title': r[1], 'kind': r[2], 'folder': r[3], 'pages': []}
              for r in c.execute("SELECT id, title, kind, folder FROM item WHERE deleted_at IS NULL AND kind = 'sheet'"
                                 ' AND NOT COALESCE((SELECT book FROM sheet WHERE item_id = item.id), 0)' + (' AND id=?' if id else ''), (id,) if id else ())}
-    notes = data.get('notes', {})
+    notes = cs.notes(c)
     missing = False
     for iid, page, file, folder in _pages(c, books=False):
         if iid not in items: continue
         key = f'{iid}:{page}'
-        ent = data['pages'].get(key)
+        ent = scans.get(key)
         if not ent: missing = True
         res = (ent or [0, None])[1] or {}
         steps = _steps(folder_path(cf, folder), page)
@@ -220,52 +205,33 @@ def cleanup_scan(request: Request):
 
 
 @router.post('/cleanup/ok')
-def cleanup_ok(body: dict = Body(...), cf=Depends(cfg)):
-    """Mark a page ('<id>:<page>') or a title ('title:<id>') as fine; {undo: true} takes that back."""
+def cleanup_ok(body: dict = Body(...), c=Depends(conn)):
+    """Mark a page ('<id>:<page>'), a title ('title:<id>') or a song ('song:<id>') as fine; {undo: true} takes that back."""
     key = body.get('key') or ''
-    with _lock:
-        data = _load(cf)
-        s = set(data.get('ok', []))
-        (s.discard if body.get('undo') else s.add)(key)
-        data['ok'] = sorted(s)
-        if not body.get('undo'): _unlater(data, key, 'kept')
-        _save(cf, data)
+    p = cs.parse_key(key)
+    if not p: raise HTTPException(400, "key must be '<id>:<page>', 'title:<id>' or 'song:<id>'")
+    if not cs.mark(c, key, not body.get('undo')): raise HTTPException(404, 'No such item')
+    if not body.get('undo') and p[0] == 'page': cs.unlater(c, p[1], p[2], 'kept')
     return {'ok': True}
 
 
-def _unlater(data, key, why):
-    """A page left for later was cropped / kept: its later mark goes (the log keeps it)."""
-    s = set(data.get('later', []))
-    if key in s:
-        s.discard(key)
-        data['later'] = sorted(s)
-        data.setdefault('later_log', []).append({'key': key, 'op': why, 'at': now_ms()})
-
-
 @router.post('/cleanup/later')
-def cleanup_later(body: dict = Body(...), cf=Depends(cfg)):
+def cleanup_later(body: dict = Body(...), c=Depends(conn)):
     """Leave a page ('<id>:<page>') for later; {undo: true} takes the mark off. Every change is logged."""
-    key = body.get('key') or ''
-    if ':' not in key: raise HTTPException(400, 'key must be <id>:<page>')
-    with _lock:
-        data = _load(cf)
-        s = set(data.get('later', []))
-        (s.discard if body.get('undo') else s.add)(key)
-        data['later'] = sorted(s)
-        data.setdefault('later_log', []).append({'key': key, 'op': 'undo' if body.get('undo') else 'later', 'at': now_ms()})
-        _save(cf, data)
-    return {'ok': True, 'later': key in s}
+    p = cs.parse_key(body.get('key') or '')
+    if not p or p[0] != 'page': raise HTTPException(400, 'key must be <id>:<page>')
+    if not body.get('undo'): must_item(c, p[1])
+    return {'ok': True, 'later': cs.later(c, p[1], p[2], not body.get('undo'))}
 
 
 @router.get('/cleanup/frames')
-def frames_get(cf=Depends(cfg)):
+def frames_get(c=Depends(conn)):
     """Saved crop frames: {'1': box | None, '2': box | None} (boxes on the original photo)."""
-    with _lock: f = _load(cf).get('frames', {})
-    return {k: f.get(k) for k in ('1', '2')}
+    return cs.frames(c)
 
 
 @router.post('/cleanup/frames')
-def frames_set(body: dict = Body(...), cf=Depends(cfg)):
+def frames_set(body: dict = Body(...), c=Depends(conn)):
     """{n: 1 | 2, box: {top, bottom, left, right}} saves frame n (box null clears it)."""
     n = str(body.get('n'))
     if n not in ('1', '2'): raise HTTPException(400, 'n must be 1 or 2')
@@ -274,13 +240,8 @@ def frames_set(body: dict = Body(...), cf=Depends(cfg)):
         try: b = {k: round(float(b[k]), 4) for k in FULL}
         except Exception: raise HTTPException(400, 'Bad box')
         if not (0 <= b['top'] < b['bottom'] <= 1 and 0 <= b['left'] < b['right'] <= 1): raise HTTPException(400, 'Bad box')
-    with _lock:
-        data = _load(cf)
-        f = data.setdefault('frames', {})
-        if b is None: f.pop(n, None)
-        else: f[n] = b
-        _save(cf, data)
-        return {k: f.get(k) for k in ('1', '2')}
+    cs.frame_set(c, n, b)
+    return cs.frames(c)
 
 
 def _page_row(c, item_id, page):
@@ -290,29 +251,25 @@ def _page_row(c, item_id, page):
 
 
 @router.get('/cleanup/sort')
-def sort_get(cf=Depends(cfg)):
+def sort_get(c=Depends(conn)):
     """'Go through sheets': {id: 'keep' | 'delete'} decided so far."""
-    with _lock: return {'decisions': _load(cf).get('sort', {})}
+    return {'decisions': cs.decisions(c)}
 
 
 @router.post('/cleanup/sort')
-def sort_set(body: dict = Body(...), cf=Depends(cfg)):
+def sort_set(body: dict = Body(...), c=Depends(conn)):
     """{id, decision: 'keep' | 'delete' | null} (null = not decided); or {clear: [ids]} after deleting."""
-    with _lock:
-        data = _load(cf)
-        d = data.setdefault('sort', {})
-        for i in body.get('clear') or []: d.pop(i, None)
-        if body.get('id'):
-            if body.get('decision') in ('keep', 'delete'): d[body['id']] = body['decision']
-            else: d.pop(body['id'], None)
-        _save(cf, data)
-        return {'decisions': d}
+    for i in body.get('clear') or []: cs.decide(c, i, None)
+    if body.get('id'):
+        if body.get('decision') in ('keep', 'delete'): must_item(c, body['id'])
+        cs.decide(c, body['id'], body.get('decision'))
+    return {'decisions': cs.decisions(c)}
 
 
 @router.get('/cleanup/notes')
-def notes_get(c=Depends(conn), cf=Depends(cfg)):
+def notes_get(c=Depends(conn)):
     """Notes for Claude, newest first: [{id, title, text, at}] (title = the item's current title)."""
-    with _lock: notes = _load(cf).get('notes', {})
+    notes = cs.notes(c)
     out = []
     for iid, n in notes.items():
         if not (n.get('text') or '').strip(): continue
@@ -322,21 +279,16 @@ def notes_get(c=Depends(conn), cf=Depends(cfg)):
 
 
 @router.post('/cleanup/notes')
-def notes_set(body: dict = Body(...), cf=Depends(cfg)):
+def notes_set(body: dict = Body(...), c=Depends(conn)):
     """{id, text}: what should happen to that sheet, for Claude to do later. Empty text removes it."""
     iid, text = body.get('id'), (body.get('text') or '').strip()
     if not iid: raise HTTPException(400, 'No id')
-    with _lock:
-        data = _load(cf)
-        notes = data.setdefault('notes', {})
-        if text: notes[iid] = {'text': text, 'at': now_ms()}
-        else: notes.pop(iid, None)
-        _save(cf, data)
+    if not cs.note_set(c, iid, text) and text: raise HTTPException(404, 'No such item')
     return {'id': iid, 'text': text}
 
 
-# Suggested names (made by Claude from outside): {item_id: {title?, artist?, why, at, status, ...}} in cleanup.json.
-# Accepted / dismissed ones stay (status + what changed) but are no longer shown; every rename goes to
+# Suggested names (made by Claude from outside): rows of name_suggestion, one current per item.
+# Accepted / dismissed / replaced / undone ones stay (status + what changed) but are not shown; every rename goes to
 # <data>/history/renames-cleanup.jsonl, which is only ever appended to.
 def _history(cf, line: dict):
     d = cf.data / 'history'
@@ -345,9 +297,9 @@ def _history(cf, line: dict):
 
 
 @router.get('/cleanup/suggest')
-def suggest_get(c=Depends(conn), cf=Depends(cfg)):
+def suggest_get(c=Depends(conn)):
     """Open suggestions: [{id, title, artist (current), suggest: {title?, artist?}, why, at}], oldest first."""
-    with _lock: sug = _load(cf).get('suggest', {})
+    sug = cs.suggestions(c)
     out = []
     for iid, s in sug.items():
         if s.get('status', 'open') != 'open': continue
@@ -367,10 +319,7 @@ def suggest_set(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
     ent = {k: str(body[k]).strip() for k in ('title', 'artist') if body.get(k) is not None}
     if not ent.get('title') and 'artist' not in ent: raise HTTPException(400, 'Suggest a title or an artist')
     ent.update(why=(body.get('why') or '').strip(), at=now_ms(), status='open')
-    with _lock:
-        data = _load(cf)
-        data.setdefault('suggest', {})[iid] = ent
-        _save(cf, data)
+    cs.suggest_add(c, iid, ent)
     return {'id': iid, **ent}
 
 
@@ -380,7 +329,7 @@ def suggest_done(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depen
     'undo' takes the last accept / dismiss back (an accept is renamed back to the old name)."""
     act = body.get('action')
     if act not in ('accept', 'dismiss', 'undo'): raise HTTPException(400, 'action must be accept, dismiss or undo')
-    with _lock: ent = _load(cf).get('suggest', {}).get(item_id)
+    ent = cs.suggestion(c, item_id)
     if not ent: raise HTTPException(404, 'No suggestion for that item')
     it = must_item(c, item_id)
     t = now_ms()
@@ -394,19 +343,18 @@ def suggest_done(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depen
             update_item(item_id, dict(new), c, cf)
             _history(cf, {'at': t, 'id': item_id, 'old': old, 'new': new, 'why': ent.get('why', ''), 'via': 'suggest'})
         ent.update(status='accepted', doneAt=t, old=old, new=new)
+        cs.suggest_update(c, item_id, ent)
     elif act == 'dismiss':
         if ent.get('status', 'open') != 'open': raise HTTPException(409, 'Already done')
         ent.update(status='dismissed', doneAt=t)
+        cs.suggest_update(c, item_id, ent)
     else:
         if ent.get('status') == 'accepted' and ent.get('old'):
             update_item(item_id, dict(ent['old']), c, cf)
             _history(cf, {'at': t, 'id': item_id, 'old': ent.get('new', {}), 'new': ent['old'], 'why': 'undo', 'via': 'suggest'})
         for k in ('doneAt', 'old', 'new'): ent.pop(k, None)
         ent['status'] = 'open'
-    with _lock:
-        data = _load(cf)
-        data.setdefault('suggest', {})[item_id] = ent
-        _save(cf, data)
+        cs.suggest_undo(c, item_id)
     return {'id': item_id, 'status': ent['status'], 'item': get_item(c, item_id)}
 
 
@@ -535,7 +483,7 @@ def trim_page(item_id: str, page: int, body: dict = Body(...), c=Depends(conn), 
     trim.crop(orig, src, top, bottom, left, right)
     _restroke(c, item_id, page, before, box)
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), item_id))
-    _forget(cf, item_id, page, src, cropped=True)
+    _forget(c, item_id, page, src, cropped=True)
     return get_item(c, item_id)
 
 
@@ -553,17 +501,12 @@ def untrim_page(item_id: str, page: int, body: dict = Body(default={}), c=Depend
     _render(d, file, steps)
     _restroke(c, item_id, page, before, _crop_of(steps))
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), item_id))
-    _forget(cf, item_id, page, d / file)
+    _forget(c, item_id, page, d / file)
     return get_item(c, item_id)
 
 
-def _forget(cf, item_id, page, path=None, cropped=False):
+def _forget(c, item_id, page, path=None, cropped=False):
     """The page file changed: look at it again now."""
-    with _lock:
-        data = _load(cf)
-        key = f'{item_id}:{page}'
-        if cropped: _unlater(data, key, 'cropped')
-        if path is None: data['pages'].pop(key, None)
-        else: data['pages'][key] = [int(path.stat().st_mtime), _analyze(path.parent, page, path.name), path.name]
-        data['v'] = CACHE_V
-        _save(cf, data)
+    if cropped: cs.unlater(c, item_id, page, 'cropped')
+    if path is None: cs.scan_forget(c, item_id, page)
+    else: cs.scan_put(c, item_id, page, int(path.stat().st_mtime), _analyze(path.parent, page, path.name), path.name)

@@ -33,7 +33,7 @@ def test_book_roundtrip(client, tmp_path):
     assert s['item']['pageFiles'] == ['Jumbo Book 1.png', 'Jumbo Book 2.png']
     # back to a sheet
     back = client.post('/api/items/book', json={'ids': [b['id']], 'book': False}).json()['items'][0]
-    assert back['book'] == 0 and back['folder'] == f'{b["id"]} Jumbo Book' and back['pageFiles'][0] == f'{b["id"]} Jumbo Book 1.png'
+    assert back['book'] == 0 and back['folder'] == b['id'] and back['pageFiles'][0] == f'{b["id"]} 1.png'
     assert color_of(client, back, 1) == (255, 0, 0)
     # delete for good works inside Books/ too
     client.post('/api/items/trash', json={'ids': [b2['id']]})
@@ -42,11 +42,17 @@ def test_book_roundtrip(client, tmp_path):
 
 def test_sort_decisions(client):
     assert client.get('/api/cleanup/sort').json() == {'decisions': {}}
-    client.post('/api/cleanup/sort', json={'id': 's-a', 'decision': 'delete'})
-    client.post('/api/cleanup/sort', json={'id': 's-b', 'decision': 'keep'})
-    assert client.get('/api/cleanup/sort').json()['decisions'] == {'s-a': 'delete', 's-b': 'keep'}
-    client.post('/api/cleanup/sort', json={'id': 's-b', 'decision': None})
-    assert client.post('/api/cleanup/sort', json={'clear': ['s-a']}).json()['decisions'] == {}
+    a, b = make(client, 'A', ['red'])['id'], make(client, 'B', ['blue'])['id']
+    client.post('/api/cleanup/sort', json={'id': a, 'decision': 'delete'})
+    client.post('/api/cleanup/sort', json={'id': b, 'decision': 'keep'})
+    assert client.get('/api/cleanup/sort').json()['decisions'] == {a: 'delete', b: 'keep'}
+    assert client.post('/api/cleanup/sort', json={'id': 's-nope', 'decision': 'keep'}).status_code == 404
+    client.post('/api/cleanup/sort', json={'id': b, 'decision': None})
+    assert client.post('/api/cleanup/sort', json={'clear': [a]}).json()['decisions'] == {}
+    # a decision follows its item: deleting the sheet for good drops it
+    client.post('/api/cleanup/sort', json={'id': b, 'decision': 'delete'})
+    client.post('/api/items/purge', json={'ids': [b]})
+    assert client.get('/api/cleanup/sort').json()['decisions'] == {}
 
 
 def test_books_get_no_trim(client, app, monkeypatch):

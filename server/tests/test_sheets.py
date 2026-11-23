@@ -26,7 +26,7 @@ def test_upload_images_and_dedupe(client, data):
     assert r.status_code == 201
     it = r.json()['item']
     f = it['folder']
-    assert f == f"{it['id']} Memory"
+    assert f == it['id']
     assert it['source'] == 'photos' and it['pages'] == 2 and it['pageFiles'] == [f'{f} 1.jpg', f'{f} 2.png']
     assert it['tags'] == ['Musical']
     assert client.get(f'/api/items/{it["id"]}/file/{f} 2.png').content == PNG % 2
@@ -38,12 +38,11 @@ def test_upload_images_and_dedupe(client, data):
     r = client.post('/api/sheets', files=[('files', ('p3.png', PNG % 3, 'image/png')), files[0]], data={'item_id': it['id']})
     assert r.json()['item']['pages'] == 3 and len(r.json()['skipped']) == 1
     assert r.json()['item']['pageFiles'][-1] == f'{f} 3.png'  # numbering continues
-    # rename: folder and every page follow the new title
+    # rename: nothing moves (folder and pages are named by id)
     client.patch(f'/api/items/{it["id"]}', json={'title': 'Memory: Cats'})
     it2 = client.get(f'/api/items/{it["id"]}').json()
-    g = f"{it['id']} Memory- Cats"
-    assert it2['folder'] == g and it2['pageFiles'] == [f'{g} 1.jpg', f'{g} 2.png', f'{g} 3.png']
-    assert not (data / 'items' / f).exists()
+    g = f
+    assert it2['title'] == 'Memory: Cats' and it2['folder'] == g and it2['pageFiles'] == [f'{g} 1.jpg', f'{g} 2.png', f'{g} 3.png']
     assert sorted(p.name for p in (data / 'items' / g).iterdir()) == it2['pageFiles']
     assert client.get(f'/api/items/{it["id"]}/file/{g} 3.png').content == PNG % 3
     client.post('/api/items/purge', json={'ids': [it['id']]})
@@ -64,9 +63,12 @@ def test_upload_pdf(client, data):
 
 
 def test_rename_rolls_back_on_failure(client, data, monkeypatch):
+    """Only books are renamed on disk (items/Books/<title>/): a failure half way puts every name back."""
     import os
     it = client.post('/api/sheets', files=[('files', ('a.png', PNG % 7, 'image/png')), ('files', ('b.png', PNG % 8, 'image/png'))],
                      data={'title': 'Old'}).json()['item']
+    it = client.post('/api/items/book', json={'ids': [it['id']], 'book': True}).json()['items'][0]
+    assert it['folder'] == 'Books/Old'
     real, calls = os.rename, []
     def flaky(a, b):
         calls.append(a)
@@ -77,7 +79,7 @@ def test_rename_rolls_back_on_failure(client, data, monkeypatch):
     monkeypatch.setattr(os, 'rename', real)
     assert after['title'] == 'New' and after['folder'] == it['folder'] and after['pageFiles'] == it['pageFiles']
     assert sorted(p.name for p in (data / 'items' / it['folder']).iterdir()) == it['pageFiles']
-    assert not (data / 'items' / f"{it['id']} New").exists()
+    assert not (data / 'items' / 'Books' / 'New').exists()
 
 
 def jpeg_with_exif(when: str | None, color=(200, 10, 10)):

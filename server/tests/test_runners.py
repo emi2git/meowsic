@@ -111,7 +111,7 @@ def test_version_job_makes_items(client, data, small_xml, no_pdf):
         assert set(it['tags']) == {arrange.VERSION_TAGS[v], 'Musicals'}
         assert it['groupId'] == 'g-src' and it['originAt'] >= j['startedAt'] and it['source'] == 'From the score “Memory”'
         assert it['artist'] == 'ALW' and it['key'] == 'Bb major' and it['bpm'] == 76
-        assert it['folder'] == f'{iid} Memory' and it['musicxml'] == f'{iid} Memory.musicxml' and it['midi'] == f'{iid} Memory.mid'
+        assert it['folder'] == iid and it['musicxml'] == f'{iid}.musicxml' and it['midi'] == f'{iid}.mid'
         assert it['pdf'] is None
         d = data / 'items' / it['folder']
         assert converter.parse(str(d / it['musicxml'])).parts and (d / it['midi']).is_file()
@@ -128,7 +128,7 @@ def test_version_job_draws_pdf(client, data, small_xml):
     assert j['status'] == 'done', j['log']
     assert any('Original — cannot be made' in x['msg'] for x in j['log'])
     it = client.get(f'/api/items/{j["result"][0]}').json()
-    assert it['pdf'] == f'{it["id"]} Memory.pdf' and (data / 'items' / it['folder'] / it['pdf']).read_bytes()[:4] == b'%PDF'
+    assert it['pdf'] == f'{it["id"]}.pdf' and (data / 'items' / it['folder'] / it['pdf']).read_bytes()[:4] == b'%PDF'
     assert it['groupId'].startswith('g-') and set(it['tags']) == {'Lead sheet', 'Musicals'}
 
 

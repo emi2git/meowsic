@@ -1,5 +1,5 @@
 """Fix pages: Later marks, done counts, grouping issues are only hints, saved frames."""
-import json
+import sqlite3
 
 from meowsic.cleanup import song_state
 from tests.test_trim import png, trim
@@ -27,8 +27,15 @@ def test_later_mark_and_clear(client, data):
     client.post('/api/cleanup/ok', json={'key': f"{it['id']}:2"})  # keep clears it too
     s = song(client, it)
     assert s['later'] == 0 and s['done'] == 2 and s['pages'][1]['kept']
-    log = json.loads((data / 'work' / 'cleanup.json').read_text())['later_log']
-    assert [x['op'] for x in log] == ['later', 'cropped', 'later', 'kept']
+    c = sqlite3.connect(data / 'meowsic.db')
+    log = c.execute('SELECT op FROM page_later_log ORDER BY id').fetchall()
+    assert [x[0] for x in log] == ['later', 'cropped', 'later', 'kept']
+    # history stays even when the sheet is deleted for good (the marks follow the item)
+    client.post('/api/cleanup/later', json={'key': key})
+    client.post('/api/items/purge', json={'ids': [it['id']]})
+    assert c.execute('SELECT COUNT(*) FROM page_later').fetchone()[0] == 0
+    assert c.execute('SELECT COUNT(*) FROM page_later_log').fetchone()[0] == 5
+    assert not (data / 'work' / 'cleanup.json').exists()
 
 
 def test_later_undo(client):
