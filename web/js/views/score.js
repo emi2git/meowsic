@@ -8,6 +8,7 @@ import { TUNES } from '../mock.js';
 import { musicXml, tuneNotes, VERSIONS, VERSION_HELP, barBeats, xmlInfo } from '../musicxml.js';
 import { ScorePlayer, VoicePlayer } from '../audio.js';
 import { scoreEditor } from './scoreeditor.js';
+import { fitLyrics } from './fitlyrics.js';
 import { InkLayer } from './annotate.js';
 import { attachSwipe, flipBy } from '../swipe.js';
 import { isTouch, isNarrow } from '../device.js';
@@ -388,6 +389,9 @@ export function scoreBody(root, it, { perform = false } = {}) {
       await fetch(`/api/items/${encodeURIComponent(it.id)}/musicxml`, { method: 'PUT', headers: { 'Content-Type': 'application/vnd.recordare.musicxml+xml' }, body: text });
       makePlayer(); await render();
     },
+    // Fit lyrics: draw (and play) MusicXML that is not saved yet; reload() = back to what the Mac has
+    async showXml(text) { xmlText = classicXml(text, it); info = xmlInfo(xmlText); tune = { ...tune, bpm: info.bpm, beats: info.beats }; makePlayer(); await render(); },
+    async reload() { if (!real) return; await loadReal(); makePlayer(); await render(); },
     get player() { return player; },
     get version() { return version; },
     async setTranspose(n) { store.update(it.id, { transpose: n }); it.transpose = n; midi.shift = n; await render(); },
@@ -416,6 +420,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
 export function scoreTools(it, view) {
   return [{ label: 'Make another version…', icon: 'plus', run: () => generateVersions(it) },
     ...(store.mode === 'server' ? [{ label: 'Add lyrics from a sheet…', icon: 'text', run: () => addLyrics(it) }] : []),
+    ...(store.mode === 'server' && view.real ? [{ label: 'Fit lyrics…', icon: 'text', run: () => fitLyrics(view, it, document.querySelector('.viewer')) }] : []),
     { label: 'Note names in noteheads', icon: 'text', checked: view.easy, run: () => view.setEasy(!view.easy) },
     ...(view.real && /<lyric[\s>]/.test(view.xml()) ? [{ label: view.hasVoice ? 'Make it sing again (beta)' : 'Make it sing (beta)', icon: 'wave', run: () => makeItSing(it) }] : []),
     ...(it.measures ? [{ label: 'Revert note edits', icon: 'restore', run: async () => { await view.revert(); document.querySelector('.editbar')?.dispatchEvent(new Event('close')); toast('Back to the original notes'); } }] : [])];

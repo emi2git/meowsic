@@ -25,6 +25,7 @@ Step ops (see record_undo for how they are written):
   script   {log}                    a one-off script's history log, replayed in reverse (changed items skipped)
   vocal    {id, title, before: {audio, bpm, history}, after: {audio, bpm}}  Make it sing -> the earlier take / none (voice.undo_vocal)
   credit   {id, title, old: {artist|source}, new, files: [{file, history, sha}]}  credited to Meowsic -> back (creditfix.undo_step)
+  musicxml {id, title, file, before, beforeSha, afterSha}  Fit lyrics saved into the score -> the file before, from .history (lyricsedit.undo_musicxml)
 Jobs (job table) are rolled back here too: a running one is stopped (cancelled), and what it made goes to the Trash.
 """
 import json
@@ -41,7 +42,7 @@ from .undolog import FIELDS, _q, record_undo  # noqa: F401  (record_undo: re-exp
 
 router = APIRouter(prefix='/api')
 
-FORCE_OK = {'fields', 'crop', 'mark', 'later', 'trash', 'restore', 'created', 'vocal', 'credit'}  # forcing these only overwrites a later edit of the same field
+FORCE_OK = {'fields', 'crop', 'mark', 'later', 'trash', 'restore', 'created', 'vocal', 'credit', 'musicxml'}  # forcing these only overwrites a later edit of the same field
 JOB_MADE = ('transcribe', 'version', 'omr')  # job kinds whose result is a list of new item ids
 NOT_UNDOABLE = {  # types logged without rollback info: why
     'delete': 'Deleted for good — the files are gone, there is nothing to bring back.',
@@ -83,6 +84,7 @@ def describe(step) -> str:
     if op == 'credit': return f'{_q(step.get("title", ""))}: ' + ', '.join([f'{k} back to {_q(v) if v else "none"}' for k, v in step['old'].items()] + (['the MusicXML credit back (from .history)'] if step.get('files') else []))
     if op == 'script': return f'Replay {step["log"]} in reverse (items changed since are skipped)'
     if op == 'vocal': return f'{_q(step.get("title", ""))}: ' + ('back to the earlier sung take' if (step.get('before') or {}).get('audio') else 'no sung voice (the take stays in .history)')
+    if op == 'musicxml': return f'{_q(step.get("title", ""))}: back to the score before the {step.get("what") or "change"} (now kept in .history)'
     return op or '?'
 
 
@@ -376,9 +378,14 @@ def _vocal(c, cf, s, mode):  # Make it sing -> the earlier take (voice.py)
     return undo_vocal(c, cf, s, mode)
 
 
+def _musicxml(c, cf, s, mode):  # Fit lyrics -> the MusicXML before (lyricsedit.py)
+    from .lyricsedit import undo_musicxml
+    return undo_musicxml(c, cf, s, mode)
+
+
 OPS = {'fields': _fields, 'trash': _trash, 'restore': _untrash, 'created': _untrash, 'book': _book, 'split': _split,
        'join': _join, 'booksplit': _booksplit, 'crop': _crop, 'mark': _mark, 'later': _later, 'suggest': _suggest, 'script': _script, 'photoimport': _photoimport,
-       'vocal': _vocal, 'credit': _credit}
+       'vocal': _vocal, 'credit': _credit, 'musicxml': _musicxml}
 
 
 # ---------- listing ----------
