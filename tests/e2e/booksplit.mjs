@@ -160,6 +160,72 @@ for (const [name, w, h, colsWant] of [['iPad landscape', 1366, 1024, [3, 5]], ['
   await p.close();
 }
 
+// ---- title detection: marking a start fills its title from the page (Apple Vision on the Mac) ----
+{
+  const T2 = 'Booksplit titles test';
+  const old = (await api('/items?deleted=true')).concat(await api('/items')).filter((x) => x.title === T2);
+  if (old.length) await post('/items/purge', { ids: old.map((x) => x.id) });
+  const tb = await page.evaluate(async (T2) => {
+    const fd = new FormData(); fd.append('title', T2); fd.append('artist', 'E2E');
+    const songs = ['', 'Moon River', 'Yesterday'];
+    for (let n = 1; n <= 3; n++) {
+      const c = document.createElement('canvas'); c.width = 1240; c.height = 1754;
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.fillStyle = '#000';
+      g.font = '24px Arial'; g.fillText(String(10 + n), 60, 70);
+      if (songs[n - 1]) {
+        g.font = 'bold 64px Arial'; g.textAlign = 'center'; g.fillText(songs[n - 1], 620, 180);
+        g.font = '24px Arial'; g.textAlign = 'right'; g.fillText('Words and Music by John Smith', 1160, 260); g.textAlign = 'left';
+      }
+      const top0 = songs[n - 1] ? 360 : 120;
+      for (let s = 0; s < 5; s++) for (let k = 0; k < 5; k++) g.fillRect(80, top0 + s * 260 + k * 16, 1080, 2);
+      fd.append('files', await new Promise((r) => c.toBlob(r, 'image/png')), `t${n}.png`);
+    }
+    const it = (await (await fetch('/api/sheets', { method: 'POST', body: fd })).json()).item;
+    return (await (await fetch('/api/items/book', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [it.id], book: true }) })).json()).items[0];
+  }, T2);
+  const probe = await api(`/items/${tb.id}/pages/2/title`);
+  if (probe.error && !probe.title) console.log('  skip title detection (Vision not available):', probe.error);
+  else {
+    check('API reads the title of page 2', probe.title === 'Moon River' && probe.confidence >= 0.5, JSON.stringify(probe));
+    await page.evaluate((id) => { localStorage.setItem('meowsic-cu-tab', 'books'); localStorage.setItem('meowsic-cu-book', id); }, tb.id);
+    await page.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
+    await page.evaluate((id) => document.querySelector(`#bs-list li[data-id="${id}"]`)?.click(), tb.id); await sleep(800);
+    check('titles test book open', (await page.$$('#bs-grid figure')).length === 3);
+    await page.click('#bs-grid figure[data-p="2"] .bs-pg');
+    await page.waitForFunction(() => document.querySelector('#bs-grid figure[data-p="2"] input')?.value === 'Moon River', { timeout: 8000 }).catch(() => {});
+    check('marking page 2 fills its title', await page.$eval('#bs-grid figure[data-p="2"] input', (e) => e.value) === 'Moon River');
+    check('“detected” hint shown', /detected/.test(await page.$eval('#bs-grid figure[data-p="2"] .bs-det', (e) => e.textContent)));
+    await sleep(800);
+    check('detected title saved on the Mac', (await api(`/books/${tb.id}/split`)).starts['2'] === 'Moon River');
+    // you type first: your text wins
+    await page.click('#bs-grid figure[data-p="3"] .bs-pg');
+    await page.evaluate(() => { const i = document.querySelector('#bs-grid figure[data-p="3"] input'); i.focus(); });
+    await page.keyboard.type('Mine'); await sleep(2500);
+    check('typed title is not overwritten', await page.$eval('#bs-grid figure[data-p="3"] input', (e) => e.value) === 'Mine');
+    // a page with no title: the hint says so, the box stays empty
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.click('#bs-grid figure[data-p="1"] .bs-pg');
+    await page.waitForFunction(() => /couldn/.test(document.querySelector('#bs-grid figure[data-p="1"] .bs-det')?.textContent || ''), { timeout: 8000 }).catch(() => {});
+    check('no title → “couldn’t read the title”', /couldn/.test(await page.$eval('#bs-grid figure[data-p="1"] .bs-det', (e) => e.textContent)) && await page.$eval('#bs-grid figure[data-p="1"] input', (e) => e.value) === '');
+    // prefetch: a start marked elsewhere with no title gets one when the book opens
+    await post(`/books/${tb.id}/split`, { starts: { 3: '' } });
+    await page.reload({ waitUntil: 'networkidle0' }); await sleep(500);
+    await page.waitForFunction(() => document.querySelector('#bs-grid figure[data-p="3"] input')?.value === 'Yesterday', { timeout: 8000 }).catch(() => {});
+    check('empty marked start is filled on open', await page.$eval('#bs-grid figure[data-p="3"] input', (e) => e.value) === 'Yesterday');
+    // Split… in Clean up → Fix pages prefills from the first page that moves
+    const sp = await page.evaluate(async (id) => {
+      const { titleBox } = await import('/js/title-detect.js');
+      const i = document.createElement('input'), h = document.createElement('small');
+      await titleBox(i, h, id, 'X (part 2)')(2);
+      const a = i.value; await titleBox(i, h, id, 'X (part 2)')(1);
+      return [a, i.value, h.textContent];
+    }, tb.id);
+    check('split title box: detected / fallback', sp[0] === 'Moon River' && sp[1] === 'X (part 2)' && /couldn/.test(sp[2]), sp.join(' | '));
+  }
+  await post(`/books/${tb.id}/split`, { starts: {} });
+  await post('/items/purge', { ids: [tb.id] });
+}
+
 check('no page errors', !errs.length, errs.join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);
 await b.close();

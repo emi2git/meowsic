@@ -11,6 +11,7 @@ import { store } from '../store.js';
 import { go } from '../app.js';
 import { $, esc, toast, menu, sheet as modal, confirmSheet } from '../ui.js';
 import { makeBooks, BOOK_KEYS } from './cleanup-books.js';
+import { titleBox } from '../title-detect.js';
 
 const KEYS = {
   sort: [
@@ -341,9 +342,14 @@ ${p.page ? `        <div class="cu-stage" id="cu-stage"><div class="cu-img">
       <p class="muted small">Tick the pages that belong to another song. They become a new song.</p>
       <div class="cu-pick">${s.pages.map((x) => `<button type="button" data-p="${x.page}" class="${pick.has(x.page) ? 'on' : ''}">
         <img src="${store.fileUrl(s.id, it?.pageFiles?.[x.page - 1] || x.file)}?v=${ver}" alt=""><span>${x.page}${x.dots ? ` · dot ${x.dots.lit ?? '?'}/${x.dots.count}` : ''}</span></button>`).join('')}</div>
-      <label class="field">New song's title <input id="cu-st" value="${esc(s.title)} (part 2)"></label>
+      <label class="field">New song's title <input id="cu-st" value="${esc(s.title)} (part 2)"><small class="bs-det muted" id="cu-st-det"></small></label>
       <div class="modal-actions"><button data-close>Cancel</button><button class="primary" data-ok>Split</button></div>`, { wide: true });
-    m.el.querySelector('.cu-pick').onclick = (e) => { const b = e.target.closest('[data-p]'); if (!b) return; const n = +b.dataset.p; pick.has(n) ? pick.delete(n) : pick.add(n); b.classList.toggle('on', pick.has(n)); };
+    // the new song's title: read off the first page that moves (again when that page changes)
+    const fill = titleBox($('#cu-st', m.el), $('#cu-st-det', m.el), s.id, `${s.title} (part 2)`, ver);
+    let first = 0;
+    const refill = () => { const f = Math.min(...pick); if (pick.size && f !== first) { first = f; fill(f); } };
+    refill();
+    m.el.querySelector('.cu-pick').onclick = (e) => { const b = e.target.closest('[data-p]'); if (!b) return; const n = +b.dataset.p; pick.has(n) ? pick.delete(n) : pick.add(n); b.classList.toggle('on', pick.has(n)); refill(); };
     m.el.querySelector('[data-ok]').onclick = () => busy(async () => {
       if (!pick.size || pick.size === s.pages.length) return toast('Tick some pages, not all of them');
       const r = await api('POST', `/items/${s.id}/split`, { pages: [...pick], title: $('#cu-st', m.el).value.trim() });
