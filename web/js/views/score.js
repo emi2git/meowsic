@@ -177,7 +177,9 @@ export function scoreBody(root, it, { perform = false } = {}) {
     });
     const r = osmd.EngravingRules;
     r.MinNoteDistance = 2.0; r.ChordSymbolXSpacing = 1.5; r.LyricsHeight = 1.8;
-    const xml = real ? xmlText : musicXml({ ...tune, title: it.title }, version);
+    // markings with empty text (e.g. a bare tempo <words/>) crash OSMD's reader — drop them; the tempo lives on the item anyway
+    const tidyXml = (x) => x.replace(/<direction(?:\s[^>]*)?>\s*<direction-type>\s*<words\s*\/>\s*<\/direction-type>[\s\S]*?<\/direction>/g, '');
+    const xml = tidyXml(real ? xmlText : musicXml({ ...tune, title: it.title }, version));
     if (easy && hasChordSymbols(xml)) r.TitleBottomDistance += KBD_ROOM; // room for the keyboard diagrams
     await osmd.load(xml);
     osmd.zoom = zoom;
