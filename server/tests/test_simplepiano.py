@@ -1,4 +1,4 @@
-"""Simple piano menu (simplepiano.py): main note only, hands on / off, remove staccato, grace notes & trills (also
+"""Simple piano menu (simplepiano.py): main note only, remove staccato, grace notes & trills (also
 the transcription's own), dynamics & pedal; the slider (test_smooth.py); defaults by source; the API (preview,
 save into this score with history + undo, save as a new "Simple piano" version) and the make-version job."""
 import xml.etree.ElementTree as ET
@@ -58,15 +58,6 @@ def test_remove_dynamics_and_pedal():
     assert '<pedal' in sp.make(x, opts(main=False))[0]
 
 
-def test_hands_off():
-    x = score([[n('C5', 2), n('D5', 2)], [n('E5', 4)]], [[n('C3', 1, 2), n('R', 1, 2), n('G2', 2, 2)], [n('C3', 4, 2)]])
-    out, _, _, found = sp.make(x, opts(main=False, left=False))
-    assert tune(out) == {'1': ['C5', 'D5', 'E5']} and found['left'] == 3 and full(out)
-    out, _, _, found = sp.make(x, opts(main=False, right=False))
-    assert tune(out) == {'2': ['C3', 'G2', 'C3']} and full(out)
-    with pytest.raises(Exception): sp.settings({'right': False, 'left': False})
-
-
 def test_main_note_only(tmp_path):
     chord = n('E4', 2) + n('C5', 2).replace('<note>', '<note><chord/>')
     x = score([[chord, n('D5', 2)]], [[n('C3', 2, 2) + n('G3', 2, 2).replace('<note>', '<note><chord/>'), n('G2', 2, 2)]])
@@ -94,12 +85,28 @@ def item(client):
     return client.post('/api/items', json={'kind': 'score', 'title': 'Home NDP', 'musicxmlText': x, 'tags': ['NDP'], **HEARD}).json()
 
 
+def test_changes_mark_what_the_settings_changed():
+    x = score([[staccato(n('C5', 1)), n('D5', 3)], [n('E5', 4)]], [[n('C3', 4, 2)], [n('C3', 4, 2)]])
+    out, *_ = sp.make(x, opts(main=False, staccato=True))
+    assert sp.changes(x, out) == [{'m': 0, 's': 0, 'a': 0.0, 'b': 1.0}]   # the staccato note only, top staff, bar 1
+    assert sp.changes(x, x) == []
+    d = '<direction><direction-type><dynamics><f/></dynamics></direction-type><staff>2</staff></direction>'
+    y = score([[n('C5', 4)]], [[n('C3', 2, 2), d + n('G2', 2, 2)]])
+    out, *_ = sp.make(y, opts(main=False, marks=True))
+    assert sp.changes(y, out) == [{'m': 0, 's': 1, 'a': 2.0, 'b': 4.0}]   # the mark: up to the bar's end
+    z = score([[n('C5', 1), n('R', Fr(1, 4)), n('D5', Fr(11, 4))]], [[n('C3', 4, 2)]])
+    out, *_ = sp.make(z, opts(main=False, level=60))
+    sp_ = sp.changes(z, out)
+    assert sp_ and all(c['m'] == 0 and c['s'] == 0 and c['a'] < 1.25 for c in sp_)
+
+
 def test_api_preview_save_this_and_undo(client, item, data):
     i = item['id']
     p0 = client.post(f'/api/items/{i}/simplepiano/preview', json={'level': 0, 'main': False, 'staccato': False, 'grace': False}).json()
     assert not p0['changed']
     p = client.post(f'/api/items/{i}/simplepiano/preview', json={'level': 70, 'main': False}).json()
     assert p['changed'] and p['after']['rests'] < p['before']['rests'] and full(p['xml']) and p['found']['staccato'] == 1
+    assert p['spans'] and p0['spans'] == [] and all({'m', 's', 'a', 'b'} <= set(c) for c in p['spans'])
     assert client.post(f'/api/items/{i}/simplepiano/preview', json={'level': 101}).status_code == 400
     f = data / 'items' / item['folder'] / item['musicxml']
     was = f.read_text()

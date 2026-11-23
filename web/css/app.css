@@ -1336,6 +1336,8 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 
 /* ===== Simple piano (js/views/simplepiano.js): a panel over the score while previewing; iPad / iPhone: a bottom sheet ===== */
 .viewer.simplifying .viewer-body { padding-bottom: 230px; }
+/* Simple piano preview: what changed, a highlighter behind the notes (the score paper is white in both themes) */
+.sp-hl { fill: #ffe24a; fill-opacity: .5; pointer-events: none; }
 .sp-panel { position: absolute; right: 12px; bottom: 12px; width: min(520px, calc(100% - 24px)); z-index: 45; background: var(--card); border: 1px solid var(--line2); border-radius: 16px; box-shadow: 0 10px 34px rgba(0, 0, 0, .22); padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 8px; max-height: 70%; overflow: auto; }
 .sp-row { display: flex; align-items: center; gap: 10px; }
 .sp-title { font-size: 16px; }
