@@ -1,7 +1,7 @@
 // Books through the UI (server on :5190, temp data): sheet → book → sheet, files move on disk
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
-const BASE = 'http://localhost:5190/';
+const BASE = process.env.BASE || 'http://localhost:5190/';
 const DATA = process.env.MDATA;
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });
 const page = await b.newPage(); await page.setViewport({ width: 1440, height: 900 });

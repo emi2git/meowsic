@@ -3,14 +3,14 @@
 // `canStart()` says whether a swipe may begin (not zoomed, not inking, not editing, …).
 // `upAtEnd`: a scrolling view only goes back on a swipe up when it was already at the bottom
 // (or does not scroll) when the finger went down, so ordinary scrolling still works.
-export const touchDevice = () => matchMedia('(pointer: coarse)').matches;
+import { isTouch } from './device.js';
 
 export function backToLibrary() {
   if (history.length > 1) history.back(); else location.hash = '#/library';
 }
 
 export function attachSwipe(el, { onLeft, onRight, onUp = backToLibrary, canStart = () => true, scroller = null, upAtEnd = false }) {
-  if (!touchDevice()) return () => {};
+  if (!isTouch()) return () => {};
   let ts = null;
   const atEnd = () => { const s = scroller?.(); return !s || s.scrollHeight - s.clientHeight - s.scrollTop < 4; };
   const wide = () => { const s = scroller?.(); return s && s.scrollWidth > s.clientWidth + 4; };

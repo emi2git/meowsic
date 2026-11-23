@@ -1,4 +1,5 @@
 // Meowsic 2.0 shell: sidebar (iPad / Mac), tab bar (iPhone), hash router.
+import './device.js'; // first: sets <html data-device> before anything draws
 import { store } from './store.js';
 import { $, esc, icon, CAT, KIND, kindOf, menu } from './ui.js';
 import { libraryView } from './views/library.js';

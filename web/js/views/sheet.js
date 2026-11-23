@@ -6,6 +6,7 @@ import { InkLayer, inkToolbar } from './annotate.js';
 import { go } from '../app.js';
 import { bookToggle } from './actions.js';
 import { attachSwipe } from '../swipe.js';
+import { isTouch, isDesktop } from '../device.js';
 
 // real sheets: the page files on the Mac; the UI preview draws mock pages
 export const pageSrc = (it, p) => (it.pageFiles?.[p - 1] && `${store.fileUrl(it.id, it.pageFiles[p - 1])}?v=${it.updatedAt || 0}`) || (it.upload && store.sessionImage(`${it.id}:${p}`)) || sheetUrl(it.title, p, it.pages, { artist: it.artist });
@@ -26,7 +27,7 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
   const pages = $('#pages', root);
   // zoom steps (100% = one page at 1.5× the screen height): Mac starts at 50% = two pages side by
   // side; iPad / iPhone start at one page fitted to the screen (67%). Bigger pages scroll.
-  const canTwo = () => it.pages > 1 && matchMedia('(pointer: fine)').matches && root.clientWidth > 900;
+  const canTwo = () => it.pages > 1 && isDesktop() && root.clientWidth > 900;
   const levels = () => (canTwo() ? ['two', 1.5, 2.25, 3] : [1, 1.5, 2.25, 3]);
   let zoom = it.zoom ?? levels()[0];
   if (!levels().includes(zoom)) zoom = levels()[0];
@@ -55,7 +56,7 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
         w.style.aspectRatio = String(ratio);
         if (row.dataset.h) { w.style.height = row.dataset.h + 'px'; w.style.width = ''; return; }
         // iPad / iPhone: the whole room inside .pages (no padding there: the page goes edge to edge); Mac: as before
-        const n = show.length, touch = matchMedia('(pointer: coarse)').matches, cs = getComputedStyle(pages);
+        const n = show.length, touch = isTouch(), cs = getComputedStyle(pages);
         const gap = touch ? parseFloat(getComputedStyle(row).columnGap) || 0 : 4;
         const H = pages.clientHeight - (touch ? parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) : 8);
         const W = (pages.clientWidth - (touch ? parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) : 12) - gap * (n - 1)) / n;
