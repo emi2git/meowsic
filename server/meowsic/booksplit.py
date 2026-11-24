@@ -16,6 +16,7 @@ from . import grouping, titles
 from .db import folder_path, get_item, log_event, now_ms, uid, write_item
 from .items import cfg, conn, must_item
 from .pages import _forget_items, _relayout, _rows
+from .autofill import fill_from_library, log_fill
 from .undolog import record_undo
 
 router = APIRouter(prefix='/api')
@@ -103,12 +104,13 @@ def make_sheets(book_id: str, body: dict = Body(default={}), c=None, cf=None, bo
     pages = sorted(int(p) for p in starts)
     lead = pages[0] - 1
     t = now_ms()
-    made = []
+    made, fills = [], []
     for k, s in enumerate(pages):
         end = pages[k + 1] - 1 if k + 1 < len(pages) else n
         title = starts[str(s)].strip() or f'{it["title"]} — p{s}'
         new = {'id': uid('s'), 'kind': 'sheet', 'title': title, 'artist': it.get('artist') or '', 'tags': it['tags'],
                'source': it.get('source') or 'photos', 'pages': 0, 'createdAt': t + k, 'updatedAt': t, 'originAt': it.get('originAt')}
+        fills.append((new, fill_from_library(c, new, exclude=(book_id,))))
         write_item(c, new, new=True)
         _relayout(c, cf, new['id'], [r for r in rows if s <= r['page'] <= end])
         made.append({'id': new['id'], 'title': title, 'start': s, 'end': end, 'pages': end - s + 1})
@@ -128,6 +130,7 @@ def make_sheets(book_id: str, body: dict = Body(default={}), c=None, cf=None, bo
               + (f' · {what} now empty → Trash' if trashed else f' · {lead} page{"s" if lead != 1 else ""} left in the {what}')
               + (f' · renamed “{keep_title}”' if keep_title else ''))
     record_undo(c, aid, {'op': 'booksplit', 'book': book_id, 'at': t, 'title': it['title'], 'n': len(made), 'books': books})
+    log_fill(c, fills)
     return {'book': get_item(c, book_id), 'sheets': [get_item(c, m['id']) for m in made], 'undo': rec}
 
 

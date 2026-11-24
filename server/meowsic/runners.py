@@ -26,6 +26,7 @@ from .arrange import VERSION_TAGS
 from .sheetversion import refresh_staves
 from .db import AI_SOURCE, NOT_ARTIST, OLD_CREDITS, connect, credit_xml, score_byline, folder_path, get_item, now_ms, platform_of, uid, write_item
 from .jobs import Cancelled, JobContext
+from .autofill import describe, fill_from_library, log_fill
 
 log = logging.getLogger('meowsic')
 
@@ -67,7 +68,7 @@ def credit_meowsic(path, artist=None, by='Made by Meowsic'):
 def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), group_id=None, key='', bpm=None, ai=0, source_url=''):
     """outs: [(version, musicxml, mid|None, pdf|None, {key, bpm})] -> one score item each, in one transaction.
     Files: items/<id> <title>/<id> <title>.musicxml|.mid|.pdf. Returns the new item ids."""
-    cfg, t, made = ctx.cfg, now_ms(), []
+    cfg, t, made, fills = ctx.cfg, now_ms(), [], []
     source = AI_SOURCE if source in OLD_CREDITS else source
     gid = group_id or uid('g')
     c = connect(cfg)
@@ -78,6 +79,7 @@ def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), gr
                   'tags': [VERSION_TAGS[v], *[x for x in tags if x not in VERSION_TAGS.values()]],
                   'createdAt': t, 'updatedAt': t, 'originAt': t, 'version': v, 'source': source, 'groupId': gid,
                   'key': extra.get('key') or key or '', 'bpm': extra.get('bpm') or bpm, 'ai': 1 if ai else 0, 'sourceUrl': source_url or ''}
+            fills.append((it, fill_from_library(c, it)))  # before the credits: composer = the filled artist
             write_item(c, it, new=True)
             d = folder_path(cfg, it['folder'])
             d.mkdir(parents=True, exist_ok=True)
@@ -95,6 +97,8 @@ def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), gr
         # the job keeps what it made from now on (Activities: Stop / Undo moves these to the Trash, even if the job is cancelled before it finishes)
         prev = json.loads((c.execute('SELECT result FROM job WHERE id=?', (ctx.id,)).fetchone() or ['null'])[0] or 'null')
         c.execute('UPDATE job SET result=? WHERE id=?', (json.dumps((prev if isinstance(prev, list) else []) + [i for _, i in made]), ctx.id))
+        msg = describe(fills)
+        log_fill(c, fills)
         c.commit()
     except BaseException:
         c.rollback()
@@ -103,6 +107,9 @@ def save_outputs(ctx: JobContext, outs, *, title, source, artist='', tags=(), gr
         raise
     finally:
         c.close()
+    if msg:
+        try: ctx.update(msg=msg)  # the job log
+        except Exception: pass
     return [i for _, i in made]
 
 

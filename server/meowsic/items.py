@@ -14,6 +14,7 @@ from pathlib import Path
 from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 
+from .autofill import fill_from_library, log_fill
 from .sheetversion import refresh_staves
 from .undolog import edit_detail, edit_title, fields_step, record_undo
 from .db import AI_SOURCE, NOT_ARTIST, OLD_CREDITS, credit_xml, score_byline, BOOKS, KIND_COLS, SCORE_VERSIONS, SHEET_VERSIONS, book_folder, ensure_tags, folder_base, folder_path, get_item, item_json, log_event, now_ms, folder_name, rebase, uid, write_item
@@ -88,6 +89,7 @@ def create_item(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
     ok = re.fullmatch(prefix + r'-[a-z0-9]{3,16}', want) and not c.execute('SELECT 1 FROM item WHERE id=?', (want,)).fetchone()
     text = body.get('musicxmlText')
     if kind == 'chords': body.setdefault('originAt', t)  # fetch / paste time
+    filled = fill_from_library(c, body)  # empty Artist / Album from the library (never the key)
     if kind == 'score':
         body['ai'] = 1 if body.get('ai') else 0  # AI music: a score Claude composed (set once, here)
         if body['ai'] and body.get('source', '') in ('', 'Composed by Claude'): body['source'] = AI_SOURCE
@@ -107,6 +109,7 @@ def create_item(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
     if kind == 'score': refresh_staves(c, cf, it['id'])
     if kind == 'score' and it.get('ai'):  # Activities: undo = move it to the Trash
         record_undo(c, 'ai-score', {'op': 'created', 'ids': [it['id']], 'titles': [it['title']]}, it['title'], 'AI music added')
+    log_fill(c, [(it, filled)])
     return get_item(c, it['id'])
 
 
@@ -474,7 +477,9 @@ async def upload_sheet(files: list[UploadFile] = File(...), title: str = Form(''
         it = {'id': uid('s'), 'kind': 'sheet', 'title': title.strip() or Path(blobs[0][0] or 'Untitled').stem,
               'artist': artist, 'tags': json.loads(tags), 'createdAt': now_ms(), 'updatedAt': now_ms(),
               'source': 'pdf' if any(b[1] == '.pdf' for b in blobs) else 'photos', 'pages': 0}
+        filled = fill_from_library(c, it)
         write_item(c, it, new=True)
+        log_fill(c, [(it, filled)])
     folder = folder_base(it['folder'])  # file names: a book's 'Books/X' -> 'X'
     d = item_dir(cf, it)
     d.mkdir(parents=True, exist_ok=True)

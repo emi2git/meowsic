@@ -22,6 +22,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
+from .autofill import fill_from_library, log_fill, recredit
 from . import lyricsfit as lf
 from .db import folder_path, get_item, now_ms, uid, write_item
 from .items import cfg, conn, item_dir, must_item, safe_file
@@ -319,7 +320,10 @@ def save(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg))
                'groupId': it.get('groupId') or uid('g'), 'key': it.get('key') or '', 'bpm': it.get('bpm'), 'ai': it.get('ai') or 0,
                'sourceUrl': it.get('sourceUrl') or ''}
         if not it.get('groupId'): c.execute('UPDATE score SET group_id=? WHERE item_id=?', (new['groupId'], it['id']))
+        filled = fill_from_library(c, new)  # Album (and an empty Artist) from the library; never the key
+        if filled.get('artist'): out = recredit(out, new['artist'])
         write_item(c, new, new=True)
+        log_fill(c, [(new, filled)])
         d = folder_path(cf, new['folder'])
         d.mkdir(parents=True, exist_ok=True)
         (d / f'{new["folder"]}.musicxml').write_text(out, encoding='utf-8')

@@ -81,7 +81,8 @@ def test_propose_keeps_hand_values_and_fixes_wrong_ones():
     assert new['artist'][0] == 'John Newton' and new['key'][0] == 'D minor'
 
 
-def test_fill_run_history_and_undo(client, data, chord):
+def test_fill_run_history_and_undo(client, data, chord, monkeypatch):
+    monkeypatch.setattr('meowsic.autofill.propose', lambda *a, **k: {})  # this test is about the one-time fill, not the fill on add
     sheet = client.post('/api/items', json={'kind': 'sheet', 'title': 'Bring Him Home', 'artist': '', 'tags': ['Super Easy']}).json()
     score = client.post('/api/items', json={'kind': 'score', 'title': 'One Day More', 'artist': 'Les Miserables', 'version': 'original',
                                             'source': 'YouTube', 'musicxmlText': XML}).json()

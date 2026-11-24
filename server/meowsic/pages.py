@@ -9,6 +9,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 
 from .db import book_folder, folder_base, folder_name, folder_path, get_item, log_event, now_ms, uid, write_item
 from .items import cfg, conn, ids_of, move_folder, must_item
+from .autofill import fill_from_library, log_fill
 from .undolog import record_undo
 
 router = APIRouter(prefix='/api')
@@ -78,12 +79,14 @@ def split(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)
     t = now_ms()
     new = {'id': uid('s'), 'kind': 'sheet', 'title': title, 'artist': it.get('artist') or '', 'tags': it['tags'],
            'source': it.get('source') or 'photos', 'pages': 0, 'createdAt': t, 'updatedAt': t, 'originAt': it.get('originAt')}
+    filled = fill_from_library(c, new, exclude=(item_id,))  # the sheet it came from is not the same song
     write_item(c, new, new=True)
     _relayout(c, cf, new['id'], [r for r in rows if r['page'] in take])
     _relayout(c, cf, item_id, [r for r in _rows(c, item_id)])
     aid = log_event(c, 'split', it['title'], f'pages {", ".join(map(str, take))} → “{title}”')
     record_undo(c, aid, {'op': 'split', 'id': item_id, 'new': new['id'], 'take': take, 'n': len(rows), 'title': it['title'], 'newTitle': title})
     _forget_items(c, item_id, new['id'])
+    log_fill(c, [(new, filled)])
     return {'item': get_item(c, item_id), 'new': get_item(c, new['id'])}
 
 

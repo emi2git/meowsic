@@ -33,6 +33,7 @@ from fastapi.responses import FileResponse
 from . import cleanstate as cs
 from . import grouping, titles, trim
 from .db import folder_path, get_item, log_event, now_ms, quiet, uid, write_item
+from .autofill import fill_from_library, log_fill
 from .undolog import record_undo
 from .items import IMAGE_EXT, cfg, conn
 
@@ -353,13 +354,14 @@ def do_import(sid: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)
     tags = [t for t in (body.get('tags') or []) if isinstance(t, str) and t.strip()]
     d0 = _sdir(cf, sid)
     t = now_ms()
-    made = []
+    made, fills = [], []
     for k, s in enumerate(songs):
         pages = [by[pg['id']] for pg in s['pages']]
         title = str(s.get('title') or '').strip()[:200] or 'Untitled'
         dates = [p['date'] for p in pages if p.get('date')]
         it = {'id': uid('s'), 'kind': 'sheet', 'title': title, 'artist': str(s.get('artist') or '').strip()[:200], 'tags': tags,
               'source': 'photos', 'pages': 0, 'createdAt': t + k, 'updatedAt': t, 'originAt': min(dates) if dates else t}
+        fills.append((it, fill_from_library(c, it)))
         write_item(c, it, new=True)
         it = get_item(c, it['id'])
         d = folder_path(cf, it['folder'])
@@ -385,6 +387,7 @@ def do_import(sid: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)
     aid = log_event(c, 'photo-import', made[0]['title'] if n == 1 else f'{n} sheets', f'From Photos (album “{st["album"]}”): '
                     + ', '.join(f'“{m["title"]}” ({m["pages"]} p)' for m in made))
     record_undo(c, aid, {'op': 'photoimport', 'import': iid, 'titles': [m['title'] for m in made]})  # Activities: Undo = this file's undo()
+    log_fill(c, fills)
     st['imports'].append(iid)
     _save(cf, st)
     return {'import': rec, 'items': [get_item(c, m['id']) for m in made]}
