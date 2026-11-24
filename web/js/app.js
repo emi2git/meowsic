@@ -68,11 +68,11 @@ export function renderSide() {
     <nav aria-label="Library">
       <a class="nav${on(kind === '')}" href="#/library">${icon('library')}<span>All music</span><i>${items.length}</i></a>
       ${['sheet', 'score', 'chords', 'book'].map((k) => `<a class="nav sub${on(kind === k)}" href="#/library?kind=${k}">${icon(KIND[k].icon)}<span>${KIND[k].plural}</span><i>${n(k)}</i></a>`).join('')}
-      <a class="nav${on(v === 'tags')}" href="#/tags">${icon('tag')}<span>Tags</span></a>
       <a class="nav${on(v === 'stats')}" href="#/stats">${icon('stats')}<span>Stats</span></a>
       <h3>Utilities</h3>
       <a class="nav${on(v === 'activity' || v === 'activities')}" href="#/activity"><span>Activities</span>${store.jobs().some((j) => j.status === 'running') ? '<i class="live">•</i>' : ''}</a>
       <a class="nav${on(v === 'cleanup')}" href="#/manage"><span>Manage library</span></a>
+      <a class="nav${on(v === 'tags' || v === 'make-tags')}" href="#/tags"><span>Tags</span></a>
       <a class="nav${on(v === 'help')}" href="#/help"><span>Help</span></a>
       <a class="nav${on(v === 'settings')}" href="#/settings">${icon('settings')}<span>Settings</span></a>
       <a class="nav${on(v === 'developer')}" href="#/developer"><span>Developer</span></a>
@@ -83,14 +83,14 @@ export function renderSide() {
   const tab = (href, ic, label, active) => `<a href="${href}" class="${active ? 'on' : ''}">${icon(ic)}<span>${label}</span></a>`;
   $('#tabbar').innerHTML =
     tab(HOME, 'library', 'Library', v === 'library' || v === 'item') +
-    tab('#/tags', 'tag', 'Tags', v === 'tags') +
     `<button id="tab-add" class="tab-add" aria-label="Add music">Add</button>` +
     tab('#/stats', 'stats', 'Stats', v === 'stats') +
-    `<button id="tab-more" class="${['bin', 'settings', 'print', 'activity', 'activities', 'developer', 'cleanup', 'manage', 'help'].includes(v) ? 'on' : ''}">${icon('more')}<span>Utilities</span></button>`;
+    `<button id="tab-more" class="${['bin', 'settings', 'print', 'activity', 'activities', 'developer', 'cleanup', 'manage', 'help', 'tags', 'make-tags'].includes(v) ? 'on' : ''}">${icon('more')}<span>Utilities</span></button>`;
   $('#tab-add').onclick = (e) => addMenu(e.currentTarget);
   $('#tab-more').onclick = (e) => menu(e.currentTarget, [
     { label: 'Activities', icon: 'wave', run: () => go('#/activity') },
     { label: 'Manage library', icon: 'tools', run: () => go('#/manage') },
+    { label: 'Tags', icon: 'tag', run: () => go('#/tags') },
     { label: 'Help', icon: 'info', run: () => go('#/help') },
     { label: 'Settings', icon: 'settings', run: () => go('#/settings') },
     { label: 'Developer', icon: 'tools', run: () => go('#/developer') },

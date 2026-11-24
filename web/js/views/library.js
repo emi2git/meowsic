@@ -7,6 +7,7 @@ import { autoTag } from './autotag.js';
 import { VERSIONS } from '../musicxml.js';
 import { isTouch, onDeviceChange } from '../device.js';
 import { attachSwipe } from '../swipe.js';
+import { verifiedMark } from './verified.js';
 
 const SORTS = {
   added: ['Recently added', (a, b) => b.createdAt - a.createdAt],
@@ -116,7 +117,7 @@ export function libraryView(main, { q }) {
         const arrow = (k) => (state.sort !== k ? '' : (k === 'added') === (state.dir > 0) ? ' ▼' : ' ▲');
         const cols = COLS_BY[kind] || COLS_BY[''];
         const cell = {
-          'c-title': (it) => (kind === 'book' ? `<span class="cover">${store.thumbUrl(it, 1, 160) ? `<img src="${store.thumbUrl(it, 1, 160)}" alt="" loading="lazy">` : ''}</span>` : '') + esc(it.title), 'c-artist': (it) => esc(it.artist || ''), 'c-album': (it) => esc(it.album || ''), 'c-type': (it) => badge(it), 'c-ver': (it) => (verLabel(it) ? `<span title="${esc(verDetail(it) || verLabel(it))}">${esc(verLabel(it))}</span>` : ''),
+          'c-title': (it) => (kind === 'book' ? `<span class="cover">${store.thumbUrl(it, 1, 160) ? `<img src="${store.thumbUrl(it, 1, 160)}" alt="" loading="lazy">` : ''}</span>` : '') + esc(it.title) + verifiedMark(it), 'c-artist': (it) => esc(it.artist || ''), 'c-album': (it) => esc(it.album || ''), 'c-type': (it) => badge(it), 'c-ver': (it) => (verLabel(it) ? `<span title="${esc(verDetail(it) || verLabel(it))}">${esc(verLabel(it))}</span>` : ''),
           'c-pages': (it) => (it.pages ? `${it.pages}<span class="pg-u"> p</span>` : ''), 'c-key': (it) => esc(keyShort(it.key)), 'c-when': (it) => ago(it.createdAt),
         };
         rows.innerHTML = `<table class="lib-table ${kind ? 'one-kind' : ''} ${selecting() ? 'selecting' : ''}"><thead><tr><th class="c-pick"></th>${cols.map(([k, l, c]) =>

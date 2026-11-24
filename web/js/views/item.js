@@ -8,6 +8,7 @@ import { autoTag } from './autotag.js';
 import { sheetBody, sheetToolbar, sheetExtraMenu, startInk } from './sheet.js';
 import { chordsBody, chordsToolbar } from './chordsview.js';
 import { scoreBody, scoreToolbar, scoreExportMenu, scoreTools } from './score.js';
+import { verifiedBadgeHtml, wireVerified } from './verified.js';
 
 export function itemView(main, { parts }) {
   const it = store.get(parts[1]);
@@ -21,6 +22,7 @@ export function itemView(main, { parts }) {
       <header class="top item-top">
         <a class="icon-btn back" href="${back}" aria-label="Back">‹ Back</a>
         <h1 class="item-title" id="it-title" title="${esc(it.title)}${it.artist ? ' — ' + esc(it.artist) : ''} (tap to rename)">${esc(it.title)}</h1>
+        ${it.kind === 'score' ? verifiedBadgeHtml(it) : ''}
         <div class="toolbar inline" id="it-bar"></div>
         ${document.fullscreenEnabled || document.webkitFullscreenEnabled ? `<button class="icon-btn" id="it-full" aria-label="Full screen" title="Full screen">${iconOn('perform')}</button>` : ''}
         <button class="icon-btn" id="it-more" aria-label="More" title="More">${iconOn('more')}</button>
@@ -32,6 +34,8 @@ export function itemView(main, { parts }) {
 
   const body = $('#it-body', main), bar = $('#it-bar', main);
   let view, offBar;
+  // Verified (scores): tag-backed toggle beside the title
+  const drawVerified = $('#it-verified', main) ? wireVerified($('#it-verified', main), it.id) : null;
   // "Page n of N": scores / chord charts shown as pages on iPad / iPhone (sheets show page dots instead)
   $('.viewer', main).addEventListener('pagechange', (e) => {
     const { show, pages } = e.detail;
@@ -91,6 +95,7 @@ export function itemView(main, { parts }) {
   const off = store.on(() => {
     if (!store.get(it.id) || it.deleted) return go(HOME);
     $('#it-title', main).textContent = it.title;
+    drawVerified?.();
     // page files renamed (title change), regrouped, reordered or deleted on the Mac (Organize pages): draw the pages again
     const pf = filesKey();
     if (pf !== lastFiles) { lastFiles = pf; view?.redraw?.(); }
