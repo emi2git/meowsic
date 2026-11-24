@@ -1,20 +1,25 @@
 // Manage library → Complete info (#/manage/info): the sheets the AI fill could not name a Key or Version for,
-// one card at a time — page 1 big (tap: zoom), then single taps:
+// one card at a time — the WHOLE page 1 fitted in its frame (tap: zoom), then two choices and one save:
 //   Key      common keys (with their key signature: 1♯, 2♭ …) or any other key typed ("F#m", "Db major")
 //   Version  Lead · Piano · Duet · Accompaniment
-// A tap saves at once (the normal PATCH: Activities + Undo work); once Key and Version are both set the next
-// card comes. The AI's guess (server: completeinfo.py) is pre-selected. Skip = later (to the end);
-// Don't know = hidden until "Show again". Both are kept on the Mac, so every device has the same queue.
-// Mac keys: 1–4 version · type a key (A–G…) + Enter · Enter = Save & next · S skip · X don't know · ← back · Space zoom.
+// Nothing moves on by itself: pick Key and Version (a value the item already has counts as picked), then
+// "Save & next" — one PATCH with both fields (one Activities row, Undo works). The AI's guess (server:
+// completeinfo.py) is only a dashed hint, never a pick. The save runs in the background: the next card comes at
+// once; a failed save shows a bar with Retry. Skip = later (to the end); Don't know = hidden until "Show again".
+// Both are kept on the Mac, so every device has the same queue.
+// Taps: pointerdown + pointerup on the same button acts at once (iPad: no lost taps, no 300 ms wait); the click
+// that follows is ignored. The card is drawn once per song; a pick only changes classes (no re-render mid-tap).
+// Mac keys: 1–4 version · type a key (A–G…) + Enter · Enter = Save & next (when on) · S skip · X don't know · ← back · Space zoom.
 import { store } from '../store.js';
 import { isDesktop } from '../device.js';
 import { $, esc, toast } from '../ui.js';
 import { SHEET_VERSIONS } from './actions.js';
+import { pageSrc } from './sheet.js';
 
 const api = async (method, path, body) => {
   const r = await fetch('/api' + path, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error((typeof data.detail === 'string' && data.detail) || 'The Mac said no.');
+  if (!r.ok) throw new Error((typeof data.detail === 'string' && data.detail) || `The Mac said no (${r.status}).`);
   return data;
 };
 
@@ -24,6 +29,7 @@ const MINORS = [['Am', '0'], ['Em', '1♯'], ['Bm', '2♯'], ['Dm', '1♭'], ['G
 const VERS = [['lead', 'Lead', 'melody + chords'], ['piano', 'Piano', 'both hands'], ['duet', 'Duet', 'two players'], ['accomp', 'Accompaniment', 'piano part, no melody']]
   .filter(([v]) => v in SHEET_VERSIONS);
 export const pretty = (k) => String(k || '').replace(/^([A-G])b/, '$1♭').replace(/^([A-G])#/, '$1♯');
+const verName = (v) => VERS.find(([x]) => x === v)?.[1] || v;
 
 // "f# minor", "Db major", "B♭m", "key of G" → 'F#m', 'Db', 'Bbm', 'G' (sheets / chord charts); scores: 'F# minor' …
 export function normKey(s, kind = 'sheet') {
@@ -44,12 +50,34 @@ export async function infoBadge(root) {
   try { const { count } = await api('GET', '/completeinfo/count'); const el = $('#cu-ninfo', root); if (el) el.textContent = count || ''; } catch {}
 }
 
+// page pictures, loaded off-page and put in only once decoded (no wrong size, no half picture, no stale song)
+const pics = new Map(); // src -> { im, ready: Promise<boolean> }
+function loadPic(src) {
+  let c = pics.get(src);
+  if (!c) {
+    const im = new Image();
+    im.draggable = false; im.decoding = 'async';
+    c = { im };
+    c.ready = new Promise((res) => {
+      im.onload = () => (im.naturalWidth ? im.decode().catch(() => {}).then(() => res(true)) : res(false));
+      im.onerror = () => res(false);
+    });
+    im.src = src;
+    pics.set(src, c);
+    while (pics.size > 6) pics.delete(pics.keys().next().value);
+  }
+  return c;
+}
+
 export function completeInfoView(body) {
   if (store.mode !== 'server') { body.innerHTML = '<p class="pad muted">Complete info needs the Mac.</p>'; return; }
-  const st = { q: null, hidden: 0, i: 0, sel: {}, back: [], done: 0, timer: 0, zoom: false, alive: true, err: '' };
+  // sel[f] = {v, how: 'have' (the item has it: picked and confirmed) | 'user' (tapped here)}
+  const st = { q: null, hidden: 0, i: 0, sel: {}, back: [], done: 0, zoom: false, alive: true, err: '', gen: 0, saves: new Map(), retry: 0 };
   const cur = () => st.q?.[st.i];
   const live = (r) => store.get(r.id) || r;
   const badge = () => { const el = document.getElementById('cu-ninfo'); if (el) el.textContent = st.q?.length || ''; };
+  const needVersion = (r) => r.kind === 'sheet' || r.kind === 'chords';
+  const complete = (r) => !!r && !!st.sel.key && (!needVersion(r) || !!st.sel.version);
 
   const load = async () => {
     body.innerHTML = '<p class="pad muted">Loading…</p>';
@@ -57,60 +85,57 @@ export function completeInfoView(body) {
     start(); badge();
   };
 
-  // the selection for the card: what it has now, else the AI's guess (pre-selected, not saved yet)
-  const start = () => {
-    clearTimeout(st.timer);
+  // a new card: what the item has now counts as picked; the AI guess is only a hint
+  const start = (sel) => {
     const r = cur();
     st.sel = {}; st.err = ''; st.zoom = false;
     if (r) {
       const it = live(r);
       for (const f of ['key', 'version']) {
-        if (!isMissing(it[f]) && !(r.kind === 'score' && f === 'version')) st.sel[f] = { v: it[f], saved: true };
-        else if (r.suggest?.[f]) st.sel[f] = { v: r.suggest[f].value, saved: false, ai: true };
+        if (f === 'version' && !needVersion(r)) continue;
+        if (sel?.[f]) st.sel[f] = { ...sel[f] };
+        else if (!isMissing(it[f])) st.sel[f] = { v: it[f], how: 'have' };
       }
     }
     draw();
   };
 
-  const needVersion = (r) => r.kind === 'sheet' || r.kind === 'chords';
-  const complete = (r) => !!st.sel.key && (!needVersion(r) || !!st.sel.version);
-
-  // save one field (PATCH through the store, so the list and Activities follow)
-  const save = (f, v) => {
+  const pick = (f, v) => {
     const r = cur(); if (!r) return;
     if (f === 'key') v = normKey(v, r.kind) || v;
-    st.sel[f] = { v, saved: true };
-    if (store.get(r.id)) store.update(r.id, { [f]: v });
-    else api('PATCH', `/items/${encodeURIComponent(r.id)}`, { [f]: v }).then((it) => store.putItem(it)).catch((e) => toast(e.message));  // added since the app loaded
+    st.sel[f] = { v, how: 'user' }; st.err = '';
+    paint();
   };
-  const pick = (f, v) => {
-    save(f, v);
-    draw();
-    const r = cur();
-    if (complete(r)) { clearTimeout(st.timer); st.timer = setTimeout(next, 450); $('#ci-card', body)?.classList.add('ci-done'); }
+
+  // ---------- saving: one PATCH per card, in the background ----------
+  const save = async (s) => {
+    s.status = 'saving'; s.msg = ''; drawSaves();
+    try {
+      const fresh = await api('PATCH', `/items/${encodeURIComponent(s.r.id)}`, s.patch);
+      if (fresh?.id) store.putItem(fresh);
+      if (s.r.skipped) api('DELETE', `/completeinfo/${encodeURIComponent(s.r.id)}/mark`).catch(() => {});
+      st.saves.delete(s.r.id);
+    } catch (e) { s.status = 'failed'; s.msg = e.message || 'No answer from the Mac'; }
+    drawSaves();
   };
-  // Save & next: the pre-selected guesses are saved too
   const next = () => {
-    clearTimeout(st.timer);
-    const r = cur(); if (!r) return;
-    if (!complete(r)) { toast(needVersion(r) && !st.sel.version ? 'Tap a version first' : 'Tap a key first'); return; }
-    for (const f of ['key', 'version']) if (st.sel[f] && !st.sel[f].saved) save(f, st.sel[f].v);
-    if (r.skipped) api('DELETE', `/completeinfo/${encodeURIComponent(r.id)}/mark`).catch(() => {});
-    st.back.push({ r, at: st.i });
+    const r = cur(); if (!complete(r)) return;
+    const it = live(r), patch = {};
+    for (const f of ['key', 'version']) { const s = st.sel[f]; if (s && s.how === 'user' && s.v !== it[f]) patch[f] = s.v; }
+    if (Object.keys(patch).length) { const s = { r, patch }; st.saves.set(r.id, s); save(s); }
+    else if (r.skipped) api('DELETE', `/completeinfo/${encodeURIComponent(r.id)}/mark`).catch(() => {});
+    st.back.push({ r, at: st.i, sel: { ...st.sel } });
     st.q.splice(st.i, 1); st.done++;
     if (st.i >= st.q.length) st.i = 0;
-    toast(`Saved “${r.title}”`);
     badge(); start();
   };
   const back = () => {
     const b = st.back.pop(); if (!b) return;
-    clearTimeout(st.timer);
     st.q.splice(Math.min(b.at, st.q.length), 0, b.r); st.i = Math.min(b.at, st.q.length - 1); st.done = Math.max(0, st.done - 1);
-    badge(); start();
+    badge(); start(b.sel);
   };
   const skip = async () => {
     const r = cur(); if (!r) return;
-    clearTimeout(st.timer);
     st.q.splice(st.i, 1); st.q.push({ ...r, skipped: Date.now() });
     if (st.i >= st.q.length - 1 && st.q.length > 1) st.i = 0;
     start();
@@ -118,7 +143,6 @@ export function completeInfoView(body) {
   };
   const dunno = async () => {
     const r = cur(); if (!r) return;
-    clearTimeout(st.timer);
     const at = st.i;
     st.q.splice(st.i, 1); st.hidden++;
     if (st.i >= st.q.length) st.i = 0;
@@ -131,89 +155,203 @@ export function completeInfoView(body) {
   };
   const showAgain = async () => { try { await api('POST', '/completeinfo/reset', {}); } catch (e) { return toast(e.message); } await load(); };
   const typed = () => {
-    const inp = $('#ci-other', body), r = cur();
+    const inp = $('#ci-other', body), r = cur(); if (!inp || !r) return;
     const k = normKey(inp.value, r.kind);
-    if (!k) { st.err = `“${inp.value}” is not a key — try C, F#m, Bb or Db major`; draw(); $('#ci-other', body)?.focus(); return; }
+    if (!k) { st.err = `“${inp.value}” is not a key — try C, F#m, Bb or Db major`; paint(); return; }
+    inp.blur(); inp.value = pretty(k);
     pick('key', k);
   };
-
-  // ---------- drawing ----------
-  const keyBtn = ([k, sig], r) => {
-    const on = st.sel.key && same(st.sel.key.v, k);
-    return `<button class="ci-key${on ? ' on' : ''}${on && st.sel.key.ai ? ' ai' : ''}" data-key="${k}" aria-pressed="${!!on}"><b>${pretty(k)}</b><small>${sig}</small></button>`;
+  const zoom = () => {
+    if (!$('#ci-pic img', body)) return;
+    st.zoom = !st.zoom;
+    $('#ci-card', body)?.classList.toggle('zoomed', st.zoom);
+    const h = $('.ci-zoomhint', body); if (h) h.textContent = st.zoom ? 'Tap to fit' : 'Tap to zoom';
   };
+
+  // ---------- the page picture ----------
+  const picSrc = (r) => {
+    const it = live(r);
+    if (r.kind !== 'sheet') return '';
+    if (it.pageFiles?.length) return pageSrc(it, 1);
+    return r.pages ? store.pageUrl(r.id, 1, it.updatedAt || r.updatedAt) : '';
+  };
+  const showPic = (r, g, src0) => {
+    const fig = $('#ci-pic', body); if (!fig) return;
+    const src = src0 || picSrc(r);
+    fig.dataset.state = 'loading';
+    fig.querySelector('.ci-ph').innerHTML = '<span class="ci-spin" aria-hidden="true"></span><span>Loading page 1…</span>';
+    const c = loadPic(src);
+    const slow = setTimeout(() => {
+      if (g !== st.gen || fig.dataset.state !== 'loading') return;
+      fig.querySelector('.ci-ph').innerHTML = '<span class="ci-spin" aria-hidden="true"></span><span>Still loading page 1…</span><button class="ci-retry" data-act="retry">Retry</button>';
+    }, 6000);
+    c.ready.then((ok) => {
+      clearTimeout(slow);
+      if (g !== st.gen || !st.alive || !fig.isConnected) return;  // another card by now: never show its page here
+      if (!ok) {
+        pics.delete(src);
+        fig.dataset.state = 'error';
+        fig.querySelector('.ci-ph').innerHTML = '<span>Couldn’t load page 1.</span><button class="ci-retry" data-act="retry">Retry</button>';
+        return;
+      }
+      const im = c.im;
+      im.alt = `Page 1 of ${r.title}`;
+      im.className = 'ci-img';
+      fig.querySelector('.ci-img')?.remove();
+      fig.prepend(im);
+      fig.dataset.state = 'ok';
+      // the next card's page, ahead
+      const n = st.q?.[st.i + 1]; if (n) { const s = picSrc(n); if (s) loadPic(s); }
+    });
+  };
+  const retryPic = () => {
+    const r = cur(); if (!r) return;
+    const src = picSrc(r); pics.delete(src);
+    showPic(r, st.gen, `${src}${src.includes('?') ? '&' : '?'}retry=${++st.retry}`);
+  };
+
+  // ---------- drawing: draw() = a new card; paint() = the picks only ----------
+  const keyBtn = ([k, sig]) => `<button type="button" class="ci-key" data-key="${k}" aria-pressed="false"><b>${pretty(k)}</b><small>${sig}</small></button>`;
+  const savesHtml = () => {
+    const bad = [...st.saves.values()].filter((s) => s.status === 'failed');
+    const busy = [...st.saves.values()].filter((s) => s.status === 'saving').length;
+    return bad.map((s) => `<div class="ci-savefail" role="alert"><span>Couldn’t save “${esc(s.r.title)}”: ${esc(s.msg)}</span><button type="button" data-act="resave" data-id="${esc(s.r.id)}">Retry</button></div>`).join('')
+      + (busy ? `<div class="ci-saving muted">Saving${busy > 1 ? ` ${busy}` : ''}…</div>` : '');
+  };
+  const drawSaves = () => { const el = $('#ci-saves', body); if (el) el.innerHTML = savesHtml(); };
+
   const draw = () => {
     if (!st.alive) return;
+    st.gen++;
     const r = cur();
     if (!r) {
-      body.innerHTML = `<div class="ci-empty"><h2>All done</h2><p class="muted">Every sheet has a key and a version${st.done ? ` — ${st.done} filled in just now` : ''}.</p>
-        ${st.hidden ? `<p class="muted">${st.hidden} hidden as “Don't know”.</p><button id="ci-again">Show them again</button>` : ''}
-        ${st.back.length ? '<button id="ci-back">‹ Back to the last one</button>' : ''}</div>`;
-      $('#ci-again', body)?.addEventListener('click', showAgain);
-      $('#ci-back', body)?.addEventListener('click', back);
+      body.innerHTML = `<div class="ci-empty"><div id="ci-saves" class="ci-saves">${savesHtml()}</div><h2>All done</h2><p class="muted">Every sheet has a key and a version${st.done ? ` — ${st.done} filled in just now` : ''}.</p>
+        ${st.hidden ? `<p class="muted">${st.hidden} hidden as “Don't know”.</p><button type="button" id="ci-again" data-act="again">Show them again</button>` : ''}
+        ${st.back.length ? '<button type="button" id="ci-back" data-act="back">‹ Back to the last one</button>' : ''}</div>`;
       return;
     }
-    const it = live(r), sk = st.sel.key, sv = st.sel.version;
-    const typedKey = sk && ![...MAJORS, ...MINORS].some(([k]) => same(k, sk.v));
-    const sug = (f) => (r.suggest?.[f] ? `<span class="ci-sug" title="${esc(r.suggest[f].why)}">Suggested: <b>${esc(f === 'key' ? pretty(r.suggest[f].value) : (VERS.find(([v]) => v === r.suggest[f].value)?.[1] || r.suggest[f].value))}</b> · ${esc(r.suggest[f].why)}</span>` : '');
-    const pic = it.kind === 'sheet' && (it.pageFiles?.length || r.pages) ? store.pageUrl(r.id, 1, it.updatedAt) : '';
-    body.innerHTML = `<div class="ci${st.zoom ? ' zoomed' : ''}" id="ci-card">
-      <figure class="ci-pic" id="ci-pic" ${pic ? 'role="button" tabindex="0" aria-label="Zoom page 1"' : ''}>
-        ${pic ? `<img src="${pic}" alt="Page 1 of ${esc(r.title)}" draggable="false"><span class="ci-zoomhint">${st.zoom ? 'Tap to fit' : 'Tap to zoom'}</span>`
+    const sug = (f) => (r.suggest?.[f] ? `<span class="ci-sug" title="${esc(r.suggest[f].why)}">Suggested: <b>${esc(f === 'key' ? pretty(r.suggest[f].value) : verName(r.suggest[f].value))}</b> · ${esc(r.suggest[f].why)}</span>` : '');
+    const pic = picSrc(r);
+    body.innerHTML = `<div class="ci" id="ci-card">
+      <figure class="ci-pic" id="ci-pic" ${pic ? 'data-act="zoom" role="button" tabindex="0" aria-label="Zoom page 1"' : ''}>
+        ${pic ? `<div class="ci-ph"></div><span class="ci-zoomhint">Tap to zoom</span>`
     : `<div class="ci-nopic">${r.kind === 'score' ? 'A score — no page photo.' : r.kind === 'chords' ? 'A chord chart.' : 'No page image.'}<br><a href="#/item/${encodeURIComponent(r.id)}">Open it ›</a></div>`}
       </figure>
       <section class="ci-side">
+        <div id="ci-saves" class="ci-saves">${savesHtml()}</div>
         <div class="ci-head">
           <span class="ci-count">${st.i + 1} of ${st.q.length}${st.done ? ` · ${st.done} done` : ''}${r.skipped ? ' · skipped before' : ''}</span>
           <h2 id="ci-title">${esc(r.title)}</h2>
           <p class="muted">${esc([r.artist, r.kind === 'sheet' ? `${r.pages} page${r.pages === 1 ? '' : 's'}` : r.kind === 'score' ? 'Score' : 'Chord chart'].filter(Boolean).join(' · '))} · <a href="#/item/${encodeURIComponent(r.id)}">Open</a></p>
         </div>
         <div class="ci-field">
-          <div class="ci-lab"><b>Key</b>${sk?.saved ? `<span class="ci-ok">✓ ${esc(pretty(sk.v))}</span>` : ''}${sug('key')}</div>
-          <div class="ci-keys" id="ci-keys" role="group" aria-label="Major keys">${MAJORS.map((k) => keyBtn(k, r)).join('')}</div>
-          <div class="ci-keys minor" role="group" aria-label="Minor keys">${MINORS.map((k) => keyBtn(k, r)).join('')}</div>
-          <form class="ci-otherrow" id="ci-form" autocomplete="off"><input id="ci-other" class="${typedKey ? 'on' : ''}" placeholder="Other key: F#m, Db major…" value="${typedKey ? esc(pretty(sk.v)) : ''}" aria-label="Other key" autocapitalize="off" spellcheck="false" enterkeyhint="done"><button type="submit" id="ci-set">Set</button></form>
-          ${st.err ? `<p class="ci-err" role="alert">${esc(st.err)}</p>` : ''}
+          <div class="ci-lab"><b>Key</b><span class="ci-ok" id="ci-okkey"></span>${sug('key')}</div>
+          <div class="ci-keys" id="ci-keys" role="group" aria-label="Major keys">${MAJORS.map(keyBtn).join('')}</div>
+          <div class="ci-keys minor" role="group" aria-label="Minor keys">${MINORS.map(keyBtn).join('')}</div>
+          <form class="ci-otherrow" id="ci-form" autocomplete="off"><input id="ci-other" placeholder="Other key: F#m, Db major…" aria-label="Other key" autocapitalize="off" spellcheck="false" enterkeyhint="done"><button type="button" id="ci-set" data-act="set">Set</button></form>
+          <p class="ci-err" id="ci-err" role="alert" hidden></p>
         </div>
         ${needVersion(r) ? `<div class="ci-field">
-          <div class="ci-lab"><b>Version</b>${sv?.saved ? `<span class="ci-ok">✓ ${esc(VERS.find(([v]) => v === sv.v)?.[1] || sv.v)}</span>` : ''}${sug('version')}</div>
-          <div class="ci-vers" id="ci-vers" role="group" aria-label="Version">${VERS.map(([v, l, d], n) => {
-    const on = sv?.v === v;
-    return `<button class="ci-ver${on ? ' on' : ''}${on && sv.ai ? ' ai' : ''}" data-ver="${v}" aria-pressed="${on}"><b>${l}</b><small>${d}</small>${isDesktop() ? `<kbd>${n + 1}</kbd>` : ''}</button>`;
-  }).join('')}</div></div>` : ''}
+          <div class="ci-lab"><b>Version</b><span class="ci-ok" id="ci-okver"></span>${sug('version')}</div>
+          <div class="ci-vers" id="ci-vers" role="group" aria-label="Version">${VERS.map(([v, l, d], n) => `<button type="button" class="ci-ver" data-ver="${v}" aria-pressed="false"><b>${l}</b><small>${d}</small>${isDesktop() ? `<kbd>${n + 1}</kbd>` : ''}</button>`).join('')}</div></div>` : ''}
         <div class="ci-acts">
-          <button id="ci-prev" ${st.back.length ? '' : 'disabled'} aria-label="Back to the last one">‹ Back</button>
-          <button id="ci-skip">Skip</button>
-          <button id="ci-dunno">Don't know</button>
-          <button class="primary" id="ci-next" ${complete(r) ? '' : 'disabled'}>Save &amp; next ›</button>
+          <button type="button" id="ci-prev" data-act="back" ${st.back.length ? '' : 'disabled'} aria-label="Back to the last one">‹ Back</button>
+          <button type="button" id="ci-skip" data-act="skip">Skip</button>
+          <button type="button" id="ci-dunno" data-act="dunno">Don't know</button>
+          <button type="button" class="primary" id="ci-next" data-act="next" disabled>Save &amp; next ›</button>
         </div>
-        <p class="ci-foot muted">${st.hidden ? `${st.hidden} hidden as “Don't know” · <button class="link" id="ci-again">Show again</button>` : ''}
-          ${isDesktop() ? '<span class="ci-keyshelp">Keys: 1–4 version · type a key + Enter · Enter next · S skip · X don’t know · ← back · Space zoom</span>' : ''}</p>
+        <p class="ci-foot muted">${st.hidden ? `${st.hidden} hidden as “Don't know” · <button type="button" class="link" id="ci-again" data-act="again">Show again</button>` : ''}
+          ${isDesktop() ? '<span class="ci-keyshelp">Keys: 1–4 version · type a key + Enter · Enter = Save &amp; next · S skip · X don’t know · ← back · Space zoom</span>' : ''}</p>
       </section></div>`;
+    body.scrollTop = 0;  // a new song starts at its top (iPhone: the page, not the buttons of the last one)
+    const inp = $('#ci-other', body), sk = st.sel.key;
+    if (sk && ![...MAJORS, ...MINORS].some(([k]) => same(k, sk.v))) inp.value = pretty(sk.v);
+    paint();
+    if (pic) showPic(r, st.gen);
   };
 
-  body.onclick = (e) => {
-    const k = e.target.closest('[data-key]'); if (k) return pick('key', k.dataset.key);
-    const v = e.target.closest('[data-ver]'); if (v) return pick('version', v.dataset.ver);
-    if (e.target.closest('#ci-pic') && $('#ci-pic img', body)) { st.zoom = !st.zoom; $('#ci-card', body)?.classList.toggle('zoomed', st.zoom); const h = $('.ci-zoomhint', body); if (h) h.textContent = st.zoom ? 'Tap to fit' : 'Tap to zoom'; return; }
-    const id = e.target.closest('button')?.id;
-    if (id === 'ci-next') next(); else if (id === 'ci-skip') skip(); else if (id === 'ci-dunno') dunno(); else if (id === 'ci-prev') back(); else if (id === 'ci-again') showAgain();
+  const paint = () => {
+    const r = cur(); if (!r || !$('#ci-card', body)) return;
+    const sk = st.sel.key, sv = st.sel.version, hk = r.suggest?.key?.value, hv = r.suggest?.version?.value;
+    body.querySelectorAll('.ci-key').forEach((b) => {
+      const on = !!sk && same(sk.v, b.dataset.key);
+      b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
+      b.classList.toggle('hint', !sk && !!hk && same(hk, b.dataset.key));
+    });
+    body.querySelectorAll('.ci-ver').forEach((b) => {
+      const on = sv?.v === b.dataset.ver;
+      b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
+      b.classList.toggle('hint', !sv && hv === b.dataset.ver);
+    });
+    const inp = $('#ci-other', body);
+    const typedKey = !!sk && ![...MAJORS, ...MINORS].some(([k]) => same(k, sk.v));
+    inp.classList.toggle('on', typedKey);
+    if (sk && !typedKey && document.activeElement !== inp) inp.value = '';
+    const ok = (el, s, name) => { if (el) el.textContent = s ? `✓ ${name(s.v)}${s.how === 'have' ? ' (already set)' : ''}` : ''; };
+    ok($('#ci-okkey', body), sk, pretty); ok($('#ci-okver', body), sv, verName);
+    const e = $('#ci-err', body); e.hidden = !st.err; e.textContent = st.err;
+    const nx = $('#ci-next', body); nx.disabled = !complete(r);
+    nx.title = complete(r) ? '' : needVersion(r) && !sv ? (sk ? 'Pick a version' : 'Pick a key and a version') : 'Pick a key';
   };
-  body.onsubmit = (e) => { if (e.target.id === 'ci-form') { e.preventDefault(); typed(); } };
+
+  // ---------- taps ----------
+  const act = (el) => {
+    if (el.disabled) return;
+    if (el.dataset.key) return pick('key', el.dataset.key);
+    if (el.dataset.ver) return pick('version', el.dataset.ver);
+    switch (el.dataset.act) {
+      case 'next': return next();
+      case 'skip': return skip();
+      case 'dunno': return dunno();
+      case 'back': return back();
+      case 'again': return showAgain();
+      case 'set': return typed();
+      case 'zoom': return zoom();
+      case 'retry': return retryPic();
+      case 'resave': { const s = st.saves.get(el.dataset.id); if (s) save(s); }
+    }
+  };
+  const target = (e) => e.target.closest?.('button, [data-act]');
+  // a tap = down and up on the same button, hardly moved (a scroll is a pointercancel); act on the up
+  let down = null, tapped = 0;
+  body.addEventListener('pointerdown', (e) => {
+    if (e.button > 0 || !e.isPrimary) return;
+    const el = target(e);
+    down = el && body.contains(el) ? { el, x: e.clientX, y: e.clientY, id: e.pointerId } : null;
+  });
+  body.addEventListener('pointercancel', () => { down = null; });
+  body.addEventListener('pointerup', (e) => {
+    const d = down; down = null;
+    if (!d || d.id !== e.pointerId || !d.el.isConnected) return;
+    if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 16) return;
+    const b = d.el.getBoundingClientRect(), m = 10;
+    if (e.clientX < b.left - m || e.clientX > b.right + m || e.clientY < b.top - m || e.clientY > b.bottom + m) return;
+    if (d.el.id === 'ci-other') return;
+    tapped = Date.now();
+    act(d.el);
+  });
+  // the click after a handled tap is dropped; a click with no tap before it (keyboard, VoiceOver) acts
+  body.addEventListener('click', (e) => {
+    const el = target(e); if (!el) return;
+    if (Date.now() - tapped < 700) { e.preventDefault(); return; }
+    act(el);
+  });
+  body.addEventListener('submit', (e) => { if (e.target.id === 'ci-form') { e.preventDefault(); typed(); } });
+
   const onKey = (e) => {
     if (!cur() || e.metaKey || e.ctrlKey || e.altKey || document.querySelector('.modal-wrap, .menu')) return;
     const inInput = e.target.closest?.('input, textarea, select');
     if (inInput) { if (e.key === 'Escape') e.target.blur(); return; }
-    if (e.key === 'Escape' && st.zoom) { $('#ci-pic img', body)?.click(); return; }
+    if (e.key === 'Escape' && st.zoom) { zoom(); return; }
     if (/^[1-4]$/.test(e.key) && needVersion(cur()) && VERS[+e.key - 1]) { e.preventDefault(); pick('version', VERS[+e.key - 1][0]); }
     else if (/^[a-gA-G]$/.test(e.key)) { e.preventDefault(); const inp = $('#ci-other', body); inp.value = e.key.toUpperCase(); inp.focus(); }
-    else if (e.key === 'Enter' || e.key === 'ArrowRight') { e.preventDefault(); next(); }
+    else if (e.key === 'Enter' || e.key === 'ArrowRight') { e.preventDefault(); if (complete(cur())) next(); }
     else if (e.key === 'ArrowLeft' || e.key === 'Backspace') { e.preventDefault(); back(); }
     else if (e.key === 's' || e.key === 'S') skip();
     else if (e.key === 'x' || e.key === 'X') dunno();
-    else if (e.key === ' ') { e.preventDefault(); $('#ci-pic img', body)?.click(); }
+    else if (e.key === ' ') { e.preventDefault(); zoom(); }
   };
   document.addEventListener('keydown', onKey);
   load();
-  return () => { st.alive = false; clearTimeout(st.timer); document.removeEventListener('keydown', onKey); };
+  return () => { st.alive = false; document.removeEventListener('keydown', onKey); };
 }
