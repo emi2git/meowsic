@@ -1354,3 +1354,7 @@ body:has(.viewer.noting) .toast { bottom: auto; top: calc(64px + env(safe-area-i
 .tc-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 150px; overflow-y: auto; }
 .tc-opt { min-height: 34px; border-radius: 99px; padding: 0 12px; font-size: 14px; max-width: 100%; white-space: normal; text-align: left; }
 .tc-new { border-style: dashed; color: var(--acc-text); }
+
+/* ---------- "New version — Reload" (js/update.js): the Mac has newer code but Edit notes is open ---------- */
+.update-pill { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 125; padding: 8px 14px; border-radius: 99px; border: 0; background: var(--acc); color: var(--acc-ink); font-weight: 700; font-size: 13px; box-shadow: 0 6px 20px rgba(0, 0, 0, .2); cursor: pointer; }
+[data-device="phone"] .update-pill { bottom: calc(72px + env(safe-area-inset-bottom)); }
