@@ -3,7 +3,7 @@
 //   library row ⋯  Info · Move to Trash
 //   sheet          Info · Edit pages… · Crop page… · Make a score… · Export ▸ (Print / PDF…, Page 1 as an image) · Move to Trash
 //   book           Info · Export ▸ · Move to Trash   (read-only: no page editing, not in Organize pages)
-//   score          Info · Make another version… · Edit notes… · Add lyrics from a sheet… · Fit lyrics… · Request singing voice
+//   score          Info · Make another version… · Edit notes… (Notes | Lyrics inside) · Request singing voice
 //                  · Export ▸ (MusicXML, MIDI, Print / PDF…) · Move to Trash — no Kids note names / Chords (toolbar toggles)
 //   singing voice  only with lyrics; "Singing voice in progress…" (disabled) while its job runs; "Redo singing voice" once
 //                  it has one; the toolbar Voice toggle is hidden until the score has a voice
@@ -58,8 +58,8 @@ const openItem = async (p, it) => { await p.goto(`${BASE}#/item/${it.id}`, { wai
 
 const SHEET = 'Info | - | Edit pages… | Crop page… | Make a score… | - | Export ▸ | - | Move to Trash';
 const BOOK = 'Info | - | Export ▸ | - | Move to Trash';
-const SCORE = (sing) => `Info | - | Make another version… | Edit notes… | - | Add lyrics from a sheet… | Fit lyrics… | ${sing} | - | Export ▸ | - | Move to Trash`;
-const SCORE_PLAIN = 'Info | - | Make another version… | Edit notes… | - | Add lyrics from a sheet… | Fit lyrics… | - | Export ▸ | - | Move to Trash';
+const SCORE = (sing) => `Info | - | Make another version… | Edit notes… | - | ${sing} | - | Export ▸ | - | Move to Trash`;
+const SCORE_PLAIN = 'Info | - | Make another version… | Edit notes… | - | Export ▸ | - | Move to Trash';
 const CHORDS = 'Info | - | Export ▸ | - | Move to Trash';
 
 for (const [dev, vp] of [['mac', { width: 1440, height: 900 }], ['ipad', { width: 1032, height: 1376, hasTouch: true, isMobile: true }], ['iphone', { width: 420, height: 912, hasTouch: true, isMobile: true }]]) {

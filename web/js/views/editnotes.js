@@ -18,6 +18,7 @@ import { iconOn, toast, sheet as modal, confirmSheet } from '../ui.js';
 import { store } from '../store.js';
 import { go } from '../app.js';
 import { isTouch } from '../device.js';
+import { lyricMode } from './lyricmode.js'; // [lyrics]
 
 export const post = (path, body) => fetch('/api' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : j.detail?.message || `Failed (${r.status})`); return j; });
@@ -48,6 +49,11 @@ export async function editNotes(view, it, host, opts = {}) {
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', 'Edit notes');
   host.append(panel);
+  // [lyrics] the notes part of the panel draws again on every change; the lyrics bar (lyricmode.js) stays beside it
+  const npBody = document.createElement('div');
+  npBody.className = 'np-body';
+  panel.append(npBody);
+  let lyr = null; // [lyrics] Lyrics mode (lyricmode.js)
   host.classList.add('noting');
   // steps[0] = the score as saved; each edit adds one (its ops = every edit so far, replayed by the Mac)
   let steps = [{ ops: [], xml: base.xml, notes: base.notes }], at = 0;
@@ -118,7 +124,7 @@ export async function editNotes(view, it, host, opts = {}) {
     const baseLen = len == null ? null : DOTTED.has(len) ? len / 1.5 : len;
     const pages = view.pages > 1;
     const off = (c) => (c ? '' : 'disabled');
-    panel.innerHTML = `<div class="np-row"><b class="np-title">${opts.title || 'Edit notes'}</b>
+    npBody.innerHTML = `<div class="np-row"><b class="np-title">${opts.title || 'Edit notes'}</b>
       <span class="np-count" id="np-count">${p.length ? `${plural(ns.length, 'note')}${rs.length ? ` · ${plural(rs.length, 'rest')}` : ''} picked` : 'Pick notes on the score'}</span>
       <span class="grow"></span>
       <button data-a="playhere" class="np-play ${view.player?.playing ? 'on' : ''}" title="${view.player?.playing ? 'Pause (space)' : 'Play from the bar before the picked notes, as edited (space)'}" aria-label="${view.player?.playing ? 'Pause' : 'Play from here'}">${view.player?.playing ? '❚❚ Pause' : '▶ From here'}</button>
@@ -144,6 +150,7 @@ export async function editNotes(view, it, host, opts = {}) {
         <button data-a="down" class="np-move" ${off(down)} title="Move to the lower staff (Shift ↓)">↓ To left hand${down ? ` (${down})` : ''}</button>` : ''}
         <button class="primary" data-a="save" ${off(at > 0)}>Save…</button>
       </div>`;
+    lyr?.drawn(); // [lyrics] the Notes | Lyrics switch, the picked note
     host.style.setProperty('--np-h', panel.offsetHeight + 'px');
   };
 
@@ -244,7 +251,7 @@ export async function editNotes(view, it, host, opts = {}) {
       steps = steps.slice(0, at + 1);
       steps.push({ ops, xml: j.xml, notes: j.notes, sel: [...sel], bar: bar ?? firstBar(j.moved, j.notes) });
       at++;
-      sel = new Set(j.moved);
+      if (op.op !== 'lyrics') sel = new Set(j.moved); // [lyrics] words: the picked note stays
       draw();
       await show(j.xml);
       cue(cur().bar, !j.tiesGone);
@@ -317,6 +324,7 @@ export async function editNotes(view, it, host, opts = {}) {
   host.addEventListener('ended', onEnded);
   const add = () => need([...sel], (refs) => run({ op: 'add', refs, by: 4 }));
   const goStep = async (k) => {
+    if (lyr?.pending) await lyr.flush(); // [lyrics] words typed but not sent yet: a step first
     if (busy || k < 0 || k >= steps.length || k === at) return;
     busy = true;
     sel = new Set(k < at ? steps[at].sel || [] : []);
@@ -359,6 +367,7 @@ export async function editNotes(view, it, host, opts = {}) {
   };
   const close = async (saved) => {
     if (closed) return;
+    if (saved !== true) await lyr?.flush(); // [lyrics]
     if (saved !== true && at > 0 && !(await confirmSheet({ title: 'Close without saving?', body: 'The notes you changed here are not saved yet.', ok: 'Close', danger: true }))) return;
     closed = true;
     host.removeEventListener('scoredrawn', tag);
@@ -367,6 +376,7 @@ export async function editNotes(view, it, host, opts = {}) {
     for (const t of ['touchstart', 'touchmove', 'touchend', 'click']) host.removeEventListener(t, stop, true);
     document.removeEventListener('keydown', onKey, true);
     host.removeEventListener('ended', onEnded);
+    lyr?.destroy(); // [lyrics]
     box?.remove(); untag(); panel.remove();
     host.classList.remove('noting'); host.style.removeProperty('--np-h');
     if (window.__editNotes === api) delete window.__editNotes;
@@ -386,6 +396,7 @@ export async function editNotes(view, it, host, opts = {}) {
   });
   const onKey = (e) => {
     if (closed || document.querySelector('.modal-wrap') || e.target.closest?.('input,textarea,select')) return;
+    if (lyr?.key(e)) return; // [lyrics] in Lyrics mode the note keys rest
     const mod = e.metaKey || e.ctrlKey;
     let f = null;
     if (mod && e.key.toLowerCase() === 'z') f = () => goStep(e.shiftKey ? at + 1 : at - 1);
@@ -408,10 +419,14 @@ export async function editNotes(view, it, host, opts = {}) {
 
   const api = { get sel() { return [...sel]; }, get notes() { return cur().notes; }, get step() { return at; }, get steps() { return steps.length; },
     get ops() { return cur().ops; }, get xml() { return cur().xml; }, select: (refs) => setSel(refs), get busy() { return busy; }, close,
-    get cueBar() { return cueAt; }, run: (op) => run(op) };
+    get cueBar() { return cueAt; }, run: (op) => run(op), get lyrics() { return lyr; } };
   window.__editNotes = api; // for automated tests
   if (opts.bar) sel = new Set(base.notes.filter((n) => !n.rest && n.bar === opts.bar - 1).map((n) => n.ref));
+  // [lyrics] Lyrics mode: the hooks it needs (opts.mode 'lyrics' opens on it; opts.verse, opts.bar: where)
+  lyr = lyricMode({ view, it, host, panel, paper, base, opts, cur, sel: () => [...sel], select: (refs) => setSel(refs), run, busy: () => busy,
+    save, draw, close, steps: () => at + 1, goStep: (d) => goStep(at + d) });
   draw();
   tag();
+  if (opts.mode === 'lyrics') lyr.set(true); // [lyrics]
   return api;
 }
