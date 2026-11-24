@@ -1307,6 +1307,23 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 :root[data-device="phone"] .fb-body { padding: 0 12px 12px 12px; }
 :root[data-device="phone"] .fb-acts button { flex: 1; }
 :root[data-device="phone"] .fb-bar .primary { flex: 1; }
+/* Feedback list: what a quick note was about */
+.fb-on { color: var(--acc-text); }
+.fb-about { margin: 0 0 8px; }
+.fb-about a { font-weight: 700; color: var(--acc-text); }
+.fb-ctx { margin: -4px 0 8px; }
+/* Quick feedback popover (score, sheet, chord views): text box + mic, Send / Cancel */
+.qfb-btn.on { background: var(--acc-soft); color: var(--acc-text); }
+.qfb { position: fixed; z-index: 115; top: 64px; right: 16px; width: min(400px, calc(100vw - 32px)); background: var(--card); color: var(--ink); border: 1px solid var(--line2); border-radius: 16px; padding: 12px; box-shadow: 0 14px 40px rgba(0, 0, 0, .22); display: flex; flex-direction: column; gap: 10px; }
+.qfb-about { font-size: 14px; color: var(--mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qfb-about b { color: var(--ink); font-weight: 700; }
+.qfb textarea { width: 100%; min-height: 96px; border: 1px solid var(--line2); border-radius: 12px; background: var(--bg); color: var(--ink); font-size: 16px; padding: 10px 44px 10px 12px; resize: vertical; }
+.qfb textarea:focus, .qfb textarea.ti-listening { border-color: var(--acc); outline: none; }
+.qfb-acts { display: flex; gap: 8px; justify-content: flex-end; }
+.qfb-acts button { min-width: 96px; }
+:root:is([data-device="phone"], [data-device="tablet"]) .qfb-acts button { min-height: 48px; }
+:root[data-device="phone"] .qfb { left: 12px; right: 12px; width: auto; }
+:root[data-device="phone"] .qfb-acts button { flex: 1; }
 /* Add music sources: two per row on iPhone */
 :root[data-device="phone"] .src-btn { flex: 1 1 40%; min-width: 0; }
 

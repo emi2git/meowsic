@@ -9,6 +9,7 @@ import { sheetBody, sheetToolbar, sheetExtraMenu, startInk } from './sheet.js';
 import { chordsBody, chordsToolbar } from './chordsview.js';
 import { scoreBody, scoreToolbar, scoreExportMenu, scoreTools } from './score.js';
 import { verifiedBadgeHtml, wireVerified } from './verified.js';
+import { quickFeedbackButton, closeQuickFeedback } from '../quickfeedback.js';
 
 export function itemView(main, { parts }) {
   const it = store.get(parts[1]);
@@ -63,6 +64,9 @@ export function itemView(main, { parts }) {
     $('#it-more', main).before(ink);
   }
 
+  // speech bubble: quick feedback about this item (quickfeedback.js)
+  ($('#it-full', main) || $('#it-more', main)).before(quickFeedbackButton(it, () => view));
+
   // ⋯ = Info only: the popup shows and edits everything, and holds the item's actions (info.js)
   const info = () => openInfo(it.id, {
     anchor: $('#it-more', main),
@@ -101,5 +105,5 @@ export function itemView(main, { parts }) {
     if (pf !== lastFiles) { lastFiles = pf; view?.redraw?.(); }
   });
   const opened = Date.now();
-  return () => { document.removeEventListener('keydown', zoomKey); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); off(); offBar?.(); view.destroy(); store.logPlay(it.id, opened, Date.now()); };
+  return () => { closeQuickFeedback(); document.removeEventListener('keydown', zoomKey); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); off(); offBar?.(); view.destroy(); store.logPlay(it.id, opened, Date.now()); };
 }

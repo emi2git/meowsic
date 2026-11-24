@@ -78,3 +78,34 @@ def test_wontfix_locked_and_bad_status(client):
 
 def test_missing_is_404(client):
     assert client.patch('/api/feedback/fb-nope', json={'text': 'x'}).status_code == 404
+
+
+def test_quick_feedback_keeps_item_and_context(client, chord):
+    ctx = {'view': 'chords', 'page': 2, 'pages': 3, 'zoom': '111%', 'device': 'iPad'}
+    a = add(client, 'Chord over the wrong word', device='iPad',
+            item={'id': chord['id'], 'kind': 'chords', 'title': 'Amazing Grace'}, context=ctx)
+    assert a['item'] == {'id': chord['id'], 'kind': 'chords', 'title': 'Amazing Grace'}
+    assert a['context'] == ctx
+    row = [r for r in client.get('/api/feedback').json() if r['id'] == a['id']][0]
+    assert row['item']['title'] == 'Amazing Grace' and row['context']['page'] == 2
+    assert client.get(f'/api/feedback/{a["id"]}').json()['context']['zoom'] == '111%'
+    # plain feedback: no item, empty context; junk context is ignored
+    b = add(client, 'General note', context='nope')
+    assert b['item'] is None and b['context'] == {}
+
+
+def test_migration_adds_columns_to_old_table(tmp_path):
+    from meowsic.feedback import ensure_schema, fb_json
+    c = sqlite3.connect(tmp_path / 'old.db')
+    c.row_factory = sqlite3.Row
+    c.executescript("""CREATE TABLE feedback (id TEXT PRIMARY KEY, text TEXT NOT NULL, created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'new', fixed_at INTEGER, fix_note TEXT NOT NULL DEFAULT '',
+        device TEXT NOT NULL DEFAULT '', removed_at INTEGER);
+        INSERT INTO feedback(id, text, created_at, updated_at) VALUES ('fb-old', 'Old note', 1, 1);""")
+    ensure_schema(c)
+    ensure_schema(c)  # twice is fine
+    cols = {r[1] for r in c.execute('PRAGMA table_info(feedback)')}
+    assert {'item_id', 'item_kind', 'item_title', 'context'} <= cols
+    r = fb_json(c.execute("SELECT * FROM feedback WHERE id='fb-old'").fetchone())
+    assert r['text'] == 'Old note' and r['item'] is None and r['context'] == {}
+    c.close()

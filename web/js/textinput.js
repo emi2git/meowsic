@@ -131,6 +131,17 @@ function attach(el) {
   ro?.observe(el);
   place(el, btn);
 }
+// start listening into a text box right away (quick feedback: the mic is on when the popover opens)
+export function startVoice(el) {
+  if (!SR || !el?.isConnected) return false;
+  attach(el);
+  const btn = mics.get(el);
+  if (!btn) return false;
+  if (live?.el !== el) listen(el, btn);
+  return true;
+}
+export const stopVoice = (cancel = true) => stopListening(cancel);
+
 const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(() => schedule()) : null;
 let queued = false;
 function schedule() {
