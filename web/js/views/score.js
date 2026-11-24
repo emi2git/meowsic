@@ -6,6 +6,7 @@ import { printEntry, download } from './actions.js';
 import { TUNES } from '../mock.js';
 import { musicXml, tuneNotes, VERSIONS, barBeats, xmlInfo } from '../musicxml.js';
 import { ScorePlayer, VoicePlayer } from '../audio.js';
+import { chordEvents } from '../chordplay.js';
 import { scoreEditor } from './scoreeditor.js';
 import { editNotes } from './editnotes.js';
 import { checkBadge } from './checkbars.js';
@@ -331,10 +332,24 @@ export function scoreBody(root, it, { perform = false } = {}) {
     voice = new VoicePlayer({ url: `/api/items/${encodeURIComponent(it.id)}/vocal?v=${encodeURIComponent(it.vocalAudio)}-${it.updatedAt || 0}`,
       bpm: it.vocalBpm || tune.bpm, beats: tune.beats, endQ: midi.endQ, onTick: place, onEnd: onEnded, segments: midi.segments });
   };
+  // Chords (toolbar toggle, this device): the chord names above the bars played as piano chords with the score
+  const cpKey = 'meowsic-chordplay';
+  let chordPlay = (() => { try { return localStorage.getItem(cpKey) === '1'; } catch { return false; } })();
+  let chordList = [];
+  const chordNotes = () => {
+    try {
+      const ci = real ? info : xmlInfo(musicXml({ ...tune, title: it.title }, version));
+      chordList = ci.chords || [];
+      const end = Math.max(ci.totalQ || 0, ...(real ? info.notes : tuneNotes(tune, version)).map((n) => n.q + n.d));
+      return chordEvents(chordList, ci.barQ, end);
+    } catch { chordList = []; return []; }
+  };
   const makePlayer = () => {
     const was = midi;
     player?.pause();
-    midi = new ScorePlayer({ notes: real ? info.notes : tuneNotes(tune, version), bpm: tune.bpm, beats: tune.beats, onTick: place, onEnd: onEnded, segments: real ? info.segments : null });
+    midi = new ScorePlayer({ notes: real ? info.notes : tuneNotes(tune, version), bpm: tune.bpm, beats: tune.beats, onTick: place, onEnd: onEnded, segments: real ? info.segments : null, chords: chordNotes() });
+    midi.chordsOn = chordPlay;
+    root.dispatchEvent(new CustomEvent('chordlistchange', { bubbles: true }));
     if (was) { midi.rate = was.rate; midi.loop = was.loop; }
     midi.shift = it.transpose || 0;
     if (!was && it.rate) midi.rate = it.rate;
@@ -517,7 +532,10 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get version() { return version; },
     async setTranspose(n) { store.update(it.id, { transpose: n }); it.transpose = n; midi.shift = n; await render(); },
     // Voice: the sung audio (Make it sing) in place of the piano
-    get hasVoice() { return hasVoice(); }, get voice() { return player === voice && !!voice; }, setVoice,
+    get hasVoice() { return hasVoice(); },
+    // Chords: play the chord names too (piano only; hidden when the score has none)
+    get hasChords() { return chordList.length > 0; }, get chordPlay() { return chordPlay; },
+    setChordPlay(on) { chordPlay = !!on; try { localStorage.setItem(cpKey, chordPlay ? '1' : '0'); } catch {} midi?.setChords(chordPlay); }, get voice() { return player === voice && !!voice; }, setVoice,
     voiceReady(v) { Object.assign(it, v); voice?.destroy(); voice = null; if (voiceOn) setVoice(true); },
     zoomReset() { this.setZoom(zDef()); },
     setZoom(z) { zoom = zClamp(z); if (zLocal) { try { localStorage.setItem(zKey, zoom); } catch {} } else store.update(it.id, { zoom: String(zoom) }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zoom * zBase(); relayout(); },
@@ -616,6 +634,7 @@ export function scoreToolbar(bar, it, view) {
     <span class="tg-row">
     <button class="tg-btn ${chordsMode() !== 'off' ? 'on' : ''}" id="sc-chords" data-mode="${chordsMode()}" title="${MODE_LABEL[chordsMode()]}" aria-label="${MODE_LABEL[chordsMode()]}">${iconOn(CHORD_ICON[chordsMode()])}</button>
     <button class="tg-btn ${view.easy ? 'on' : ''}" id="sc-names" aria-pressed="${view.easy}" title="Kids note names: big noteheads with the note's letter" aria-label="Kids note names">${iconOn('baby')}</button>
+    <button class="tg-btn ${view.chordPlay ? 'on' : ''}" id="sc-chordplay" aria-pressed="${view.chordPlay}" title="Play the chords too: the chord names above the bars on the piano" aria-label="Play chords"${view.hasChords && !view.voice ? '' : ' hidden'}>${iconOn('chordplay')}</button>
     <button class="tg-btn ${view.voice ? 'on' : ''}" id="sc-voice" aria-pressed="${view.voice}" title="Voice: hear it sung (off = piano only)" aria-label="Voice"${view.hasVoice ? '' : ' hidden'}>${iconOn('voice')}</button>
     </span>`;
 
@@ -635,7 +654,11 @@ export function scoreToolbar(bar, it, view) {
   // speed, 5% at a time; 100% = the score's own tempo (never shown)
   // Voice: the sung audio has its own tempo and key — a tempo or key change goes back to the piano
   const voiceBtn = $('#sc-voice', bar);
-  const vl = () => { voiceBtn.hidden = !view.hasVoice; voiceBtn.classList.toggle('on', view.voice); voiceBtn.setAttribute('aria-pressed', String(view.voice)); $('#sc-rate', bar).textContent = speedNow(); setPlay(); };
+  const cpBtn = $('#sc-chordplay', bar);
+  const cpl = () => { cpBtn.hidden = !view.hasChords || view.voice; cpBtn.classList.toggle('on', view.chordPlay); cpBtn.setAttribute('aria-pressed', String(view.chordPlay)); };
+  cpBtn.onclick = () => { view.setChordPlay(!view.chordPlay); cpl(); };
+  host.addEventListener('chordlistchange', cpl); // an edit added / took away chord names
+  const vl = () => { cpl(); voiceBtn.hidden = !view.hasVoice; voiceBtn.classList.toggle('on', view.voice); voiceBtn.setAttribute('aria-pressed', String(view.voice)); $('#sc-rate', bar).textContent = speedNow(); setPlay(); };
   voiceBtn.onclick = async () => { const pr = view.setVoice(!view.voice); vl(); await pr; vl(); };
   const toPiano = (why) => { if (!view.voice) return; view.setVoice(false); vl(); toast(`${why} — back to the piano (the voice sings at its own tempo and key)`); };
   const onSung = (e) => { // "Make it sing" finished for this score: Voice turns on
@@ -694,7 +717,7 @@ export function scoreToolbar(bar, it, view) {
   if (store.mode === 'server') store.refreshJobs().catch(() => {});  // a sing job still running (after a reload): ⋯ says so, and Voice appears when it is done
   return () => {
     offCheck(); offVoice();
-    host.removeEventListener('ended', onEnd); host.removeEventListener('playstate', onEnd); document.removeEventListener('keydown', onSpace); removeEventListener('meowsic-new-items', onSung);
+    host.removeEventListener('ended', onEnd); host.removeEventListener('playstate', onEnd); host.removeEventListener('chordlistchange', cpl); document.removeEventListener('keydown', onSpace); removeEventListener('meowsic-new-items', onSung);
     viewer?.removeEventListener('ukeclose', onUkeClose); viewer?.removeEventListener('uketoggle', onUkeToggle); uke?.destroy(); uke = null;
   };
 }

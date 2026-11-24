@@ -33,7 +33,7 @@ Server (`server/meowsic/`; each file's docstring explains it, and most list thei
 - `barcheck.py`: Check bars on OMR scores. `voice.py` + `singscore.py`: singing. `feedback.py`: the Feedback queue. `ai.py`: offline tag AI.
 - `backup.py`: JSON export / import and daily DB copies. `version.py`: git sha and shell version for health.
 
-Web (`web/js/`): `app.js` is the shell and hash router, `store.js` the library store (server / offline / mock modes), `ui.js` the shared helpers, `audio.js` playback, `device.js` the device class, `easyscore.js` kids note names and no tempo marks.
+Web (`web/js/`): `app.js` is the shell and hash router, `store.js` the library store (server / offline / mock modes), `ui.js` the shared helpers, `audio.js` playback (`chordplay.js`: Play chords), `device.js` the device class, `easyscore.js` kids note names and no tempo marks.
 Views (`web/js/views/`):
 - `library.js`: lists. `item.js`: the viewer frame. `sheet.js`, `chordsview.js`, `score.js`: the three viewers. `info.js`: the one edit popup.
 - `scoreeditor.js` is the ✎ entry: real scores open `editnotes.js` (+ `lyricmode.js`, `lyricspanel.js`, `../midiedit.js`), and preview samples open the old one-line bar (`../scoremodel.js`). `checkbars.js`: Check bars.

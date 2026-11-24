@@ -1,6 +1,7 @@
 // Mock scores: build MusicXML (for drawing) and a note list (for playback) from a small tune
 // description, in the three versions Emi Music Note produces.
 import { chordTones, splitChord, notePc } from './chords.js';
+import { harmonyName } from './chordplay.js';
 
 const DIV = 12; // divisions per quarter: room for 16ths (3) and triplets (4 = triplet eighth)
 // length in twelfths of a beat → [type, dotted, triplet]
@@ -141,8 +142,10 @@ export function xmlInfo(text) {
   let bpm = 0, beats = 4, end = 0;
   const barQ = []; // where each bar of the first part starts, in quarters
   const marks = []; // repeats and endings of each bar of the first part (playOrder)
+  let chords = null; // the chord names (<harmony>) of the first part that has any: [{q, name}]
   for (const part of doc.querySelectorAll('part')) {
     const first = !barQ.length;
+    const hs = [];
     if (first) marks.push(...barMarks(part));
     let div = 1, t = 0; // t in divisions
     const tied = new Map(); // MIDI note → the sounding note a tie carries on
@@ -157,6 +160,12 @@ export function xmlInfo(text) {
         } else if (el.tagName === 'sound' || el.tagName === 'direction') {
           const s = el.tagName === 'sound' ? el : el.querySelector('sound');
           if (s?.getAttribute('tempo') && !bpm) bpm = +s.getAttribute('tempo');
+        } else if (el.tagName === 'harmony') {
+          const tx = (s) => el.querySelector(s)?.textContent ?? '';
+          const k = el.querySelector(':scope > kind');
+          const name = harmonyName({ rootStep: tx('root > root-step'), rootAlter: tx('root > root-alter'), kind: k?.textContent || 'major',
+            kindText: k && k.hasAttribute('text') ? k.getAttribute('text') : null, bassStep: tx('bass > bass-step'), bassAlter: tx('bass > bass-alter') });
+          if (name) hs.push({ q: (t + +(tx(':scope > offset') || 0)) / div, name });
         } else if (el.tagName === 'backup') t -= +el.querySelector('duration').textContent;
         else if (el.tagName === 'forward') t += +el.querySelector('duration').textContent;
         else if (el.tagName === 'note') {
@@ -179,6 +188,7 @@ export function xmlInfo(text) {
         }
       }
     }
+    if (!chords && hs.length) chords = hs.sort((a, b) => a.q - b.q).filter((h, i, a) => !i || Math.abs(h.q - a[i - 1].q) > 1e-6);
   }
   // the bars as they are played (repeats, 1st / 2nd endings): [[from, to] in quarters] for the player, or null
   const order = playOrder(marks);
@@ -191,7 +201,7 @@ export function xmlInfo(text) {
       if (last && Math.abs(last[1] - a) < 1e-6) last[1] = z; else segments.push([a, z]);
     }
   }
-  return { notes: notes.sort((a, b) => a.q - b.q), bpm: bpm || 100, beats, totalQ: end, barQ, order, segments };
+  return { notes: notes.sort((a, b) => a.q - b.q), bpm: bpm || 100, beats, totalQ: end, barQ, order, segments, chords: chords || [] };
 }
 
 // ---- repeats and endings (the same rules as server/meowsic/structops.py play_order) ----

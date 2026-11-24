@@ -39,6 +39,7 @@ Updated: 2026-11-24
 - Record your own singing/talking voice (future beta, in Feedback)
 
 ## Done today (live)
+- Play chords: score toolbar toggle plays the chord names above the bars as piano chords with the score (repeats, from here, tempo, stop; remembered per device)
 - OMR: keep all lyrics; chords from sheet fixed (all 5 benchmark songs 100%); scores remade, old copies in Trash
 - One Day More + Home NDP lyrics fitted; Home NDP lyric-loss bug (Revert) fixed + recovered
 - Verified badge (icon) + library ✓; Tags moved; Key column; library auto-fill on add
