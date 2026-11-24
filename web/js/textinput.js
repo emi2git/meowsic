@@ -47,48 +47,135 @@ function putText(el, text, final) {
 }
 
 // ---------- listening ----------
-let live = null; // { rec, el, btn, before, finals, interim, timer, heard }
-function stopListening(cancel = false) {
-  if (!live) return;
-  live.cancel = cancel;
-  try { live.rec.stop(); } catch {}
+// One recognizer for the whole app (search, Feedback, quick feedback), because iOS / WebKit trips over a
+// second one: start() before the last session's onend throws InvalidStateError or quietly does nothing, and
+// the mic then "pulses" with nothing listening. So:
+//  - start() runs synchronously inside the tap; a tap while the last session is still winding down waits for its
+//    onend (or a watchdog: iOS sometimes never sends one, and that recognizer is then thrown away)
+//  - the button pulses only once the recognizer says it started (onstart / onaudiostart), and stops on onend
+//  - a fast failure (InvalidStateError, no onstart, an early 'aborted' / 'audio-capture') retries once, on a fresh
+//    recognizer; errors say what to do (no speech, no internet, mic blocked)
+//  - our own audio session ('playback', audio.js) blocks the mic on iOS: 'play-and-record' while listening, then back
+//  - the app going to the background ends the session (the words heard so far are kept)
+const START_MS = 1800, FAST_FAIL_MS = 1200, END_MS = 1500, DOUBLE_TAP_MS = 400;
+const MSG = {
+  'no-speech': 'Mic didn’t hear anything — tap to try again',
+  network: 'Speech needs internet on this device',
+  'not-allowed': 'Microphone blocked — allow it in Settings',
+  'service-not-allowed': 'Speech recognition is off — turn on Siri & Dictation in Settings',
+  'audio-capture': 'Mic is busy or missing — tap to try again',
+  'no-start': 'Mic didn’t start — tap to try again',
+};
+const HARD = new Set(['not-allowed', 'service-not-allowed', 'network', 'language-not-supported']);
+let rec = null;    // the one recognizer (made again only when the old one is stuck)
+let live = null;   // the session: { el, btn, lang, before, finals, interim, heard, started, err, cancel, retried, t0, timers }
+let ending = null; // a session told to stop that has not ended yet
+let nextUp = null; // { el, btn } to start once `ending` is over
+let lastMicTap = 0;
+let savedSession;  // the audio session type before the mic took it
+function takeSession() {
+  try { const s = navigator.audioSession; if (s && s.type !== 'play-and-record') { if (savedSession === undefined) savedSession = s.type; s.type = 'play-and-record'; } } catch {}
+}
+function giveSession() {
+  if (savedSession === undefined) return;
+  try { if (navigator.audioSession) navigator.audioSession.type = savedSession; } catch {}
+  savedSession = undefined;
+}
+function show(L, on) {
+  L.btn.classList.toggle('on', on); L.el.classList.toggle('ti-listening', on); L.btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+}
+const setup = (r, lang) => { r.lang = lang; r.interimResults = true; r.continuous = true; r.maxAlternatives = 5; };
+function recognizer(fresh) {
+  if (rec && !fresh) return rec;
+  if (rec) { const old = rec; old.onstart = old.onaudiostart = old.onresult = old.onerror = old.onend = null; try { old.abort(); } catch {} }
+  const r = rec = new SR();
+  r.onstart = r.onaudiostart = () => { const L = live; if (rec !== r || !L || L.started) return; L.started = true; clearTimeout(L.startTimer); show(L, true); arm(L, FIRST_WORD_MS); };
+  r.onresult = (e) => { if (rec === r && live) heard(live, e); };
+  r.onerror = (e) => { const L = live || ending; if (rec === r && L) L.err = e.error || 'error'; };
+  r.onend = () => { if (rec === r) ended(); };
+  return r;
+}
+function arm(L, ms) {
+  clearTimeout(L.timer);
+  L.timer = setTimeout(() => { if (live === L) { if (!L.heard) L.err = 'no-speech'; stopListening(false, 'quiet'); } }, ms);
+}
+const textOf = (L) => tidy([...L.finals.filter(Boolean), L.interim].join(' '));
+function heard(L, e) {
+  L.heard = true;
+  if (!L.started) { L.started = true; clearTimeout(L.startTimer); show(L, true); }
+  let interim = '';
+  for (let i = e.resultIndex; i < e.results.length; i++) {
+    const r = e.results[i], t = bestAlt(r, L.lang);
+    if (r.isFinal) L.finals[i] = t; else interim += ' ' + t;
+  }
+  L.interim = tidy(interim);
+  const now = textOf(L); // the finals so far, then the words still being heard
+  if (now && L.el.isConnected && !L.el.readOnly) putText(L.el, now, false); // live feedback only; the app hears the final text
+  arm(L, SILENCE_MS);
+}
+// why: 'user' (a tap, Cancel, leaving), 'quiet' (silence timer) or 'no-start' (no onstart: may retry once)
+function stopListening(cancel = false, why = 'user') {
+  nextUp = null;
+  const L = live;
+  if (!L) return;
+  L.cancel = cancel; L.why = why;
+  live = null; ending = L;
+  clearTimeout(L.timer); clearTimeout(L.startTimer);
+  show(L, false);
+  try { cancel ? rec.abort() : rec.stop(); } catch {}
+  // iOS sometimes never ends: finish anyway and throw that recognizer away
+  L.endTimer = setTimeout(() => { if (ending === L) { recognizer(true); ended(); } }, END_MS);
+}
+function ended() {
+  const L = ending || live;
+  if (!L) return;
+  live = null; ending = null;
+  clearTimeout(L.timer); clearTimeout(L.startTimer); clearTimeout(L.endTimer);
+  show(L, false);
+  // a fast failure (never started, or dropped at once, nothing heard): try once more, on a fresh recognizer
+  const fast = !L.cancel && !L.heard && !L.retried && !HARD.has(L.err) && (!L.why || L.why === 'no-start')
+    && (!L.started || (Date.now() - L.t0 < FAST_FAIL_MS && ['aborted', 'audio-capture', 'no-speech'].includes(L.err)));
+  if (fast && L.el.isConnected && !nextUp) { recognizer(true); begin(L.el, L.btn, L.before); return; }
+  giveSession();
+  finish(L);
+  if (nextUp) { const q = nextUp; nextUp = null; if (q.el.isConnected) begin(q.el, q.btn); }
+}
+function finish(L) {
+  const { el } = L;
+  if (!el.isConnected || el.readOnly || el.disabled) return;
+  const text = textOf(L);
+  if (text && !L.cancel) { putText(el, el.maxLength > 0 ? text.slice(0, el.maxLength) : text, true); return; }
+  if (el.value !== L.before) putText(el, L.before, false);
+  if (L.cancel || (L.why === 'user' && !L.err)) return; // stopped on purpose before any words: nothing to say
+  const err = !L.started && (!L.err || L.err === 'aborted' || L.err === 'no-start') ? 'no-start' : L.err === 'aborted' ? null : L.err || 'no-speech';
+  if (!err) return;
+  toast(MSG[err] || (err === 'language-not-supported' ? `${LANGS[L.lang]} isn’t supported here` : 'Voice input stopped: ' + err));
+}
+// retryOf: the text before the first try (a retry keeps it)
+function begin(el, btn, retryOf) {
+  const lang = voiceLang(), retry = retryOf !== undefined;
+  const L = live = { el, btn, lang, before: retry ? retryOf : el.value, finals: [], interim: '', heard: false, started: false, err: null, cancel: false, retried: retry, t0: Date.now() };
+  takeSession();
+  try { const r = recognizer(false); setup(r, lang); r.start(); }
+  catch { // InvalidStateError: still busy (or broken) — a fresh recognizer, right now, still inside the tap
+    try { const r = recognizer(true); setup(r, lang); r.start(); }
+    catch { L.err = 'no-start'; L.retried = true; ended(); return; }
+  }
+  // no onstart in time: the mic never came on (and the pulse was never shown)
+  L.startTimer = setTimeout(() => { if (live === L && !L.started) { L.err = 'no-start'; stopListening(false, 'no-start'); } }, START_MS);
 }
 function listen(el, btn) {
+  const now = Date.now();
+  if (now - lastMicTap < DOUBLE_TAP_MS) return; // a double tap counts once (not start-then-stop)
+  lastMicTap = now;
   if (live) { const same = live.el === el; stopListening(); if (same) return; }
-  const lang = voiceLang();
-  const rec = new SR();
-  rec.lang = lang; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 5;
-  const L = live = { rec, el, btn, before: el.value, finals: [], interim: '', heard: false, err: null };
-  const arm = (ms) => { clearTimeout(L.timer); L.timer = setTimeout(() => { if (live === L) { if (!L.heard) L.err = 'no-speech'; try { rec.stop(); } catch {} } }, ms); };
-  btn.classList.add('on'); el.classList.add('ti-listening'); btn.setAttribute('aria-pressed', 'true');
-  rec.onresult = (e) => {
-    L.heard = true;
-    let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      const r = e.results[i], t = bestAlt(r, lang);
-      if (r.isFinal) L.finals[i] = t; else interim += ' ' + t;
-    }
-    L.interim = tidy(interim);
-    const now = tidy([...L.finals.filter(Boolean), L.interim].join(' '));
-    if (now && el.isConnected && !el.readOnly) putText(el, now, false); // live feedback only; the app hears the final text
-    arm(SILENCE_MS);
-  };
-  rec.onerror = (e) => { L.err = e.error || 'error'; };
-  rec.onend = () => {
-    clearTimeout(L.timer);
-    if (live === L) live = null;
-    btn.classList.remove('on'); el.classList.remove('ti-listening'); btn.setAttribute('aria-pressed', 'false');
-    const text = tidy([...L.finals.filter(Boolean), L.interim].join(' '));
-    if (!el.isConnected || el.readOnly || el.disabled) return;
-    if (text && !L.cancel) putText(el, el.maxLength > 0 ? text.slice(0, el.maxLength) : text, true);
-    else {
-      if (el.value !== L.before) putText(el, L.before, false);
-      const msg = { 'not-allowed': 'Microphone not allowed — allow it in the browser settings', 'service-not-allowed': 'Speech recognition not allowed — turn on Siri & Dictation / allow speech recognition', 'no-speech': 'No speech heard', 'audio-capture': 'No microphone found', network: 'Speech recognition needs the internet', 'language-not-supported': `${LANGS[lang]} isn’t supported here` }[L.err];
-      if (!L.cancel && L.err !== 'aborted') toast(msg || (L.err ? 'Voice input stopped: ' + L.err : 'No speech heard'));
-    }
-  };
-  try { rec.start(); arm(FIRST_WORD_MS); } catch (err) { L.err = 'error'; rec.onend(); }
+  else if (nextUp?.el === el) { nextUp = null; return; }
+  if (ending) { nextUp = { el, btn }; return; } // the last session is still winding down: start on its onend
+  begin(el, btn);
 }
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopListening(false); });
+addEventListener('pagehide', () => stopListening(false));
+export const micState = () => ({ live: !!live, started: !!live?.started, ending: !!ending, queued: !!nextUp }); // for tests
 
 // ---------- the mic buttons ----------
 const mics = new Map(); // field → button
@@ -137,7 +224,7 @@ export function startVoice(el) {
   attach(el);
   const btn = mics.get(el);
   if (!btn) return false;
-  if (live?.el !== el) listen(el, btn);
+  if (live?.el !== el && nextUp?.el !== el) { lastMicTap = 0; listen(el, btn); }
   return true;
 }
 export const stopVoice = (cancel = true) => stopListening(cancel);
