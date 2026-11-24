@@ -1,4 +1,5 @@
 // photo → score (beta) through the UI, against the temp server :5190 (sheet "Kiss The Girl p2")
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5190/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });

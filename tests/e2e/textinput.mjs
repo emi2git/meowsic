@@ -1,5 +1,6 @@
 // Voice input + double-tap select-all on every text box (js/textinput.js), with a fake SpeechRecognition.
 // PREVIEW=http://localhost:5236 node textinput.mjs   (or BASE=… for a real server)
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const ORIGIN = process.env.PREVIEW || process.env.BASE?.replace(/\/$/, '') || 'http://localhost:5181';
 const BASE = ORIGIN + (process.env.BASE ? '/' : '/?preview=1');

@@ -3,6 +3,7 @@
 // ⋯ → Request singing voice → job → Voice button appears (on); Play plays the audio with the playhead in sync; tap on
 // the music and dragging the line move the audio; Voice off/on swaps piano ↔ voice at the same spot; Stop goes back to the start; a tempo change
 // keeps the voice (time-stretched to the new tempo); it ends; the choice is remembered; iPhone: a tap on Play starts the audio.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5244/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', args: ['--autoplay-policy=no-user-gesture-required'] });

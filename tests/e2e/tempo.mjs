@@ -5,6 +5,7 @@
 // on, the A–B loop keeps looping at the new tempo; tap the number → type 150, Tap the beat, ↺ back to 96; the tempo
 // is kept per score (the entry's rate, after a reload; the other score keeps its own); Edit notes' ▶ From here and the
 // cue play at the same tempo; Voice: the sung audio is time-stretched (playbackRate, pitch kept) and follows it.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5371/';
 const SHOTS = process.env.SHOTS || '';

@@ -6,6 +6,7 @@
 //   hold to set length → the options sheet (remembered per keyboard);
 //   iPad (touch, paged, fake MIDI): "Next note" from the last note of page 1 turns the page;
 //   no Web MIDI (iPad / iPhone Safari): no chip, nothing attached.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
 const BASE = process.env.BASE || 'http://localhost:5391/';
@@ -142,6 +143,10 @@ console.log('\nMac');
   await tap(53); // F3 = 1/8
   x = await note((n) => n.bar === 4 && n.staff === 1 && n.on === 0);
   check('length key F3: an eighth', x?.dur === 0.5, JSON.stringify(x));
+  await tap(59); // B3 = 1/32
+  x = await note((n) => n.bar === 4 && n.staff === 1 && n.on === 0);
+  check('length key B3: a 32nd, the bar still full', x?.dur === 0.125 && full(await EN(() => window.__editNotes.notes)), JSON.stringify(x));
+  await tap(53);
 
   // next note: three keys walk along bar 6, then across the bar line
   await EN(() => window.__midiEdit.setOpts({ auto: true }));

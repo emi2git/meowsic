@@ -5,6 +5,7 @@
 // not close the view (swipe.js toolOpen). iPad Pro 13 + iPhone Air + Mac, against a test server (BASE, default
 // :5317, a temp data folder — never the real library). Speech recognition is a stand-in that "hears" a sentence.
 // SHOTS = folder for screenshots.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs, { readFileSync } from 'node:fs';
 const BASE = process.env.BASE || 'http://localhost:5317/';

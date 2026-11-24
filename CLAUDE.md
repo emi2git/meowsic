@@ -25,7 +25,7 @@ Server (`server/meowsic/`; each file's docstring explains it, and most list thei
 - `items.py`: items, Trash, tags, plays, ink, files, sheet upload, MusicXML get/put/revert.
 - `jobs.py` + `runners.py`: background jobs (transcribe, omr, lyrics, sing, version) and their runners.
 - `undo.py` + `undolog.py`: Activities rows and their 24 h Undo. `dailycleanup.py`: the daily Final + clean-up.
-- `staffmove.py`: the Edit notes API (`POST /api/items/{id}/editnotes`). It uses `barops`, `rangeops`, `structops`, `noteset`, `barnorm`, `easerests`.
+- `staffmove.py`: the Edit notes API (`POST /api/items/{id}/editnotes`). It uses `barops`, `rangeops`, `structops`, `noteset`, `barnorm`, `easerests`, `divisions` (finer `<divisions>` when a 32nd needs them).
 - `editsafe.py`: Edit notes never loses edits: edit sessions (the 423 lock), drafts on disk (`<data>/drafts/<item>/`), and the rebase that merges a Save onto a score changed meanwhile.
 - `lyricsedit.py`: lyrics by hand and Edit notes → Lyrics. `lyricsfit.py`: a sheet's words placed on a score.
 - `simplepiano.py` + `smoothrhythm.py` + `arrange.py`: the Simple piano versions. `chordfind.py`: chords from notes.
@@ -34,7 +34,7 @@ Server (`server/meowsic/`; each file's docstring explains it, and most list thei
 - `barcheck.py`: Check bars on OMR scores. `voice.py` + `singscore.py`: singing. `feedback.py`: the Feedback queue. `ai.py`: offline tag AI.
 - `backup.py`: JSON export / import and daily DB copies. `version.py`: git sha and shell version for health.
 
-Web (`web/js/`): `app.js` is the shell and hash router, `store.js` the library store (server / offline / mock modes), `ui.js` the shared helpers, `audio.js` playback (`chordplay.js`: Play chords), `device.js` the device class, `easyscore.js` kids note names and no tempo marks.
+Web (`web/js/`): `app.js` is the shell and hash router, `store.js` the library store (server / offline / mock modes), `ui.js` the shared helpers, `audio.js` playback (`chordplay.js`: Play chords), `device.js` the device class, `easyscore.js` kids note names and no tempo marks, `notevalue.js` the note / rest glyphs (SVG) for length buttons and Help.
 Views (`web/js/views/`):
 - `library.js`: lists. `item.js`: the viewer frame. `sheet.js`, `chordsview.js`, `score.js`: the three viewers. `info.js`: the one edit popup.
 - `scoreeditor.js` is the ✎ entry: real scores open `editnotes.js` (+ `lyricmode.js`, `lyricspanel.js`, `../midiedit.js`, `../editdraft.js`: drafts, session, the Save note), and preview samples open the old one-line bar (`../scoremodel.js`). `checkbars.js`: Check bars.
@@ -52,7 +52,8 @@ Views (`web/js/views/`):
 - `scripts/test-smoke` runs pytest (~600 tests, ~2 min) plus `flows.mjs` (~200 checks on the UI preview). Run it before every push.
 - `scripts/test-all` runs pytest plus the main e2e suites (about 30, about 15 min). Each suite gets its own fresh server or preview on a free port with temp data; 4 run at a time, a failed suite gets one more go alone, and a summary comes at the end. `scripts/test-all menus editnotes` runs just those suites. `--list` shows each suite's kind; `--every` adds the extras.
 - By hand: `cd server && .venv/bin/python -m pytest -q`. For e2e, `cd tests/e2e && BASE=http://127.0.0.1:<port>/ node <suite>.mjs` against a dev-server. Preview suites (flows, playback, scorezoom, topcast, touchseek, keycolumn, betakeyboard) take `PREVIEW=http://127.0.0.1:<port>` instead. Most suites also read `SHOTS=<dir>` for screenshots; `offline` and `storage` need `SERVER=<shell command>`, because they stop and start the server.
-- Never point a test at :5180 or `~/Documents/Meowsic`. `reallib.mjs` is the one read-only look at the live library.
+- Never point a test at :5180 or `~/Documents/Meowsic`. Hard guards enforce it: every e2e suite imports `tests/e2e/live-guard.mjs` first (refuses live env vars, exits 3 on any request to :5180); `scripts/meowsic_dev.py` refuses ports ≤ 5300 and the live data folder (or inside it); test-all stops restart-suite servers only via `kill_test_servers` (temp folders only, never the :5180 PID); pytest's default data folder is a temp one. `reallib.mjs` is the one read-only look at the live library: `MEOWSIC_LIVE_READONLY=1 node reallib.mjs` (GETs only).
+- Never signal, debug (lldb / py-spy attach) or kill the live server process; a failed `lldb -p` attach killed it on 2026-11-24. Restarts go through the deploy agent.
 - Extras (`--every`, or by hand) need songs that a fresh server lacks: point BASE at `scripts/dev-server --data <copy of the library>`. They are aimusic, addchords, books, checkbars, easyscore, libversion, metadata, notenames, omr, printscore, real, realedit, resync, simplepiano, touchfill, touchlib, touchpages, touchview, and voice (slow: it loads the SoulX model). `shots.mjs` and `renderall.mjs` are manual tools.
 
 ## How to deploy

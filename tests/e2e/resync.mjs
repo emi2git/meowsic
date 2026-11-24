@@ -1,4 +1,5 @@
 // The app drops items the Mac no longer has (e.g. a split undone elsewhere) when it comes back to the foreground
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 const BASE = process.env.BASE || 'http://localhost:5190/';

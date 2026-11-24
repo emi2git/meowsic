@@ -2,6 +2,7 @@
 // another line → it snaps to a note, the picked notes stay picked (no box, no swipe-close), ▶ From here then plays
 // from the dropped spot; dragging while playing plays on from the new spot; iPad / iPhone: holding it at the page's
 // right edge turns the page. Against a test server (BASE; a fresh temp server, never the real library).
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5371/';
 const SHOTS = process.env.SHOTS || '';

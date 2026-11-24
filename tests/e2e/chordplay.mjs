@@ -4,6 +4,7 @@
 // the toolbar; tapping it turns it on (remembered on this device, after a reload too); Play schedules the chords as
 // piano notes (C = C2 + C3 E3 G3) with the melody, in the play order (the repeat), struck again on beat 1 of each bar;
 // from bar 3 the G held over from bar 2 is struck there; Stop stops them; turned off: no chord notes.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5371/';
 const SHOTS = process.env.SHOTS || '';

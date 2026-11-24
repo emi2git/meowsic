@@ -10,6 +10,7 @@
 //   iPad: Looks right ×2 → none left; the whole page is not shown (no sheet linked).
 //   iPhone: the crop, tap → whole page; Edit notes → close without saving → back in the review at the same bar.
 // Screenshots go to $SHOTS.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
 const BASE = process.env.BASE || 'http://localhost:5371/';

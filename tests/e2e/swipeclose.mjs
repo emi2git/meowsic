@@ -1,6 +1,7 @@
 // Swipe up / down closes a sheet or score only in plain viewing mode: with a tool open (Edit notes,
 // Annotate, Info) it does nothing. The chords strip at the top of a score is a display aid, not a tool: with it on, swipes still close. iPad + iPhone touch emulation, against a test server (BASE, default :5378,
 // a scratchpad copy of the data — never the real library). Makes its own sheet (two icon pages) and score.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import { readFileSync } from 'node:fs';
 const BASE = process.env.BASE || 'http://localhost:5378/';

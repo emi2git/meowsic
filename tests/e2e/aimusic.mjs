@@ -1,6 +1,7 @@
 // AI pieces through the UI (server on $BASE, default :5195, temp data with one AI piece added by
 // ~/git/scripts/meowsic-add-ai-score.py): plain scores (no AI Studio section), listed + counted under Scores,
 // Info says "Source: Meowsic"; a YouTube score's Info shows "YouTube" + the original link (clickable, Copy link)
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5195/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', args: ['--autoplay-policy=no-user-gesture-required'] });

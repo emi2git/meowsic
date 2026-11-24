@@ -1,4 +1,5 @@
 // Screenshot every screen at Mac / iPad / iPhone sizes, light + dark; collect console errors.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const OUT = new URL('./shots/', import.meta.url).pathname;
 import fs from 'fs';

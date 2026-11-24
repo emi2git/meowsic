@@ -4,6 +4,7 @@
 // shows, sorts, set from the ⋯ menu, the selection bar and Info; search finds versions; Pages column on Sheets / Books.
 // Mac + iPad Pro 13 (portrait, landscape) + iPhone Air. Sheet versions it sets are put back at the end.
 // BASE=http://localhost:5230/ (a test server; never :5180)  OUT=dir for screenshots
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5230/';
 const OUT = process.env.OUT || '';

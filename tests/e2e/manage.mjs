@@ -11,6 +11,7 @@
 //   · Trash: Restore, Delete (asks first), Empty Trash (asks first)
 //   · every screen on iPad (1032×1376 touch), iPhone (390×844 touch) and Mac (1440×900): no sideways scroll; screenshots in SHOTS
 import fs from 'node:fs';
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5190/';
 const SHOTS = process.env.SHOTS || '/private/tmp/claude-501/-Users-emi2mac/4133b106-9ccb-4a6c-97de-aed86ecf9500/scratchpad/manage-built';

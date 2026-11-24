@@ -35,7 +35,7 @@ SUITES = {
     'touchseek': 'preview', 'betakeyboard': 'preview',
     'activities': 'server', 'chordplay': 'server', 'hands': 'server', 'tempo': 'server', 'addchords': 'server', 'addmusic': 'server', 'aimusic': 'server', 'books': 'server',
     'booksplit': 'server', 'checkbars': 'server', 'completeinfo': 'server', 'cuedrag': 'server', 'dailycleanup': 'server', 'easyscore': 'server',
-    'dragnote': 'server', 'editnotes': 'server', 'editperf': 'server', 'feedback': 'server', 'jobs': 'server', 'langtoggle': 'server', 'libversion': 'server',
+    'dragnote': 'server', 'editnotes': 'server', 'note32': 'server', 'editperf': 'server', 'feedback': 'server', 'jobs': 'server', 'langtoggle': 'server', 'libversion': 'server',
     'lyricmode': 'server', 'manage': 'server', 'menus': 'server', 'metadata': 'server', 'midiedit': 'server',
     'notenames': 'server', 'organizepages': 'server', 'photoimport': 'server', 'quickfeedback': 'server', 'real': 'server',
     'realedit': 'server', 'renameopen': 'server', 'resync': 'server', 'simplepiano': 'server', 'swipeclose': 'server',
@@ -85,7 +85,7 @@ def run_suite(name, out_dir, timeout):
         log.write_text(f'setup failed: {e}\n'); code = 'setup'
     finally:
         for p in procs: p.stop()
-        if kind == 'restart': subprocess.run(['pkill', '-f', f'--data {env.get("DATA", "@@none")}'], capture_output=True)
+        if kind == 'restart' and env.get('DATA'): dev.kill_test_servers(env['DATA'])  # guarded: never the live server
     text = log.read_text(errors='ignore')
     m = OK_RX.findall(text)
     passed, failed = (int(m[-1][0]), int(m[-1][1])) if m else (None, None)
@@ -155,7 +155,7 @@ def main():
 # BASE pointing at a dev-server on a COPY of the library: scripts/dev-server --data <copy>), or are slow and heavy
 # (voice: loads the SoulX-Singer model; may time out while another sing job runs).
 MAIN = ['flows', 'keycolumn', 'playback', 'scorezoom', 'topcast', 'touchseek', 'betakeyboard',
-        'activities', 'chordplay', 'hands', 'tempo', 'addmusic', 'booksplit', 'completeinfo', 'cuedrag', 'dailycleanup', 'dragnote', 'editnotes', 'editperf', 'feedback', 'jobs', 'langtoggle',
+        'activities', 'chordplay', 'hands', 'tempo', 'addmusic', 'booksplit', 'completeinfo', 'cuedrag', 'dailycleanup', 'dragnote', 'editnotes', 'note32', 'editperf', 'feedback', 'jobs', 'langtoggle',
         'lyricmode', 'manage', 'menus', 'midiedit', 'organizepages', 'photoimport', 'quickfeedback', 'renameopen',
         'swipeclose', 'textinput', 'verified', 'offline', 'storage', 'editsafe']
 if __name__ == '__main__':

@@ -1,4 +1,5 @@
 // Rename a sheet while it is open (iPad): the page files are renamed on the Mac and the open pages keep loading
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 const BASE = process.env.BASE || 'http://localhost:5190/';

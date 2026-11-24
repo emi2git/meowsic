@@ -7,6 +7,7 @@
 //   A–G typed: a rest becomes that note (octave nearest the note before), the next one is picked, a run of letters ·
 //   Shift+letter an octave up · nothing picked: the next rest is written · # / - a semitone · Help lists the keys;
 //   iPad: no help text, a tap picks a note (no drag on touch).
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
 const BASE = process.env.BASE || 'http://localhost:5391/';

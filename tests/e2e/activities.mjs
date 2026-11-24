@@ -2,6 +2,7 @@
 // rename → Undo restores the title; a tag batch → one Undo takes it all back; Stop on a running transcription;
 // rolled-back rows stay, struck through ("Rolled back …"); filter chips; iPad Pro 13 and iPhone Air.
 // CLIP = a short audio file for the running job (default: the scratchpad's clip.wav).
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 const BASE = process.env.BASE || 'http://localhost:5190/';

@@ -1,5 +1,9 @@
 // Help (App section; iPhone: More): where music can come from and how each Add path works. Add music itself stays short.
 import { store } from '../store.js';
+import { noteIcon } from '../notevalue.js';
+
+// Edit notes' length keys: [key, quarters, name]
+const LEN_KEYS = [['1', 0.125, '32nd note'], ['2', 0.25, '16th note'], ['3', 0.5, 'eighth note'], ['4', 1, 'quarter note'], ['5', 2, 'half note'], ['6', 4, 'whole note']];
 
 const sec = (id, title, items) => `<section class="card help-sec" id="help-${id}"><h2>${title}</h2><ul>${items.map((x) => `<li>${x}</li>`).join('')}</ul></section>`;
 
@@ -41,8 +45,9 @@ export function helpView(main) {
         'iPad / iPhone: hold a note, then tap or drag to another for a range; <b>Several</b> adds each tap.',
         'Mac mouse: ⌘-click adds one, Shift-click picks a range. <b>Drag a note</b> up / down to change its pitch (in the key; ⌥ a semitone) or sideways to another beat (onto rests; onto a note of the same length they swap); Esc cancels.',
         'Click a <b>tie or slur</b> to pick it, then its ✕ or ⌫ takes it away.',
-        '<b>Type notes</b>: A–G sets the picked note (or rest) to that letter in the key, nearest octave, then moves on — type a run like CDEFG. Shift+letter an octave higher. A length key first (2–6) sets the rest’s length.',
-        'Keys: ← → next note · Shift ← → range · ⌘A all · Esc let go · ↑ ↓ (or # + / -) semitone · ⌘↑ ⌘↓ octave · Shift ↑ ↓ other hand · J respell · 2–6 length (1/16 … whole) · . dotted · L fill next rest · T tie · S slur · N add a note · ⌫ delete (a rest stays; on a rest: remove it) · ⌘C ⌘X ⌘V · R repeat · W whole bar · K chord name · ⌘Z / ⇧⌘Z undo / redo · space play · Page ↑ ↓ page.',
+        '<b>Type notes</b>: A–G sets the picked note (or rest) to that letter in the key, nearest octave, then moves on — type a run like CDEFG. Shift+letter an octave higher. A length key first (1–6) sets the rest’s length.',
+        `<b>Lengths</b> (keys 1–6, or the buttons): ${LEN_KEYS.map(([k, q, w]) => `<span class="help-len" title="${w}"><kbd>${k}</kbd> ${noteIcon(q)}<span class="sr">${w}</span></span>`).join(' ')} · <kbd>.</kbd> dotted. A picked rest shows rests: ${LEN_KEYS.map(([, q, w]) => `${noteIcon(q, { rest: true })}<span class="sr">${w.replace('note', 'rest')}</span>`).join(' ')}. MIDI keyboard: the low length keys C D E F G B = ${[4, 2, 1, 0.5, 0.25, 0.125].map((q) => noteIcon(q)).join(' ')}.`,
+        'Keys: ← → next note · Shift ← → range · ⌘A all · Esc let go · ↑ ↓ (or # + / -) semitone · ⌘↑ ⌘↓ octave · Shift ↑ ↓ other hand · J respell · 1–6 length · . dotted · L fill next rest · T tie · S slur · N add a note · ⌫ delete (a rest stays; on a rest: remove it) · ⌘C ⌘X ⌘V · R repeat · W whole bar · K chord name · ⌘Z / ⇧⌘Z undo / redo · space play · Page ↑ ↓ page.',
         'A bar left short shows a badge: tap it to fix.',
       ])}
       ${store.mode === 'mock' ? '<p class="muted small">Preview: sheets can be tried with <b>Samples</b>.</p>' : ''}

@@ -1,6 +1,7 @@
 // Manage library → Fix pages: books are not offered (read-only); split a sheet into songs, against a test server (BASE, default :5190). Never the real library.
 // Makes (or reuses) the book "Booksplit test": 10 pages, each a colour + its big page number, so a
 // page can be recognised wherever it ends up. Marks 3 starts, reloads, makes the sheets, undoes.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5190/';
 const TITLE = 'Booksplit test', N = 10;

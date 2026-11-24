@@ -3,9 +3,10 @@
 //   askMidi() / midi.status / inputsOf()   ask Chrome for MIDI access once (kept for the page's life)
 //   readMidi(e)                            a midimessage → { type: 'on' | 'off', midi, vel, t } (or null)
 //   listenMidi(fn)                         every connected input → fn(event); plugged in later too; → stop()
-//   FN_KEYS / FN_BASES                     the low "length keys": C D E F G = 1 … 1/16, A = rest, C# = dot, D# = tie
+//   FN_KEYS / FN_BASES                     the low "length keys": C D E F G B = whole … 32nd, A = rest, C# = dot, D# = tie
 //   holdBeats / pickLen / calibrate        "hold to set length", with the calibration in localStorage
 // Timing: every press / release time is the event's own timeStamp (performance.now() clock).
+import { noteIcon } from './notevalue.js';
 export const PC = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
 export const pcName = (m) => PC[((m % 12) + 12) % 12];
 export const noteName = (m) => pcName(m) + (Math.floor(m / 12) - 1);
@@ -60,14 +61,19 @@ export function listenMidi(fn, onChange = () => {}) {
 }
 
 // ---------- the low length keys ----------
-// offsets from a C: [offset, kind, ticks, label] (ticks: TPQ per quarter, 96 = whole)
+// offsets from a C: [offset, kind, ticks, label] (ticks: TPQ per quarter, 96 = whole; 3 = a 32nd). C D E F G B =
+// whole … 32nd (B: the next white key after the rest's A), A = rest, C# = dot, D# = tie. Lengths are shown as glyphs
+// (fnLabel); the label is their words.
 export const TPQ = 24;
-export const FN_KEYS = [[0, 'len', 96, '1'], [2, 'len', 48, '1/2'], [4, 'len', 24, '1/4'], [5, 'len', 12, '1/8'], [7, 'len', 6, '1/16'], [9, 'rest', 0, 'Rest'], [1, 'dot', 0, 'Dot'], [3, 'tie', 0, 'Tie']];
+export const FN_KEYS = [[0, 'len', 96, 'whole'], [2, 'len', 48, 'half'], [4, 'len', 24, 'quarter'], [5, 'len', 12, 'eighth'], [7, 'len', 6, '16th'], [11, 'len', 3, '32nd'], [9, 'rest', 0, 'Rest'], [1, 'dot', 0, 'Dot'], [3, 'tie', 0, 'Tie']];
+// a length key's glyph (notevalue.js), else its word
+export const fnLabel = (f) => (f.kind === 'len' ? `${noteIcon(f.t / TPQ)}<span class="sr">${f.label} note</span>` : f.label);
 export const FN_BASES = [36, 48, 60];
 export const fnKeys = (base) => new Map(FN_KEYS.map(([off, kind, t, label]) => [base + off, { kind, t, label }]));
 
 // ---------- hold to set length ----------
 // Lengths (ticks) a hold can pick, short → long; dotted ones only with "Dotted" on.
+// (No 32nd: too short to hold on purpose — its length key, button or number key sets it.)
 export const HOLD_PLAIN = [6, 12, 24, 48, 96], HOLD_DOTS = [6, 9, 12, 18, 24, 36, 48, 72, 96];
 // the switch points (in beats) between neighbours: the geometric midpoint √(a·b), so a hold is judged by ratio
 // (0.36 beat is nearer 1/16 than 1/8), never by the arithmetic middle (which would round short holds up)

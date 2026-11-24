@@ -7,13 +7,13 @@
 //   next      with "Next note" on, the next note / rest of the same staff and voice is picked after it (across
 //             bars and pages: the page turns); a whole chord picked → the next whole chord, one note of a chord
 //             → the note at the same place from the top of the next one
-//   length    the low length keys (C D E F G = 1 … 1/16, A = rest, C# = dot, D# = tie) set the picked note's
+//   length    the low length keys (C D E F G B = whole … 32nd, A = rest, C# = dot, D# = tie) set the picked note's
 //             length — pick the length first, then play the note; "Hold to set length": how long the key is
 //             held (at the hold tempo, with the calibration) sets it before moving on
 // Every change is one of the editor's own edits (undo / redo, the play cue, bars kept full, ties, slurs, lyrics).
 // attachMidi(ed) → { paint(slot), destroy() } | null. ed (from editnotes.js): notes, sel (picked notes), busy, step,
 // select(refs), setPitch(refs, midis), setLength(q), dot(), tie(), rest(), toast(msg).
-import { hasMidi, midi, askMidi, inputsOf, listenMidi, fnKeys, FN_BASES, noteName, pickLen, holdBeats, loadCal, TPQ } from './midi.js';
+import { hasMidi, midi, askMidi, inputsOf, listenMidi, fnKeys, fnLabel, FN_BASES, noteName, pickLen, holdBeats, loadCal, TPQ } from './midi.js';
 import { pianoKey, audioCtx, loadPiano } from './audio.js';
 import { esc, sheet } from './ui.js';
 
@@ -66,7 +66,7 @@ export function attachMidi(ed) {
         <label class="me-tg"><input type="checkbox" data-o="auto"${opts.auto ? ' checked' : ''}><span>Next note after each key</span></label>
         <label class="me-tg"><input type="checkbox" data-o="fnOn"${opts.fnOn ? ' checked' : ''}><span>Low keys set the length, from</span>
           <select data-o="fnBase">${FN_BASES.map((m) => `<option value="${m}"${m === opts.fnBase ? ' selected' : ''}>${noteName(m)}</option>`).join('')}</select></label>
-        <p class="muted small me-legend">${[...fnKeys(opts.fnBase)].sort((a, b) => a[0] - b[0]).map(([m, f]) => `<b>${noteName(m)}</b> ${f.label}`).join(' · ')}. Pick the length first, then play the note.</p>
+        <p class="muted small me-legend">${[...fnKeys(opts.fnBase)].sort((a, b) => a[0] - b[0]).map(([m, f]) => `<b>${noteName(m)}</b> ${fnLabel(f)}`).join(' · ')}. Pick the length first, then play the note.</p>
         <label class="me-tg"><input type="checkbox" data-o="hold"${opts.hold ? ' checked' : ''}><span>Hold to set length, at</span>
           <select data-o="holdTempo">${[40, 50, 60, 72, 80, 100, 120].map((b) => `<option value="${b}"${b === opts.holdTempo ? ' selected' : ''}>${b} BPM</option>`).join('')}</select></label>
         <label class="me-tg me-sub"><input type="checkbox" data-o="holdDot"${opts.holdDot ? ' checked' : ''}><span>Dotted lengths too</span></label>
@@ -80,7 +80,7 @@ export function attachMidi(ed) {
       if (!o) return;
       opts[o] = e.target.type === 'checkbox' ? e.target.checked : +e.target.value;
       persist();
-      if (o === 'fnBase') s.el.querySelector('.me-legend').innerHTML = `${[...fnKeys(opts.fnBase)].sort((a, b) => a[0] - b[0]).map(([m, f]) => `<b>${noteName(m)}</b> ${f.label}`).join(' · ')}. Pick the length first, then play the note.`;
+      if (o === 'fnBase') s.el.querySelector('.me-legend').innerHTML = `${[...fnKeys(opts.fnBase)].sort((a, b) => a[0] - b[0]).map(([m, f]) => `<b>${noteName(m)}</b> ${fnLabel(f)}`).join(' · ')}. Pick the length first, then play the note.`;
       if (o === 'sound' && opts.sound) { try { audioCtx(); loadPiano(); } catch {} }
     });
     optSheet = s;

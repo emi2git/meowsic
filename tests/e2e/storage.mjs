@@ -5,6 +5,7 @@
 // SERVER = the shell command that starts the server: this test starts it and stops it for the offline check
 // (without SERVER, BASE must already answer and the offline check is skipped).
 // PREVIEW=http://localhost:5227/ also checks Settings in the UI preview (no Mac).
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 import { spawn } from 'child_process';

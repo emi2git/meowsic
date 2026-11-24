@@ -6,6 +6,7 @@
 // keep full bars, chords stay together → undo / redo → Mac: save into this score (Activities undo puts it back),
 // iPad: save as a new version (tagged "Hands moved"; undone after), iPhone: close without saving (unchanged).
 // Screenshots go to $SHOTS.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5371/';
 const SHOTS = process.env.SHOTS || '/private/tmp/claude-501/-Users-emi2mac/4133b106-9ccb-4a6c-97de-aed86ecf9500/scratchpad/editnotes';

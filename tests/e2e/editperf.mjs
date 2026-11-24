@@ -8,6 +8,7 @@
 //     not replayed);
 //   - three ↑ pressed fast while an edit is on its way all count (the queue), the score is drawn once at the end;
 //   - Undo walks back every step and the notes are the ones before; ties and words stay.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5371/';
 const BUDGET = +(process.env.BUDGET || 700);
