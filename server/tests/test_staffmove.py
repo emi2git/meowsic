@@ -273,7 +273,8 @@ def test_length_shorter_and_longer_keep_bars_full():
     # D5 (beat 2) longer: a half note over the E5 → the E5 is written over, the bar still adds up
     d5 = refs(out, lambda n: n['midi'] == 74 and n['bar'] == 0)
     out2, _ = sm.edit(out, {'op': 'len', 'refs': d5, 'q': 2})
-    assert full(out2) and (0, 1, 1.0, 2.0, 74) in music(out2) and not any(k[0] == 0 and k[2] == 2.0 and k[1] == 1 for k in music(out2))
+    # (a half on beat 2 is spelled quarter~quarter by the meter: it sounds the same)
+    assert full(out2) and {(0, 1, 1.0, 1.0, 74), (0, 1, 2.0, 1.0, 74)} <= music(out2) and not any(k[0] == 0 and k[2] == 2.0 and k[1] == 1 and k[4] != 74 for k in music(out2))
     with pytest.raises(Exception): sm.edit(x, {'op': 'len', 'refs': e5, 'q': 4})       # does not fit the bar
     with pytest.raises(Exception): sm.edit(x, {'op': 'len', 'refs': e5, 'q': 1.25})    # not one written value
 
