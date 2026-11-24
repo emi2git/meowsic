@@ -98,6 +98,12 @@ progress { width: 100%; height: 8px; accent-color: var(--acc); }
 .nav i.live { background: var(--acc); color: var(--acc-ink); border-radius: 99px; padding: 0 7px; }
 .nav:hover { background: color-mix(in srgb, var(--acc) 8%, transparent); }
 .nav.on { background: var(--card); box-shadow: var(--shadow); color: var(--acc-text); }
+/* Library is the top entry (opens All music, total count); its four kinds sit indented under it */
+.nav.lib { font-weight: 650; }
+.nav.sub { padding-left: 28px; }
+.top .help-link { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: var(--acc-text); padding: 6px 10px; border-radius: 10px; }
+.top .help-link svg { width: 18px; height: 18px; }
+.top .help-link:hover { background: color-mix(in srgb, var(--acc) 8%, transparent); }
 .side-foot { margin-top: auto; padding: 12px 10px 0; display: flex; gap: 8px; align-items: center; color: var(--ok); font-size: 13px; font-weight: 600; }
 .tabbar { display: none; }
 
