@@ -1,6 +1,8 @@
-// Score zoom: "100%" draws at the old 75% size (OSMD zoom 0.75); +/− steps stay 15% of the label.
-// Zooms saved on the old scale (a number on the entry, device key meowsic-zoom-<id>) are read as old / 0.75,
-// so they look the same as before. Mac, iPad, iPhone; screenshots in OUT.
+// Score zoom: "100%" is each device's default. Mac / iPad draw it at OSMD zoom 0.75 (the old 75%),
+// iPhone at 0.62 (the old iPhone default). +/- steps stay 15% of the label.
+// Saved zooms keep their drawn size: entry number / device key meowsic-zoom-<id> (drawn) -> drawn / base,
+// device key meowsic-scorezoom-<id> (label x 0.75) -> label x 0.75 / base; both move to meowsic-devzoom-<id>, once.
+// Mac, iPad, iPhone; screenshots in OUT.
 // PREVIEW=http://localhost:5371 OUT=<dir> node scorezoom.mjs   (static server: python3 -m http.server 5371 -d web)
 import puppeteer from 'puppeteer-core';
 const ORIGIN = process.env.PREVIEW || 'http://localhost:5181';
@@ -57,20 +59,26 @@ for (const [name, w, h] of [['ipad', 1032, 1376], ['iphone', 420, 912]]) {
   await q.goto(BASE + '#/library', { waitUntil: 'networkidle0' }); await q.reload({ waitUntil: 'networkidle0' });
   await mock(q, 1.5); // the entry's zoom is the Mac's: ignored on touch devices
   await open(q);
-  const want = name === 'iphone' ? 0.62 * 0.75 : 0.75;
+  const base = name === 'iphone' ? 0.62 : 0.75;
   const s = await size(q);
-  check(`${name}: default drawn at ${want}`, s && Math.abs(s.z - want) < 0.01, JSON.stringify(s));
+  check(`${name}: default label 100%`, (await label(q)) === '100%', await label(q));
+  check(`${name}: default drawn at ${base}`, s && Math.abs(s.z - base) < 0.01, JSON.stringify(s));
   check(`${name}: paged, "Page 1 of N"`, /Page 1 of \d+/.test(await q.$eval('#pageno', (e) => e.textContent).catch(() => '')));
   check(`${name}: no scrolling`, await q.evaluate(() => [document.scrollingElement, document.querySelector('#main'), document.querySelector('#it-body')].every((e) => !e || e.scrollHeight <= e.clientHeight + 1)));
   await q.screenshot({ path: `${OUT}/${name}-100.png` });
-  // the old device key: same size as before
-  await q.evaluate((i) => { localStorage.removeItem('meowsic-scorezoom-' + i); localStorage.setItem('meowsic-zoom-' + i, '0.9'); }, ID);
-  await open(q);
-  const so = await size(q);
-  check(`${name}: old device zoom 0.9 → 120%, same size, key moved`, Math.abs(so.z - 0.9) < 0.01 && await q.evaluate((i) => localStorage.getItem('meowsic-scorezoom-' + i) === '1.2' && localStorage.getItem('meowsic-zoom-' + i) === null, ID), JSON.stringify(so));
-  if (name === 'ipad') check('ipad: label 120%', (await label(q)) === '120%', await label(q));
+  const keys = () => q.evaluate((i) => [localStorage.getItem('meowsic-devzoom-' + i), localStorage.getItem('meowsic-scorezoom-' + i), localStorage.getItem('meowsic-zoom-' + i)], ID);
+  for (const [k, v, drawn] of [['meowsic-zoom-', '0.9', 0.9], ['meowsic-scorezoom-', '1.2', 0.9]]) {
+    await q.evaluate((i, k, v) => { localStorage.removeItem('meowsic-devzoom-' + i); localStorage.setItem(k + i, v); }, ID, k, v);
+    await open(q);
+    const want = Math.round((drawn / base) * 100) / 100, so = await size(q), ks = await keys();
+    check(`${name}: ${k}<id> ${v} -> ${Math.round(want * 100)}%, drawn ${drawn}, key moved`, Math.abs(so.z - drawn) < 0.01 && (await label(q)) === `${Math.round(want * 100)}%` && ks[0] === String(want) && ks[1] === null && ks[2] === null, `${await label(q)} ${JSON.stringify(so)} ${JSON.stringify(ks)}`);
+    await open(q);
+    check(`${name}: reopens the same (not converted twice)`, Math.abs((await size(q)).z - drawn) < 0.01 && (await label(q)) === `${Math.round(want * 100)}%`, await label(q));
+  }
+  await q.$eval('#sc-zreset', (e) => e.click()); await sleep(600); // iPhone: the stepper sits in the ⋯ panel
+  check(`${name}: reset -> 100% at ${base}`, (await label(q)) === '100%' && Math.abs((await size(q)).z - base) < 0.01, `${await label(q)} ${JSON.stringify(await size(q))}`);
   // note names on
-  await q.evaluate((i) => localStorage.removeItem('meowsic-scorezoom-' + i), ID);
+  await q.evaluate((i) => localStorage.removeItem('meowsic-devzoom-' + i), ID);
   await open(q);
   const nb = await q.$('#sc-names');
   if (nb) { await nb.click(); await sleep(1500); check(`${name}: note names drawn`, (await q.$$eval('#osmd text.nl', (e) => e.length)) > 0); await q.screenshot({ path: `${OUT}/${name}-names.png` }); await nb.click(); await sleep(800); }
