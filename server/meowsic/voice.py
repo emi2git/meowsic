@@ -1,6 +1,8 @@
-"""Make it sing (beta): a score with English lyrics -> a sung vocal + soft piano, saved with the score.
+"""Make it sing (beta): a score with English or Chinese lyrics -> a sung vocal + soft piano, saved with the score.
 
-POST /api/items/{id}/sing   -> a 'sing' job (sing/sing.py in SoulX-Singer's own venv, in a subprocess)
+POST /api/items/{id}/sing   -> a 'sing' job (sing/sing.py in SoulX-Singer's own venv, in a subprocess);
+                               optional body {voice, octave}: the singer (default: the best for the score's language,
+                               en_target for English, zh_target for Chinese) and octaves to move the melody
 GET  /api/items/{id}/vocal  -> the rendered audio (m4a; Range requests, so Safari can seek)
 The score keeps the file name in score.vocal_audio ('<folder> vocal.m4a') and the tempo it was sung at in
 score.vocal_bpm: the player's Voice toggle plays it in place of the piano and maps the playhead with that tempo.
@@ -13,7 +15,9 @@ import subprocess
 import threading
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+import re
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from . import singscore
@@ -42,12 +46,22 @@ def score_xml(cf, it) -> Path:
 
 
 @router.post('/items/{item_id}/sing', status_code=201)
-def make_it_sing(item_id: str, request: Request, c=Depends(conn), cf=Depends(cfg)):
+def make_it_sing(item_id: str, request: Request, body: dict | None = Body(None), c=Depends(conn), cf=Depends(cfg)):
     it = must_item(c, item_id)
     xml = score_xml(cf, it)
     if not singscore.has_lyrics(xml.read_text(encoding='utf-8')):
-        raise HTTPException(400, 'This score has no English lyrics to sing')
-    return start_job(request.app, 'sing', it['title'], 'Singing voice', ['voice'], {'fromItemId': item_id})
+        raise HTTPException(400, 'This score has no lyrics to sing')
+    body = body if isinstance(body, dict) else {}
+    params = {'fromItemId': item_id}
+    voice = body.get('voice')
+    if voice:  # sing.py checks it against the installed voices
+        if not isinstance(voice, str) or not re.fullmatch(r'[a-z][a-z0-9_]{1,30}', voice): raise HTTPException(400, 'Unknown voice')
+        params['voice'] = voice
+    if body.get('octave') is not None:
+        if not isinstance(body['octave'], int) or isinstance(body['octave'], bool) or not -2 <= body['octave'] <= 2:
+            raise HTTPException(400, 'octave must be a whole number from -2 to 2')
+        params['octave'] = body['octave']
+    return start_job(request.app, 'sing', it['title'], 'Singing voice', ['voice'], params)
 
 
 @router.get('/items/{item_id}/vocal')
@@ -130,6 +144,8 @@ def sing_runner(ctx: JobContext):
     out = ctx.work / 'sing'
     cmd = [str(py), str(SING), '--xml', str(xml), '--out', str(out), '--name', 'vocal', '--check']
     if it.get('bpm'): cmd += ['--bpm', str(it['bpm'])]
+    if ctx.params.get('voice'): cmd += ['--voice', str(ctx.params['voice'])]
+    if ctx.params.get('octave') is not None: cmd += ['--octave', str(int(ctx.params['octave']))]
     ctx.update(stage=0, progress=0)
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=str(REPO),
                             env={**os.environ, 'PYTORCH_ENABLE_MPS_FALLBACK': '1'})

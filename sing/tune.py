@@ -1,13 +1,15 @@
 """Gentle pitch correction for the sung vocal: snap each note's pitch centre to the score, keep the vibrato.
 
 target_curve(notes, bpm, shift, times)   -> score pitch per frame (midi, 0 = rest)
-retune_f0(f0, times, target, strength)  -> f0 with each note's slow drift pulled to the score; vibrato, scoops
+retune_f0(f0, times, target, strength)  -> f0 with each note's slow drift pulled to the score; wrong-octave, short
+                                          and clearly wrong notes moved whole onto the score; vibrato, scoops
                                           between notes and unvoiced frames left alone (numpy only, testable)
 retune(y, sr, notes, bpm, shift)         -> WORLD (pyworld) analysis -> retune_f0 -> resynthesis; returns (y, report)
 
-The slow part of the pitch error is a ~0.2 s moving median of (sung - score) in cents; what is left over (vibrato,
-jitter) rides on top unchanged. The correction itself is smoothed over ~40 ms so note changes stay legato, and a
-frame more than 3 semitones off (a tracking slip, or a deliberate ornament) is not touched.
+The slow part of the pitch error is a ~0.2 s (0.1 s on notes under 0.6 s) moving median of (sung - score) in cents; what is left over (vibrato,
+jitter) rides on top unchanged. The correction itself is smoothed over ~25 ms so note changes stay legato, and a
+frame more than 3 semitones from its note's own centre (a tracking slip, or an ornament) is not touched. A note the
+model sang in the wrong octave, or a note more than 100 cents off, is moved whole onto the score.
 """
 import numpy as np
 
@@ -32,28 +34,45 @@ def _moving(x, w, fn):
     return fn(win, axis=1)
 
 
-def retune_f0(f0, times, target, strength=0.85, slow_s=0.2, smooth_s=0.04, max_cents=300.0):
+def retune_f0(f0, times, target, strength=0.85, slow_s=0.2, fast_s=0.1, smooth_s=0.025, max_cents=300.0, short_s=0.0, wrong_c=100.0):
+    """Per note (a run of frames with one target):
+    - a note sung in the wrong octave is moved to the score's octave (an octave jump is a wrong note, not a style);
+    - frames more than max_cents from the note's own median are tracking slips / ornaments and stay untouched;
+    - the slow drift (moving median, slow_s) is pulled to the score by `strength`; vibrato / jitter ride on top;
+    - a note whose centre is more than wrong_c off (a wrong note), or shorter than short_s (off by default: on the
+      model's fast notes WORLD's f0 is too rough to snap them whole), is moved as a whole, fully, onto the score pitch.
+    The drift window is slow_s (keeps a 5-6 Hz vibrato) on notes of 0.6 s and longer, fast_s on shorter ones (0.2 s
+    scored worse on One Day More's 16ths).
+    The correction is smoothed over smooth_s so note changes stay legato without lagging at note starts."""
     f0 = np.asarray(f0, dtype=float)
     fp = float(times[1] - times[0]) if len(times) > 1 else FRAME_S
-    ok = (f0 > 0) & (target > 0)
+    v = (f0 > 0) & (target > 0)
     dev = np.zeros_like(f0)
-    dev[ok] = 1200 * np.log2(f0[ok] / (440.0 * 2 ** ((target[ok] - 69) / 12)))
-    oct_ = np.round(dev / 1200) * 1200  # sung an octave away from the score: tune to that octave
-    dev = dev - oct_
-    ok &= np.abs(dev) <= max_cents
+    dev[v] = 1200 * np.log2(f0[v] / (440.0 * 2 ** ((target[v] - 69) / 12)))
+    ok = np.zeros_like(v)
     corr = np.zeros_like(f0)
     w = max(3, int(round(slow_s / fp)) | 1)
-    # per note (a run of frames with the same target), the slow drift = moving median inside that note only
     edges = np.flatnonzero(np.diff(np.r_[-1, target, -1]) != 0)
     for a, b in zip(edges[:-1], edges[1:]):
         if target[a] <= 0: continue
-        m = ok[a:b]
+        m = v[a:b].copy()
         if m.sum() < 3: continue
         d = dev[a:b].copy()
+        med = float(np.median(d[m]))
+        octv = 1200.0 * round(med / 1200)  # sung an octave (or two) off: back to the score's octave
+        d -= octv
+        m &= np.abs(d - (med - octv)) <= max_cents
+        if m.sum() < 3: continue
+        ok[a:b] = m
+        centre = float(np.median(d[m]))
+        if (b - a) * fp < short_s or abs(centre) > wrong_c:
+            corr[a:b] = -octv - centre  # whole note onto the score
+            continue
         idx = np.flatnonzero(m)
-        d[~m] = np.interp(np.flatnonzero(~m), idx, d[idx]) if (~m).any() else d[~m]
-        slow = _moving(d, min(w, (len(d) // 2) * 2 + 1 if len(d) > 2 else 1), np.median)
-        corr[a:b] = -strength * slow
+        if (~m).any(): d[~m] = np.interp(np.flatnonzero(~m), idx, d[idx])
+        wn = w if (b - a) * fp >= 0.6 else max(3, int(round(fast_s / fp)) | 1)
+        slow = _moving(d, min(wn, (len(d) // 2) * 2 + 1 if len(d) > 2 else 1), np.median)
+        corr[a:b] = -octv - strength * slow
     sw = max(1, int(round(smooth_s / fp)))
     if sw > 1:
         k = np.hanning(sw + 2)[1:-1]; k /= k.sum()
@@ -74,8 +93,7 @@ def note_stats(f0, times, target):
         v = seg > 0
         if v.sum() < 3: continue
         c.append(1200 * np.log2(np.median(seg[v]) / (440.0 * 2 ** ((tg[0] - 69) / 12))))
-    c = np.abs(np.array(c)) if c else np.array([np.inf])
-    c = np.minimum(c, np.abs(c - 1200))
+    c = np.abs(np.array(c)) if c else np.array([np.inf])  # an octave off counts as wrong
     return {'notes': int(len(c)), 'in25': round(100 * float(np.mean(c <= 25)), 1), 'in50': round(100 * float(np.mean(c <= 50)), 1)}
 
 
