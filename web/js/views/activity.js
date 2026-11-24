@@ -9,10 +9,10 @@ import { $, esc, ago, sheet, toast } from '../ui.js';
 const WHAT = { transcribe: 'Score from recording', version: 'Make another version', omr: 'Score from photo', tags: 'AI tag suggestions',
   'add-sheet': 'Add sheets', 'add-chords': 'Add chords', bin: 'Moved to Trash', print: 'Printed', 'make-tags': 'Generate tags', restore: 'Restored',
   delete: 'Deleted for good', import: 'Import', edit: 'Edited', 'tag-rename': 'Tag renamed', 'tag-delete': 'Tag deleted',
-  split: 'Split', join: 'Joined', book: 'Made a book', unbook: 'Made a sheet', booksplit: 'Book → sheets', unbooksplit: 'Sheets → book', songsplit: 'Split songs', unsongsplit: 'Songs put back', pages: 'Organize pages', reviewed: 'Complete song', unreviewed: 'Check again', organize: 'Organize pages scan',
+  split: 'Split', join: 'Joined', book: 'Made a book', unbook: 'Made a sheet', booksplit: 'Book → sheets', unbooksplit: 'Sheets → book', songsplit: 'Split songs', unsongsplit: 'Songs put back', pages: 'Fix pages', reviewed: 'Marked fine', unreviewed: 'Check again', organize: 'Check suspect songs',
   trim: 'Trimmed', 'cleanup-marks': 'Clean up marks', cleanup: 'Clean up', suggest: 'Name suggestion', 'ai-score': 'AI music',
   'import-photos': 'From Photos', 'photo-import': 'From Photos', 'photo-unimport': 'From Photos undone', migrate: 'One-off change', rename: 'Renamed', rollback: 'Undo', change: 'Change', 'lyrics-fit': 'Fit lyrics', 'edit-notes': 'Edit notes', metafill: 'Song info filled', autofill: 'Info from your library' };
-const what = (a) => (isJob(a) ? WHAT[a.kind || a.type] : a.type === 'version' ? 'Version set' : a.type === 'tags' ? 'Tags' : WHAT[a.type]) || a.type;
+export const what = (a) => (isJob(a) ? WHAT[a.kind || a.type] : a.type === 'version' ? 'Version set' : a.type === 'tags' ? 'Tags' : WHAT[a.type]) || a.type;
 const fmt = (t) => new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 const STATUS = { running: 'Running', queued: 'Waiting', done: 'Done', cancelled: 'Cancelled', failed: 'Failed' };
 const hm = (t) => new Date(t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
