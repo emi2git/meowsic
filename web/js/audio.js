@@ -120,7 +120,7 @@ export class ScorePlayer {
     if (!this.playing) return this.posQ;
     const t = this.ctx.currentTime;
     const a = this.anchors.filter((x) => x.t0 <= t).pop() || this.anchors[0];
-    return a.q0 + (t - a.t0) * this.qps;
+    return a.q0 + Math.max(0, t - a.t0) * this.qps; // not before the start while the first notes are on their way
   }
   async play() {
     if (this.playing || this.starting) return;

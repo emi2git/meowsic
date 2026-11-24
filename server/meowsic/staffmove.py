@@ -284,6 +284,12 @@ def _write_bar(m, voices, other, bar_len, div, beat):
             else:
                 kids.extend(ev.graces); kids.extend(ev.notes)
             cur = ev.end
+            if k == 0:  # a chord name inside a long note / rest: step back to its time, then on again
+                for o in [o for o in pend if o[2].tag == 'harmony' and ev.on < o[0] < cur]:
+                    pend.remove(o)
+                    b = ET.Element('backup'); ET.SubElement(b, 'duration').text = str(int(cur - o[0])); kids.append(b)
+                    kids.append(o[2])
+                    f = ET.Element('forward'); ET.SubElement(f, 'duration').text = str(int(cur - o[0])); kids.append(f)
         if k == 0:
             for t, _, e in list(pend):
                 if t > cur:
@@ -1024,6 +1030,8 @@ def edit_ex(text: str, op: dict, info=None):
     if kind in RANGE_OPS: return range_op(text, op, info)  # copy / cut / paste / Repeat, respelling, accidentals
     from .structops import OPS as STRUCT_OPS, struct_op
     if kind in STRUCT_OPS: return struct_op(text, op, info)  # pickup, key / time from here, repeats, endings
+    from .chordops import OPS as CHORD_OPS, chord_op
+    if kind in CHORD_OPS: return chord_op(text, op, info)  # chord names, Realize to left hand
     if kind in ('fillbar', 'bartime'): return _bar_op(text, kind, op, info), [], 0
     if kind not in ('move', 'pitch', 'len', 'fill', 'restdel', 'delete', 'add', 'tie', 'slur', 'unslur', 'set'): raise HTTPException(400, f'Unknown edit: {kind}')
     root = ET.fromstring(text.encode('utf-8'))
@@ -1360,7 +1368,7 @@ def _what(ops):
     for o in ops:
         k = o.get('op') or ('move' if 'to' in o else '')
         k = f'move{o.get("to")}' if k == 'move' else k
-        cnt[k] = cnt.get(k, 0) + (len(o.get('bars') or []) if k == 'unmark' else 1 if k in ('alt', 'delbar', 'fillbar', 'bartime', 'clearbar', 'addhand', 'insbar', 'addstaff', 'delstaff', 'clear', 'paste', 'pickup', 'keysig', 'timesig', 'repeat', 'ending') else len(o.get('refs') or []))
+        cnt[k] = cnt.get(k, 0) + (len(o.get('bars') or []) if k == 'unmark' else 1 if k in ('alt', 'delbar', 'fillbar', 'bartime', 'clearbar', 'addhand', 'insbar', 'addstaff', 'delstaff', 'clear', 'paste', 'pickup', 'keysig', 'timesig', 'repeat', 'ending', 'chord', 'realize') else len(o.get('refs') or []))
     words = {'move1': lambda n: f'{s(n)} to the right hand', 'move2': lambda n: f'{s(n)} to the left hand', 'move3': lambda n: f'{s(n)} to staff 3',
              'pitch': lambda n: f'{s(n)} higher / lower', 'len': lambda n: f'{n} note{"s" if n != 1 else ""} / rest{"s" if n != 1 else ""} longer / shorter',
              'fill': lambda n: f'{s(n)} filled into the rest after', 'restdel': lambda n: f'{n} rest{"s" if n != 1 else ""} removed',
@@ -1379,7 +1387,8 @@ def _what(ops):
              'courtesy': lambda n: f'{n} courtesy accidental{"s" if n != 1 else ""} changed',
              'pickup': lambda n: 'the pickup changed', 'keysig': lambda n: f'{n} key change{"s" if n != 1 else ""}',
              'timesig': lambda n: f'{n} time change{"s" if n != 1 else ""}', 'repeat': lambda n: f'{n} repeat sign{"s" if n != 1 else ""} changed',
-             'ending': lambda n: f'{n} ending{"s" if n != 1 else ""} changed'}
+             'ending': lambda n: f'{n} ending{"s" if n != 1 else ""} changed',
+             'chord': lambda n: f'{n} chord name{"s" if n != 1 else ""} changed', 'realize': lambda n: f'left hand written from the chords{f" ({n} times)" if n != 1 else ""}'}
     verses = sorted({str(o.get('verse') or '1') for o in ops if o.get('op') == 'lyrics'}, key=lambda v: (len(v), v))
     out = [words[k](n) for k, n in cnt.items() if k in words and n] + ([f'lyrics of verse{"s" if len(verses) > 1 else ""} {", ".join(verses)}'] if verses else [])
     return ', '.join(out) or 'no notes'

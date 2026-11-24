@@ -1236,6 +1236,10 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .np-fifths { position: relative; width: min(360px, 84vw); aspect-ratio: 1; margin: 8px auto 4px; border-radius: 50%; background: var(--bg2); }
 .np-fifths button { position: absolute; transform: translate(-50%, -50%); min-width: 50px; min-height: 44px; padding: 2px 6px; border-radius: 22px; display: flex; flex-direction: column; align-items: center; line-height: 1.05; font-weight: 600; }
 .np-fifths button small { font-weight: 400; font-size: 11px; opacity: .7; }
+.np-chord input { width: 100%; font-size: 22px; min-height: 48px; padding: 6px 12px; }
+.np-chord-err { min-height: 1.2em; color: var(--danger, #c0392b); margin: 4px 0; }
+.np-patterns button { display: flex; flex-direction: column; align-items: flex-start; flex: 1 1 140px; min-height: 58px; padding: 8px 12px; text-align: left; }
+.np-patterns small { opacity: .7; font-weight: 400; }
 .np-range { fill: #2f7de1; fill-opacity: .10; stroke: #2f7de1; stroke-width: 2.5; stroke-opacity: .75; pointer-events: none; }
 .np-acts .np-clip button { min-width: 40px; padding: 0 9px; display: inline-flex; align-items: center; justify-content: center; }
 .np-clip .ic { width: 19px; height: 19px; }

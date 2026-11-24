@@ -995,6 +995,107 @@ async function structure(name, vp) {
   await page.close();
 }
 if (process.env.ONLY === 'structure') { await structure('Mac', MAC); await structure('iPad', IPAD); await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
+// ---- chord names: tap above the top staff (an empty beat or a chord name) → type it (the chord grammar checks it);
+// K on a picked note; Realize to left hand (block / root–fifth / broken) over a range; the chord list keeps working ----
+async function chordNames(name, vp) {
+  console.log(`\nChord names ${name}`);
+  const touch = !!vp.hasTouch;
+  const title = `Chords ${name} ${stamp}`;
+  const sc = await send('POST', '/items', { kind: 'score', title, musicxmlText: scoreXml(title) });
+  const page = await b.newPage(); await page.setViewport(vp);
+  page.on('pageerror', (e) => errs.push(`chords ${name}: ${e.message}`));
+  page.on('console', (m) => m.type() === 'error' && !/404|409|400|favicon/.test(m.text()) && errs.push(`chords ${name}: ${m.text()}`));
+  const EN = (f, ...a) => page.evaluate(f, ...a);
+  const idle = async () => { for (let i = 0; i < 60; i++) { await sleep(150); if (!(await EN(() => window.__editNotes?.busy))) break; } await sleep(700); };
+  const tapXY = async (x, y) => { if (touch) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); await sleep(250); };
+  const act = async (a) => { if (touch) await page.tap(`.notes-panel [data-a="${a}"]`); else await page.click(`.notes-panel [data-a="${a}"]`); await sleep(200); };
+  const btn = async (sel) => { const h = await page.$(sel); if (touch) await h.tap(); else await h.click(); await sleep(200); };
+  const chords = () => EN(() => window.__editNotes.chords.map((c) => `${c.bar}@${c.on}:${c.name}`).join(' '));
+  const lh = (bar) => EN((bar) => window.__editNotes.notes.filter((n) => n.bar === bar && n.staff === 2 && !n.rest).map((n) => n.midi + '@' + n.on + ':' + n.dur).join(' '), bar);
+  // a point above the top staff over the note of bar `bar` at onset `on`
+  const above = (bar, on) => EN(([bar, on]) => {
+    const n = window.__editNotes.notes.find((n) => n.bar === bar && n.staff === 1 && n.on === on && !n.rest);
+    const g = document.querySelector(`#paper g[data-ref="${n.ref}"]`).getBoundingClientRect();
+    const x = g.left + g.width / 2;
+    let y = g.top; // up to the chord-name strip over the top staff, then a little into it
+    while (y > 0 && !window.__editNotes.chordAt(x, y)) y -= 2;
+    return { x, y: y - 14 };
+  }, [bar, on]);
+  await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' });
+  await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(600);
+  await page.evaluate(() => document.querySelector('#it-more').click()); await sleep(200);
+  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+  await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(600);
+
+  // 1. tap above bar 1 beat 1: the chord sheet; a wrong name is refused, then C
+  let p = await above(0, 0);
+  await tapXY(p.x, p.y);
+  check('tap above the top staff: the chord name sheet for bar 1, beat 1', /bar 1, beat 1/.test(await page.$eval('.modal h2', (e) => e.textContent).catch(() => '')), await page.$eval('.modal h2', (e) => e.textContent).catch(() => 'no sheet'));
+  await page.type('#np-chord', 'Hm7'); await sleep(150);
+  check('…“Hm7” is not a chord name: Use is off', (await page.$eval('.modal [data-ok]', (e) => e.disabled)) && /not a chord name/.test(await page.$eval('#np-chord-err', (e) => e.textContent)));
+  await page.$eval('#np-chord', (e) => { e.value = ''; }); await page.type('#np-chord', 'C'); await sleep(100);
+  await btn('.modal [data-ok]'); await idle();
+  check('C on bar 1, beat 1', (await chords()) === '0@0:C', await chords());
+  await sleep(400);
+  check('…drawn above the staff', (await page.$$eval('#osmd svg text', (e) => e.map((t) => t.textContent.trim()))).includes('C'));
+  if (name === 'Mac') await page.screenshot({ path: `${SHOTS}/Chords-${name}.png` });
+  // 2. G7 on beat 3 (Mac: K on the picked note; iPad: tap above it)
+  if (!touch) {
+    await EN(() => window.__editNotes.select([window.__editNotes.notes.find((n) => n.bar === 0 && n.staff === 1 && n.on === 2).ref])); await sleep(150);
+    await page.keyboard.press('k'); await sleep(300);
+  } else { p = await above(0, 2); await tapXY(p.x, p.y); }
+  check(`${touch ? 'tap above beat 3' : 'K'}: the sheet for beat 3`, /bar 1, beat 3/.test(await page.$eval('.modal h2', (e) => e.textContent).catch(() => '')));
+  check('…the chords already used are offered', (await page.$$eval('.np-used button', (e) => e.map((x) => x.textContent))).includes('C'));
+  await page.type('#np-chord', 'G7'); await page.keyboard.press('Enter'); await idle();
+  // 3. F/A at bar 2, then change it to Dm7, and take a chord away
+  p = await above(1, 0); await tapXY(p.x, p.y);
+  await page.type('#np-chord', 'F/A'); await btn('.modal [data-ok]'); await idle();
+  check('C, G7, F/A', (await chords()) === '0@0:C 0@2:G7 1@0:F/A', await chords());
+  p = await above(1, 0); await tapXY(p.x, p.y);
+  check('tapping a chord name: its sheet, filled in, with Take away', (await page.$eval('#np-chord', (e) => e.value)) === 'F/A' && !!(await page.$('.modal [data-del]')));
+  await page.$eval('#np-chord', (e) => { e.value = ''; }); await page.type('#np-chord', 'Dm7'); await btn('.modal [data-ok]'); await idle();
+  check('changed to Dm7', (await chords()) === '0@0:C 0@2:G7 1@0:Dm7', await chords());
+  p = await above(0, 2); await tapXY(p.x, p.y); await btn('.modal [data-del]'); await idle();
+  check('Take away: G7 gone', (await chords()) === '0@0:C 1@0:Dm7', await chords());
+  await act('undo'); await idle();
+  check('Undo: back', (await chords()) === '0@0:C 0@2:G7 1@0:Dm7');
+
+  // 4. Realize to left hand over bars 1–2 (a range): block chords, then broken chords (one undo step each)
+  const lh3 = await lh(2);
+  await EN(() => window.__editNotes.setRange({ a: 0, b: 8, s0: 1, s1: 2 })); await sleep(200);
+  await act('barmenu');
+  const items = await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
+  check('Bar ▾ has Realize chords to left hand', items.includes('Realize chords to left hand…'), items.join('|'));
+  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Realize chords to left hand…').click()); await sleep(300);
+  check('…over bars 1–2, three patterns', /bars 1–2/.test(await page.$eval('.modal p', (e) => e.textContent)) && (await page.$$eval('.np-patterns button', (e) => e.length)) === 3);
+  const s0 = await EN(() => window.__editNotes.step);
+  await btn('.np-patterns [data-p="block"]'); await idle();
+  check('block: C3 E3 G3 for C, G2 B2 D3 F3 for G7, D3 F3 A3 C4 for Dm7', (await lh(0)) === '48@0:2 52@0:2 55@0:2 43@2:2 47@2:2 50@2:2 53@2:2' && (await lh(1)).split(' ').map((x) => +x.split('@')[0]).sort().join() === '50,53,57,60', `${await lh(0)} | ${await lh(1)}`);
+  check('…bar 3 untouched, one undo step, bars full', (await lh(2)) === lh3 && (await EN(() => window.__editNotes.step)) === s0 + 1 && barsFull(await EN(() => window.__editNotes.xml)));
+  check('…the chord names stay', (await chords()) === '0@0:C 0@2:G7 1@0:Dm7');
+  await act('undo'); await idle();
+  await EN(() => window.__editNotes.setRange({ a: 0, b: 8, s0: 1, s1: 2 })); await sleep(200);
+  await act('barmenu');
+  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Realize chords to left hand…').click()); await sleep(300);
+  await btn('.np-patterns [data-p="broken"]'); await idle();
+  check('broken: C3 G3 E4 G3 in eighths', (await lh(0)).startsWith('48@0:0.5 55@0.5:0.5 64@1:0.5 55@1.5:0.5'), await lh(0));
+  if (name === 'Mac') await page.screenshot({ path: `${SHOTS}/Realize-${name}.png` });
+
+  // 5. save: the chord list (ukulele panel) has them
+  if (!touch) {
+    await act('save'); await sleep(300);
+    await page.evaluate(() => document.querySelector('.np-save [data-mode="this"]').click()); await sleep(2500);
+    const list = await api(`/items/${sc.id}/score-chords`);
+    check('saved: the chord list reads C, G7, Dm7', JSON.stringify(list.chords) === '["C","G7","Dm7"]', JSON.stringify(list));
+    check('…and the score shows them', (await page.$$eval('#osmd svg text', (e) => e.map((t) => t.textContent.trim()))).includes('G7'));
+  } else {
+    await EN(() => { window.__editNotes.close(); }); await sleep(300);
+    await page.evaluate(() => [...document.querySelectorAll('.modal-wrap button')].find((x) => x.textContent.trim() === 'Close')?.click()); await sleep(300);
+  }
+  await send('POST', '/items/trash', { ids: [sc.id] }).catch(() => {});
+  await page.close();
+}
+if (process.env.ONLY === 'chords') { await chordNames('Mac', MAC); await chordNames('iPad', IPAD); await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
 if (process.env.ONLY === 'fits') { await editBarFits(); await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
 if (process.env.ONLY === 'bar') { await barTools('Mac', MAC); await barTools('iPad', IPAD); await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
 // ---- rests: pick one in either hand (whole-bar rests too), change its length, Undo; Fill next rest ----
@@ -1210,6 +1311,8 @@ await rangeTools('Mac', MAC);
 await rangeTools('iPad', IPAD);
 await structure('Mac', MAC);
 await structure('iPad', IPAD);
+await chordNames('Mac', MAC);
+await chordNames('iPad', IPAD);
 await editBarFits();
 await b.close();
 if (errs.length) { console.log('\nconsole errors:'); errs.forEach((e) => console.log('  ', e)); }

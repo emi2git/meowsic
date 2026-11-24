@@ -267,7 +267,7 @@ export async function editNotes(view, it, host, opts = {}) {
       <button class="icon-btn" data-a="redo" ${off(at < steps.length - 1)} title="Redo (⇧⌘Z)" aria-label="Redo"><span class="flip">${iconOn('undo')}</span></button>
       <button class="icon-btn" data-a="close" title="Close (Esc)" aria-label="Close">${iconOn('close')}</button></div>
       ${onlyRests ? `<p class="muted np-help np-rest-help">${plural(rs.length, 'rest')} picked: a length button makes ${rs.length === 1 ? 'it' : 'them'} longer or shorter; “+ Note here” turns ${rs.length === 1 ? 'it' : 'them'} into a note.</p>` : ''}
-      <p class="muted np-help">${isTouch() ? 'Tap notes or rests to pick them, or drag a box around them; hold a note, then tap or drag to another for a range; tap a bar’s empty space for Bar ▾. “Several” adds each tap.' : 'Click a note or rest to pick it · click a bar’s empty space for Bar ▾ · ⌘-click adds one · Shift-click picks a range · drag a box around notes. Keys: ← → next note, Shift ← → range, ⌘A all, ↑ ↓ semitone, ⌘↑ ⌘↓ octave, J respell, 2–6 length, . dotted, E fill next rest, T tie, S slur, N add, ⌘C ⌘X ⌘V, R repeat, Delete, space play, Page ↑ ↓ page.'} A bar left short shows a badge: tap it to fix.</p>
+      <p class="muted np-help">${isTouch() ? 'Tap notes or rests to pick them, or drag a box around them; hold a note, then tap or drag to another for a range; tap above the top staff for a chord name; tap a bar’s empty space for Bar ▾. “Several” adds each tap.' : 'Click a note or rest to pick it · click a bar’s empty space for Bar ▾ · ⌘-click adds one · Shift-click picks a range · drag a box around notes. Keys: ← → next note, Shift ← → range, ⌘A all, ↑ ↓ semitone, ⌘↑ ⌘↓ octave, J respell, 2–6 length, . dotted, E fill next rest, T tie, S slur, N add, ⌘C ⌘X ⌘V, R repeat, K chord name (or click above the staff), Delete, space play, Page ↑ ↓ page.'} A bar left short shows a badge: tap it to fix.</p>
       <div class="np-acts np-tools">
         ${isTouch() ? `<button data-a="several" class="${several ? 'on' : ''}" aria-pressed="${several}" title="Pick several: each tap adds a note">Several</button>` : ''}
         <button data-a="barmenu" class="np-barmenu" aria-haspopup="menu" title="Bar and staff tools: clear or add a hand, insert or delete a bar, add or remove a staff">${tgt ? `Bar ${tgt.bar + 1}` : 'Bar'} ▾</button>
@@ -322,14 +322,14 @@ export async function editNotes(view, it, host, opts = {}) {
     e.stopPropagation();
     const dot = e.target.closest('.score-dots i');
     if (dot) { e.preventDefault(); press = null; view.goTo([...dot.parentElement.children].indexOf(dot) + 1); return draw(); }
-    press = { x: e.clientX, y: e.clientY, id: e.pointerId, ref: e.target.closest('g[data-ref]')?.dataset.ref ?? nearRef(e.clientX, e.clientY) };
+    press = { x: e.clientX, y: e.clientY, id: e.pointerId, ref: e.target.closest('g[data-ref]')?.dataset.ref, near: nearRef(e.clientX, e.clientY) };
     // touch: a long press on a note starts a range — then tap another note, or drag to it
-    if (e.pointerType !== 'mouse' && press.ref != null) {
+    if (e.pointerType !== 'mouse' && (press.ref ?? press.near) != null) {
       const p = press;
       p.timer = setTimeout(() => {
         if (press !== p || box) return;
         p.long = true;
-        anchor = +p.ref; barPick = null;
+        anchor = +(p.ref ?? p.near); barPick = null;
         const n = byRef().get(anchor);
         rangeEnd = 1;
         if (n) setRange(spanOf([n]));
@@ -379,6 +379,9 @@ export async function editNotes(view, it, host, opts = {}) {
     }
     if (e.type !== 'pointerup') return;
     // not right on a notehead: the nearest one within a finger's width
+    // right on a notehead: that note; above the top staff: its chord name; else the nearest note within a finger
+    const ch = p.ref == null && !e.shiftKey && !e.metaKey && !e.ctrlKey && chordAt(e.clientX, e.clientY);
+    if (ch) return chordSheet(ch.bar, ch.on);
     const ref = p.ref ?? nearRef(e.clientX, e.clientY);
     if (ref != null) { barPick = null; tapNote(+ref, e); return; }
     const b = barAt(e.clientX, e.clientY);
@@ -556,6 +559,99 @@ export async function editNotes(view, it, host, opts = {}) {
       { label: `Ending 2 over ${span}`, checked: endingOn(2), run: () => run({ op: 'ending', bars: [b0, b1], number: '2' }, null, { bar: b0 }) }, '-');
     return out;
   };
+  // ---- chord names (chordops.py): tap one above the top staff (or an empty beat there), or K on a picked note ----
+  const KIND_SUFFIX = { major: '', minor: 'm', dominant: '7', 'dominant-seventh': '7', 'major-seventh': 'maj7', 'minor-seventh': 'm7', diminished: 'dim',
+    'diminished-seventh': 'dim7', 'half-diminished': 'm7b5', augmented: 'aug', 'suspended-fourth': 'sus4', 'suspended-second': 'sus2', 'major-sixth': '6',
+    'minor-sixth': 'm6', 'dominant-ninth': '9', power: '5' };
+  // [{ bar, on, name }] of the edited part
+  const chordsOf = () => {
+    const doc = new DOMParser().parseFromString(cur().xml, 'application/xml');
+    const part = doc.querySelectorAll('part')[base.part] || doc.querySelector('part');
+    const out = [];
+    let div = 1;
+    [...part.querySelectorAll(':scope > measure')].forEach((m, bar) => {
+      let t = 0, last = 0;
+      for (const el of m.children) {
+        if (el.tagName === 'attributes') div = +(el.querySelector('divisions')?.textContent || div);
+        else if (el.tagName === 'backup') t -= +el.querySelector('duration').textContent;
+        else if (el.tagName === 'forward') t += +el.querySelector('duration').textContent;
+        else if (el.tagName === 'note' && !el.querySelector('grace')) { const d = +(el.querySelector('duration')?.textContent || 0); if (!el.querySelector('chord')) { last = t; t += d; } }
+        else if (el.tagName === 'harmony') {
+          const k = el.querySelector('kind'), rs = el.querySelector('root-step')?.textContent || '';
+          const acc = (a) => ({ 1: '#', '-1': 'b' })[Math.round(+(a?.textContent || 0))] || '';
+          const name = k?.textContent === 'none' ? 'N.C.' : rs + acc(el.querySelector('root-alter')) + (k?.getAttribute('text') ?? KIND_SUFFIX[k?.textContent] ?? '').replace(/♭/g, 'b').replace(/♯/g, '#')
+            + (el.querySelector('bass-step') ? '/' + el.querySelector('bass-step').textContent + acc(el.querySelector('bass-alter')) : '');
+          out.push({ bar, on: r3((t + +(el.querySelector('offset')?.textContent || 0)) / div), name });
+        }
+      }
+    });
+    return out;
+  };
+  // a point above the top staff → { bar, on }: the nearest onset in that bar, else the beat under it
+  const chordAt = (cx, cy) => {
+    for (const b of barBoxes()) {
+      if (b.staff !== 1) continue;
+      const m = b.svg.getScreenCTM?.();
+      if (!m) continue;
+      const p = new DOMPoint(cx, cy).matrixTransform(m.inverse()), x = p.x / 10, y = p.y / 10;
+      if (x < b.x || x > b.x + b.w || y < b.y - 5.5 || y > b.y + 1.3) continue;
+      const len = Math.max(0, ...cur().notes.filter((n) => n.bar === b.bar).map((n) => n.on + n.dur)) || 4;
+      const ons = [];
+      for (const n of cur().notes.filter((n) => n.bar === b.bar)) {
+        const g = paper.querySelector(`g[data-ref="${n.ref}"]`);
+        if (!g || g.ownerSVGElement !== b.svg) continue;
+        const bb = g.getBBox();
+        ons.push({ x: (bb.x + bb.width / 2) / 10, on: n.on });
+      }
+      ons.sort((p_, q) => Math.abs(p_.x - x) - Math.abs(q.x - x));
+      if (ons.length && Math.abs(ons[0].x - x) < 2.5) return { bar: b.bar, on: ons[0].on };
+      const first = ons.length ? Math.min(...ons.map((o) => o.x)) : b.x + 2;
+      const f = Math.max(0, Math.min(0.999, (x - first) / Math.max(1, b.x + b.w - first)));
+      const unit = len % 1.5 === 0 && len >= 3 && len !== 4 ? 1.5 : 1;
+      return { bar: b.bar, on: Math.min(len - unit, Math.max(0, Math.floor((f * len) / unit) * unit)) };
+    }
+    return null;
+  };
+  const CHORD_RE = /^([A-G])([#b]?)(maj|ma|M|Δ|min|mi|m|dim|°|o|aug|\+|ø|sus)?(6\/9|69|13|11|9|7|6|5|4|2)?((?:\(?(?:add|sus|maj|M|b|#|\+)?(?:13|11|9|7|6|5|4|2)\)?|sus)*)(?:\/([A-G][#b]?))?$/;
+  const chordOk = (t) => { t = t.replace(/♭/g, 'b').replace(/♯/g, '#').replace(/\s/g, ''); if (/^N\.?C\.?$/.test(t)) return true; const m = CHORD_RE.exec(t); return !!m && !(m[4] === '5' && !m[3] && !m[5]); };
+  const chordSheet = (bar, on) => {
+    const all = chordsOf(), have = all.find((c) => c.bar === bar && Math.abs(c.on - on) < 1e-3);
+    const used = [...new Set(all.map((c) => c.name))].slice(0, 12);
+    const beat = on + 1;
+    const s = modal(`<h2>Chord name · bar ${bar + 1}, beat ${Number.isInteger(beat) ? beat : beat.toFixed(2)}</h2>
+      <p class="muted">Like C, Am7, F/A, B♭maj7, G7sus4 or N.C. It is drawn above the top staff; “Realize to left hand” in Bar ▾ writes the left hand from them.</p>
+      <label class="np-chord"><input id="np-chord" autocomplete="off" autocapitalize="off" spellcheck="false" value="${have ? have.name : ''}" placeholder="C, Am7, F/A …"></label>
+      <p class="np-chord-err muted" id="np-chord-err"></p>
+      ${used.length ? `<div class="np-choices np-used">${used.map((n) => `<button data-n="${n}">${n}</button>`).join('')}</div>` : ''}
+      <div class="modal-actions"><button data-close>Cancel</button>${have ? '<button class="danger" data-del>Take away</button>' : ''}<button class="primary" data-ok>Use</button></div>`);
+    const inp = s.el.querySelector('#np-chord'), ok = s.el.querySelector('[data-ok]'), err = s.el.querySelector('#np-chord-err');
+    const check = () => { const v = inp.value.trim(), good = !v || chordOk(v); ok.disabled = !v || !good; err.textContent = good ? '' : `“${v}” is not a chord name`; };
+    inp.addEventListener('input', check);
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !ok.disabled) { e.preventDefault(); ok.click(); } });
+    check();
+    const use = (text) => { s.close(); run({ op: 'chord', bar, on, text }, null, { bar }); };
+    ok.onclick = () => use(inp.value.trim());
+    s.el.querySelector('[data-del]')?.addEventListener('click', () => use(''));
+    s.el.querySelectorAll('[data-n]').forEach((x) => (x.onclick = () => use(x.dataset.n)));
+  };
+  const chordHere = () => {
+    const p = picked().sort((a, b) => a.bar - b.bar || a.on - b.on)[0];
+    if (p) return chordSheet(p.bar, p.on);
+    if (barPick) return chordSheet(barPick.bar, 0);
+    toast('Pick a note first, or tap above the top staff');
+  };
+  // Realize to left hand: the range / the picked bars, else the whole score
+  const realizeSheet = () => {
+    const s0 = starts(), w = rng ? windowOf() : null, bs = barsPicked(target());
+    const where = w ? { start: w.start, end: w.end } : bs && (sel.size > 1 || barPick) ? { start: [bs[0], 0], end: [bs[1] + 1, 0] } : {};
+    const to = where.end ? (where.end[1] > 1e-6 ? where.end[0] : where.end[0] - 1) : 0;
+    const span = where.start ? (to === where.start[0] ? `bar ${to + 1}` : `bars ${where.start[0] + 1}–${to + 1}`) : `the whole score (${plural(s0.length - 1, 'bar')})`;
+    if (!chordsOf().length) return toast('No chord names yet: tap above the top staff to write one');
+    const s = modal(`<h2>Realize chords to the left hand</h2><p class="muted">Over ${span}: the lowest staff is written again from the chord names (what it has there now goes — Undo brings it back).</p>
+      <div class="np-choices np-patterns"><button data-p="block"><b>Block chord</b><small>the chord held</small></button><button data-p="root5"><b>Root – fifth</b><small>one a beat</small></button><button data-p="broken"><b>Broken chord</b><small>in eighths</small></button></div>
+      <div class="modal-actions"><button data-close>Cancel</button></div>`);
+    s.el.querySelectorAll('[data-p]').forEach((x) => (x.onclick = () => { s.close(); run({ op: 'realize', pattern: x.dataset.p, ...where }, null, { bar: where.start?.[0] ?? 0 }); }));
+  };
   const barMenu = (anchor) => {
     const t = target(), n = nStaves(), entries = [];
     if (sel.size) entries.push({ label: 'Whole bar: pick every note of these bars (B)', run: wholeBar }, '-');
@@ -572,7 +668,7 @@ export async function editNotes(view, it, host, opts = {}) {
         } });
       }
       if (n === 1) entries.push({ label: 'Add a left-hand staff', run: () => run({ op: 'addstaff', at: 2, clef: 'bass' }) });
-      entries.push('-', ...structEntries(t),
+      entries.push('-', ...structEntries(t), { label: `Chord name at bar ${t.bar + 1}… (K)`, run: chordHere }, { label: 'Realize chords to left hand…', run: realizeSheet }, '-',
         { label: `Insert an empty bar before ${label}`, run: () => run({ op: 'insbar', bar: b, after: false }) },
         { label: `Insert an empty bar after ${label}`, run: () => run({ op: 'insbar', bar: b, after: true }) },
         { label: `Delete ${label}`, danger: true, run: async () => {
@@ -580,7 +676,7 @@ export async function editNotes(view, it, host, opts = {}) {
           if (inBar(b).some((x) => !x.rest) && !(await confirmSheet({ title: `Delete ${label}?`, body: 'Its notes on every staff go, and the bars after it move up. Undo brings it back.', ok: 'Delete bar', danger: true }))) return;
           run({ op: 'delbar', bar: b });
         } });
-    } else entries.push({ label: 'Tap a bar’s empty space or a note first', disabled: true, run: () => {} });
+    } else entries.push({ label: 'Tap a bar’s empty space or a note first', disabled: true, run: () => {} }, { label: 'Realize chords to left hand…', run: realizeSheet });
     entries.push('-');
     if (n === 1 && !t) entries.push({ label: 'Add a left-hand staff', run: () => run({ op: 'addstaff', at: 2, clef: 'bass' }) });
     if (n === 2) entries.push({ label: 'Add a voice staff on top (for lyrics)', run: () => run({ op: 'addstaff', at: 1, clef: 'treble' }) });
@@ -902,7 +998,7 @@ export async function editNotes(view, it, host, opts = {}) {
       const len = LENS.find((x) => x[3] === e.key);
       f = len ? () => setLen(len[0]) : { ArrowUp: () => pitch(1), ArrowDown: () => pitch(-1), ArrowLeft: () => stepNote(-1), ArrowRight: () => stepNote(1),
         '.': dot, e: fill, E: fill, n: add, N: add, t: tie, T: tie, s: slur, S: slur, ...(e.target.closest?.('button') ? {} : { ' ': playHere }), Delete: del, Backspace: del,
-        b: wholeBar, B: wholeBar, r: repeat, R: repeat, j: respell, J: respell, Escape: () => (sel.size || rng ? setSel([]) : close()) }[e.key];
+        b: wholeBar, B: wholeBar, r: repeat, R: repeat, j: respell, J: respell, k: chordHere, K: chordHere, Escape: () => (sel.size || rng ? setSel([]) : close()) }[e.key];
     }
     if (!f) return;
     e.preventDefault(); e.stopPropagation();
@@ -915,7 +1011,7 @@ export async function editNotes(view, it, host, opts = {}) {
     get ops() { return cur().ops; }, get xml() { return cur().xml; }, select: (refs) => setSel(refs), get busy() { return busy; }, close,
     get cueBar() { return cueAt; }, run: (op) => run(op), get barPick() { return barPick; }, pickBar: (bar, staff = 1) => { barPick = { bar, staff }; setSel([]); },
     get staves() { return nStaves(); }, get took() { return [...took]; }, get lyrics() { return lyr; },
-    get range() { return rng && { ...rng }; }, setRange: (r) => setRange(r), get clip() { return clip; }, get rangeArm() { return rangeArm; } };
+    get range() { return rng && { ...rng }; }, get chords() { return chordsOf(); }, chordAt: (x, y) => chordAt(x, y), setRange: (r) => setRange(r), get clip() { return clip; }, get rangeArm() { return rangeArm; } };
   window.__editNotes = api; // for automated tests
   // a MIDI keyboard plays into the picked notes: midiedit.js, through these edits
   midiCtl = attachMidi({ get notes() { return cur().notes; }, get sel() { return picked(); }, get busy() { return busy; }, get step() { return at; },
