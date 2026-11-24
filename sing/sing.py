@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Make a lead sheet sing (beta), fully offline: MusicXML melody + English lyrics -> a sung vocal with a soft piano.
+"""Make a lead sheet sing (beta), fully offline: MusicXML melody + English / Vietnamese / Mandarin lyrics -> a sung vocal with a soft piano.
 
   sing.py --xml song.musicxml --out DIR --name "m-abc vocal" [--bpm 72] [--steps 32] [--device mps] [--check]
           [--voice zh_target] [--tune 0.85] [--octave N] [--verse N]
@@ -58,7 +58,7 @@ VOICES = BUILTIN_VOICES + EXTRA_VOICES
 # pick ("take C", 2026-11). Its clip sits around D3-G#3, so the auto octave (octave_for) usually moves a melody down
 # one octave; --voice / --octave still pick another singer / range.
 VOICE = 'zh_target'
-DEFAULT_VOICE = {'English': VOICE, 'Chinese': VOICE}
+DEFAULT_VOICE = {'English': VOICE, 'Chinese': VOICE, 'Vietnamese': VOICE}
 SR_OUT = 44100
 TAIL_Q = 1.0  # the last note rings on for a beat after the score ends
 
@@ -359,7 +359,7 @@ def main():
     say(1, 0, f'Loading the voice ({len(segs)} phrases at {bpm:g} bpm)')
 
     def on_seg(i, n, ws):
-        say(2, i / n, f'Phrase {i} of {n}: ' + ' '.join(dict.fromkeys(ws)))
+        say(2, i / n, f'Phrase {i} of {n} ({len(ws)} syllables)')  # counts only: lyric text never goes in a log
     dry, vsr, shift, _ = sing(segs, bpm, device, a.steps, a.cfg, on_seg, a.mode, a.voice, a.octave, lang)
     tuned = None
     if os.environ.get('MEOWSIC_SING_RAW'):  # debugging: the voice as the model sang it, before tuning / gating
