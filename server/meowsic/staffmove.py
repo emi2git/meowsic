@@ -13,6 +13,9 @@ move(text, refs, to) changes the <staff> of the chosen notes and rebuilds only t
   so every voice of both staves still fills its bar. Clefs and pitches stay; beams of a changed voice are drawn
   again per beat; a moved note loses its stem direction (the renderer picks one).
 Grace notes stay where they are (with the note they lead into when that note stays in its voice).
+After every edit the edited staff / voice of each edited bar is tidied (barnorm.normalize_bar: beams by beat group,
+rests joined into the largest rests that keep the beat) and so is the whole score (barnorm.tidy_score: no repeated
+time signature / key / clef, edited bars full).
 
 refs = indexes among the part's <note> elements (as notes() gives them). ops = [{op, refs, …}, …] applied in order
 (the refs of an op are in the score as the ops before it left it).
@@ -491,7 +494,7 @@ def edit(text: str, op: dict) -> tuple[str, list]:
     if kind == 'alt': return use_measure(text, op.get('bar'), op.get('measure')), []
     if kind not in ('move', 'pitch', 'len', 'delete', 'add'): raise HTTPException(400, f'Unknown edit: {kind}')
     root = ET.fromstring(text.encode('utf-8'))
-    _, part, hands = edit_part(root)
+    pk, part, hands = edit_part(root)
     if part is None: raise HTTPException(400, 'This score has no notes')
     if kind == 'move' and not hands: raise HTTPException(400, 'This score has no piano part with two staves')
     all_notes = list(part.iter('note'))
@@ -510,6 +513,7 @@ def edit(text: str, op: dict) -> tuple[str, list]:
     touched = []
     flats = _key_flats(part)
     bars = part.findall('measure')
+    tidy = set()  # (bar index, staff, voice) edited: beams and rests tidied after (barnorm.py)
     if kind in ('pitch', 'add'):
         by = int(op.get('by', 4 if kind == 'add' else 0) or 0)
         div = Fr(1)
@@ -519,6 +523,7 @@ def edit(text: str, op: dict) -> tuple[str, list]:
             kids = list(m)
             for i, n in enumerate(kids):
                 if n.tag != 'note': continue
+                if (id(n) in want or id(n) in rests): tidy.add((bi, _st(n), _vo(n)))
                 if kind == 'pitch' and id(n) in want:
                     _set_pitch(n, _midi(n) + by, flats[bi] if by >= 0 else True)
                     touched.append(n)
@@ -572,6 +577,20 @@ def edit(text: str, op: dict) -> tuple[str, list]:
                     voices.remove(vo)
             voices.sort(key=lambda v: (v.staff, v.first))  # upper staff first, then lower, each as the bar had them
             _write_bar(m, voices, other, bar_len, div, beat)
+            tidy.update((bars.index(m), vo.staff, vo.num) for vo in voices if vo.touched)
+    if tidy:
+        from .barnorm import normalize_bar
+        div, tsig = Fr(1), (4, 4)
+        for bi, m in enumerate(bars):
+            for a in m.findall('attributes'):
+                if a.findtext('divisions'): div = Fr(int(float(a.findtext('divisions'))))
+                tm = a.find('time')
+                if tm is not None and (tm.findtext('beats') or '').strip().isdigit():
+                    tsig = (int(tm.findtext('beats')), int(tm.findtext('beat-type') or 4))
+            for b, st, v in sorted(tidy):
+                if b == bi: normalize_bar(m, st, v, tsig, div)
+    from .barnorm import tidy_score
+    tidy_score(root, {(pk, b) for b, _, _ in tidy})  # no repeated time / key / clef; edited bars full
     ET.indent(root, space='  ')
     out = _head(text) + ET.tostring(root, encoding='unicode') + '\n'
     ref = {id(e): i for i, e in enumerate(part.iter('note'))}
@@ -614,7 +633,9 @@ def preview(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cf
     k, part, hands = edit_part(root)
     if part is None: raise HTTPException(400, 'This score has no notes')
     out, moved = apply_ops(text, body.get('ops') or [])
-    return {'xml': out, 'notes': notes(ET.fromstring(out.encode('utf-8'))), 'moved': moved, 'part': k, 'hands': hands,
+    from .barnorm import tidy_score
+    over = [num for _, num in tidy_score(ET.fromstring(out.encode('utf-8')))['overfull']]
+    return {'xml': out, 'notes': notes(ET.fromstring(out.encode('utf-8'))), 'moved': moved, 'part': k, 'hands': hands, 'overfull': over,
             'check': check_bars(out), 'sha': _sha(text), 'changed': bool(body.get('ops'))}
 
 
