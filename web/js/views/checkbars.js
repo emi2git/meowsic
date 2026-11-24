@@ -63,7 +63,7 @@ export async function checkList(it, xml) {
 export function barTimes(xml) {
   const doc = new DOMParser().parseFromString(xml, 'application/xml');
   const parts = [...doc.querySelectorAll('part')];
-  const part = parts.find((p) => [...p.querySelectorAll('attributes > staves')].some((s) => s.textContent.trim() === '2')) || parts[0];
+  const part = parts.find((p) => [...p.querySelectorAll('attributes > staves')].some((s) => +s.textContent.trim() >= 2)) || parts[0];
   const out = [];
   let div = 1, start = 0;
   for (const m of part ? part.querySelectorAll(':scope > measure') : []) {

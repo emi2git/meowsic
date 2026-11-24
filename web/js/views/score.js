@@ -6,7 +6,7 @@ import { pageSrc } from './sheet.js';
 import { go } from '../app.js';
 import { printEntry, download } from './actions.js';
 import { TUNES } from '../mock.js';
-import { musicXml, tuneNotes, VERSIONS, VERSION_HELP, barBeats, xmlInfo } from '../musicxml.js';
+import { musicXml, tuneNotes, VERSIONS, barBeats, xmlInfo } from '../musicxml.js';
 import { ScorePlayer, VoicePlayer } from '../audio.js';
 import { scoreEditor } from './scoreeditor.js';
 import { fitLyrics } from './fitlyrics.js';
@@ -514,14 +514,11 @@ const singing = (it) => store.jobs().some((j) => j.kind === 'sing' && j.fromItem
 // toolbar toggles, so they are not here too. The singing voice needs lyrics; while its job runs it shows, greyed.
 export function scoreTools(it, view) {
   const srv = store.mode === 'server', viewer = () => document.querySelector('.viewer');
-  const notes = [{ label: 'Make another version…', icon: 'plus', run: () => generateVersions(it) },
-    ...(srv && view.real ? [{ label: 'Edit notes…', icon: 'edit', run: () => editNotes(view, it, viewer()) }] : []),
+  const notes = [...(srv && view.real ? [{ label: 'Edit notes…', icon: 'edit', run: () => editNotes(view, it, viewer()) }] : []),
     ...(it.measures ? [{ label: 'Revert note edits', icon: 'restore', run: async () => { await view.revert(); document.querySelector('.editbar')?.dispatchEvent(new Event('close')); toast('Back to the original notes'); } }] : [])];
-  const words = [...(srv ? [{ label: 'Add lyrics from a sheet…', icon: 'text', run: () => addLyrics(it) }] : []),
-    ...(srv && view.real ? [{ label: 'Fit lyrics…', icon: 'text', run: () => fitLyrics(view, it, viewer()) }] : []),
-    ...(view.real && /<lyric[\s>]/.test(view.xml()) ? [singing(it) ? { label: 'Singing voice in progress…', icon: 'voice', disabled: true, run: () => {} }
+  const words = [...(view.real && /<lyric[\s>]/.test(view.xml()) ? [singing(it) ? { label: 'Singing voice in progress…', icon: 'voice', disabled: true, run: () => {} }
       : { label: it.vocalAudio ? 'Redo singing voice' : 'Request singing voice', icon: 'voice', run: () => makeItSing(it) }] : [])];
-  return words.length ? [...notes, '-', ...words] : notes;
+  return notes.length && words.length ? [...notes, '-', ...words] : [...notes, ...words];
 }
 // Export ▸ for a score: the notes as MusicXML or MIDI (as shown: edits and transposition), print / PDF
 export function scoreExportMenu(it, view) {
@@ -659,39 +656,6 @@ async function makeItSing(it) {
   if (!ok) return;
   store.addJob({ kind: 'sing', title: it.title, source: 'Singing voice', output: 'Voice', outputs: ['voice'], fromItemId: it.id });
   toast('Singing… progress is in Add → Score');
-}
-
-// make other arrangements of this score; each one becomes its own entry, tagged with its version (never Original: it exists)
-function generateVersions(it) {
-  const have = new Set(store.items().filter((x) => x.kind === 'score' && x.title === it.title && x.tune === it.tune).map((x) => x.version));
-  const pick = new Set();
-  const s = modal(`<h2>Make another version of “${esc(it.title)}”</h2>
-    <p class="muted">Pick one or more. Each becomes its own entry in the library.</p>
-    <div class="cards one-col" id="gv">${Object.keys(VERSIONS).filter((v) => v !== 'original').map((v) => `<button type="button" class="card-opt" data-o="${v}">
-      <b>${VERSIONS[v]}${have.has(v) ? ' <small class="have">· you have one</small>' : ''}</b><small>${VERSION_HELP[v]}</small></button>`).join('')}</div>
-    <p class="warn" id="gv-warn" hidden></p>
-    <div class="modal-actions"><button data-close>Cancel</button><button class="primary" data-ok disabled>Make</button></div>`, { wide: true });
-  const ok = s.el.querySelector('[data-ok]');
-  s.el.querySelector('#gv').onclick = (e) => {
-    const b = e.target.closest('[data-o]');
-    if (!b || b.disabled) return;
-    const v = b.dataset.o;
-    pick.has(v) ? pick.delete(v) : pick.add(v);
-    b.classList.toggle('on', pick.has(v));
-    ok.disabled = !pick.size;
-    ok.textContent = pick.size > 1 ? `Make ${pick.size}` : 'Make';
-    const dup = [...pick].filter((x) => have.has(x)).map((x) => VERSIONS[x]);
-    const w = s.el.querySelector('#gv-warn');
-    w.hidden = !dup.length;
-    w.textContent = dup.length ? `You already have ${dup.join(' and ')}. A new copy will be added next to it; the one you have, with your edits and annotations, stays as it is.` : '';
-  };
-  ok.onclick = () => {
-    const outputs = [...pick];
-    store.addJob({ gen: true, fromItemId: it.id, title: it.title, artist: it.artist, tags: it.tags.filter((t) => !Object.values(VERSIONS).includes(t)), tune: it.tune, key: it.key,
-      source: `From the score “${it.title}”`, sourceUrl: it.sourceUrl || '', outputs, output: outputs.map((v) => VERSIONS[v]).join(' + ') });
-    s.close();
-    toast(`Making ${outputs.map((v) => VERSIONS[v]).join(', ')} — progress is in Add → Score`);
-  };
 }
 
 // the words of a sheet (photos of the printed song) under this score's tune: the Mac reads the sheet, lines its

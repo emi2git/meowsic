@@ -500,6 +500,174 @@ async function cueAndArcs(name, vp) {
   await page.close();
 }
 
+// ---- Bar ▾: pick a bar (tap its empty space, or a note), clear / add a hand, insert / delete bars, add / remove a
+// staff (a voice line on top for lyrics), undo; then a 3-staff score with lyrics on the top staff: picking, an edit,
+// Save keeps everything, it plays ----
+async function barTools(name, vp) {
+  console.log(`\nBar ▾ ${name}`);
+  const touch = !!vp.hasTouch;
+  const title = `Bar tools ${name} ${stamp}`;
+  // bar 3 has no left hand at all (an odd file); the rest as Ode to Joy
+  const xml = scoreXml(title).replace(/(<measure number="3">[\s\S]*?)<backup><duration>8<\/duration><\/backup>[\s\S]*?<\/measure>/, '$1</measure>');
+  const sc = await send('POST', '/items', { kind: 'score', title, musicxmlText: xml });
+  let page;
+  const newPage = async () => {
+    page = await b.newPage(); await page.setViewport(vp);
+    page.on('pageerror', (e) => errs.push(`bar ${name}: ${e.message}`));
+    page.on('console', (m) => m.type() === 'error' && !/404|409|favicon/.test(m.text()) && errs.push(`bar ${name}: ${m.text()}`));
+  };
+  await newPage();
+  const tapXY = async (x, y) => { if (touch) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); await sleep(200); };
+  const tap = async (sel) => { if (touch) await page.tap(sel); else await page.click(sel); await sleep(200); };
+  const act = (a) => tap(`.notes-panel [data-a="${a}"]`);
+  const EN = (f, ...a) => page.evaluate(f, ...a);
+  const idle = async () => { for (let i = 0; i < 60; i++) { await sleep(150); if (!(await EN(() => window.__editNotes?.busy))) break; } await sleep(700); };
+  const menuItems = () => page.$$eval('.menu > button', (e) => e.map((x) => x.textContent.trim() + (x.disabled ? ' (off)' : '')));
+  const pickMenu = async (label) => {
+    await act('barmenu'); await sleep(250);
+    const i = await page.$$eval('.menu > button', (e, l) => e.findIndex((x) => x.textContent.trim() === l), label);
+    if (i < 0) { check(`menu has “${label}”`, false, (await menuItems()).join(' | ')); return; }
+    await tap(`.menu > button:nth-of-type(${i + 1})`);
+  };
+  const confirm = async () => { await sleep(300); await page.evaluate(() => document.querySelector('.modal-wrap .modal-actions button:last-child').click()); await sleep(200); };
+  const nowNotes = () => EN(() => window.__editNotes.notes);
+  const sounding = (ns) => ns.filter((n) => !n.rest).map((n) => `${n.bar}/${n.staff}/${n.on}/${n.midi}`).sort().join();
+  // a point in a bar's staff, away from every notehead and rest (the bar's empty space)
+  const emptySpot = (bar, staff) => EN(([bar, staff]) => {
+    const osmd = window.__score.osmd, gm = osmd.GraphicSheet.MeasureList[bar][staff - 1], ps = gm.PositionAndShape;
+    const svg = document.querySelectorAll('#osmd svg')[Math.max(0, osmd.GraphicSheet.MusicPages.indexOf(gm.ParentMusicSystem.Parent))];
+    const m = svg.getScreenCTM(), y0 = (gm.ParentStaffLine?.PositionAndShape || ps).AbsolutePosition.y;
+    const heads = [...document.querySelectorAll('#paper g[data-ref]')].map((g) => g.getBoundingClientRect()).map((r) => [(r.left + r.right) / 2, (r.top + r.bottom) / 2]);
+    let best = null;
+    for (let fx = 0.05; fx < 1; fx += 0.03) for (const fy of [0.5, 1.5, 2.5, 3.5]) {
+      const p = new DOMPoint((ps.AbsolutePosition.x + ps.BorderLeft + fx * (ps.BorderRight - ps.BorderLeft)) * 10, (y0 + fy) * 10).matrixTransform(m);
+      const d = Math.min(...heads.map(([x, y]) => Math.hypot(x - p.x, y - p.y)));
+      if (!best || d > best.d) best = { x: p.x, y: p.y, d };
+    }
+    return best;
+  }, [bar, staff]);
+
+  await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' });
+  await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(800);
+  await tap('#it-more'); await sleep(200);
+  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+  await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(700);
+  const n0 = await nowNotes();
+
+  // 1. tap bar 2's empty space (left hand) → the bar is picked, shaded; Bar ▾ says which bar
+  let spot = await emptySpot(1, 2);
+  await tapXY(spot.x, spot.y);
+  check('tapping a bar’s empty space picks the bar', JSON.stringify(await EN(() => window.__editNotes.barPick)) === '{"bar":1,"staff":2}' && (await EN(() => window.__editNotes.sel.length)) === 0, `${JSON.stringify(await EN(() => window.__editNotes.barPick))} d=${spot.d}`);
+  check('the bar is shaded, the button says “Bar 2 ▾”', (await page.$$('#paper rect.np-barpick')).length === 2 && (await page.$eval('[data-a="barmenu"]', (e) => e.textContent.trim())) === 'Bar 2 ▾');
+  await act('barmenu'); await sleep(250);
+  const items = await menuItems();
+  check('Bar ▾: clear / add each hand, insert before / after, delete, add / remove a staff',
+    ['Clear the right hand in bar 2', 'Clear the left hand in bar 2', 'Add the right hand to bar 2', 'Add the left hand to bar 2', 'Insert an empty bar before bar 2', 'Insert an empty bar after bar 2', 'Delete bar 2', 'Add a voice staff on top (for lyrics)', 'Add a staff…', 'Remove the right hand staff…', 'Remove the left hand staff…'].every((l) => items.includes(l)), items.join(' | '));
+  if (name === 'iPad') await page.screenshot({ path: `${SHOTS}/${name}-barmenu.png` });
+  await page.evaluate(() => document.querySelector('.menu')?.remove());
+
+  // 2. clear the left hand in bar 2: a whole rest; the right hand stays; undo brings it back
+  await pickMenu('Clear the left hand in bar 2'); await idle();
+  let ns = await nowNotes(), x = await EN(() => window.__editNotes.xml);
+  check('Clear left hand: bar 2’s left hand is one whole rest, right hand kept', ns.filter((n) => n.bar === 1 && n.staff === 2).every((n) => n.rest) && ns.filter((n) => n.bar === 1 && n.staff === 2).length === 1
+    && sounding(ns.filter((n) => n.staff === 1)) === sounding(n0.filter((n) => n.staff === 1)), JSON.stringify(ns.filter((n) => n.bar === 1 && n.staff === 2)));
+  check('the score drew again with it', (await page.$$eval('#paper g.nh-rest', (e) => e.length)) >= 1);
+  await act('undo'); await idle();
+  check('Undo: the left hand is back', sounding(await nowNotes()) === sounding(n0));
+  await act('redo'); await idle();
+  check('Redo: cleared again', (await nowNotes()).filter((n) => n.bar === 1 && n.staff === 2 && !n.rest).length === 0);
+  await act('undo'); await idle();
+
+  // 3. bar 3 has no left hand: pick one of its notes, Bar ▾ → Add the left hand → a whole rest, picked; + Note writes there
+  let h = await page.evaluate(() => { const n = window.__editNotes.notes.find((x) => x.bar === 2 && x.staff === 1 && !x.rest); const r = document.querySelector(`#paper g[data-ref="${n.ref}"]`).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  await tapXY(h.x, h.y);
+  check('a note picked: Bar ▾ is that bar', (await page.$eval('[data-a="barmenu"]', (e) => e.textContent.trim())) === 'Bar 3 ▾');
+  await pickMenu('Add the left hand to bar 3'); await idle();
+  ns = await nowNotes(); x = await EN(() => window.__editNotes.xml);
+  const lh3 = ns.filter((n) => n.bar === 2 && n.staff === 2);
+  check('Add left hand: bar 3 gets a whole-bar rest on the left hand, picked', lh3.length === 1 && lh3[0].rest && lh3[0].dur === 4 && (await EN(() => window.__editNotes.sel)).includes(lh3[0].ref) && barsFull(x), JSON.stringify(lh3));
+  await act('add'); await idle();
+  check('+ Note on it: a note in the new left hand', (await nowNotes()).some((n) => n.bar === 2 && n.staff === 2 && !n.rest));
+  const afterAdd = await nowNotes();
+
+  // 4. insert an empty bar after bar 1, then delete it (empty: no question) and delete bar 1 (asks first), undo
+  spot = await emptySpot(0, 1); await tapXY(spot.x, spot.y);
+  await pickMenu('Insert an empty bar after bar 1'); await idle();
+  ns = await nowNotes(); x = await EN(() => window.__editNotes.xml);
+  check('Insert after: 5 bars, bar 2 empty on both staves, later bars moved on, renumbered', new Set(ns.map((n) => n.bar)).size === 5 && ns.filter((n) => n.bar === 1).every((n) => n.rest) && ns.filter((n) => n.bar === 1).length === 2
+    && sounding(ns.filter((n) => n.bar >= 2).map((n) => ({ ...n, bar: n.bar - 1 }))) === sounding(afterAdd.filter((n) => n.bar >= 1)) && /<measure number="5"/.test(x) && barsFull(x));
+  await pickMenu('Delete bar 2'); await idle();
+  check('Delete an empty bar: no question, 4 bars again', !(await page.$('.modal-wrap')) && sounding(await nowNotes()) === sounding(afterAdd));
+  spot = await emptySpot(0, 2); await tapXY(spot.x, spot.y);
+  await pickMenu('Delete bar 1'); await sleep(300);
+  check('Delete a bar with notes asks first', !!(await page.$('.modal-wrap')));
+  await confirm(); await idle();
+  ns = await nowNotes(); x = await EN(() => window.__editNotes.xml);
+  check('Delete bar 1: 3 bars, the key / time / clefs / tempo carry on', new Set(ns.map((n) => n.bar)).size === 3 && /<divisions>/.test(x.split('<measure')[1]) && /<clef number="2">/.test(x.split('<measure')[1]) && /tempo="120"/.test(x.split('<measure')[1]) && barsFull(x));
+  await act('undo'); await idle();
+  check('Undo: bar 1 is back', sounding(await nowNotes()) === sounding(afterAdd));
+
+  // 5. a voice staff on top: 3 staves, all pickable; ↓ moves a right-hand note to the left hand (one staff down)
+  await pickMenu('Add a voice staff on top (for lyrics)'); await idle();
+  ns = await nowNotes(); x = await EN(() => window.__editNotes.xml);
+  check('Add a voice staff: 3 staves, a rest in every bar of the top one, the piano one staff down', (await EN(() => window.__editNotes.staves)) === 3 && /<staves>3<\/staves>/.test(x)
+    && ns.filter((n) => n.staff === 1).length === 4 && ns.filter((n) => n.staff === 1).every((n) => n.rest) && sounding(ns.map((n) => ({ ...n, staff: n.staff - 1 }))) === sounding(afterAdd));
+  check('every note and rest of the 3 staves can be picked', (await page.$$eval('#paper g[data-ref]', (e) => new Set(e.map((g) => g.dataset.ref)).size)) === ns.length, `${await page.$$eval('#paper g[data-ref]', (e) => e.length)} / ${ns.length}`);
+  h = await page.evaluate(() => { const n = window.__editNotes.notes.find((x) => x.bar === 1 && x.staff === 2 && !x.rest); const r = document.querySelector(`#paper g[data-ref="${n.ref}"]`).getBoundingClientRect(); return { ref: n.ref, midi: n.midi, x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  await act('none'); await tapXY(h.x, h.y);
+  check('the move buttons name the staves', (await page.$eval('[data-a="up"]', (e) => e.textContent.trim())).startsWith('↑ To voice') && (await page.$eval('[data-a="down"]', (e) => e.textContent.trim())).startsWith('↓ To left hand'));
+  await act('down'); await idle();
+  check('↓ moves it to the left hand (staff 3)', (await nowNotes()).some((n) => n.bar === 1 && n.staff === 3 && n.midi === h.midi) && barsFull(await EN(() => window.__editNotes.xml)));
+  if (name === 'iPad') await page.screenshot({ path: `${SHOTS}/${name}-three-staves.png` });
+  await act('none');
+  await pickMenu('Remove the voice staff…'); await sleep(300);
+  check('Remove a staff asks first', !!(await page.$('.modal-wrap')));
+  await confirm(); await idle();
+  check('Remove the voice staff: 2 staves again', (await EN(() => window.__editNotes.staves)) === 2 && !/<staves>3/.test(await EN(() => window.__editNotes.xml)));
+  await act('undo'); await idle();
+  check('Undo: the voice staff is back', (await EN(() => window.__editNotes.staves)) === 3);
+  // Save into the score keeps all of it
+  const want = await EN(() => window.__editNotes.xml);
+  await act('save'); await sleep(300);
+  await page.evaluate(() => document.querySelector('.np-save [data-mode="this"]').click()); await sleep(2500);
+  check('Save: the file is what the editor showed (3 staves)', (await xmlOf(sc.id)) === want && /<staves>3<\/staves>/.test(want));
+  check('the 3-staff score plays', await (async () => { await tap('#sc-play'); await sleep(900); const q = await EN(() => window.__score.player.now()); await tap('#sc-stop'); return q > 0.3; })());
+  await send('POST', '/items/trash', { ids: [sc.id] }).catch(() => {});
+
+  // 6. voice + piano with lyrics on the voice staff (made by the Mac's own ops): it draws the words, every note picks,
+  // an edit on the piano and Save keep the voice line and its words
+  const t2 = `Voice and piano ${name} ${stamp}`;
+  const base2 = await send('POST', '/items', { kind: 'score', title: t2, musicxmlText: scoreXml(t2) });
+  let pv = await send('POST', `/items/${base2.id}/editnotes/preview`, { ops: [{ op: 'addstaff', at: 1, clef: 'treble' }] });
+  const rests = pv.notes.filter((n) => n.staff === 1).map((n) => n.ref);
+  pv = await send('POST', `/items/${base2.id}/editnotes/preview`, { ops: [{ op: 'addstaff', at: 1, clef: 'treble' }, { op: 'add', refs: rests, midi: 72 }] });
+  let k = 0;
+  const sung = pv.xml.replace(/(<note>\s*<pitch>\s*<step>C<\/step>\s*<octave>5<\/octave>\s*<\/pitch>[\s\S]*?<staff>1<\/staff>)/g, (m) => `${m}<lyric number="1"><syllabic>single</syllabic><text>la${k++}</text></lyric>`);
+  const voc = await send('POST', '/items', { kind: 'score', title: `${t2} sung`, musicxmlText: sung });
+  await send('POST', '/items/trash', { ids: [base2.id] }).catch(() => {});
+  await page.close(); await newPage();
+  await page.goto(`${BASE}#/item/${voc.id}`, { waitUntil: 'networkidle0' });
+  await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(900);
+  const words = await page.$$eval('#osmd svg text', (e) => e.map((t) => t.textContent).filter((t) => /^la\d$/.test(t)));
+  check('voice + piano: the words are drawn under the voice staff', k === 4 && words.length === 4, `${k} / ${words.join(',')}`);
+  await tap('#it-more'); await sleep(200);
+  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+  await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(700);
+  ns = await nowNotes();
+  check('voice + piano: 3 staves, every note picks', (await EN(() => window.__editNotes.staves)) === 3 && (await page.$$eval('#paper g[data-ref]', (e) => new Set(e.map((g) => g.dataset.ref)).size)) === ns.length);
+  h = await page.evaluate(() => { const n = window.__editNotes.notes.find((x) => x.bar === 0 && x.staff === 3 && !x.rest); const r = document.querySelector(`#paper g[data-ref="${n.ref}"]`).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  await tapXY(h.x, h.y);
+  await act('semi+'); await idle();
+  await act('save'); await sleep(300);
+  await page.evaluate(() => document.querySelector('.np-save [data-mode="this"]').click()); await sleep(2500);
+  const saved = await xmlOf(voc.id);
+  check('voice + piano: an edit + Save keeps the voice line and its words', (saved.match(/<text>la\d<\/text>/g) || []).length === 4 && /<staves>3<\/staves>/.test(saved) && saved !== sung);
+  check('voice + piano plays', await (async () => { await tap('#sc-play'); await sleep(900); const q = await EN(() => window.__score.player.now()); await tap('#sc-stop'); return q > 0.3; })());
+  await send('POST', '/items/trash', { ids: [voc.id] }).catch(() => {});
+  await page.close();
+}
+
+if (process.env.ONLY === 'bar') { await barTools('Mac', MAC); await barTools('iPad', IPAD); await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
 await cueAndArcs('Mac', MAC);
 await cueAndArcs('iPad', IPAD);
 await cueAndArcs('iPhone', PHONE);
@@ -509,6 +677,8 @@ await run('iPad', IPAD, 'new');
 await run('iPhone', PHONE, 'close');
 await leftHand('Mac', MAC);
 await leftHand('iPad', IPAD);
+await barTools('Mac', MAC);
+await barTools('iPad', IPAD);
 await b.close();
 if (errs.length) { console.log('\nconsole errors:'); errs.forEach((e) => console.log('  ', e)); }
 console.log(`\n${pass} passed, ${fail} failed${errs.length ? `, ${errs.length} console errors` : ''}`);

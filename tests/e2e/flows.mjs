@@ -241,24 +241,21 @@ check('speed shows a % (no bpm) and − slows it', (await text('#sc-rate')) === 
 await page.click('#sc-fast'); await page.click('#sc-fast'); await sleep(100);
 check('speed + speeds it up', (await text('#sc-rate')) === '105%', await text('#sc-rate'));
 check('no Version dropdown', !(await page.$('#sc-ver')));
-await page.click('#it-more'); await sleep(150); await clickText('.menu button', 'Make another version');
-check('make another version offers Simple Piano and Lead sheet, never Original', (await page.$$eval('#gv [data-o]', (e) => e.map((b) => b.dataset.o))).join() === 'clear,lead', await page.$$eval('#gv [data-o]', (e) => e.map((b) => b.dataset.o).join()));
-await page.click('#gv [data-o="lead"]'); await page.click('#gv [data-o="clear"]');
-check('generate button counts picks', (await text('.modal [data-ok]')) === 'Make 2');
-await page.click('.modal [data-ok]'); await sleep(300);
+// "Make another version…" is gone from the score ⋯; other versions still come from a job (as Add → Score makes them)
+await page.click('#it-more'); await sleep(150);
+check('score ⋯ has no “Make another version…”', !(await page.$$eval('.menu button', (e) => e.map((b) => b.textContent))).some((t) => t.includes('Make another version')));
+await closeMenu();
+await page.evaluate(async () => {
+  const { store } = await import('./js/store.js');
+  const it = store.get(location.hash.split('/').pop());
+  store.addJob({ gen: true, fromItemId: it.id, title: it.title, artist: it.artist, tags: it.tags.filter((t) => !['Lead sheet', 'Simple Piano'].includes(t)), tune: it.tune, key: it.key,
+    source: `From the score “${it.title}”`, sourceUrl: '', outputs: ['lead', 'clear'], output: 'Lead sheet + Simple Piano' });
+});
 let gen = false;
 for (let i = 0; i < 30 && !gen; i++) { await sleep(700); gen = (await db()).items.filter((x) => x.title === 'Amazing Grace' && x.kind === 'score').length === 3; }
 check('lead + simple piano generated as two new entries', gen);
 d = await db();
 check('new entries tagged Lead sheet / Simple Piano', d.items.some((x) => x.title === 'Amazing Grace' && x.tags.includes('Lead sheet')) && d.items.some((x) => x.title === 'Amazing Grace' && x.tags.includes('Simple Piano')));
-await go('#/item/m-02i'); await sleep(1200);
-await page.click('#it-more'); await sleep(150); await clickText('.menu button', 'Make another version');
-check('versions you have stay pickable', !(await page.$eval('#gv [data-o="clear"]', (b) => b.disabled)));
-await page.click('#gv [data-o="clear"]'); await sleep(100);
-check('picking one you have shows a warning', (await text('#gv-warn')).includes('already have Simple Piano'), await text('#gv-warn'));
-await page.click('#gv [data-o="clear"]'); await sleep(100);
-check('warning goes when unpicked', await page.$eval('#gv-warn', (e) => e.hidden));
-await page.click('.modal [data-close]'); await sleep(200);
 const simple = d.items.find((x) => x.title === 'Amazing Grace' && x.version === 'clear');
 await go('#/item/' + simple.id); await sleep(1500);
 check('simple piano score draws', (await count('#osmd svg')) >= 1);
@@ -270,7 +267,7 @@ await go('#/library?tags=Lead%20sheet');
 check('version is a tag (Lead sheet)', (await count('#lib-rows .row')) === 2, await count('#lib-rows .row'));
 await go('#/item/m-02i'); await sleep(1200);
 check('no Loop, no Files, no Details in the score header', !/Loop|Files|Details/.test(await text('.item-top')));
-{ const m = await moreMenu(); check('score ⋯ (preview): Info · Make another version… · Export ▸ · Move to Trash (Kids note names / Chords are toolbar toggles)', m === 'Info|-|Make another version…|-|Export|-|Move to Trash', m);
+{ const m = await moreMenu(); check('score ⋯ (preview): Info · Export ▸ · Move to Trash (Kids note names / Chords are toolbar toggles)', m === 'Info|-|Export|-|Move to Trash', m);
   await clickText('.menu button', 'Export'); const x = await page.$$eval('.menu button span', (e) => e.map((y) => y.textContent.trim()).join('|'));
   check('score Export ▸ MusicXML, MIDI, Print / PDF…', x === 'Export|MusicXML|MIDI|Print / PDF…', x); await closeMenu(); }
 await page.click('#sc-tup'); await sleep(1200);

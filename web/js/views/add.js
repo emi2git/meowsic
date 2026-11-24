@@ -297,7 +297,7 @@ export function addScoreView(main) {
       <button class="primary big" id="sf-go">${icon('wave')}Start</button>
       <p class="muted small center"><a class="link" href="#/help">Help</a></p>
     </form>`;
-  // a recording always becomes the Original; other versions are made from the score (⋯ → Make another version)
+  // a recording always becomes the Original
   $('#sf-src', main).onclick = (e) => { const b = e.target.closest('[data-s]'); if (!b) return; f.src = b.dataset.s; $('#sf-src', main).querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); $('#sf-yt', main).hidden = f.src !== 'yt'; $('#sf-file', main).hidden = f.src !== 'file'; };
   $('#sf-url', main).oninput = (e) => { if (/youtu/.test(e.target.value) && !$('#sf-title', main).value) $('#sf-title', main).value = 'Song from YouTube'; };
   $('#sf-audio', main).onchange = (e) => { const file = e.target.files[0]; if (!file) return; f.file = file.name; f.fileObj = file; $('#sf-fname', main).textContent = file.name; if (!$('#sf-title', main).value) $('#sf-title', main).value = titleCase(file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ')); };

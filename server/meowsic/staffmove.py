@@ -64,9 +64,9 @@ def _dur(n): return Fr(int(float(n.findtext('duration') or 0)))
 
 
 def piano_part(root):
-    """(index, part) of the first part with two staves, or (None, None)."""
+    """(index, part) of the first part with two staves or more (a grand staff, or voice + piano), or (None, None)."""
     for k, p in enumerate(root.findall('part')):
-        if any((a.findtext('staves') or '').strip() == '2' for a in p.iter('attributes')): return k, p
+        if any((a.findtext('staves') or '').strip() not in ('', '0', '1') for a in p.iter('attributes')): return k, p
     return None, None
 
 
@@ -332,6 +332,11 @@ def _set_type(n, q, div):
     if r is not None and r.get('measure'): del r.attrib['measure']
 
 
+def _staves(part):
+    from .barops import staves
+    return staves(part)
+
+
 def edit_part(root):
     """(index, part, hands): the piano part (two staves: hands = True), else the first part."""
     k, part = piano_part(root)
@@ -397,7 +402,7 @@ def _place(voices, taken, to, div, beat, bar_len):
         vo = next((v for v in dest if _fill(v, on, dur)), None)
         if vo is None:
             used = {v.num for v in voices}
-            num = TOP[to]
+            num = TOP.get(to, 4 * (int(to) - 1) + 1)
             while str(num) in used: num += 1
             vo = Voice(str(num), to)
             vo.first = 10 ** 9
@@ -710,6 +715,8 @@ def edit_ex(text: str, op: dict):
     kind = op.get('op') or ('move' if 'to' in op else None)
     if kind == 'unmark': return unmark(text, op.get('bars')), [], 0
     if kind == 'alt': return use_measure(text, op.get('bar'), op.get('measure')), [], 0
+    from .barops import OPS as BAR_OPS, bar_op
+    if kind in BAR_OPS: return bar_op(text, op)  # Bar ▾: clear / add a staff in a bar, insert / delete bars, add / remove staves
     if kind not in ('move', 'pitch', 'len', 'delete', 'add', 'tie', 'slur', 'unslur'): raise HTTPException(400, f'Unknown edit: {kind}')
     root = ET.fromstring(text.encode('utf-8'))
     pk, part, hands = edit_part(root)
@@ -771,7 +778,7 @@ def edit_ex(text: str, op: dict):
                     touched.append(new)
     else:
         to = str(op.get('to', ''))
-        if kind == 'move' and to not in ('1', '2'): raise HTTPException(400, 'to: 1 (upper staff) or 2 (lower staff)')
+        if kind == 'move' and not (to.isdigit() and 1 <= int(to) <= max(2, _staves(part))): raise HTTPException(400, 'to: a staff of the part (1 = the top one)')
         q = None
         if kind == 'len':
             try: q = Fr(str(op.get('q')))
@@ -889,13 +896,16 @@ def _what(ops):
     for o in ops:
         k = o.get('op') or ('move' if 'to' in o else '')
         k = f'move{o.get("to")}' if k == 'move' else k
-        cnt[k] = cnt.get(k, 0) + (len(o.get('bars') or []) if k == 'unmark' else 1 if k == 'alt' else len(o.get('refs') or []))
-    words = {'move1': lambda n: f'{s(n)} to the right hand', 'move2': lambda n: f'{s(n)} to the left hand',
+        cnt[k] = cnt.get(k, 0) + (len(o.get('bars') or []) if k == 'unmark' else 1 if k in ('alt', 'clearbar', 'fillbar', 'insbar', 'delbar', 'addstaff', 'delstaff') else len(o.get('refs') or []))
+    words = {'move1': lambda n: f'{s(n)} to the right hand', 'move2': lambda n: f'{s(n)} to the left hand', 'move3': lambda n: f'{s(n)} to staff 3',
              'pitch': lambda n: f'{s(n)} higher / lower', 'len': lambda n: f'{s(n)} longer / shorter', 'delete': lambda n: f'{s(n)} deleted',
              'add': lambda n: f'{s(n)} added', 'unmark': lambda n: f'{n} bar{"s" if n != 1 else ""} checked',
              'alt': lambda n: f'{n} bar{"s" if n != 1 else ""} from the other reading',
              'tie': lambda n: f'{n} tie{"s" if n != 1 else ""} changed', 'slur': lambda n: f'{n} slur{"s" if n != 1 else ""} added',
-             'unslur': lambda n: f'{n} slur{"s" if n != 1 else ""} removed'}
+             'unslur': lambda n: f'{n} slur{"s" if n != 1 else ""} removed',
+             'clearbar': lambda n: f'{n} bar{"s" if n != 1 else ""} cleared on one staff', 'fillbar': lambda n: f'{n} bar{"s" if n != 1 else ""} given a staff',
+             'insbar': lambda n: f'{n} empty bar{"s" if n != 1 else ""} added', 'delbar': lambda n: f'{n} bar{"s" if n != 1 else ""} deleted',
+             'addstaff': lambda n: f'{n} staff added' if n == 1 else f'{n} staves added', 'delstaff': lambda n: f'{n} staff removed' if n == 1 else f'{n} staves removed'}
     return ', '.join(words[k](n) for k, n in cnt.items() if k in words and n) or 'no notes'
 
 
