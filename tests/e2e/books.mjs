@@ -1,5 +1,6 @@
 // Books (server on a test port, temp data): sheet → book → sheet through the API (the app no longer offers it:
 // books stay books), files move on disk; the ⋯ menu never offers Make it a book / Not a book
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 const BASE = process.env.BASE || 'http://localhost:5190/';

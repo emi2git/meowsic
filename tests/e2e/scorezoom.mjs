@@ -4,6 +4,7 @@
 // device key meowsic-scorezoom-<id> (label x 0.75) -> label x 0.75 / base; both move to meowsic-devzoom-<id>, once.
 // Mac, iPad, iPhone; screenshots in OUT.
 // PREVIEW=http://localhost:5371 OUT=<dir> node scorezoom.mjs   (static server: python3 -m http.server 5371 -d web)
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const ORIGIN = process.env.PREVIEW || 'http://localhost:5181';
 const BASE = ORIGIN + '/?preview=1';

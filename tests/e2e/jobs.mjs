@@ -1,4 +1,5 @@
 // real job runners through the UI (server on :5190, temp data)
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 const BASE = process.env.BASE || 'http://localhost:5190/';

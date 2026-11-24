@@ -2,6 +2,7 @@
 // height of the area under the top bar (fit, aspect kept), edge to edge. Turning, zoom, ink and the
 // top bar still work; the Mac layout keeps its |‹| page |›| strips. Clean up: books are not in it.
 // Needs a test server with a multi-page sheet and a book: FILL_BASE=http://localhost:5194/ (never :5180)
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.FILL_BASE || 'http://localhost:5190/';
 const out = process.env.OUT || '.';

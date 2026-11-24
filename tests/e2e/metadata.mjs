@@ -2,6 +2,7 @@
 // still use them), the viewer's ⋯ holds only Info, the Info popup shows + edits everything (voice-mic fields, Save /
 // Cancel, one PATCH, undoable) and carries the item's actions (no Make it a book). iPhone: Info is full screen.
 // Mac + iPad Pro 13 + iPhone. BASE=http://127.0.0.1:5290/ (a test server on a data copy; never :5180)
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://127.0.0.1:5290/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', args: ['--ignore-certificate-errors'] });

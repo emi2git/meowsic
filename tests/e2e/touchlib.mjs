@@ -4,6 +4,7 @@
 // Mac: the list still scrolls, 50 rows a page.
 // BASE=http://localhost:5211/ (a test server with 100+ items; never :5180) or BASE='http://localhost:5210/?preview=1'
 // OUT=dir for screenshots (default: no screenshots)
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5211/';
 const OUT = process.env.OUT || '';

@@ -2,6 +2,7 @@
 // library). DB = that server's meowsic.db (to make one row 25 h old). A fresh change shows "Can undo until … left";
 // a row older than 24 h shows the small Final badge and no Undo; the server refuses it (409 final); "Clean up now…"
 // shows a dry run (counts, MB) and deleting nothing until asked; iPad Pro 13 and iPhone Air.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import { execFileSync } from 'child_process';
 const BASE = process.env.BASE || 'http://localhost:5317/';

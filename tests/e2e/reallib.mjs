@@ -1,4 +1,5 @@
-// read-only look at the real library (no clicks that change data; viewers closed within 10 s so no plays are logged)
+// read-only look at the LIVE library (no clicks that change data; viewers closed within 10 s so no plays are logged). On purpose only: MEOWSIC_LIVE_READONLY=1 node reallib.mjs (live-guard allows GETs only)
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = 'https://localhost:5180/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', args: ['--ignore-certificate-errors'] });

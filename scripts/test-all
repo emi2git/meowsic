@@ -85,7 +85,7 @@ def run_suite(name, out_dir, timeout):
         log.write_text(f'setup failed: {e}\n'); code = 'setup'
     finally:
         for p in procs: p.stop()
-        if kind == 'restart': subprocess.run(['pkill', '-f', f'--data {env.get("DATA", "@@none")}'], capture_output=True)
+        if kind == 'restart' and env.get('DATA'): dev.kill_test_servers(env['DATA'])  # guarded: never the live server
     text = log.read_text(errors='ignore')
     m = OK_RX.findall(text)
     passed, failed = (int(m[-1][0]), int(m[-1][1])) if m else (None, None)

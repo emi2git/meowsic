@@ -5,6 +5,7 @@
 // inset emulated), a real touch at that point plays, a 'running' but frozen context (iOS 26 Home Screen app back from
 // the background) is replaced, a frozen clock says so, no tempo mark is drawn and the toolbar shows no bpm, a stuck AudioContext (iOS 'interrupted' / a resume that never
 // wakes) is replaced on the next tap, and a Play that gets no running audio says so instead of a frozen Pause.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const ORIGIN = process.env.PREVIEW || 'http://localhost:5181';
 const BASE = ORIGIN + '/?preview=1';

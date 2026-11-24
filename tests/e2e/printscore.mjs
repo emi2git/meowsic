@@ -1,4 +1,5 @@
 // print a real score: notation laid out on A4 pages (temp server :5190)
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5190/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });

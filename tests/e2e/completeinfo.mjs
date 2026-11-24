@@ -10,6 +10,7 @@
 //   · typed key ("f# minor" → F#m, a wrong one refused), Accompaniment, Back, Skip, Don't know, Show again
 //   · Mac: 1 = Lead, "eb" + Enter = E♭, Enter = Save & next (only when on); Activities row + its Undo
 // Screenshots in SHOTS.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 const BASE = process.env.BASE || 'http://localhost:5381/';

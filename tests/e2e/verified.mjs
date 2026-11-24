@@ -4,6 +4,7 @@
 // tag "Verified" (made if missing); an Activities row whose Undo takes it back; the library row shows a small ✓.
 // Tags is in the App section (left bar after Manage library; iPhone: the More menu, not the tab bar).
 // Mac, iPad Pro 13 and iPhone Air; screenshots in SHOTS.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 const BASE = process.env.BASE || 'http://localhost:5347/';

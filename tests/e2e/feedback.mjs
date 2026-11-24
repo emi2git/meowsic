@@ -3,6 +3,7 @@
 // Submit → newest first, collapsed rows (time + status + first line), Edit (history kept), Remove (soft),
 // Fixed / Won't fix (set by Claude) hide Edit / Remove and the Mac says 409, offline submit waits and is sent later.
 // SHOTS = folder for screenshots.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 const BASE = process.env.BASE || 'http://localhost:5190/';

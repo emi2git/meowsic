@@ -13,6 +13,7 @@
 //        chord in order of first use (symbols as drawn: follow transpose), slash chords as their base chord; a tap
 //        lights its chord symbols in the score; a score without symbols gets chords from the notes; remembered.
 // Screenshots go to $SHOTS.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5190/';
 const SHOTS = process.env.SHOTS || '/private/tmp/claude-501/-Users-emi2mac/4133b106-9ccb-4a6c-97de-aed86ecf9500/scratchpad/scorekids';

@@ -1,4 +1,5 @@
 // End-to-end: drive every feature of the UI preview and check the result.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 // PREVIEW (or BASE, as the other e2e scripts take it) = the UI preview's origin. Without either it falls back to
 // :5181, which serves the main checkout, not this tree: a worktree's tests then run against other (older) files.

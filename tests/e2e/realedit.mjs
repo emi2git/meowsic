@@ -1,4 +1,5 @@
 // note editing on a real (transcribed) score, against the temp server on :5190
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 const BASE = process.env.BASE || 'http://localhost:5190/';
