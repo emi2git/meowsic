@@ -868,8 +868,7 @@ kbd { font: 11px ui-monospace, monospace; opacity: .7; margin-left: 6px; border:
   .pane-l { border-right: 0; }
   .two-col { grid-template-columns: 1fr; }
 }
-/* library columns hide as space runs out (Title > Type > Artist > Added > Tag > Key / Pages) */
-@media (max-width: 1100px) { .lib-table .c-key { display: none; } }
+/* library columns hide as space runs out (Title > Key > Version > Type > Artist > Added > Pages) */
 @media (max-width: 900px) { .lib-table .c-album { display: none; } }
 @media (max-width: 640px) { .lib-table .c-when { display: none; } .lib-table .c-artist { width: 34%; } .lib-table .c-title { width: auto; } }
 @media (max-width: 480px) { .lib-table .c-artist { display: none; } }
@@ -1198,6 +1197,11 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
   .lib-table .c-pages { width: 50px; }
   .lib-table .c-pages .pg-u { display: inline; }
 }
+/* Key: the song's key as a chord name (A, Dm, Bb), shown on every device; compact on a phone,
+   where Pages gives way first */
+.lib-table .c-key { width: 64px; white-space: nowrap; }
+@media (max-width: 760px) { .lib-table .c-key { width: 58px; padding-right: 6px; } }
+@media (max-width: 480px) { .lib-table:has(th.c-key) .c-pages { display: none; } }
 
 /* ===== Fit lyrics (score ⋯ → Fit lyrics…, js/views/fitlyrics.js) ===== */
 /* a panel over the lower part of the score; the score above makes room (.fitting → --fl-h) and stays live */

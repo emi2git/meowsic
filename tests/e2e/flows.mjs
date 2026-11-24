@@ -50,9 +50,9 @@ check('second click reverses (Z–A)', (await page.$eval('[data-sort="title"]', 
 await page.click('[data-sort="added"]'); await sleep(200);
 check('no song icons', (await count('.song-ic')) === 0);
 check('no source site names in the library', !/Ultimate Guitar|Hợp Âm Chuẩn/.test(await text('#lib-rows')));
-check('library is a table on Mac with columns', (await page.$$eval('.lib-table th', (e) => e.map((x) => x.textContent.trim()).join('|'))).startsWith('|Title|Artist|Album|Version|Type|Key|Added'));
+check('library is a table on Mac with columns', (await page.$$eval('.lib-table th', (e) => e.map((x) => x.textContent.trim()).join('|'))).startsWith('|Title|Artist|Album|Key|Version|Type|Added'));
 await page.click('#side a[href="#/library?kind=sheet"]'); await sleep(300);
-check('Sheets columns: Title Artist Album Version Key Pages Added', (await page.$$eval('.lib-table th', (e) => e.map((x) => x.textContent.trim().replace(/[▲▼]/g, '').trim()).filter(Boolean).join('|'))) === 'Title|Artist|Album|Version|Key|Pages|Added');
+check('Sheets columns: Title Artist Album Key Version Pages Added', (await page.$$eval('.lib-table th', (e) => e.map((x) => x.textContent.trim().replace(/[▲▼]/g, '').trim()).filter(Boolean).join('|'))) === 'Title|Artist|Album|Key|Version|Pages|Added');
 check('no tags in the library list', (await count('#lib-rows .tagchip, #lib-rows .c-tag')) === 0);
 check('no PDF in the list', !(await text('#lib-rows')).includes('PDF'));
 await go('#/library');

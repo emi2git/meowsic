@@ -14,7 +14,8 @@ export function thumbHtml(it) {
 }
 
 // "C major" → "C", "A minor" → "Am", "Key G" → "G"
-export const keyShort = (k) => String(k || '').replace(/^key\s*/i, '').replace(/\s*major$/i, '').replace(/\s*minor$/i, 'm').trim();
+// a song's key as a chord name, written like the chord charts (b / #): "A major" → A, "D minor" → Dm, "Bb major" → Bb
+export const keyShort = (k) => String(k || '').replace(/^key\s*/i, '').replace(/\s*(major|maj)$/i, '').replace(/\s*(minor|min)$/i, 'm').replace(/♭/g, 'b').replace(/♯/g, '#').trim();
 
 export function metaText(it) {
   if (it.kind === 'sheet') return `${it.pages} page${it.pages > 1 ? 's' : ''}`; // file type lives under Info
