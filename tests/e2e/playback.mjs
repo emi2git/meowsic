@@ -116,7 +116,7 @@ for (const [name, vp] of DEVICES) {
   check('the score file keeps its tempo (the player reads it)', tempo.file, JSON.stringify(tempo));
   check('the drawn XML drops ♩ = N, tempo words and <sound tempo>, keeps other words and dynamics', tempo.strip, JSON.stringify(tempo));
   check('no tempo mark drawn on the score (no ♩ = N, no tempo words)', tempo.svg && !tempo.mark, JSON.stringify(tempo));
-  check('no bpm in the score toolbar (speed is a %)', !tempo.bar && /^\d+%$/.test(tempo.rate || ''), JSON.stringify(tempo));
+  check('the toolbar tempo is a plain number (the score\'s own bpm), nothing drawn on the score', /^\d{2,3}$/.test(tempo.rate || ''), JSON.stringify(tempo));
   // audio that never starts: the button goes back to Play and says so (no frozen Pause)
   await p.evaluate(() => { const P = (window.AudioContext || window.webkitAudioContext).prototype; window.__res = P.resume; P.resume = function () { return new Promise(() => {}); }; });
   await p.evaluate(async () => { const { audioCtx } = await import('/js/audio.js'); await audioCtx().suspend(); });

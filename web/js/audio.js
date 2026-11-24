@@ -108,6 +108,8 @@ function pianoVoice(out, pitch, vel, when, held) {
 // at the end of each the clock jumps to the next (the playhead with it); A–B loop mode ignores them.
 // chords: the chord symbols as piano chords ([{q, d, n, v}], chordplay.js chordEvents), heard while chordsOn; a chord
 // already sounding where Play starts (or a loop jumps back to) is struck there for the rest of its length.
+// Tempo: bpm × rate; setRate while playing takes over at once (the notes already on their way after that moment are
+// called back and scheduled again at the new tempo), with no stop / restart of the audio.
 // mute: the staves not played (a note's s, musicxml.js; hands.js picks them), changed at once by setMute.
 export class ScorePlayer {
   constructor({ notes, bpm, beats, onTick, onEnd, segments = null, chords = [] }) {
@@ -115,6 +117,7 @@ export class ScorePlayer {
     this.chordsOn = false; this.chordVoices = []; this.heardChords = []; // heardChords: [q, midi] as scheduled (for tests)
     this.seg = 0; this.played = []; this.heard = []; // played: [segment index, …] as they start (for tests); heard: [q, midi, staff]
     this.mute = new Set(); this.noteVoices = [];
+    this.heardAt = []; this.sched = []; // heardAt: [q, audio time] of each note played (for tests); sched: voices on their way (tempo changes)
     this.rate = 1; this.shift = 0;
     this.loop = null; // [startQ, endQ]
     this.posQ = 0; this.playing = false;
@@ -126,7 +129,7 @@ export class ScorePlayer {
     if (!this.playing) return this.posQ;
     const t = this.ctx.currentTime;
     const a = this.anchors.filter((x) => x.t0 <= t).pop() || this.anchors[0];
-    return a.q0 + Math.max(0, t - a.t0) * this.qps; // not before the start while the first notes are on their way
+    return a.q0 + Math.max(0, t - a.t0) * a.qps; // not before the start while the first notes are on their way
   }
   async play() {
     if (this.playing || this.starting) return;
@@ -152,9 +155,9 @@ export class ScorePlayer {
       this.seg = k < 0 ? this.segments.length - 1 : k;
       this.played = [this.seg];
     }
-    this.heard = []; this.heardChords = []; this.chordVoices = []; this.noteVoices = [];
+    this.heard = []; this.heardAt = []; this.heardChords = []; this.chordVoices = []; this.noteVoices = []; this.sched = [];
     this.q0 = this.posQ; this.t0 = c.currentTime + 0.12;
-    this.anchors = [{ q0: this.q0, t0: this.t0 }];
+    this.anchors = [{ q0: this.q0, t0: this.t0, qps: this.qps }];
     this.scheduledTo = this.posQ;
     this.carryChords(this.posQ);
     this.playing = true;
@@ -181,17 +184,20 @@ export class ScorePlayer {
       else if (segs && this.seg + 1 < segs.length) { this.seg++; this.played.push(this.seg); this.q0 = segs[this.seg][0]; } // a repeat / an ending
       else break;
       this.t0 = tEnd; this.scheduledTo = this.q0;
-      this.anchors = [...this.anchors.slice(-1), { q0: this.q0, t0: this.t0 }];
+      this.anchors = [...this.anchors.slice(-2), { q0: this.q0, t0: this.t0, qps: this.qps }];
       this.carryChords(this.q0);
     }
+    const tNow = this.ctx.currentTime;
+    if (this.sched.length > 64) this.sched = this.sched.filter((s) => s.at > tNow - 0.05);
     const last = !segs || this.seg === segs.length - 1;
     if (!this.loop && last && this.now() >= (segs ? segs.at(-1)[1] : this.endQ) + 0.5) { this.pause(); this.posQ = 0; this.onEnd?.(); }
   }
   noteVoice(n) {
     const when = this.t0 + (n.q - this.q0) / this.qps, t = this.ctx.currentTime;
-    const v = pianoVoice(this.out, n.n + this.shift, n.v, Math.max(t, when), Math.max(0.08, n.d / this.qps));
+    const at = Math.max(t, when), v = pianoVoice(this.out, n.n + this.shift, n.v, at, Math.max(0.08, n.d / this.qps));
     this.noteVoices = this.noteVoices.filter((x) => x.v.end > t); this.noteVoices.push({ v, s: n.s });
-    if (this.heard.length < 4000) this.heard.push([n.q, n.n, n.s]); // what was played, in order (for tests)
+    this.sched.push({ v, at, chord: false });
+    if (this.heard.length < 4000) { this.heard.push([n.q, n.n, n.s]); this.heardAt.push([n.q, at]); } // what was played, in order (for tests)
   }
   // fade out notes already on their way (or sounding)
   hush(voices) { const t = this.ctx.currentTime; for (const v of voices) { try { v.env.gain.cancelScheduledValues(t); v.env.gain.setTargetAtTime(0, t, 0.05); v.src.stop(t + 0.4); } catch {} } }
@@ -207,8 +213,9 @@ export class ScorePlayer {
     for (const n of this.notes) if (was.has(n.s) && !next.has(n.s) && n.q >= lo && n.q < this.scheduledTo) this.noteVoice(n);
   }
   chordVoice(n, q, d) {
-    const when = this.t0 + (q - this.q0) / this.qps;
-    const v = pianoVoice(this.out, n.n + this.shift, n.v, Math.max(this.ctx.currentTime, when), Math.max(0.08, d / this.qps - 0.02));
+    const at = Math.max(this.ctx.currentTime, this.t0 + (q - this.q0) / this.qps);
+    const v = pianoVoice(this.out, n.n + this.shift, n.v, at, Math.max(0.08, d / this.qps - 0.02));
+    this.sched.push({ v, at, chord: true });
     const t = this.ctx.currentTime;
     this.chordVoices = this.chordVoices.filter((x) => x.end > t); this.chordVoices.push(v);
     if (this.heardChords.length < 4000) this.heardChords.push([q, n.n]);
@@ -235,13 +242,35 @@ export class ScorePlayer {
     const o = this.out; o.gain.setTargetAtTime(0, this.ctx.currentTime, 0.03); setTimeout(() => o.disconnect(), 300);
   }
   seek(q) { const was = this.playing; if (was) this.pause(); this.posQ = Math.max(0, Math.min(q, this.endQ)); this.onTick?.(this.posQ); if (was) this.play().catch(() => {}); }
-  setRate(r) { const was = this.playing; if (was) this.pause(); this.rate = r; if (was) this.play().catch(() => {}); }
+  setRate(r) {
+    if (!(r > 0) || r === this.rate) return;
+    if (!this.playing) { this.rate = r; return; }
+    const t = this.ctx.currentTime + 0.03, last = this.anchors.at(-1);
+    if (last.t0 > t) { // a repeat / a loop jump is already on its way: the new tempo from the end of what is scheduled
+      this.t0 += (this.scheduledTo - this.q0) / this.qps; this.q0 = this.scheduledTo; this.rate = r;
+    } else { // from now: call back what starts after t, then schedule it again at the new tempo
+      const q = last.q0 + Math.max(0, t - last.t0) * last.qps;
+      let nm = 0, nc = 0;
+      this.sched = this.sched.filter((s) => {
+        if (s.at < t - 1e-4) return true;
+        try { s.v.src.stop(); s.v.env.disconnect(); } catch {}
+        if (s.chord) nc++; else nm++;
+        return false;
+      });
+      const drop = (arr, k) => { if (k) arr.splice(Math.max(0, arr.length - k)); };
+      drop(this.heard, nm); drop(this.heardAt, nm); drop(this.heardChords, nc);
+      this.rate = r; this.q0 = q; this.t0 = t; this.scheduledTo = q;
+    }
+    this.anchors = [...this.anchors.slice(-2), { q0: this.q0, t0: this.t0, qps: this.qps }];
+    this.pump();
+  }
   stop() { this.pause(); this.posQ = 0; }
 }
 
 // ---------- voice player: a rendered (sung) audio file in place of the piano, same interface as ScorePlayer ----------
-// The audio was rendered at `bpm` from beat 0, so the playhead is currentTime × bpm / 60. It has its own tempo:
-// rate stays 1 (the toolbar switches back to the piano for tempo / transpose changes).
+// The audio was rendered at `bpm` from beat 0, so the playhead is currentTime × bpm / 60 (media time). Tempo: the
+// browser's own time-stretch (playbackRate, pitch kept), so the toolbar's tempo applies to the voice too; a key
+// change still goes back to the piano.
 // iPad / iPhone: el.play() runs straight from the Play tap (nothing awaited before it), which Safari needs.
 export class VoicePlayer {
   // segments (repeats, as ScorePlayer): the sung audio runs through them in order (singscore.py unrolls the repeats),
@@ -269,6 +298,7 @@ export class VoicePlayer {
     this.setTime(this.posQ);
     this.playing = true;
     const p = this.el.play(); // first thing, inside the tap
+    if (this.el.playbackRate !== this.rate) this.el.playbackRate = this.rate; // Safari can reset it on load
     const tick = () => {
       if (!this.playing) return;
       const q = this.now();
@@ -282,7 +312,13 @@ export class VoicePlayer {
   stopClock() { this.playing = false; cancelAnimationFrame(this.raf); try { this.el.pause(); } catch {} }
   pause() { if (!this.playing) return; this.posQ = this.now(); this.stopClock(); }
   seek(q) { this.posQ = Math.max(0, Math.min(q, this.endQ)); this.setTime(this.posQ); this.onTick?.(this.posQ); }
-  setRate() {} // its own tempo; see the toolbar
+  setRate(r) {
+    if (!(r > 0)) return;
+    this.rate = Math.max(0.25, Math.min(4, r)); // what browsers play with sound
+    const el = this.el;
+    el.preservesPitch = true; el.webkitPreservesPitch = true; el.mozPreservesPitch = true;
+    el.defaultPlaybackRate = this.rate; el.playbackRate = this.rate;
+  }
   stop() { this.pause(); this.posQ = 0; this.setTime(0); }
   destroy() { this.stopClock(); this.el.removeAttribute('src'); try { this.el.load(); } catch {} }
 }

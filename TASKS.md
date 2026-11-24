@@ -60,3 +60,4 @@ Updated: 2026-11-24
 - 22 voices × 4 songs on the takes page
 - Left menu regrouped; Help moved to Settings
 - Score ⋯: Edit notes removed (it is the toolbar ✎, on screen at every width); menus/editnotes tests updated
+- Score tempo control (− BPM +, steps of 5, hold repeats, tap to type / Tap / ↺ score tempo; 30–240; per score on the entry's rate; live change without restart; Edit notes and Voice follow it, the voice time-stretched with pitch kept); tests/e2e/tempo.mjs
