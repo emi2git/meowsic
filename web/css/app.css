@@ -281,6 +281,11 @@ body[data-view="item"] #main, body[data-view="perform"] #main { overflow: hidden
 .playbar { pointer-events: auto; cursor: ew-resize; touch-action: none; }
 .playbar::before { content: ''; position: absolute; top: -8px; bottom: -8px; left: -16px; right: -16px; }
 .playbar.dragging { background: rgba(240, 96, 36, 1); box-shadow: 0 0 0 3px rgba(240, 96, 36, .25); }
+/* the grip: an orange dot just above the line (clear of the top staff's notes), with a finger-sized (44 px) hit area */
+.playbar .pb-grip { position: absolute; left: 50%; top: -18px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: rgba(240, 96, 36, .95); box-shadow: 0 1px 3px rgba(0, 0, 0, .25); }
+.playbar .pb-grip::before { content: ''; position: absolute; left: -15px; right: -15px; top: -20px; bottom: -8px; }
+.playbar .pb-grip::after { content: ''; position: absolute; left: 50%; top: 12px; width: 2px; height: 8px; margin-left: -1px; background: rgba(240, 96, 36, .9); }
+.playbar.dragging .pb-grip { transform: scale(1.25); }
 .editing .playbar { pointer-events: none; }
 .transport { display: inline-flex; align-items: center; gap: 6px; flex: none; }
 /* score player: Stop (back to the beginning) then one Play / Pause button; the orange line in the score shows where it is */
@@ -1138,7 +1143,13 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 /* ===== Edit notes (the score toolbar ✎, js/views/editnotes.js): pick notes, move them to the other hand ===== */
 .viewer.noting .viewer-body { padding-bottom: var(--np-h, 150px); }
 .viewer.noting .score-paper { touch-action: none; user-select: none; -webkit-user-select: none; }
+/* while editing notes only the line's grip drags it (editnotes.js lets it through), so the line never hides a note's tap */
 .viewer.noting .playbar { pointer-events: none; }
+.viewer.noting .playbar .pb-grip { pointer-events: auto; cursor: ew-resize; touch-action: none; }
+/* …and the grip hangs below the system (above the top staff is where a tap names a chord) */
+.viewer.noting .playbar .pb-grip { top: auto; bottom: -18px; }
+.viewer.noting .playbar .pb-grip::before { top: -8px; bottom: -20px; }
+.viewer.noting .playbar .pb-grip::after { top: -6px; }
 .nh-hit { cursor: pointer; }
 .nh-hit:hover path, .nh-hit:hover ellipse { fill: var(--acc-text); stroke: var(--acc-text); }
 .viewer .nh-on path, .viewer .nh-on ellipse, .viewer .nh-on rect { fill: var(--acc) !important; stroke: var(--acc) !important; }

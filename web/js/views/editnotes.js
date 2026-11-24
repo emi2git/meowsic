@@ -87,6 +87,7 @@ export async function editNotes(view, it, host, opts = {}) {
   // steps[0] = the score as saved; each edit adds one (its ops = every edit so far, replayed by the Mac)
   let steps = [{ ops: [], xml: base.xml, notes: base.notes }], at = 0;
   let sel = new Set(), anchor = null, several = false, busy = false, shown = false, closed = false, cueAt = null, took = new Set();
+  let dropped = false; // the orange line was dragged since the last pick: ▶ From here plays from it, not the picked notes
   let barPick = null; // a bar picked by tapping its empty space: { bar (0-based), staff }
   let midiCtl = null; // a MIDI keyboard (midiedit.js): its chip in the bar
   // a range: { a, b (quarters from the start, b not in it), s0, s1 (staves) }; drawn as a blue box
@@ -295,7 +296,7 @@ export async function editNotes(view, it, host, opts = {}) {
   };
 
   // ---- picking ----
-  const setSel = (refs, add = false) => { rng = null; rangeArm = false; sel = add ? new Set([...sel, ...refs]) : new Set(refs); paint(); };
+  const setSel = (refs, add = false) => { dropped = false; rng = null; rangeArm = false; sel = add ? new Set([...sel, ...refs]) : new Set(refs); paint(); };
   // a range from the anchor note to this one (every staff between them)
   const rangeTo = (ref) => {
     const a = byRef().get(anchor), z = byRef().get(ref);
@@ -319,6 +320,7 @@ export async function editNotes(view, it, host, opts = {}) {
   const inPaper = (e) => !!e.target.closest?.('#paper') && !e.target.closest('.notes-panel') && !e.target.closest('.ib-badge');
   const onDown = (e) => {
     if (!inPaper(e) || e.button > 0) return;
+    if (e.target.closest('.playbar')) return; // the orange line: score.js drags it (no pick, no box, no swipe)
     e.stopPropagation();
     const dot = e.target.closest('.score-dots i');
     if (dot) { e.preventDefault(); press = null; view.goTo([...dot.parentElement.children].indexOf(dot) + 1); return draw(); }
@@ -404,7 +406,7 @@ export async function editNotes(view, it, host, opts = {}) {
     if (bi == null || closed) return;
     const n = view.cueBar(bi);
     if (say && n !== cueAt) toast(`Ready to play from bar ${n}`);
-    cueAt = n;
+    cueAt = n; dropped = false;
     draw();
   };
   const firstBar = (refs, notes = cur().notes) => {
@@ -785,7 +787,7 @@ export async function editNotes(view, it, host, opts = {}) {
     if (!pl) return;
     if (pl.playing) { pl.pause(); host.dispatchEvent(new CustomEvent('playstate', { bubbles: true })); return draw(); }
     const b = firstBar([...sel]);
-    if (b != null) cueAt = view.cueBar(b); // one bar of lead-in, like the cue after an edit
+    if (b != null && !dropped) cueAt = view.cueBar(b); // one bar of lead-in, like the cue after an edit
     const pr = pl.play();
     host.dispatchEvent(new CustomEvent('playstate', { bubbles: true }));
     draw();
@@ -793,6 +795,10 @@ export async function editNotes(view, it, host, opts = {}) {
   };
   const onEnded = () => !closed && draw();
   host.addEventListener('ended', onEnded);
+  // the orange line dragged (score.js): Play / ▶ From here start where it was dropped
+  const onCueDrag = (e) => { if (closed) return; cueAt = e.detail.bar + 1; dropped = true; draw(); };
+  host.addEventListener('cuedrag', onCueDrag);
+  view.keepBar?.(true);
   const add = () => need([...sel], (refs) => run({ op: 'add', refs, by: 4 }));
   // ---- copy / cut / paste / repeat (rangeops.py) ----
   const takeClip = async (w) => {
@@ -946,6 +952,7 @@ export async function editNotes(view, it, host, opts = {}) {
     host.removeEventListener('contextmenu', noMenu, true);
     document.removeEventListener('keydown', onKey, true);
     host.removeEventListener('ended', onEnded);
+    host.removeEventListener('cuedrag', onCueDrag); view.keepBar?.(false);
     lyr?.destroy(); // [lyrics]
     box?.remove(); untag(); panel.remove();
     host.classList.remove('noting'); host.style.removeProperty('--np-h');

@@ -40,6 +40,7 @@ Updated: 2026-11-24
 - Record your own singing/talking voice (future beta, in Feedback)
 
 ## Done today (live)
+- Edit notes: drag the orange play line by its grip (touch + mouse), snaps to notes, across lines; hold at the page edge turns the page; dropping sets Play / ▶ From here start; dragging while playing seeks (e2e cuedrag)
 - Play chords: score toolbar toggle plays the chord names above the bars as piano chords with the score (repeats, from here, tempo, stop; remembered per device)
 - Add score: only running/queued jobs, compact, below the form; done/failed live in Activities
 - Singing: Vietnamese lyrics keep every letter (Unicode, NFC; the A-Z reader cut most syllables) and each syllable is read as ARPAbet for SoulX-Singer (it has no Vietnamese phonemes)
