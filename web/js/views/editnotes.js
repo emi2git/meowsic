@@ -10,7 +10,8 @@
 //   ♭ / ♯ a semitone down / up (↓ / ↑), 8↓ / 8↑ an octave (⌘↓ / ⌘↑), a length (1–6 = 32nd … whole, . = dotted) —
 //   of a note or a rest (a rest made shorter leaves a rest after it, or "Pull the next notes earlier"; made longer it
 //   takes the time of what follows in the bar — the notes it shortened or took are named and shown, Undo brings them
-//   back; too long for the bar: refused) —, →| Fill next rest (E: the note takes in the one rest after it, each press
+//   back; too long for the bar: refused) —, = Even out (Q, shown when 2+ notes / rests one after the other in one
+//   voice are picked: one length each, the same total — dotted 8th + 16th → two 8ths; evenops.py), →| Fill next rest (E: the note takes in the one rest after it, each press
 //   one more; never a note), Delete (a rest stays; on a rest: Remove rest — what follows comes earlier and the bar is
 //   left short, "Previous note fills it" a tap away; a rest at the end of its bar: pull notes from the next bar or the
 //   note before fills it; a whole-bar rest: Delete this bar), + Note (a third above, in the chord; on a rest: "+ Note here"
@@ -40,7 +41,7 @@ import { barFixSheet, fixBarOp } from '../incomplete.js';
 import { lyricMode } from './lyricmode.js'; // [lyrics]
 import { attachMidi } from '../midiedit.js';
 import { barMarks } from '../musicxml.js';
-import { noteIcon, DOT_IC } from '../notevalue.js';
+import { noteIcon, DOT_IC, EVEN_IC } from '../notevalue.js';
 import { handsHtml, handsClick } from '../hands.js';
 
 export const post = (path, body) => fetch('/api' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -356,6 +357,7 @@ export async function editNotes(view, it, host, opts = {}) {
         <span class="stepper np-clip" aria-label="Copy and paste">
         <button data-a="copy" class="np-icon" ${off(p.length || barPick)} title="Copy (⌘C)" aria-label="Copy">${COPY_IC}</button><button data-a="cut" class="np-icon" ${off(p.length || barPick)} title="Cut (⌘X): rests are left" aria-label="Cut">${CUT_IC}</button><button data-a="paste" class="np-icon" ${off(clip && (p.length || barPick))} title="${clip ? `Paste (⌘V) ${clipWords(clip)} here, over what follows` : 'Paste (⌘V): copy something first'}" aria-label="Paste">${PASTE_IC}</button><button data-a="repeat" class="np-icon np-repeat" ${off(p.length || barPick)} title="Repeat (R): the selection again right after itself" aria-label="Repeat">⟳</button>
         </span>
+        ${evenGroup()?.some((n, i, g) => Math.abs(n.dur - g[0].dur) > 1e-6) ? `<button data-a="even" class="np-icon np-even" title="Even out (Q): the picked notes get one length each, the same total — a dotted note and its short partner become two equal notes" aria-label="Even out">${EVEN_IC}</button>` : ''}
         <span class="grow"></span>
         ${nst > 1 ? `<button data-a="up" class="np-move" ${off(up)} title="Move to the staff above (Shift ↑)">↑ ${nst === 2 ? 'To right hand' : toUp ? `To ${staffName(toUp, nst)}` : 'Staff up'}${up ? ` (${up})` : ''}</button>
         <button data-a="down" class="np-move" ${off(down)} title="Move to the staff below (Shift ↓)">↓ ${nst === 2 ? 'To left hand' : toDown ? `To ${staffName(toDown, nst)}` : 'Staff down'}${down ? ` (${down})` : ''}</button>` : ''}
@@ -921,6 +923,23 @@ export async function editNotes(view, it, host, opts = {}) {
     const d = ls[0].dur;
     setLen(DOTTED.has(d) ? d / 1.5 : d * 1.5);
   };
+  // = Even out (Q): 2+ notes / rests one after the other in one voice of one staff and bar (any note of a chord
+  // picks the chord) → one length each, the same total (dotted 8th + 16th → two 8ths; evenops.py). The group, or null
+  const evenGroup = () => {
+    const p = picked();
+    if (p.length < 2) return null;
+    const k0 = `${p[0].bar}|${p[0].staff}|${p[0].voice}`;
+    if (p.some((n) => `${n.bar}|${n.staff}|${n.voice}` !== k0)) return null;
+    const evs = [...new Map(p.map((n) => [r3(n.on), n])).values()].sort((a, b) => a.on - b.on);
+    if (evs.length < 2 || evs.some((n, i) => i && Math.abs(evs[i - 1].on + evs[i - 1].dur - n.on) > 1e-6)) return null;
+    return evs;
+  };
+  const evenOut = () => {
+    const g = evenGroup();
+    if (!g) return toast('Pick 2 or more notes one after the other (one hand, one bar) to even them out');
+    if (g.every((n) => Math.abs(n.dur - g[0].dur) < 1e-6)) return toast('These notes are already the same length');
+    run({ op: 'even', refs: g.map((n) => n.ref) });
+  };
   // →| Fill next rest: each press, the picked note takes in the one rest right after it (the note stays picked)
   const fill = () => {
     const ns = picked().filter((n) => !n.rest);
@@ -1222,7 +1241,7 @@ export async function editNotes(view, it, host, opts = {}) {
     const a = e.target.closest('[data-a]')?.dataset.a;
     if (!a) return;
     const fn = ({ close: () => close(), undo: () => goStep(at - 1), redo: () => goStep(at + 1), save, up: () => moveTo(-1), down: () => moveTo(1), barmenu: () => barMenu(e.target.closest('[data-a]')),
-      'semi-': () => pitch(-1), 'semi+': () => pitch(1), 'oct-': () => pitch(-12), 'oct+': () => pitch(12), dot, del, add, fill,
+      'semi-': () => pitch(-1), 'semi+': () => pitch(1), 'oct-': () => pitch(-12), 'oct+': () => pitch(12), dot, del, add, fill, even: evenOut,
       copy: () => copy(), cut: () => copy(true), paste, repeat, respell: () => (heldMenu ? (heldMenu = false) : respell()),
       bar: wholeBar, none: () => setSel([]), several: () => { several = !several; draw(); }, tie, slur, playhere: playHere,
       prev: () => turn(-1), next: () => turn(1) })[a];
@@ -1264,7 +1283,7 @@ export async function editNotes(view, it, host, opts = {}) {
     else if (!mod) {
       const len = LENS.find((x) => x[2] === e.key);
       f = len ? () => setLen(len[0]) : { ArrowUp: () => pitch(1), ArrowDown: () => pitch(-1), ArrowLeft: () => stepNote(-1), ArrowRight: () => stepNote(1),
-        '.': dot, l: fill, L: fill, n: add, N: add, '#': () => pitch(1), '+': () => pitch(1), '=': () => pitch(1), '-': () => pitch(-1), t: tie, T: tie, s: slur, S: slur, ...(e.target.closest?.('button') ? {} : { ' ': playHere }), Delete: del, Backspace: del,
+        '.': dot, q: evenOut, Q: evenOut, l: fill, L: fill, n: add, N: add, '#': () => pitch(1), '+': () => pitch(1), '=': () => pitch(1), '-': () => pitch(-1), t: tie, T: tie, s: slur, S: slur, ...(e.target.closest?.('button') ? {} : { ' ': playHere }), Delete: del, Backspace: del,
         w: wholeBar, W: wholeBar, r: repeat, R: repeat, j: respell, J: respell, k: chordHere, K: chordHere, Escape: () => (sel.size || rng ? setSel([]) : close()) }[e.key];
     }
     if (!f) return;
