@@ -3,7 +3,9 @@
 // (ID, default "Home NDP" m-b6xs990) and a made-up score without chord symbols:
 //  kids: off by default; on = a letter inside every notehead of every staff, heads grown (big), letter = the pitch,
 //        no keyboard chord diagrams; playback cursor moves; on iPad / iPhone the pages + dots are recomputed;
-//        remembered on this device (all scores), off again = classic.
+//        remembered on this device (all scores), off again = classic. Heads are big before layout (VexFlow), so every
+//        stem sits at its head's edge — right edge going up, left edge going down, never through the circle — at
+//        several zooms and in Dark theme too (iPad runs Dark).
 //  toolbar: exactly three round buttons, one icon each (no text); the chords icon shows its state.
 //  chords: off by default; piano = keyboards with the chord's keys shaded; ukulele = GCEA boxes; both as one compact row at the top of the
 //        score (under the toolbar, above the music, full width, scrolls sideways; no panel on the right); off = no strip, the score gets the
@@ -46,7 +48,6 @@ const state = (page) => page.evaluate(() => {
   return {
     letters: texts.length, heads: heads.length, inside, svgs: svgs.length,
     allHeads: document.querySelectorAll('#osmd .vf-stavenote .vf-notehead').length,
-    grown: heads.filter((h) => /scale\((1\.[3-9]|[2-9])/.test(h.getAttribute('transform') || '')).length,
     headH: hs.length ? hs.sort((a, b) => a - b)[Math.floor(hs.length / 2)] : 0, plainH: plainH.length ? plainH.sort((a, b) => a - b)[Math.floor(plainH.length / 2)] : 0,
     kbds: document.querySelectorAll('#osmd g.kbd, #osmd .easy-kbd-row').length,
     btn: document.querySelector('#sc-names')?.classList.contains('on'), kitten: !!document.querySelector('#sc-names svg.ic'),
@@ -72,6 +73,30 @@ const state = (page) => page.evaluate(() => {
     paperH: document.querySelector('#paper')?.clientHeight || 0,
   };
 });
+// every stemmed kids note: the stem's x against the head it starts from (lowest head going up, highest going down)
+const stems = (page) => page.evaluate(() => {
+  const out = [];
+  for (const g of document.querySelectorAll('#osmd .vf-stavenote')) {
+    const st = g.querySelector('.vf-stem');
+    const hs = [...g.querySelectorAll('.vf-notehead[data-nl]')].filter((h) => h.closest('.vf-stavenote') === g);
+    if (!st || !hs.length) continue;
+    const s = st.getBoundingClientRect();
+    if (s.height < 2) continue;
+    const hr = hs.map((h) => h.getBoundingClientRect());
+    const top = Math.min(...hr.map((q) => q.top)), bot = Math.max(...hr.map((q) => q.bottom));
+    const up = (s.top + s.bottom) / 2 < (top + bot) / 2;
+    const sx = s.x + s.width / 2;
+    const h = up ? hr.reduce((a, q) => (q.bottom > a.bottom ? q : a)) : hr.reduce((a, q) => (q.top < a.top ? q : a));
+    const dx = up ? sx - h.right : sx - h.left;
+    out.push({ up, n: hs.length, dx: +dx.toFixed(2), inside: sx > h.left + 1.5 && sx < h.right - 1.5 });
+  }
+  const bad = out.filter((x) => x.inside || Math.abs(x.dx) > 1.5);
+  return { n: out.length, up: out.filter((x) => x.up).length, down: out.filter((x) => !x.up).length, chords: out.filter((x) => x.n > 1).length, bad: bad.length, eg: bad.slice(0, 4) };
+});
+const stemCheck = async (page, what) => {
+  const t = await stems(page);
+  check(`kids: stems at the head's edge (up → right, down → left, never inside) ${what}`, t.n > 20 && t.up && t.down && !t.bad, JSON.stringify(t));
+};
 // the pitch letter of every sounding note on every staff, in document order of the MusicXML
 const steps = (xml) => [...xml.matchAll(/<note>(?:(?!<\/note>)[\s\S])*?<step>([A-G])<\/step>/g)].length;
 
@@ -88,20 +113,31 @@ async function run(name, vp) {
   const page = await b.newPage(); await page.setViewport(vp);
   page.on('pageerror', (e) => errs.push(`${name}: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error' && !/404|409|favicon/.test(m.text())) errs.push(`${name}: ${m.text()}`); });
+  // iPad runs in Dark theme, Mac and iPhone in Light (set before the app reads it on load)
+  await page.evaluateOnNewDocument((dark) => { try { localStorage.setItem('meowsic-theme', dark ? 'dark' : 'light'); } catch {} }, name === 'ipad');
   await page.goto(`${BASE}#/library`, { waitUntil: 'networkidle0' });
   await page.evaluate(() => { localStorage.removeItem('meowsic-kids'); localStorage.removeItem('meowsic-chords'); });
   await page.goto(`${BASE}#/item/${ID}`, { waitUntil: 'networkidle0' }); await sleep(3500);
   let s = await state(page);
   check('classic by default: no letters, baby button off, chords off, no panel', s.letters === 0 && s.btn === false && s.kitten && !s.uke && s.ukeBtn === false && s.mode === 'off', JSON.stringify(s));
   check('toolbar: chords + kids (+ voice when the score sings) as round icon-only buttons; no "A B C" / "Voice" text', s.toggles.map((x) => x.id).join() === 'sc-chords,sc-names,sc-voice' && s.toggles.every((x) => !x.text && x.icons === 1) && !s.abc, JSON.stringify(s.toggles));
-  const dots0 = s.dots;
+  const dots0 = s.dots, h0 = s.plainH;
   await page.click('#sc-names'); await sleep(3500);
   s = await state(page);
   const xml = await fetch(`${BASE}api/items/${ID}/musicxml`).then((r) => r.text());
   check('kids: baby button lights up', s.btn === true);
   check('kids: a letter in every notehead of every staff (rests none)', s.letters > 50 && s.heads === s.letters && s.letters === steps(xml), `${s.letters} letters / ${s.heads} heads / ${steps(xml)} notes`);
   check('kids: each letter sits inside its head', s.inside);
-  check('kids: heads are big (grown ≥ 1.3× on most notes)', s.grown >= s.letters * 0.6, `${s.grown}/${s.letters}`);
+  check('kids: heads are big (median ≥ 1.3× a classic head)', h0 > 0 && s.headH >= h0 * 1.3, `${s.headH} vs ${h0}`);
+  await stemCheck(page, `(${name}${name === 'ipad' ? ', Dark' : ''})`);
+  if (name !== 'iphone') { // iPhone has no zoom buttons (pinch)
+    for (const [btn, n] of [['#sc-zin', 2], ['#sc-zout', 4]]) {
+      for (let k = 0; k < n; k++) { await page.evaluate((x) => document.querySelector(x).click(), btn); await sleep(900); }
+      await sleep(1200);
+      await stemCheck(page, `(${name}, zoom ${await page.$eval('#sc-zreset', (x) => x.textContent.trim())})`);
+    }
+    await page.evaluate(() => document.querySelector('#sc-zreset').click()); await sleep(2000);
+  }
   check('kids: no keyboard chord diagrams', s.kbds === 0);
   if (touch) check('kids: pages + dots recomputed (more pages with the bigger notes)', s.dots >= dots0 && /Page 1 of/.test(s.page), `${dots0} → ${s.dots} ${s.page}`);
   await page.screenshot({ path: `${SHOTS}/kids-${name}.png` });
