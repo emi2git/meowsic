@@ -44,6 +44,7 @@ WINDOW = 4          # a syllable is judged by the sheet notes up to WINDOW befor
 SURE, KEEP = 0.7, 0.4  # sure when this share of them pair up with the same pitch (and the tempo fits); left out below KEEP
 TEMPO = (0.5, 2.2)  # …and the score takes about as long for them as the sheet (rubato, held notes)
 FILL_MAX = 4        # syllables with no partner note are placed only inside short gaps
+RESPREAD_MAX = 24   # …or a stretch of up to this many syllables between sure ones is spread over its notes again
 
 
 @dataclass
@@ -286,8 +287,40 @@ def place(S: list[Note], T: list[Note]):
         want = T[lo[1]].onset + f * (T[hi[1]].onset - T[lo[1]].onset)
         j = min(free, key=lambda j: abs(T[j].onset - want))
         out.append((i, j, False)); used.add(j)
+    out = _respread(S, T, out)
     out.sort(key=lambda x: x[1])
     return out, {'shift': trip[0][2] if trip else 0, 'blocks': len({t[2] for t in trip})}
+
+
+def _respread(S, T, out):
+    """Between two sure syllables, when some syllables found no note but the score has at least as many notes there
+    as the sheet has syllables (the pairing went astray, e.g. a misread bar), the stretch's syllables are spread
+    over its score notes again, in order, each as near as possible to where its time says (all unsure)."""
+    by_i = {i: (j, sure) for i, j, sure in out}
+    anchors = sorted((i, j) for i, j, sure in out if sure)
+    anchors = [a for k, a in enumerate(anchors) if all(a[1] > b[1] for b in anchors[:k])]  # strictly in order
+    for (ai, aj), (bi, bj) in zip(anchors, anchors[1:]):
+        syl = [i for i in range(ai + 1, bi) if S[i].text]
+        if not syl or len(syl) > RESPREAD_MAX or all(i in by_i for i in syl): continue
+        notes = list(range(aj + 1, bj))
+        if len(notes) < len(syl): continue
+        span_s = max(S[bi].onset - S[ai].onset, EPS)
+        want = [T[aj].onset + (S[i].onset - S[ai].onset) / span_s * (T[bj].onset - T[aj].onset) for i in syl]
+        # monotone assignment of syllables to notes, least total time error (k syllables × m notes)
+        k, m = len(syl), len(notes)
+        INF = float('inf')
+        C = [[INF] * (m + 1) for _ in range(k + 1)]
+        C[0] = [0.0] * (m + 1)
+        for a in range(1, k + 1):
+            for b in range(a, m + 1):
+                C[a][b] = min(C[a][b - 1], C[a - 1][b - 1] + abs(T[notes[b - 1]].onset - want[a - 1]))
+        a, b, pick = k, m, []
+        while a > 0:
+            if b > a and C[a][b] == C[a][b - 1]: b -= 1
+            else: pick.append((syl[a - 1], notes[b - 1])); a -= 1; b -= 1
+        for i in syl: by_i.pop(i, None)
+        for i, j in pick: by_i[i] = (j, False)
+    return [(i, j, sure) for i, (j, sure) in by_i.items()]
 
 
 # ---------- writing ----------

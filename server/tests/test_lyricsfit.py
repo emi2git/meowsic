@@ -183,6 +183,33 @@ def test_unsure_words_are_marked():
     assert sum(1 for l in root.iter('lyric') if l.get('color') == lf.RED) == rep['unsure']
 
 
+def test_respread_puts_lost_syllables_back_in_order():
+    # 2 sure ends, 6 syllables between them: 2 placed out of order, 4 lost; the score has 7 notes there
+    S = [lf.Note(k * 0.5, 0.5, 60, '1', text=f's{k}') for k in range(8)]
+    T = [lf.Note(10 + k * 0.5, 0.5, 60, '2') for k in range(9)]
+    out = [(0, 0, True), (7, 8, True), (2, 5, False), (5, 2, False)]
+    got = sorted(lf._respread(S, T, out))
+    assert [i for i, _, _ in got] == list(range(8))
+    js = [j for _, j, _ in got]
+    assert js == sorted(js) and len(set(js)) == 8  # one note each, in order
+    assert [s for i, _, s in got if 0 < i < 7] == [False] * 6  # all unsure
+    # too few notes between the sure ends: left as it was
+    assert sorted(lf._respread(S, T[:5], [(0, 0, True), (7, 4, True)])) == [(0, 0, True), (7, 4, True)]
+
+
+def test_misread_bar_still_gets_its_words():
+    bars = tune(8, bars=12)
+    words = made_up_words(bars)
+    sheet = [list(b) for b in bars]
+    sheet[6] = [(m + 4 if k % 2 else m - 3, q) for k, (m, q) in enumerate(sheet[6])]  # the reader got a bar's pitches wrong
+    out, rep = lf.fit(piano_xml(transpose(bars, 2)), sheet_xml(sheet, words))
+    want, got = sheet_pitches(bars, words), placed(out)
+    bar7 = {w[0] for w in words[sum(len(b) for b in bars[:6]):sum(len(b) for b in bars[:7])] if w}
+    assert bar7 <= set(got) and all(got[t][0] == want[t] + 2 for t in bar7)
+    onsets = [got[w[0]][1] for w in words if w and w[0] in got]
+    assert onsets == sorted(onsets)
+
+
 def test_no_words_on_the_sheet():
     bars = tune(7, bars=4)
     with pytest.raises(ValueError):
