@@ -125,6 +125,11 @@ progress { width: 100%; height: 8px; accent-color: var(--acc); }
 .seg button .ic { width: 17px; height: 17px; }
 .seg button.on { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
 .seg.small button { min-height: 32px; font-size: 14px; }
+/* Hands (hands.js): L · Both · R beside Play, and in Edit notes */
+.seg.hands { padding: 2px; flex-wrap: nowrap; flex: none; } .seg.hands button { min-height: 30px; padding: 0 9px; font-size: 13px; }
+.hands-slot { display: inline-flex; } .hands-slot:empty { display: none; }
+/* Edit notes: Mac / iPad keep the score toolbar (and its picker) on show; iPhone hides it, so the edit bar has one */
+:root:not([data-device="phone"]) #np-hands { display: none; }
 
 .sort { font-size: 14px; color: var(--mute); display: flex; gap: 6px; align-items: center; }
 .sort select { min-height: 36px; }

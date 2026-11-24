@@ -110,12 +110,14 @@ function pianoVoice(out, pitch, vel, when, held) {
 // already sounding where Play starts (or a loop jumps back to) is struck there for the rest of its length.
 // Tempo: bpm × rate; setRate while playing takes over at once (the notes already on their way after that moment are
 // called back and scheduled again at the new tempo), with no stop / restart of the audio.
+// mute: the staves not played (a note's s, musicxml.js; hands.js picks them), changed at once by setMute.
 export class ScorePlayer {
   constructor({ notes, bpm, beats, onTick, onEnd, segments = null, chords = [] }) {
     Object.assign(this, { notes, bpm, beats, onTick, onEnd, segments, chords });
     this.chordsOn = false; this.chordVoices = []; this.heardChords = []; // heardChords: [q, midi] as scheduled (for tests)
-    this.seg = 0; this.played = []; this.heard = []; // played: [segment index, …] as they start (for tests)
-    this.heardAt = []; this.sched = []; // heardAt: [q, audio time] of each melody note (for tests); sched: voices on their way
+    this.seg = 0; this.played = []; this.heard = []; // played: [segment index, …] as they start (for tests); heard: [q, midi, staff]
+    this.mute = new Set(); this.noteVoices = [];
+    this.heardAt = []; this.sched = []; // heardAt: [q, audio time] of each note played (for tests); sched: voices on their way (tempo changes)
     this.rate = 1; this.shift = 0;
     this.loop = null; // [startQ, endQ]
     this.posQ = 0; this.playing = false;
@@ -153,7 +155,7 @@ export class ScorePlayer {
       this.seg = k < 0 ? this.segments.length - 1 : k;
       this.played = [this.seg];
     }
-    this.heard = []; this.heardAt = []; this.heardChords = []; this.chordVoices = []; this.sched = [];
+    this.heard = []; this.heardAt = []; this.heardChords = []; this.chordVoices = []; this.noteVoices = []; this.sched = [];
     this.q0 = this.posQ; this.t0 = c.currentTime + 0.12;
     this.anchors = [{ q0: this.q0, t0: this.t0, qps: this.qps }];
     this.scheduledTo = this.posQ;
@@ -173,11 +175,7 @@ export class ScorePlayer {
       if (this.scheduledTo >= horizonQ) break;
       const stopQ = this.loop ? this.loop[1] : segs ? segs[this.seg][1] : this.endQ;
       const a = this.scheduledTo, b = Math.min(horizonQ, stopQ);
-      for (const n of this.notes) if (n.q >= a && n.q < b) {
-        const at = Math.max(this.ctx.currentTime, this.t0 + (n.q - this.q0) / this.qps);
-        this.sched.push({ v: pianoVoice(this.out, n.n + this.shift, n.v, at, Math.max(0.08, n.d / this.qps)), at, chord: false });
-        if (this.heard.length < 4000) { this.heard.push([n.q, n.n]); this.heardAt.push([n.q, at]); } // what was played, in order (for tests)
-      }
+      for (const n of this.notes) if (n.q >= a && n.q < b && !this.mute.has(n.s)) this.noteVoice(n);
       if (this.chordsOn) for (const n of this.chords) if (n.q >= a && n.q < b) this.chordVoice(n, n.q, n.d);
       this.scheduledTo = b;
       if (b < stopQ) break;
@@ -193,6 +191,26 @@ export class ScorePlayer {
     if (this.sched.length > 64) this.sched = this.sched.filter((s) => s.at > tNow - 0.05);
     const last = !segs || this.seg === segs.length - 1;
     if (!this.loop && last && this.now() >= (segs ? segs.at(-1)[1] : this.endQ) + 0.5) { this.pause(); this.posQ = 0; this.onEnd?.(); }
+  }
+  noteVoice(n) {
+    const when = this.t0 + (n.q - this.q0) / this.qps, t = this.ctx.currentTime;
+    const at = Math.max(t, when), v = pianoVoice(this.out, n.n + this.shift, n.v, at, Math.max(0.08, n.d / this.qps));
+    this.noteVoices = this.noteVoices.filter((x) => x.v.end > t); this.noteVoices.push({ v, s: n.s });
+    this.sched.push({ v, at, chord: false });
+    if (this.heard.length < 4000) { this.heard.push([n.q, n.n, n.s]); this.heardAt.push([n.q, at]); } // what was played, in order (for tests)
+  }
+  // fade out notes already on their way (or sounding)
+  hush(voices) { const t = this.ctx.currentTime; for (const v of voices) { try { v.env.gain.cancelScheduledValues(t); v.env.gain.setTargetAtTime(0, t, 0.05); v.src.stop(t + 0.4); } catch {} } }
+  // Hands while playing: a staff muted now stops at once; one turned back on comes in from the next note
+  setMute(staves) {
+    const next = new Set(staves || []);
+    const was = this.mute;
+    this.mute = next;
+    if (!this.playing) return;
+    this.hush(this.noteVoices.filter((x) => next.has(x.s) && !was.has(x.s)).map((x) => x.v));
+    this.noteVoices = this.noteVoices.filter((x) => !next.has(x.s));
+    const a = this.anchors.at(-1), lo = a.t0 > this.ctx.currentTime ? a.q0 : this.now(); // a jump on its way: its notes only
+    for (const n of this.notes) if (was.has(n.s) && !next.has(n.s) && n.q >= lo && n.q < this.scheduledTo) this.noteVoice(n);
   }
   chordVoice(n, q, d) {
     const at = Math.max(this.ctx.currentTime, this.t0 + (q - this.q0) / this.qps);
@@ -214,7 +232,7 @@ export class ScorePlayer {
     this.chordsOn = on;
     if (!this.playing) return;
     if (on) { const q = this.now(); for (const n of this.chords) if (n.q < q && n.q + n.d > q + 0.05) this.chordVoice(n, q, n.q + n.d - q); for (const n of this.chords) if (n.q >= q && n.q < this.scheduledTo) this.chordVoice(n, n.q, n.d); }
-    else { const t = this.ctx.currentTime; for (const v of this.chordVoices) { try { v.env.gain.cancelScheduledValues(t); v.env.gain.setTargetAtTime(0, t, 0.05); v.src.stop(t + 0.4); } catch {} } this.chordVoices = []; }
+    else { this.hush(this.chordVoices); this.chordVoices = []; }
   }
   pause() {
     if (!this.playing) return;
