@@ -5,7 +5,7 @@
 // in the score and brought into view, why it is flagged in plain words, the printed bar from the sheet next to it
 // (cropped to the bar, or the whole page; tap to zoom), and what to do:
 //   Looks right · Use other reading (preview first, then keep it) · Edit notes (that bar, in the note editor) · Play bar;
-//   words read too poorly to write ("lyrics unsure"): Fix lyrics (the Fit lyrics editor on that verse and bar; saved →
+//   words read too poorly to write ("lyrics unsure"): Fix lyrics (Edit notes in Lyrics mode on that verse and bar; saved →
 //   those bars are checked); Mark all as looks right (asks first; one Activities undo).
 // Every change is saved into the score with history + Activities undo: Looks right / Use other reading through
 // POST /api/items/{id}/check (server/meowsic/barcheck.py; scores without check.json: through Edit notes), note
@@ -15,7 +15,6 @@ import { store } from '../store.js';
 import { go } from '../app.js';
 import { pageSrc } from './sheet.js';
 import { editNotes, post } from './editnotes.js';
-import { fitLyrics } from './fitlyrics.js';
 const LYRICS = 'lyrics unsure — use Fit lyrics';
 
 const WHY = 'The two ways of reading the sheet did not agree here, or the bar was changed so its notes add up. Compare it with the printed bar.';
@@ -261,12 +260,13 @@ export async function reviewChecks(view, it, host, list, start = 0, refreshBadge
       } });
   };
 
-  // words read too poorly to write: the Fit lyrics editor on that verse, at the line's first bar; once saved into
+  // words read too poorly to write: Edit notes in Lyrics mode on that verse, at the line's first bar; once saved into
   // this score, the line's bars that were flagged for their words alone are checked
   const fixLyrics = () => {
     const c = now(), i = k;
     hide();
-    fitLyrics(view, it, host, { verse: c.lyrics.verse, bar: c.lyrics.bars[0], onClose: async (saved) => {
+    editNotes(view, it, host, { mode: 'lyrics', verse: c.lyrics.verse, bar: c.lyrics.bars[0], title: `Lyrics from bar ${c.lyrics.bars[0]}`, onDone: async (j) => {
+      const saved = !!j && j.mode === 'this';
       if (saved && list.api) {
         const bars = list.filter((x) => x.lyricsOnly && x.lyrics?.verse === c.lyrics.verse && c.lyrics.bars.includes(x.bar)).map((x) => x.bar);
         try {

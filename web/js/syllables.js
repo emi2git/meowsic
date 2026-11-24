@@ -1,4 +1,4 @@
-// Lyrics → syllables, one per sung note (Fit lyrics, views/fitlyrics.js).
+// Lyrics → syllables, one per sung note (Edit notes → Lyrics, views/lyricmode.js).
 //   English: rule-based hyphenation the way songbooks print it (a-maz-ing, twin-kle, lov-ing, won-der).
 //   Vietnamese: every written word is one syllable. Chinese / Japanese characters: one each.
 //   A "-" typed in a word is kept as the split ("Hal-le-lu-jah"); "_" or "~" glues words onto one note ("and_the").

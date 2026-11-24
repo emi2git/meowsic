@@ -1,4 +1,4 @@
-// Swipe up / down closes a sheet or score only in plain viewing mode: with a tool open (Fit lyrics, Edit notes,
+// Swipe up / down closes a sheet or score only in plain viewing mode: with a tool open (Edit notes,
 // Annotate, Info) it does nothing. The chords strip at the top of a score is a display aid, not a tool: with it on, swipes still close. iPad + iPhone touch emulation, against a test server (BASE, default :5378,
 // a scratchpad copy of the data — never the real library). Makes its own sheet (two icon pages) and score.
 import puppeteer from 'puppeteer-core';
@@ -67,7 +67,7 @@ async function run(name, vp) {
     await swipe('down');
     check(`${k}: swipe with Info open stays`, (await hash()).startsWith('#/item/'), await hash()); // (a touch on the backdrop may close the popup itself)
   }
-  for (const [label, sel] of [['Fit lyrics…', '.fitly'], ['Edit notes…', '.notes-panel']]) {
+  for (const [label, sel] of [['Edit notes…', '.notes-panel']]) {
     await open(score); await action(label, sel);
     for (const dir of ['down', 'up']) await swipe(dir);
     check(`score: swipe with ${label.replace('…', '')} open stays`, (await hash()).startsWith('#/item/') && !!(await page.$(sel)), await hash());
