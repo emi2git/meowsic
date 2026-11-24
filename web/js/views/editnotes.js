@@ -1,4 +1,4 @@
-// Edit notes (score ⋯ → "Edit notes…", or "Edit notes" on a bar in Check bars): pick notes on the score and change
+// Edit notes (the score toolbar ✎, or "Edit notes" on a bar in Check bars): pick notes on the score and change
 // them. Tap / click a note (or a rest) to pick it; ⌘ / Ctrl-click (iPad / iPhone: "Pick several") adds or takes one
 // away; drag a box to pick everything in it; "Whole bar" picks every note of the picked notes' bars on their staves.
 // A range (a blue box): Shift-click (iPad / iPhone: long-press a note, then tap or drag to another) picks everything

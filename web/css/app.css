@@ -337,6 +337,11 @@ legend { font-weight: 700; margin-bottom: 8px; }
 .card-opt.on { border: 2px solid var(--acc); background: var(--acc-soft); }
 .sub-h { font-size: 17px; margin: 4px 0 12px; }
 .job { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; margin-bottom: 14px; box-shadow: var(--shadow); }
+.job.compact { padding: 10px 12px; margin-bottom: 8px; }
+.job.compact progress { display: block; width: 100%; margin-top: 8px; }
+.job.compact .job-head { align-items: center; }
+.job.compact .job-head small { color: var(--mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#sf-jobs { padding-top: 0; }
 .job-head { display: flex; gap: 10px; align-items: flex-start; }
 .job-head > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .stages { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 6px; }
@@ -1130,7 +1135,7 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
   .bs-grid figcaption { gap: 4px; }
 }
 
-/* ===== Edit notes (score ⋯ → Edit notes…, js/views/editnotes.js): pick notes, move them to the other hand ===== */
+/* ===== Edit notes (the score toolbar ✎, js/views/editnotes.js): pick notes, move them to the other hand ===== */
 .viewer.noting .viewer-body { padding-bottom: var(--np-h, 150px); }
 .viewer.noting .score-paper { touch-action: none; user-select: none; -webkit-user-select: none; }
 .viewer.noting .playbar { pointer-events: none; }

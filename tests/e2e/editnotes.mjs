@@ -1,4 +1,4 @@
-// Edit notes (score ⋯ → "Edit notes…") and the score player's Stop + Play / Pause, against a test server (BASE,
+// Edit notes (the score toolbar ✎) and the score player's Stop + Play / Pause, against a test server (BASE,
 // default :5371, a scratchpad copy of the data — never the real library). Per device (Mac, iPad Pro 13", iPhone Air):
 // a made-up piano score (Ode to Joy, public domain) → the player has Stop before Play / Pause and no position bar;
 // Play moves the orange line, Stop puts it back at the start → open Edit notes → pick a note (tap), a range
@@ -95,12 +95,14 @@ async function run(name, vp, how) {
   check('player fits on the screen', box.right <= vp.width && box.w < 160, JSON.stringify(box));
   if (name === 'Mac' || name === 'iPhone') await page.screenshot({ path: `${SHOTS}/${name}-player.png` });
 
-  // ---- Edit notes… in the score ⋯ ----
+  // ---- Edit notes: the toolbar ✎ (on every width); not in the score ⋯ too ----
   await tap('#it-more'); await sleep(200);
- 
   const entries = await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
-  check('score ⋯ has Edit notes…', entries.includes('Edit notes…'), entries.join('|'));
-  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+  check('score ⋯ has no Edit notes (it is the toolbar ✎)', !entries.includes('Edit notes…') && entries.length > 0, entries.join('|'));
+  await page.evaluate(() => document.querySelector('.menu')?.remove()); await sleep(150);
+  const edBox = await page.$eval('#sc-edit', (e) => { const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, x: r.x, right: r.right, vw: innerWidth }; });
+  check(`${name}: the toolbar ✎ Edit notes shows on screen`, edBox.w > 20 && edBox.h > 20 && edBox.x >= 0 && edBox.right <= edBox.vw, JSON.stringify(edBox));
+  await tap('#sc-edit');
   await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(600);
   const nNotes = await EN(() => window.__editNotes.notes.filter((n) => !n.rest).length);
   const tagged = await page.$$eval('#paper g[data-ref]', (e) => new Set(e.map((g) => g.dataset.ref)).size);
@@ -550,8 +552,7 @@ async function barTools(name, vp) {
 
   await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(800);
-  await tap('#it-more'); await sleep(200);
-  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+  await page.evaluate(() => document.querySelector('#sc-edit').click());
   await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(700);
   const n0 = await nowNotes();
 
@@ -651,8 +652,7 @@ async function barTools(name, vp) {
   await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(900);
   const words = await page.$$eval('#osmd svg text', (e) => e.map((t) => t.textContent).filter((t) => /^la\d$/.test(t)));
   check('voice + piano: the words are drawn under the voice staff', k === 4 && words.length === 4, `${k} / ${words.join(',')}`);
-  await tap('#it-more'); await sleep(200);
-  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+  await page.evaluate(() => document.querySelector('#sc-edit').click());
   await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(700);
   ns = await nowNotes();
   check('voice + piano: 3 staves, every note picks', (await EN(() => window.__editNotes.staves)) === 3 && (await page.$$eval('#paper g[data-ref]', (e) => new Set(e.map((g) => g.dataset.ref)).size)) === ns.length);
@@ -689,8 +689,7 @@ async function editBarFits() {
     page.on('pageerror', (e) => errs.push(`fits ${w}: ${e.message}`));
     await page.goto(`${BASE}#/item/${pv0.id}`, { waitUntil: 'networkidle0' });
     await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(600);
-    await page.evaluate(() => document.querySelector('#it-more').click()); await sleep(200);
-    await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+    await page.evaluate(() => document.querySelector('#sc-edit').click());
     await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(600);
     const bad = [];
     bad.push(...(await wrapped()).map((c) => `nothing picked: ${c}`));
@@ -741,8 +740,7 @@ async function rangeTools(name, vp) {
   const toastText = () => page.$eval('#toast', (e) => e.textContent).catch(() => '');
   await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(600);
-  await page.evaluate(() => document.querySelector('#it-more').click()); await sleep(200);
-  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+  await page.evaluate(() => document.querySelector('#sc-edit').click());
   await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(600);
   const b1 = [await music(0, 1), await music(0, 2)], b2 = [await music(1, 1), await music(1, 2)];
 
@@ -922,8 +920,7 @@ async function structure(name, vp) {
   const bars = (x) => x.split('<measure').length - 1;
   await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(600);
-  await page.evaluate(() => document.querySelector('#it-more').click()); await sleep(200);
-  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+  await page.evaluate(() => document.querySelector('#sc-edit').click());
   await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(600);
 
   // 1. pickup (first bar only): 1 beat — the bar is short but not "incomplete"
@@ -1023,8 +1020,7 @@ async function chordNames(name, vp) {
   }, [bar, on]);
   await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(600);
-  await page.evaluate(() => document.querySelector('#it-more').click()); await sleep(200);
-  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+  await page.evaluate(() => document.querySelector('#sc-edit').click());
   await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(600);
 
   // 1. tap above bar 1 beat 1: the chord sheet; a wrong name is refused, then C

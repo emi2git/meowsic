@@ -40,6 +40,7 @@ Updated: 2026-11-24
 - Record your own singing/talking voice (future beta, in Feedback)
 
 ## Done today (live)
+- Add score: only running/queued jobs, compact, below the form; done/failed live in Activities
 - Singing: Vietnamese lyrics keep every letter (Unicode, NFC; the A-Z reader cut most syllables) and each syllable is read as ARPAbet for SoulX-Singer (it has no Vietnamese phonemes)
 - OMR: keep all lyrics; chords from sheet fixed (all 5 benchmark songs 100%); scores remade, old copies in Trash
 - One Day More + Home NDP lyrics fitted; Home NDP lyric-loss bug (Revert) fixed + recovered
@@ -53,3 +54,4 @@ Updated: 2026-11-24
 - Keyboard beta (Connect + Fix notes by playing, length keys, accurate hold-to-length)
 - 22 voices × 4 songs on the takes page
 - Left menu regrouped; Help moved to Settings
+- Score ⋯: Edit notes removed (it is the toolbar ✎, on screen at every width); menus/editnotes tests updated
