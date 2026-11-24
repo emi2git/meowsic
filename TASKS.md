@@ -15,6 +15,7 @@ Updated: 2026-11-24
 | 2 | Edit notes: Lyrics mode (Notes \| Lyrics), paste verse, verses, lyrics-text side panel from chord chart; remove Fit lyrics / Add lyrics from sheet menu | ✅ Live (a5f7384) |
 | 3 | Edit notes: Bar ▾ (clear/add LH or RH bar, insert/delete bar), add/remove staff, vocal + piano (3 staves); remove "Make another version" | ✅ Live (584ef94) |
 | 8 | Pro-editor top 8 (range select, copy/paste, repeat, octave, respell, bar options, repeats/endings, chord symbols + realize) | ✅ Live (54891c1) |
+| 11 | Singing voice: default = zh_target (take C, low male) for English, Vietnamese and Mandarin; auto octave fits it; {voice, octave} still override | ✅ Pushed, deploying |
 | 10 | Maintainability: project CLAUDE.md, scripts (test-all/smoke/deploy/dev-server), docs tidy, dead-code sweep, /api/health | ✅ Pushed, deploying |
 | 4 | Add music → Chords: fit iPad Pro/iPhone, auto-tags + "+ Tag", never save empty chords, refill One Day More | ✅ Live (a6de135) |
 | 4b | Singing: only sing lyric notes, wrong-note diagnosis, Approve/Reject toggles, Mandarin + voice choice, sing 两只老虎 (m-nrogmyq) | ✅ Live (takes page re-rendered; verdicts via ~/git/scripts/meowsic-verdicts.py) |
