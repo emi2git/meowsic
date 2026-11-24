@@ -92,7 +92,7 @@ for (const [name, d] of Object.entries(DEV)) {
   // score + chord chart
   await p.goto(`${BASE}#/item/${score.id}`, { waitUntil: 'networkidle0' }); await sleep(2000);
   const sa = await openInfo(p);
-  check(`${name}: score ⋯ = Info, score.js tools, Export, Move to Trash`, sa[0] === 'Info' && sa.some((a) => a.startsWith('Make another version')) && sa.includes('Export') && sa.at(-1) === 'Move to Trash', sa.join('|'));
+  check(`${name}: score ⋯ = Info, score.js tools, Export, Move to Trash`, sa[0] === 'Info' && !sa.some((a) => a.startsWith('Make another version')) && sa.includes('Export') && sa.at(-1) === 'Move to Trash', sa.join('|'));
   check(`${name}: score Info shows its source`, !!(await p.$('#dt-source')));
   await p.keyboard.press('Escape'); await sleep(200);
   await p.goto(`${BASE}#/item/${chord.id}`, { waitUntil: 'networkidle0' }); await sleep(900);

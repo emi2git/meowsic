@@ -11,10 +11,14 @@ const api = (p, o) => fetch(BASE + 'api' + p, o).then((r) => r.json());
 const xml = fs.readFileSync('/Users/emi2mac/Documents/Emi Music Note/memory-from-cats-andrew-lloyd-webber/memory-from-cats-andrew-lloyd-webber.musicxml', 'utf8');
 const sc = await api('/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'score', title: 'Memory', version: 'original', tags: ['Original'], musicxmlText: xml }) });
 await page.goto(BASE + '#/item/' + sc.id, { waitUntil: 'networkidle0' }); await sleep(4000);
-await page.click('#it-more'); await sleep(200);
-await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.includes('Make another version')).click()); await sleep(300);
+// the score ⋯ has no "Make another version…" any more: the version job is started as it made it
 const oldJobs = new Set((await api('/jobs')).map((j) => j.id)); const scoresBefore = (await api('/items?kind=score')).length;
-await page.click('#gv [data-o="lead"]'); await page.click('#gv [data-o="clear"]'); await page.click('.modal [data-ok]');
+await page.evaluate(async (id) => {
+  const { store } = await import('./js/store.js');
+  const it = store.get(id);
+  store.addJob({ gen: true, fromItemId: it.id, title: it.title, artist: it.artist, tags: it.tags.filter((t) => !['Lead sheet', 'Simple Piano', 'Original'].includes(t)), tune: it.tune, key: it.key,
+    source: `From the score “${it.title}”`, sourceUrl: it.sourceUrl || '', outputs: ['lead', 'clear'], output: 'Lead sheet + Simple Piano' });
+}, sc.id);
 let done = null; const t0 = Date.now();
 for (let i = 0; i < 120 && !done; i++) { await sleep(1000); const js = await api('/jobs'); done = js.find((j) => !oldJobs.has(j.id) && j.kind === 'version' && ['done', 'failed'].includes(j.status)); }
 check('version job finishes', done?.status === 'done', JSON.stringify(done?.log?.slice(-2)));
