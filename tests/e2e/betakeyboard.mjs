@@ -56,6 +56,15 @@ const FAKE_MIDI = () => {
   };
   window.__note = (m, v = 100) => { const e = new Event('midimessage'); e.data = new Uint8Array([v ? 0x90 : 0x80, m, v]); window.__midi.input.dispatchEvent(e); };
   window.__tap = (m, ms = 120) => { window.__note(m, 100); setTimeout(() => window.__note(m, 0), ms); };
+  // events with an exact timeStamp (the page measures holds from the event's own timeStamp)
+  const at = (e, t) => { Object.defineProperty(e, 'timeStamp', { value: t }); return e; };
+  window.__noteAt = (m, v, t) => { const e = new Event('midimessage'); e.data = new Uint8Array([v ? 0x90 : 0x80, m, v]); window.__midi.input.dispatchEvent(at(e, t)); };
+  window.__holdMidi = (m, ms, t0 = performance.now()) => { window.__noteAt(m, 100, t0); window.__noteAt(m, 0, t0 + ms); };
+  window.__holdScreen = (m, ms, t0 = performance.now()) => {
+    const k = document.querySelector(`.bk-key[data-m="${m}"]`), o = { bubbles: true, cancelable: true, pointerId: 41, pointerType: 'touch', isPrimary: true };
+    k.dispatchEvent(at(new PointerEvent('pointerdown', o), t0)); k.dispatchEvent(at(new PointerEvent('pointerup', o), t0 + ms));
+  };
+  window.__keyAt = (type, code, t, repeat = false) => document.body.dispatchEvent(at(new KeyboardEvent(type, { code, key: code.slice(3).toLowerCase(), repeat, bubbles: true, cancelable: true }), t));
 };
 
 const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', args: ['--autoplay-policy=no-user-gesture-required'] });
@@ -204,9 +213,9 @@ console.log('Hold to set length');
 await clk(page, '#bk-hold'); await sleep(40);
 await page.$eval('#bk-tempo', (r) => { r.value = '120'; r.dispatchEvent(new Event('input')); });
 await pick(page, '7:0'); // C5 whole
-await tap(page, 74, 1000); // 1 s at 120 BPM = 2 beats
+await page.evaluate(() => window.__holdMidi(74, 1000)); await sleep(80); // 1 s at 120 BPM = 2 beats
 check('held 1 s at 120 BPM → half note D5', (await bar(page, 7)) === '74/48 R/48', await bar(page, 7));
-await tap(page, 76, 260); // next note (the rest) ≈ 1/8
+await page.evaluate(() => window.__holdMidi(76, 260)); await sleep(80); // next note (the rest) ≈ 1/8
 check('next key held ≈ 0.25 s → eighth on the next note', (await bar(page, 7)) === '74/48 76/12 R/12 R/24', await bar(page, 7));
 await clk(page, '#bk-hold'); await sleep(40);
 
@@ -251,6 +260,102 @@ check('no lyric text on the page', !(await page.evaluate(() => document.body.inn
 check('no writes to the server', writes.length === 0, writes.join(', '));
 check('no page errors', errors.length === 0, errors.join('\n'));
 await page.close();
+
+// =============== hold to set length: exact timing ===============
+console.log('Hold to set length: timing');
+{
+  const { page, errors } = await open();
+  if (await has(page, '#bk-connect')) await page.click('#bk-connect');
+  await page.waitForSelector('#bk-dev', { timeout: 3000 }).catch(() => {});
+  await page.click('#bk-go'); await page.waitForSelector('.bk-it');
+  await clk(page, '#bk-hold'); await sleep(40);
+  check('hold mode: tempo defaults to 60 BPM, the bar and options show', (await txt(page, '#bk-bpm')) === '60 BPM' && !(await page.$eval('#bk-holdbox', (b) => b.hidden)));
+  check('ticks at 1/16 1/8 1/4 1/2 1', (await page.$$eval('#bk-hticks i', (t) => t.map((x) => x.textContent).join(' '))) === '1/16 1/8 1/4 1/2 1');
+  await clk(page, '#bk-auto'); await sleep(40); // every key goes to the same note: bar 8's whole C5
+  await pick(page, '7:0');
+  const len = () => page.$eval('.bk-it[data-k="7:0"]', (x) => +x.dataset.t);
+  const holdLen = async (how, ms) => { await page.evaluate((how, ms) => (how === 'screen' ? window.__holdScreen(72, ms) : window.__holdMidi(72, ms)), how, ms); await sleep(60); return len(); };
+  const LAT = 25; // default release latency (ms)
+  const TH = [[6, 12], [12, 24], [24, 48], [48, 96]].map(([a, b]) => [a, b, Math.sqrt((a / 24) * (b / 24))]);
+  for (const bpmv of [60, 120]) {
+    await page.$eval('#bk-tempo', (r, v) => { r.value = String(v); r.dispatchEvent(new Event('input')); }, bpmv);
+    const beat = 60000 / bpmv;
+    for (const [a, b, th] of TH) {
+      const ms = th * beat + LAT;
+      for (const how of ['midi', 'screen']) {
+        const lo = await holdLen(how, ms - 8), hi = await holdLen(how, ms + 8);
+        check(`${bpmv} BPM, ${how}: ${(ms / 1000).toFixed(3)} s is the ${a}→${b} switch point (geometric midpoint)`, lo === a && hi === b, `${lo} ${hi}`);
+      }
+    }
+    check(`${bpmv} BPM: a very short hold is 1/16, a very long one a whole`, (await holdLen('midi', 40)) === 6 && (await holdLen('midi', beat * 9)) === 96);
+  }
+  await page.$eval('#bk-tempo', (r) => { r.value = '60'; r.dispatchEvent(new Event('input')); });
+  check('judged by ratio: 0.37 beat → 1/8 (switch √(1/4·1/2) = 0.354, not the arithmetic 0.375); 0.34 → 1/16', (await holdLen('midi', 370 + LAT)) === 12 && (await holdLen('midi', 340 + LAT)) === 6);
+  check('dotted off: 1.3 beats → plain 1/4', (await holdLen('midi', 1300 + LAT)) === 24);
+  check('the read-out shows the beats and the length', (await txt(page, '#bk-hbeats')) === '1.30 beats' && /= quarter/.test(await txt(page, '#bk-hlen')), await txt(page, '#bk-hnow'));
+  await clk(page, '#bk-holddot'); await sleep(40);
+  check('dotted on: 1.3 beats → dotted 1/4; 1.15 beats → 1/4', (await holdLen('midi', 1300 + LAT)) === 36 && (await holdLen('midi', 1150 + LAT)) === 24);
+  check('dotted on: 0.4 beat → dotted 1/16 (switch √(1/4·3/8) = 0.306)', (await holdLen('midi', 400 + LAT)) === 9);
+  await clk(page, '#bk-holddot'); await sleep(40);
+
+  console.log('Live bar while holding');
+  await clk(page, '#bk-holdclick'); await sleep(40);
+  await page.evaluate(() => window.__note(72, 100)); await sleep(650);
+  const live = await page.evaluate(() => ({ on: document.querySelector('#bk-hbar').classList.contains('on'), w: parseFloat(document.querySelector('#bk-hfill').style.width), beats: parseFloat(document.querySelector('#bk-hbeats').textContent), t: +document.querySelector('#bk-hnow').dataset.t, ic: !!document.querySelector('#bk-hic svg') }));
+  check('while holding: the bar grows, beats count up, the note icon shows the pick so far', live.on && live.w > 40 && live.beats > 0.5 && live.beats < 1.3 && [12, 24].includes(live.t) && live.ic, JSON.stringify(live));
+  await page.$eval('#bk-holdbox', (e) => e.scrollIntoView({ block: 'center' })); await page.screenshot({ path: `${SHOTS}/mac-hold-live.png` });
+  await page.evaluate(() => window.__note(72, 0)); await sleep(60);
+  check('…released: the bar stops', !(await page.$eval('#bk-hbar', (b) => b.classList.contains('on'))));
+  await clk(page, '#bk-holdclick'); await sleep(40);
+
+  console.log('On-screen keys: pointer capture');
+  await page.$eval('#bk-hbar', (e) => e.scrollIntoView({ block: 'center' }));
+  const keyPt = (m) => page.$eval(`.bk-key[data-m="${m}"]`, (k) => { const r = k.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height - 14]; });
+  const [x72, y72] = await keyPt(72), [x76, y76] = await keyPt(76);
+  await page.mouse.move(x72, y72); await page.mouse.down();
+  await page.mouse.move(x76, y76, { steps: 6 }); await sleep(40);
+  const downs = await page.$$eval('.bk-key.down', (k) => k.map((x) => x.dataset.m).join(','));
+  await page.mouse.move(x76, 40, { steps: 6 }); // off the piano, up over the page
+  await sleep(500);
+  await page.mouse.up(); await sleep(80);
+  const heldMs = +(await page.$eval('#bk-live', (e) => e.dataset.holdMs));
+  check('slide onto another key: still only the pressed key sounds', downs === '72', downs);
+  check('slide off and release: the hold ends at the release (no stuck key), measured ≈ the real time', !(await has(page, '.bk-key.down')) && heldMs > 480 && heldMs < 900, String(heldMs));
+  check('…and it set the length from that time (1/8 below 0.73 s, else 1/4)', (await len()) === ((heldMs - LAT) / 1000 < Math.SQRT1_2 ? 12 : 24) && (await page.$eval('.bk-it[data-k="7:0"]', (x) => x.dataset.m)) === '72', String(await len()));
+
+  console.log('Computer keys: auto-repeat ignored');
+  await page.evaluate(() => { const t0 = performance.now(); window.__keyAt('keydown', 'KeyD', t0); for (let k = 1; k <= 12; k++) window.__keyAt('keydown', 'KeyD', t0 + 300 + k * 33, true); window.__keyAt('keyup', 'KeyD', t0 + 1525); });
+  await sleep(80);
+  check('held D 1.5 s with auto-repeat → one note E4, a half (1.5 beats)', (await page.$eval('.bk-it[data-k="7:0"]', (x) => x.dataset.m)) === '64' && (await len()) === 48 && /held 1\.5\d s = 1\.50 beats/.test(await msg(page)), (await len()) + ' ' + (await msg(page)));
+  check('…repeats did not restart the hold or move on', (await selK(page)) === '7:0' && !(await has(page, '.bk-key.down')));
+
+  console.log('Calibration');
+  const sw = () => page.$eval('#bk-holdhelp [data-th="2"]', (e) => e.textContent);
+  check('before: 0.6 s → 1/8; 1/4→1/2 switch at 1.44 s', (await holdLen('midi', 600)) === 12 && (await sw()) === '1.44 s', await sw());
+  await clk(page, '#bk-cal'); await sleep(40);
+  check('Calibrate asks for 4 quarter notes', /4 quarter notes/.test(await txt(page, '#bk-calbox')) && (await txt(page, '#bk-cal')) === 'Cancel');
+  const before7 = await bar(page, 7);
+  await page.evaluate(() => { const t0 = performance.now(); for (let k = 0; k < 4; k++) window.__holdMidi(67, 800, t0 + k * 1000); }); // released 0.2 s early each time
+  await sleep(80);
+  const c1 = await page.evaluate(() => JSON.parse(localStorage.getItem('meowsic-beta-keyboard-cal')));
+  check('4 holds of 0.8 s on a 1 s beat → latency −200 ms, stretch 1, saved on the device', c1 && c1.latency === -200 && c1.stretch === 1 && /Calibrated/.test(await txt(page, '#bk-calbox')), JSON.stringify(c1));
+  check('calibrating did not edit the notes', (await bar(page, 7)) === before7);
+  check('after: the switch points move (1/4→1/2 now at 1.21 s), 0.6 s now reads as 1/4', (await sw()) === '1.21 s' && (await holdLen('midi', 600)) === 24, await sw());
+  await clk(page, '#bk-cal'); await sleep(40);
+  await page.evaluate(() => { const t0 = performance.now(); for (let k = 0; k < 4; k++) window.__holdMidi(67, 1100, t0 + k * 1100); }); // a slower beat, legato
+  await sleep(80);
+  const c2 = await page.evaluate(() => JSON.parse(localStorage.getItem('meowsic-beta-keyboard-cal')));
+  check('a slow, legato player → latency 0, stretch 0.91; 1/4→1/2 at 1.56 s', c2.latency === 0 && Math.abs(c2.stretch - 0.909) < 0.002 && (await sw()) === '1.56 s', JSON.stringify(c2) + ' ' + (await sw()));
+  await page.reload({ waitUntil: 'networkidle0' }); await page.waitForFunction(() => window.__ready); await page.waitForSelector('.bk-it');
+  check('calibration kept after reload', (await sw()) === '1.56 s', await sw());
+  await clk(page, '#bk-calreset'); await sleep(40);
+  check('Reset calibration → default', (await sw()) === '1.44 s' && !(await page.evaluate(() => localStorage.getItem('meowsic-beta-keyboard-cal'))));
+  await page.evaluate(() => { localStorage.setItem('meowsic-beta-keyboard-cal', '{bad json'); });
+  await page.reload({ waitUntil: 'networkidle0' }); await page.waitForFunction(() => window.__ready); await page.waitForSelector('.bk-it');
+  check('a broken saved calibration falls back to the default', (await sw()) === '1.44 s');
+  check('no page errors', errors.length === 0, errors.join('\n'));
+  await page.close();
+}
 
 // =============== no device / blocked ===============
 console.log('No keyboard / blocked');

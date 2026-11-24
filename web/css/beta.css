@@ -125,3 +125,18 @@
   .bk-len { min-width: 52px; }
   #bk-rest { margin-left: 0; }
 }
+/* hold to set length: live bar (log time, ticks 1/16 … 1), the pick right now, calibration */
+.bk-holdbox { border-top: 1px dashed var(--line); margin-top: 4px; padding-top: 4px; }
+.bk-holdbox[hidden], .bk-calbox[hidden] { display: none; }
+.bk-hbar { position: relative; height: 16px; margin: 10px 0 22px; border-radius: 8px; background: var(--bg2); border: 1px solid var(--line); }
+.bk-hfill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 8px; background: color-mix(in srgb, var(--acc) 55%, transparent); }
+.bk-hbar.on .bk-hfill { background: var(--acc); }
+.bk-hticks { position: absolute; inset: 0; }
+.bk-hticks i { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--ink2); font-style: normal; }
+.bk-hticks i span { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); font-size: 11px; font-weight: 700; color: var(--mute); white-space: nowrap; margin-top: 2px; }
+.bk-hticks i.past span { color: var(--acc-text); }
+.bk-hticks u { position: absolute; top: 2px; bottom: 2px; width: 0; border-left: 1px dotted var(--mute); }
+.bk-hnow { display: flex; align-items: center; gap: 8px; min-height: 30px; font-size: 16px; }
+.bk-hic .bk-ic { width: 22px; height: 26px; }
+.bk-calbox { background: var(--acc-soft); border-radius: 10px; padding: 8px 10px; margin: 6px 0; font-size: 14px; }
+.bk-calbox .ok { color: var(--ok); font-weight: 600; }

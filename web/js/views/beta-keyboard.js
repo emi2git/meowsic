@@ -5,13 +5,18 @@
 //   Pitch    press a key: the selected note takes it (it sounds); the next key goes to the next note (toggle)
 //   Length   buttons 1 · 1/2 · 1/4 · 1/8 · 1/16 · dot · tie; number keys 1 2 4 8 6 and . ;
 //            the lowest keyboard keys (C D E F G = 1 … 1/16, A = rest, C# = dot, D# = tie; start note configurable);
-//            "Hold to set length": how long a key is held at the tempo picks the nearest length
+//            "Hold to set length": how long a key is held at the hold tempo (60 BPM by default) picks the length:
+//            switch points at the geometric midpoints between neighbours (dotted ones only with "Dotted lengths"),
+//            minus a calibrated release latency, times a calibrated stretch (Calibrate: 4 quarter notes with clicks);
+//            a live bar with 1/16 … 1 ticks, the note it would pick and the beats so far; optional quiet clicks
 //   Bars always add up: shorter → a rest fills the gap (or the next notes move earlier); longer → borrows from the
 //   notes / rests after it in the bar, refused when it would cross the bar line.
 //   Rest (button, R / Delete, MIDI key) · Undo / Redo · Reset · Play these bars.
 // Input: Web MIDI (Chrome on the Mac). iPad / iPhone Safari has no Web MIDI: the on-screen keys or the computer
 // keyboard (A S D F … white, W E T Y U … black, Z / X octave) stand in. Settings are remembered per device (localStorage, guarded).
 import { pianoKey, audioCtx, loadPiano, ScorePlayer } from '../audio.js';
+// Timing for "Hold to set length": every press / release time is the event's own timeStamp (MIDIMessageEvent,
+// PointerEvent, KeyboardEvent: all on the performance.now() clock), never Date.now() or a timer callback.
 import { esc } from '../ui.js';
 
 const SONG_ID = 'm-b6xs990';
@@ -23,6 +28,7 @@ const noteName = (m) => pcName(m) + (Math.floor(m / 12) - 1);
 const WHITE = [0, 2, 4, 5, 7, 9, 11];
 const isWhite = (m) => WHITE.includes(((m % 12) + 12) % 12);
 const now = () => performance.now();
+const evT = (e) => (Number.isFinite(e?.timeStamp) && e.timeStamp > 0 ? e.timeStamp : now());
 
 function loadSettings() { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } }
 function saveSettings(s) { try { localStorage.setItem(LS, JSON.stringify(s)); } catch {} }
@@ -308,20 +314,25 @@ function makePiano(host, emit) {
   const paintFn = () => host.querySelectorAll('.bk-key').forEach((k) => { const t = fn.get(+k.dataset.m); k.classList.toggle('fn', !!t); k.querySelector('.bk-fn').textContent = t || ''; });
   const setFn = (map) => { fn = map; paintFn(); };
   const setRange = (a, b) => { if (a === lo && b === hi) return; lo = a; hi = b; build(); };
-  // touch / mouse: a press sounds until the finger lifts
+  // touch / mouse: a press sounds until the finger lifts. The pressed key captures the pointer, so sliding off it
+  // (or off the piano) neither ends the note nor starts another; the release time is pointerup's own timeStamp.
   const down = new Map();
   host.addEventListener('pointerdown', (e) => {
-    const k = e.target.closest('.bk-key'); if (!k) return;
+    const k = e.target.closest('.bk-key'); if (!k || down.has(e.pointerId)) return;
+    if (e.button > 0) return;
     e.preventDefault();
-    try { host.setPointerCapture(e.pointerId); } catch {}
+    try { k.setPointerCapture(e.pointerId); } catch {}
     const m = +k.dataset.m; down.set(e.pointerId, m);
-    emit({ type: 'on', midi: m, vel: 96, t: now(), src: 'screen' });
+    emit({ type: 'on', midi: m, vel: 96, t: evT(e), src: 'screen' });
   });
-  const up = (e) => { const m = down.get(e.pointerId); if (m == null) return; down.delete(e.pointerId); emit({ type: 'off', midi: m, vel: 0, t: now(), src: 'screen' }); };
+  const up = (e) => { const m = down.get(e.pointerId); if (m == null) return; down.delete(e.pointerId); emit({ type: 'off', midi: m, vel: 0, t: evT(e), src: 'screen' }); };
   host.addEventListener('pointerup', up); host.addEventListener('pointercancel', up);
+  // a backstop when capture isn't available: a release anywhere on the page still ends the note (once)
+  addEventListener('pointerup', up); addEventListener('pointercancel', up);
   host.addEventListener('contextmenu', (e) => e.preventDefault());
   build();
-  return { light, clear, fold, labels, setFn, setRange, get range() { return [lo, hi]; } };
+  const destroy = () => { removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
+  return { light, clear, fold, labels, setFn, setRange, destroy, get range() { return [lo, hi]; } };
 }
 
 // the computer keyboard: one row of white keys, the row above for black keys, Z / X = octave down / up
@@ -346,7 +357,7 @@ const STEPS = [
 
 export function render(el, _ctx = {}) {
   ensureCss();
-  const st = Object.assign({ step: 0, done: [], sound: true, base: 60, tempo: 80, auto: true, hold: false, fnOn: true, fnBase: 48, pull: false }, loadSettings());
+  const st = Object.assign({ step: 0, done: [], sound: true, base: 60, tempo: 80, holdTempo: 60, holdDot: false, holdClick: false, auto: true, hold: false, fnOn: true, fnBase: 48, pull: false }, loadSettings());
   st.step = Math.max(0, Math.min(STEPS.length - 1, +st.step || 0));
   const persist = () => saveSettings(st);
   const subs = new Set();
@@ -407,23 +418,23 @@ export function render(el, _ctx = {}) {
       if (e.code === 'KeyZ' || e.code === 'KeyX') { if (!e.repeat) { st.base = Math.max(36, Math.min(84, st.base + (e.code === 'KeyZ' ? -12 : 12))); persist(); keyLabels(); } e.preventDefault(); return; }
       if (!(e.code in CODES)) return;
       e.preventDefault();
-      if (e.repeat || keyDown.has(e.code)) return;
+      if (e.repeat || keyDown.has(e.code)) return; // auto-repeat never restarts (or ends) a held key
       const m = st.base + CODES[e.code]; keyDown.set(e.code, m);
-      emit({ type: 'on', midi: m, vel: 90, t: e.timeStamp || now(), src: 'keys' });
+      emit({ type: 'on', midi: m, vel: 90, t: evT(e), src: 'keys' });
     } else if (keyDown.has(e.code)) {
       const m = keyDown.get(e.code); keyDown.delete(e.code);
-      emit({ type: 'off', midi: m, vel: 0, t: e.timeStamp || now(), src: 'keys' });
+      emit({ type: 'off', midi: m, vel: 0, t: evT(e), src: 'keys' });
     }
   };
   addEventListener('keydown', onKey); addEventListener('keyup', onKey);
-  const onBlur = () => { for (const [code, m] of keyDown) { keyDown.delete(code); emit({ type: 'off', midi: m, vel: 0, t: now(), src: 'keys' }); } };
+  const onBlur = (e) => { for (const [code, m] of keyDown) { keyDown.delete(code); emit({ type: 'off', midi: m, vel: 0, t: evT(e), src: 'keys' }); } };
   addEventListener('blur', onBlur);
 
   // MIDI
   const attached = new Set();
   const onMidi = (e) => {
     const d = e.data; if (!d || d.length < 2) return;
-    const cmd = d[0] & 0xf0, t = e.timeStamp || now();
+    const cmd = d[0] & 0xf0, t = evT(e);
     if (cmd === 0x90 && d[2] > 0) emit({ type: 'on', midi: d[1], vel: d[2], t, src: 'midi' });
     else if (cmd === 0x80 || cmd === 0x90) emit({ type: 'off', midi: d[1], vel: 0, t, src: 'midi' });
   };
@@ -494,6 +505,7 @@ export function render(el, _ctx = {}) {
     for (const inp of attached) inp.removeEventListener('midimessage', onMidi);
     midi.access?.removeEventListener?.('statechange', onState);
     for (const r of held.values()) r(); held.clear();
+    piano.destroy();
   };
 }
 export const betaKeyboardView = render;
@@ -503,9 +515,61 @@ export default render;
 // the lowest keys as length keys, from a C: C D E F G = 1 1/2 1/4 1/8 1/16, A = rest, C# = dot, D# = tie
 const FN_KEYS = [[0, 'len', 96, '1'], [2, 'len', 48, '1/2'], [4, 'len', 24, '1/4'], [5, 'len', 12, '1/8'], [7, 'len', 6, '1/16'], [9, 'rest', 0, 'Rest'], [1, 'dot', 0, 'Dot'], [3, 'tie', 0, 'Tie']];
 const FN_BASES = [36, 48, 60];
-// hold to set length: the nearest of these (in log time)
-const HOLD_LENS = [96, 72, 48, 36, 24, 18, 12, 6];
-export const nearestLen = (beats) => HOLD_LENS.reduce((a, t) => (Math.abs(Math.log(t / TPQ / beats)) < Math.abs(Math.log(a / TPQ / beats)) ? t : a));
+// ---------- hold to set length ----------
+// Lengths (ticks) a hold can pick, short → long; dotted ones only with "Dotted" on.
+const HOLD_PLAIN = [6, 12, 24, 48, 96], HOLD_DOTS = [6, 9, 12, 18, 24, 36, 48, 72, 96];
+// the switch points (in beats) between neighbours: the geometric midpoint √(a·b), so a hold is judged by ratio
+// (0.36 beat is nearer 1/16 than 1/8), never by the arithmetic middle (which would round short holds up)
+export const holdThresholds = (dots = false) => { const L = dots ? HOLD_DOTS : HOLD_PLAIN; return L.slice(1).map((t, i) => Math.sqrt((L[i] / TPQ) * (t / TPQ))); };
+export function pickLen(beats, dots = false) {
+  const L = dots ? HOLD_DOTS : HOLD_PLAIN, th = holdThresholds(dots);
+  const k = th.findIndex((x) => beats < x);
+  return L[k < 0 ? L.length - 1 : k];
+}
+export const nearestLen = (beats) => pickLen(beats, true); // kept for older callers
+// the player's own timing, measured by Calibrate: ms subtracted from every hold (release latency) and a stretch
+export const CAL_DEFAULT = { latency: 25, stretch: 1 };
+const LS_CAL = 'meowsic-beta-keyboard-cal';
+export function loadCal() { try { const c = JSON.parse(localStorage.getItem(LS_CAL)); if (c && Number.isFinite(c.latency) && Number.isFinite(c.stretch) && c.stretch > 0) return { latency: c.latency, stretch: c.stretch, at: c.at }; } catch {} return { ...CAL_DEFAULT }; }
+function saveCal(c) { try { if (c) localStorage.setItem(LS_CAL, JSON.stringify(c)); else localStorage.removeItem(LS_CAL); } catch {} }
+// held ms → beats at the tempo, with the calibration applied
+export const holdBeats = (ms, bpm, cal = CAL_DEFAULT) => Math.max(0, (ms - cal.latency) * cal.stretch) / 1000 * (bpm / 60);
+const median = (xs) => { const a = [...xs].sort((x, y) => x - y), h = a.length >> 1; return a.length % 2 ? a[h] : (a[h - 1] + a[h]) / 2; };
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+// 4 quarter notes held with the clicks (press on a click, let go on the next): holds = [{ on, off }] in ms.
+// The player's beat = the median time between presses; stretch maps it onto the tempo's beat, and latency is how
+// much longer (or, released early, shorter) each hold is than that beat. After it, these holds read as exactly 1/4.
+export function calibrate(holds, beatMs) {
+  const d = median(holds.map((h) => h.off - h.on));
+  const gaps = holds.slice(1).map((h, i) => h.on - holds[i].on);
+  let ioi = gaps.length ? median(gaps) : beatMs;
+  if (!(ioi > beatMs * 0.6 && ioi < beatMs * 1.6)) ioi = beatMs;
+  return { latency: Math.round(clamp(d - ioi, -300, 300)), stretch: +clamp(beatMs / ioi, 0.7, 1.4).toFixed(3) };
+}
+// a quiet metronome tick at audio time `when`; returns a stopper
+function softClick(when, accent = false, gain = 0.07) {
+  try {
+    const c = audioCtx(), o = c.createOscillator(), g = c.createGain();
+    o.frequency.value = accent ? 1500 : 1100;
+    g.gain.setValueAtTime(0, when); g.gain.linearRampToValueAtTime(accent ? gain * 1.6 : gain, when + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, when + 0.05);
+    o.connect(g); g.connect(c.destination); o.start(when); o.stop(when + 0.07);
+    return () => { try { o.stop(); } catch {} };
+  } catch { return () => {}; }
+}
+// ticks at beat k of a hold that started at performance time t0 (ms): audio clock = now + (t0 + k·beat − now)
+function clicksFrom(t0, beatMs, count, { from = 1, gain, accentEvery = 0 } = {}) {
+  let stops = [];
+  try {
+    const c = audioCtx(), base = c.currentTime - now() / 1000;
+    for (let k = from; k < from + count; k++) { const w = base + (t0 + k * beatMs) / 1000; if (w >= c.currentTime) stops.push(softClick(w, accentEvery && k % accentEvery === 0, gain)); }
+  } catch {}
+  return () => { stops.forEach((f) => f()); stops = []; };
+}
+// the progress bar's scale: log time from 1/32 to past a whole note, so every tick has room
+const BAR_LO = 0.125, BAR_HI = 5.2;
+const barPos = (beats) => clamp(Math.log(Math.max(beats, 1e-3) / BAR_LO) / Math.log(BAR_HI / BAR_LO), 0, 1) * 100;
+const TICKS = [[6, '1/16'], [12, '1/8'], [24, '1/4'], [48, '1/2'], [96, '1']];
+const ICON_ANY = (t) => { const p = HOLD_PLAIN.includes(t) ? t : t / 1.5; const ic = ICON(p); return p === t ? ic : ic.replace('</svg>', '<circle cx="16" cy="17" r="1.8" fill="currentColor"/></svg>'); };
 
 const MOUNT = {
   connect(live, { on, markDone }, show) {
@@ -565,8 +629,19 @@ function fixEditor(live, song, { on, piano, st, persist, markDone, setSilent }) 
       </div>
       <div class="bk-row">
         <label class="bk-tg"><input type="checkbox" id="bk-hold"${st.hold ? ' checked' : ''}><span>Hold to set length</span></label>
-        <label class="bk-slider">Tempo <input type="range" id="bk-tempo" min="40" max="160" step="5" value="${st.tempo}"> <b id="bk-bpm"></b></label>
-        <span class="muted small" id="bk-holdhelp"></span>
+        <label class="bk-slider">Tempo <input type="range" id="bk-tempo" min="40" max="160" step="5" value="${st.hold ? st.holdTempo : st.tempo}"> <b id="bk-bpm"></b></label>
+      </div>
+      <div class="bk-holdbox" id="bk-holdbox"${st.hold ? '' : ' hidden'}>
+        <div class="bk-row">
+          <label class="bk-tg"><input type="checkbox" id="bk-holddot"${st.holdDot ? ' checked' : ''}><span>Dotted lengths</span></label>
+          <label class="bk-tg"><input type="checkbox" id="bk-holdclick"${st.holdClick ? ' checked' : ''}><span>Quiet clicks while holding</span></label>
+          <button type="button" id="bk-cal">Calibrate</button>
+          <button type="button" class="bk-link" id="bk-calreset">Reset calibration</button>
+        </div>
+        <div class="bk-hbar" id="bk-hbar" aria-hidden="true"><div class="bk-hfill" id="bk-hfill"></div><div class="bk-hticks" id="bk-hticks"></div></div>
+        <div class="bk-hnow" id="bk-hnow" aria-live="off"><span class="bk-hic" id="bk-hic"></span><b id="bk-hbeats">Hold a key</b><span class="muted small" id="bk-hlen"></span></div>
+        <div class="bk-calbox" id="bk-calbox" hidden></div>
+        <p class="muted small" id="bk-holdhelp"></p>
       </div>
       <div class="bk-row">
         <label class="bk-tg"><input type="checkbox" id="bk-fnon"${st.fnOn ? ' checked' : ''}><span>Low keys set the length</span></label>
@@ -732,10 +807,82 @@ function fixEditor(live, song, { on, piano, st, persist, markDone, setSilent }) 
   q('#bk-undo').onclick = undo; q('#bk-redo').onclick = redo; q('#bk-reset').onclick = reset;
   q('#bk-auto').onchange = (e) => { st.auto = e.target.checked; persist(); armed = false; draw(); };
   q('#bk-pull').onchange = (e) => { st.pull = e.target.checked; persist(); };
+  // ----- hold to set length: tempo, live bar, calibration -----
+  let cal = loadCal(), calRun = null, raf = 0, stopClicks = () => {};
+  const bpm = () => (st.hold ? st.holdTempo : st.tempo); // hold mode has its own (slow) tempo, 60 by default
+  const beatMs = () => 60000 / bpm();
   const tempo = q('#bk-tempo');
-  const showBpm = () => { q('#bk-bpm').textContent = `${st.tempo} BPM`; q('#bk-holdhelp').textContent = st.hold ? `Hold about ${(60 / st.tempo).toFixed(2)} s for 1/4, twice that for 1/2.` : ''; };
-  tempo.oninput = () => { st.tempo = +tempo.value; persist(); showBpm(); if (player) { player.bpm = st.tempo; } };
-  q('#bk-hold').onchange = (e) => { st.hold = e.target.checked; persist(); showBpm(); msg(st.hold ? 'Hold to set length is on: hold each key as long as the note should last.' : 'Hold to set length is off.'); };
+  // the hold (ms) where each length starts, at this tempo with the calibration: beats → ms is holdBeats reversed
+  const switchMs = (beats) => (beats * beatMs()) / cal.stretch + cal.latency;
+  const showBpm = () => {
+    q('#bk-bpm').textContent = `${bpm()} BPM`;
+    q('#bk-holdbox').hidden = !st.hold;
+    if (!st.hold) return;
+    const L = st.holdDot ? HOLD_DOTS : HOLD_PLAIN, th = holdThresholds(st.holdDot);
+    q('#bk-holdhelp').innerHTML = `1 beat = ${(beatMs() / 1000).toFixed(2)} s. Switch points: ${L.map((t, i) => `<b>${lenShort(t)}</b>${th[i] != null ? ` <span data-th="${i}">${(switchMs(th[i]) / 1000).toFixed(2)} s</span>` : ''}`).join(' · ')}. `
+      + `Calibration: ${cal.latency >= 0 ? '−' : '+'}${Math.abs(cal.latency)} ms, ×${cal.stretch.toFixed(2)}${cal.at ? '' : ' (default)'}.`;
+    q('#bk-hticks').innerHTML = TICKS.map(([t, l]) => `<i data-t="${t}" style="left:${barPos(t / TPQ)}%" title="${l} · ${((t / TPQ) * beatMs() / 1000).toFixed(2)} s"><span>${l}</span></i>`).join('')
+      + th.map((b) => `<u style="left:${barPos(b)}%"></u>`).join('');
+  };
+  // the live read-out: bar, the note it would pick right now, the length in beats
+  const showHold = (beats, done = false) => {
+    const t = pickLen(beats, st.holdDot);
+    q('#bk-hfill').style.width = `${barPos(beats)}%`;
+    q('#bk-hbar').classList.toggle('on', !done);
+    q('#bk-hticks').querySelectorAll('i').forEach((i) => i.classList.toggle('past', beats >= +i.dataset.t / TPQ));
+    q('#bk-hic').innerHTML = ICON_ANY(t);
+    q('#bk-hbeats').textContent = `${beats.toFixed(2)} beat${Math.abs(beats - 1) < 0.005 ? '' : 's'}`;
+    q('#bk-hlen').textContent = `${done ? '=' : '→'} ${lenName(t)}`;
+    q('#bk-hnow').dataset.t = String(t);
+    return t;
+  };
+  const liveLoop = () => { if (!hold) return; showHold(holdBeats(now() - hold.t, bpm(), cal)); raf = requestAnimationFrame(liveLoop); };
+  const startHold = (h) => {
+    hold = h;
+    stopClicks(); stopClicks = st.holdClick ? clicksFrom(h.t, beatMs(), 8) : () => {};
+    cancelAnimationFrame(raf); liveLoop();
+  };
+  const endHold = () => { cancelAnimationFrame(raf); stopClicks(); stopClicks = () => {}; const h = hold; hold = null; return h; };
+
+  const calBox = q('#bk-calbox');
+  const calEnd = (text, cls = '') => {
+    if (!calRun) return;
+    calRun.stop(); calRun = null;
+    q('#bk-cal').textContent = 'Calibrate';
+    calBox.hidden = !text; calBox.innerHTML = text ? `<span class="${cls}">${text}</span>` : '';
+    showBpm();
+  };
+  const calDraw = () => { calBox.hidden = false; calBox.innerHTML = `<b>Calibrate:</b> listen to 4 clicks, then hold <b>4 quarter notes</b> with the clicks: press on a click, let go on the next one, press again. <b id="bk-caln">${calRun.holds.length} / 4</b>`; };
+  const calKey = (e) => {
+    if (e.type === 'on') { if (!calRun.cur) calRun.cur = { midi: e.midi, on: e.t }; return; }
+    if (!calRun.cur || calRun.cur.midi !== e.midi) return;
+    calRun.holds.push({ on: calRun.cur.on, off: e.t }); calRun.cur = null;
+    if (calRun.holds.length < 4) return calDraw();
+    const r = calibrate(calRun.holds, calRun.beat);
+    cal = { ...r, at: Date.now() }; saveCal(cal);
+    calEnd(`Calibrated: ${r.latency >= 0 ? 'holds read ' + r.latency + ' ms shorter' : 'holds read ' + -r.latency + ' ms longer'}, stretch ×${r.stretch.toFixed(2)}. Saved on this device.`, 'ok');
+    msg('Calibrated. Hold a key to try it.');
+  };
+  q('#bk-cal').onclick = () => {
+    if (calRun) return calEnd('Calibration cancelled.');
+    if (hold) endHold();
+    try { audioCtx(); } catch {}
+    const b = beatMs(), t0 = now() + 300;
+    calRun = { holds: [], cur: null, beat: b, stop: clicksFrom(t0, b, 14, { from: 0, gain: 0.14, accentEvery: 4 }) };
+    q('#bk-cal').textContent = 'Cancel';
+    calDraw();
+  };
+  q('#bk-calreset').onclick = () => { if (calRun) calEnd(''); cal = { ...CAL_DEFAULT }; saveCal(null); calBox.hidden = false; calBox.textContent = 'Calibration reset to the default.'; showBpm(); };
+
+  tempo.oninput = () => { if (st.hold) st.holdTempo = +tempo.value; else st.tempo = +tempo.value; persist(); showBpm(); if (player) { player.bpm = bpm(); } };
+  q('#bk-hold').onchange = (e) => {
+    st.hold = e.target.checked; persist();
+    if (!st.hold) { endHold(); calEnd(''); }
+    tempo.value = String(bpm()); showBpm();
+    msg(st.hold ? `Hold to set length is on (${bpm()} BPM): hold each key as long as the note should last.` : 'Hold to set length is off.');
+  };
+  q('#bk-holddot').onchange = (e) => { st.holdDot = e.target.checked; persist(); showBpm(); };
+  q('#bk-holdclick').onchange = (e) => { st.holdClick = e.target.checked; persist(); if (st.holdClick) { try { audioCtx(); } catch {} } };
   q('#bk-fnon').onchange = (e) => { st.fnOn = e.target.checked; persist(); paintFn(); };
   q('#bk-fnbase').onchange = (e) => { st.fnBase = +e.target.value; persist(); paintFn(); };
   showBpm();
@@ -746,7 +893,7 @@ function fixEditor(live, song, { on, piano, st, persist, markDone, setSilent }) 
     const notes = barsNotes(bars);
     const qs = []; bars.forEach((bar, b) => { const s = starts(bar); bar.items.forEach((x, i) => qs.push({ k: `${b}:${i}`, q: (bars.slice(0, b).reduce((a, y) => a + y.len, 0) + s[i]) / TPQ, d: x.t / TPQ })); });
     let lit = null;
-    player = new ScorePlayer({ notes, bpm: st.tempo, beats: bars[0].len / TPQ,
+    player = new ScorePlayer({ notes, bpm: bpm(), beats: bars[0].len / TPQ,
       onTick: (pq) => { const h = qs.find((x) => pq >= x.q && pq < x.q + x.d); const k = h?.k || null; if (k === lit) return; live.querySelector(`.bk-it[data-k="${lit}"]`)?.classList.remove('playing'); lit = k; if (k) live.querySelector(`.bk-it[data-k="${k}"]`)?.classList.add('playing'); },
       onEnd: () => stopPlay() });
     q('#bk-play').textContent = '■ Stop';
@@ -757,6 +904,7 @@ function fixEditor(live, song, { on, piano, st, persist, markDone, setSilent }) 
 
   // ----- the keyboard(s) -----
   const offNotes = on((e) => {
+    if (calRun) return calKey(e); // while calibrating, every key is a measurement and nothing is edited
     const f = fns.get(e.midi);
     if (f) {
       if (e.type !== 'on') return;
@@ -768,13 +916,15 @@ function fixEditor(live, song, { on, piano, st, persist, markDone, setSilent }) 
     }
     if (e.type === 'on') {
       if (player) stopPlay();
+      if (hold) endHold();
       const at = setPitch(e.midi);
-      if (st.hold && at) hold = { midi: e.midi, t: e.t, at };
+      if (st.hold && at) startHold({ midi: e.midi, t: e.t, at });
     } else if (hold && hold.midi === e.midi) {
-      const h = hold; hold = null;
-      const beats = ((e.t - h.t) / 1000) * (st.tempo / 60), t = nearestLen(beats);
+      const h = endHold(), ms = e.t - h.t;
+      const beats = holdBeats(ms, bpm(), cal), t = showHold(beats, true);
+      live.dataset.holdMs = String(Math.round(ms));
       if (sel.b !== h.at.b || sel.i !== h.at.i) return;
-      setLen(t, `held ${((e.t - h.t) / 1000).toFixed(2)} s`);
+      setLen(t, `held ${(ms / 1000).toFixed(2)} s = ${beats.toFixed(2)} beats`);
     }
   });
   const onKey = (e) => {
@@ -793,5 +943,5 @@ function fixEditor(live, song, { on, piano, st, persist, markDone, setSilent }) 
   addEventListener('keydown', onKey, true);
   msg(`Bar 1, note ${sel.i + 1} is picked. Play a key to change it.`);
   draw();
-  return () => { offNotes(); removeEventListener('keydown', onKey, true); stopPlay(); setSilent(null); piano.setFn(new Map()); };
+  return () => { offNotes(); endHold(); calEnd(''); removeEventListener('keydown', onKey, true); stopPlay(); setSilent(null); piano.setFn(new Map()); };
 }
