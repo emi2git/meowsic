@@ -16,23 +16,24 @@ const SORTS = {
   artist: ['Artist A–Z', (a, b) => (a.artist || '').localeCompare(b.artist || '') || a.title.localeCompare(b.title)],
   kind: ['Type', (a, b) => kindOf(a).localeCompare(kindOf(b)) || a.title.localeCompare(b.title)],
   pages: ['Pages', (a, b) => (a.pages || 0) - (b.pages || 0) || a.title.localeCompare(b.title)],
-  key: ['Key', (a, b) => (a.key || '').localeCompare(b.key || '') || a.title.localeCompare(b.title)],
+  key: ['Key', (a, b) => (keyShort(a.key) || '\uffff').localeCompare(keyShort(b.key) || '\uffff') || a.title.localeCompare(b.title)],
   version: ['Version', (a, b) => (verLabel(a) || '\uffff').localeCompare(verLabel(b) || '\uffff') || a.title.localeCompare(b.title)],
   album: ['Album', (a, b) => (a.album || '\uffff').localeCompare(b.album || '\uffff') || a.title.localeCompare(b.title)],
 };
 // table columns (Mac / iPad); clicking a heading sorts, clicking it again reverses
 // [sort key, heading, class]. Type is left out when a type is already picked in the left bar.
-// columns per view: [sort key, heading, class]
+// columns per view: [sort key, heading, class]. Key (as a chord name: A, Dm, Bb) sits right after the
+// title block on every device; on a phone Pages gives way before Key (app.css).
 const C = { title: ['title', 'Title', 'c-title'], artist: ['artist', 'Artist', 'c-artist'], album: ['album', 'Album', 'c-album'], type: ['kind', 'Type', 'c-type'],
   version: ['version', 'Version', 'c-ver'], pages: ['pages', 'Pages', 'c-pages'], key: ['key', 'Key', 'c-key'], added: ['added', 'Added', 'c-when'] };
 // No tags in any list (they stay on the items: the tag filter and search use them, Info shows and edits them).
 // Album (the show / movie / collection) is a Mac column; iPad / iPhone keep the list compact (app.css, touch section).
 const COLS_BY = {
-  '': [C.title, C.artist, C.album, C.version, C.type, C.key, C.added],
-  sheet: [C.title, C.artist, C.album, C.version, C.key, C.pages, C.added],
+  '': [C.title, C.artist, C.album, C.key, C.version, C.type, C.added],
+  sheet: [C.title, C.artist, C.album, C.key, C.version, C.pages, C.added],
   book: [C.title, C.artist, C.album, C.version, C.pages, C.added],
-  chords: [C.title, C.artist, C.album, C.version, C.key, C.added],
-  score: [C.title, C.artist, C.album, C.version, C.key, C.added],
+  chords: [C.title, C.artist, C.album, C.key, C.version, C.added],
+  score: [C.title, C.artist, C.album, C.key, C.version, C.added],
 };
 const PAGE = 50; // rows per page on the Mac (the list scrolls)
 // iPad / iPhone: the page never scrolls; a page of the list = as many rows as fit on the screen
