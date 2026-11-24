@@ -1,23 +1,35 @@
-// Manage library → Organize pages: delete and reorder pages (✕, ‹ ›, drag with the mouse and with touch, across
-// a song start), Undo, the sheet viewer showing the new order, Merge…, Refresh (scan job) → Recommended to check,
-// "This is a complete song" + Show hidden, and the Trash tab — on Mac, iPad (1032×1376 touch) and iPhone (420×912 touch).
-// Against a test server only: BASE (default :5190) and DATA (its data folder, to see .history). SHOTS = screenshot folder.
+// Manage library → Fix pages (#/manage/pages/<id>): the clean page grid + one dock, on Mac (1440×900, click /
+// ⌘-click, drag, keys), iPad (1032×1376 touch, real taps, hold + drag) and iPhone (390×844 touch):
+//   · no buttons on the pages; tap = select (✓); the dock (Crop · Move · New song here · Merge with… · Delete)
+//     is off until a page is selected (Merge with… always on)
+//   · Delete one page / several (confirm), Move (dock, then tap the place), drag; each undoable (header Undo),
+//     an Activities row each, the deleted page kept in .history
+//   · New song here → "Song 2 starts here · ✕ Remove" + banner; Done → "Split into 2 sheets" → 2 sheets; Undo
+//   · Crop (full screen): draw a box, Crop & next carries the box to page 3, Cancel → back with page 2 selected
+//     and a "cropped" tag; Undo takes the crop off
+//   · Merge with… → pick the other sheet → its pages after these, it goes to the Trash; Undo
+//   · books are not editable here; the sheet ⋯ Edit pages… / Crop page… open here and Back returns to the sheet
+// Against a test server only: BASE (a temp data dir; refuses ~/Documents/Meowsic), DATA (to see .history), SHOTS.
 import fs from 'node:fs';
 import path from 'node:path';
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5190/';
 const DATA = process.env.DATA || '';
-const SHOTS = process.env.SHOTS || '.';
-const T = 'Organize test', T2 = 'Organize test (part 2)', N = 6;
+const SHOTS = process.env.SHOTS || '/private/tmp/claude-501/-Users-emi2mac/4133b106-9ccb-4a6c-97de-aed86ecf9500/scratchpad/organizepages';
+fs.mkdirSync(SHOTS, { recursive: true });
+const health = await fetch(BASE + 'api/health').then((r) => r.json());
+if (!health.ok || /Documents\/Meowsic/.test(health.data)) { console.log('refusing: not a test server', health); process.exit(2); }
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0; const check = (n, c, x = '') => { c ? pass++ : fail++; console.log(c ? '  ok  ' : '  FAIL', n, c ? '' : x); };
 const api = (p) => fetch(BASE + 'api' + p).then((r) => r.json());
 const post = (p, body) => fetch(BASE + 'api' + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
 const errs = [];
-const newPage = async (vp) => {
-  const p = await b.newPage(); await p.setViewport(vp);
-  p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && !/404|409/.test(m.text()) && errs.push(m.text()));
+const IPAD_UA = 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+const PHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+const newPage = async (vp, ua) => {
+  const p = await b.newPage(); if (ua) await p.setUserAgent(ua); await p.setViewport(vp); await p.setBypassServiceWorker(true);
+  p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && !/404|409|Failed to load resource/.test(m.text()) && errs.push(m.text()));
   return p;
 };
 const colour = (n) => [(n * 37) % 256, 240 - n * 22, 30 + n * 21];
@@ -25,11 +37,6 @@ const COLS = Array.from({ length: 10 }, (_, k) => colour(k + 1));
 
 const mac = await newPage({ width: 1440, height: 900 });
 await mac.goto(BASE + '#/library', { waitUntil: 'networkidle0' });
-const purgeOld = async () => {
-  const old = (await api('/items?deleted=true')).concat(await api('/items')).filter((x) => x.title.startsWith(T));
-  if (old.length) await post('/items/purge', { ids: old.map((x) => x.id) });
-};
-await purgeOld();
 const upload = (title, from, n) => mac.evaluate(async (title, from, n, cols) => {
   const fd = new FormData(); fd.append('title', title); fd.append('artist', 'E2E');
   for (let k = from; k < from + n; k++) {
@@ -40,11 +47,7 @@ const upload = (title, from, n) => mac.evaluate(async (title, from, n, cols) => 
   }
   return (await (await fetch('/api/sheets', { method: 'POST', body: fd })).json()).item;
 }, title, from, n, COLS);
-let sh = await upload(T, 1, N);
-const sh2 = await upload(T2, 7, 2);
-await post(`/sheets/${sh.id}/split`, { starts: { 4: 'Second' } });  // song 1 = pages 1–3, song 2 = 4–6
-
-// which test page (by colour) is page k now — through the stable page URLs /api/items/{id}/pages/{n}
+// which test page (by colour) is page k now
 const order = (id) => mac.evaluate(async (id, cols) => {
   const it = await (await fetch(`/api/items/${id}`)).json(), out = [];
   for (let n = 1; n <= it.pages; n++) {
@@ -55,90 +58,119 @@ const order = (id) => mac.evaluate(async (id, cols) => {
   }
   return out.join(',');
 }, id, COLS);
-const deletedInHistory = () => {
+const historyCount = (it) => {
   if (!DATA) return null;
-  const d = path.join(DATA, 'items', sh.folder, '.history');
-  return fs.existsSync(d) ? fs.readdirSync(d).filter((f) => /^deleted-[0-9a-fx]+-p[0-9]+\.[a-z]+$/.test(f)).length : 0;  // the page photos (not their crop history)
+  const d = path.join(DATA, 'items', it.folder, '.history');
+  return fs.existsSync(d) ? fs.readdirSync(d).filter((f) => /^deleted-/.test(f)).length : 0;
 };
-check('test sheet pages in order', (await order(sh.id)) === '1,2,3,4,5,6');
 
-const open = async (p, id) => {
-  await p.goto(BASE + `#/manage?id=${id}`, { waitUntil: 'networkidle2', timeout: 60000 }); await sleep(1500);  // the Mac may still be reading page titles
-  await p.waitForSelector('#bs-grid figure', { timeout: 8000 }).catch(() => {});
-};
-const figCount = (p) => p.$$eval('#bs-grid figure', (e) => e.length);
-const undoBtn = async (p) => { await p.$eval('#cu-undo', (e) => e.click()); await sleep(1600); };
-
-for (const [name, vp] of [['mac', { width: 1440, height: 900 }], ['ipad', { width: 1032, height: 1376, hasTouch: true, isMobile: true }], ['iphone', { width: 420, height: 912, hasTouch: true, isMobile: true }]]) {
+const DEVICES = [['mac', { width: 1440, height: 900 }], ['ipad', { width: 1032, height: 1376, hasTouch: true, isMobile: true }, IPAD_UA], ['iphone', { width: 390, height: 844, hasTouch: true, isMobile: true }, PHONE_UA]];
+for (const [name, vp, ua] of DEVICES) {
   console.log(name);
-  const p = name === 'mac' ? mac : await newPage(vp);
+  const T = `Fix ${name}`;
+  const sh = await upload(T, 1, 6), sh2 = await upload(`${T} other`, 7, 2);
+  const p = name === 'mac' ? mac : await newPage(vp, ua);
   const touch = name !== 'mac';
-  await open(p, sh.id);
-  check(`${name}: Manage library → Organize pages, 6 pages`, (await p.$eval('.cu-tabs a.on', (e) => e.dataset.tab)) === 'organize' && (await figCount(p)) === N, await figCount(p));
-  check(`${name}: every page has ✕ and ‹ ›`, (await p.$$('#bs-grid .og-del')).length === N && (await p.$$('#bs-grid .og-mv')).length === 2 * N);
-  const fit = await p.evaluate(() => { const se = document.scrollingElement; return { sw: se.scrollWidth, iw: innerWidth, sh: se.scrollHeight, ih: innerHeight }; });
-  check(`${name}: no page scroll`, fit.sw <= fit.iw + 1 && fit.sh <= fit.ih + 1, JSON.stringify(fit));
-  if (name === 'iphone') check('iphone: delete button big enough', (await p.$eval('#bs-grid .og-del', (e) => e.getBoundingClientRect().width)) >= 34);
-  // ---- delete page 2 ----
-  const h0 = deletedInHistory();
-  const tapOrClick = (sel) => (touch ? p.tap(sel) : p.click(sel));
-  await tapOrClick('#bs-grid figure[data-p="2"] .og-del'); await sleep(1800);
-  check(`${name}: ✕ deletes page 2 (on the Mac)`, (await order(sh.id)) === '1,3,4,5,6' && (await figCount(p)) === 5, await order(sh.id));
-  if (h0 !== null) check(`${name}: the deleted page is kept in .history`, deletedInHistory() === h0 + 1, `${h0} → ${deletedInHistory()}`);
-  check(`${name}: song 2 still starts on its page`, JSON.stringify((await api(`/sheets/${sh.id}/split`)).starts) === JSON.stringify({ 3: 'Second' }));
-  const acts = await api('/activity');
-  check(`${name}: an undoable Activities row`, acts.some((a) => a.type === 'pages' && a.action === 'undo' && /deleted page 2/.test(a.detail)));
-  check(`${name}: Undo offers it`, /delete page 2/.test(await p.$eval('#cu-undo', (e) => e.textContent)));
-  await undoBtn(p);
-  check(`${name}: Undo brings page 2 back`, (await order(sh.id)) === '1,2,3,4,5,6' && (await figCount(p)) === N, await order(sh.id));
-  if (h0 !== null) check(`${name}: .history after undo`, deletedInHistory() === h0);
-  // ---- move page 1 right with › ----
-  await tapOrClick('#bs-grid figure[data-p="1"] .og-mv[data-mv="1"]'); await sleep(1800);
-  check(`${name}: › moves page 1 right`, (await order(sh.id)) === '2,1,3,4,5,6', await order(sh.id));
-  await undoBtn(p);
+  // a real tap (touch: scrolled into view, then touchscreen.tap at its centre) or a click
+  const tap = async (sel, mods = []) => {
+    const h = await p.$(sel); if (!h) throw new Error('no ' + sel);
+    await h.evaluate((e) => { const r = e.getBoundingClientRect(); if (r.top < 70 || r.bottom > innerHeight - 100) e.scrollIntoView({ block: 'center' }); });
+    await sleep(120);
+    const r = await h.boundingBox();
+    if (touch) await p.touchscreen.tap(r.x + r.width / 2, r.y + r.height / 2);
+    else { for (const m of mods) await p.keyboard.down(m); await p.mouse.click(r.x + r.width / 2, r.y + r.height / 2); for (const m of mods) await p.keyboard.up(m); }
+    await sleep(250);
+  };
+  const tile = (n) => `#pe-grid .pe-tile[data-p="${n}"]`;
+  // select page n alone (touch: a tap toggles one page, so the others are tapped off first)
+  const only = async (n) => { if (!touch) return tap(tile(n)); for (const x of await sel()) if (x !== n) await tap(tile(x)); if (!(await sel()).includes(n)) await tap(tile(n)); };
+  const tiles = () => p.$$eval('#pe-grid .pe-tile', (e) => e.length);
+  const sel = () => p.$$eval('#pe-grid .pe-tile.sel', (e) => e.map((x) => +x.dataset.p));
+  const dis = (a) => p.$eval(`#pe-dock [data-act="${a}"]`, (e) => e.disabled);
+  const undo = async () => { await tap('#pe-undo'); await sleep(1500); };
+  const open = async () => { await p.goto(BASE + `#/manage/pages/${sh.id}`, { waitUntil: 'networkidle2' }); await p.waitForSelector(tile(1), { timeout: 8000 }).catch(() => {}); await sleep(400); };
+  await open();
+  check(`${name}: the editor shows 6 pages, no buttons on them`, (await tiles()) === 6 && !(await p.$('#pe-grid .pe-tile button')), await tiles());
+  check(`${name}: no side pane, no song chip row`, !(await p.$('.og-side, .bs-segs, .bs-side')));
+  check(`${name}: dock off until a page is selected (Merge with… on)`, (await dis('crop')) && (await dis('delete')) && (await dis('move')) && !(await dis('merge')));
+  const fit = await p.evaluate(() => ({ sw: document.scrollingElement.scrollWidth, iw: innerWidth, mw: document.querySelector('#main').scrollWidth, mcw: document.querySelector('#main').clientWidth }));
+  check(`${name}: no sideways scroll`, fit.sw <= fit.iw + 1 && fit.mw <= fit.mcw + 1, JSON.stringify(fit));
+  const cols = await p.$eval('#pe-grid', (e) => getComputedStyle(e).gridTemplateColumns.split(' ').length);
+  check(`${name}: ${{ mac: 5, ipad: 4, iphone: 2 }[name]} pages a row`, cols === { mac: 5, ipad: 4, iphone: 2 }[name], cols);
+  const dock = await p.$eval('#pe-dock', (e) => { const r = e.getBoundingClientRect(); return { b: r.bottom, h: innerHeight, l: r.left, r: r.right, w: innerWidth }; });
+  check(`${name}: the dock floats at the bottom, on screen`, dock.b <= dock.h && dock.b > dock.h - 60 && dock.l >= 0 && dock.r <= dock.w, JSON.stringify(dock));
+
+  // ---- select + delete one page ----
+  await only(2);
+  check(`${name}: tap selects (✓, dock on)`, JSON.stringify(await sel()) === '[2]' && !(await dis('delete')) && /Page 2/.test(await p.$eval('#pe-hint', (e) => e.textContent)));
+  await p.screenshot({ path: path.join(SHOTS, `editor-${name}.png`) });
+  const h0 = historyCount(sh);
+  await tap('#pe-dock [data-act="delete"]'); await sleep(1800);
+  check(`${name}: Delete removes page 2 (on the Mac)`, (await order(sh.id)) === '1,3,4,5,6' && (await tiles()) === 5, await order(sh.id));
+  if (h0 !== null) check(`${name}: the deleted page is kept in .history`, historyCount(sh) === h0 + 1);
+  check(`${name}: an undoable Activities row`, (await api('/activity')).some((a) => a.type === 'pages' && a.action === 'undo' && /deleted page 2/.test(a.detail)));
+  await undo();
+  check(`${name}: Undo brings page 2 back`, (await order(sh.id)) === '1,2,3,4,5,6' && (await tiles()) === 6, await order(sh.id));
+
+  // ---- select several + delete (asks first) ----
+  await only(2); await tap(tile(3), ['Meta']);
+  check(`${name}: several selected (2, 3)`, JSON.stringify(await sel()) === '[2,3]', JSON.stringify(await sel()));
+  await tap('#pe-dock [data-act="delete"]'); await sleep(300);
+  check(`${name}: deleting 2 pages asks first`, /Delete 2 pages/.test(await p.$eval('.modal h2', (e) => e.textContent).catch(() => '')));
+  await tap('.modal [data-ok]'); await sleep(1800);
+  check(`${name}: pages 2 and 3 deleted`, (await order(sh.id)) === '1,4,5,6', await order(sh.id));
+  await undo();
+  check(`${name}: Undo brings both back`, (await order(sh.id)) === '1,2,3,4,5,6', await order(sh.id));
+
+  // ---- Move (dock, then tap the place) ----
+  await only(1);
+  check(`${name}: page 1 alone selected`, JSON.stringify(await sel()) === '[1]', JSON.stringify(await sel()));
+  await tap('#pe-dock [data-act="move"]');
+  check(`${name}: Move explains what to tap`, /Tap the page whose place page 1/.test(await p.$eval('#pe-banner', (e) => e.textContent)));
+  await tap(tile(3)); await sleep(1800);
+  check(`${name}: Move → tap page 3: page 1 goes there`, (await order(sh.id)) === '2,3,1,4,5,6', await order(sh.id));
+  await undo();
   check(`${name}: undo the move`, (await order(sh.id)) === '1,2,3,4,5,6');
-  // ---- drag page 5 (song 2) before page 4 (song 2 starts there): it joins song 1 ----
-  await p.$eval('#bs-grid figure[data-p="4"]', (e) => e.scrollIntoView({ block: 'start' })); await sleep(300);
-  const rect = (sel) => p.$eval(sel, (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, l: r.x, w: r.width }; });
-  const from = await rect('#bs-grid figure[data-p="5"] .bs-pg img');
-  const to = await rect('#bs-grid figure[data-p="4"] .bs-pg img');
+
+  // ---- drag page 5 before page 4 ----
+  await p.$eval(tile(4), (e) => e.scrollIntoView({ block: 'center' })); await sleep(300);
+  const rect = (s) => p.$eval(s, (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, l: r.x, w: r.width }; });
+  const from = await rect(`${tile(5)} img`), to = await rect(`${tile(4)} img`);
   const tx = to.l + to.w * 0.2, ty = to.y;
   if (!touch) {
     await p.mouse.move(from.x, from.y); await p.mouse.down();
     for (let k = 1; k <= 12; k++) { await p.mouse.move(from.x + (tx - from.x) * k / 12, from.y + (ty - from.y) * k / 12); await sleep(20); }
-    check('mac: dragging shows where it goes', !!(await p.$('#bs-grid figure.drop-before')));
+    check('mac: dragging shows where it goes', !!(await p.$('#pe-grid .drop-before')));
     await p.mouse.up();
   } else {
     const cdp = await p.target().createCDPSession();
     const tp = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
-    await tp('touchStart', from.x, from.y); await sleep(550);  // hold
+    await tp('touchStart', from.x, from.y); await sleep(550);
     for (let k = 1; k <= 12; k++) { await tp('touchMove', from.x + (tx - from.x) * k / 12, from.y + (ty - from.y) * k / 12); await sleep(25); }
-    check(`${name}: hold + drag shows where it goes`, !!(await p.$('#bs-grid figure.drop-before')));
+    check(`${name}: hold + drag shows where it goes`, !!(await p.$('#pe-grid .drop-before')));
     await tp('touchEnd'); await cdp.detach();
   }
   await sleep(2000);
   check(`${name}: drag moved page 5 before 4`, (await order(sh.id)) === '1,2,3,5,4,6', await order(sh.id));
-  const st = (await api(`/sheets/${sh.id}/split`)).starts;
-  check(`${name}: it crossed into song 1 (song 2 now starts on page 5)`, JSON.stringify(st) === JSON.stringify({ 5: 'Second' }), JSON.stringify(st));
-  check(`${name}: on screen too`, await p.$eval('#bs-grid figure[data-p="5"]', (e) => e.classList.contains('start')) && !(await p.$eval('#bs-grid figure[data-p="4"]', (e) => e.classList.contains('start'))));
-  check(`${name}: not marked as a tap (no new start)`, !(await p.$eval('#bs-grid figure[data-p="4"]', (e) => e.classList.contains('start'))));
-  await p.screenshot({ path: path.join(SHOTS, `organize-${name}.png`) });
-  if (name === 'mac') {
-    // the sheet viewer shows the new order (store resync)
-    await p.goto(BASE + `#/item/${sh.id}`, { waitUntil: 'networkidle0' }); await sleep(1200);
-    const src = await p.$eval('#page-row img', (e) => e.src).catch(() => '');
-    check('sheet viewer uses the stable page URL with the new version', /\/api\/items\/.+\/pages\/1\?v=/.test(src), src);
-    const v = (await api('/items/' + sh.id)).updatedAt;
-    check('…and the new updatedAt', src.includes(`v=${v}`), `${src} vs ${v}`);
-    await p.goBack(); await sleep(1200);
+  await undo();
+  check(`${name}: undo the drag`, (await order(sh.id)) === '1,2,3,4,5,6');
+
+  if (name === 'mac') {  // keys: → selects the next page, ⇧→ moves it
+    await only(2); await p.keyboard.press('ArrowRight'); await sleep(200);
+    check('mac: → selects page 3', JSON.stringify(await sel()) === '[3]');
+    await p.keyboard.down('Shift'); await p.keyboard.press('ArrowRight'); await p.keyboard.up('Shift'); await sleep(1800);
+    check('mac: ⇧→ moves page 3 right', (await order(sh.id)) === '1,2,4,3,5,6', await order(sh.id));
+    await p.keyboard.press('u'); await sleep(1800);
+    check('mac: U undoes it', (await order(sh.id)) === '1,2,3,4,5,6');
   }
-  await undoBtn(p);
-  check(`${name}: undo the drag (order and song start back)`, (await order(sh.id)) === '1,2,3,4,5,6' && JSON.stringify((await api(`/sheets/${sh.id}/split`)).starts) === JSON.stringify({ 4: 'Second' }), await order(sh.id));
-  // ---- crop page 2: the original with the box, Crop & next carries the box, Undo ----
-  await p.$eval('#bs-grid figure[data-p="2"]', (e) => e.scrollIntoView({ block: 'center' })); await sleep(200);
-  await tapOrClick('#bs-grid figure[data-p="2"] .og-crop'); await sleep(1200);
-  check(`${name}: ✂ opens the crop on the original photo`, /\/pages\/2\/original/.test(await p.$eval('#cr-stage img', (e) => e.src).catch(() => '')));
+
+  // ---- crop page 2, full screen ----
+  await only(2);
+  await tap('#pe-dock [data-act="crop"]'); await sleep(1500);
+  check(`${name}: Crop opens page 2 full screen (the original photo)`, (await p.evaluate(() => location.hash)).startsWith(`#/manage/pages/${sh.id}/crop/2`) && /\/pages\/2\/original/.test(await p.$eval('#cr-stage img', (e) => e.src).catch(() => '')));
   const ir = await p.$eval('#cr-stage img', (e) => { const r = e.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; });
+  const wr = await p.$eval('#cr-stage .cu-img', (e) => { const r = e.getBoundingClientRect(); return { w: r.width, h: r.height }; });
+  check(`${name}: the box frame matches the photo, on screen`, Math.abs(wr.w - ir.w) < 2 && Math.abs(wr.h - ir.h) < 2 && ir.y + ir.h <= vp.height, JSON.stringify([ir, wr]));
   const A = [ir.x + ir.w * 0.15, ir.y + ir.h * 0.12], B = [ir.x + ir.w * 0.85, ir.y + ir.h * 0.8];
   if (!touch) { await p.mouse.move(...A); await p.mouse.down(); for (let k = 1; k <= 8; k++) await p.mouse.move(A[0] + (B[0] - A[0]) * k / 8, A[1] + (B[1] - A[1]) * k / 8); await p.mouse.up(); }
   else {
@@ -148,113 +180,78 @@ for (const [name, vp] of [['mac', { width: 1440, height: 900 }], ['ipad', { widt
   }
   await sleep(200);
   check(`${name}: drawing a box`, (await p.$eval('#cr-from', (e) => e.textContent)) === 'Your box');
-  await tapOrClick('#cr-oknext'); await sleep(2000);
+  await p.screenshot({ path: path.join(SHOTS, `crop-${name}.png`) });
+  await tap('#cr-oknext'); await sleep(2000);
   let crops = (await api(`/items/${sh.id}/crops`)).pages;
-  check(`${name}: page 2 cropped on the Mac (box of the original)`, crops[1].crop && Math.abs(crops[1].crop.top - 0.12) < 0.03 && Math.abs(crops[1].crop.right - 0.85) < 0.03, JSON.stringify(crops[1]));
-  check(`${name}: Crop & next → page 3 starts with the same box`, /Page 3/.test(await p.$eval('#cr-t', (e) => e.textContent)) && (await p.$eval('#cr-from', (e) => e.textContent)) === 'Same as the last crop');
-  await p.screenshot({ path: path.join(SHOTS, `organize-crop-${name}.png`) });
+  check(`${name}: page 2 cropped on the Mac`, crops[1].crop && Math.abs(crops[1].crop.top - 0.12) < 0.03 && Math.abs(crops[1].crop.right - 0.85) < 0.03, JSON.stringify(crops[1]));
+  check(`${name}: Crop & next → page 3 with the same box`, /3 of 6/.test(await p.$eval('.mg-t h2', (e) => e.textContent)) && (await p.$eval('#cr-from', (e) => e.textContent)) === 'Same box as the last page' && /\/crop\/3/.test(await p.evaluate(() => location.hash)));
   if (name === 'mac') {
-    await p.click('#cr-frames [data-frs="1"]'); await sleep(800);
-    check('mac: ⤓ saves Frame 1', !(await p.$eval('#cr-frames [data-fr="1"]', (e) => e.disabled)));
-    await p.click('#cr-whole'); await sleep(100);
-    await p.click('#cr-frames [data-fr="1"]'); await sleep(100);
-    check('mac: Frame 1 puts the box back', (await p.$eval('#cr-from', (e) => e.textContent)) === 'Frame 1');
+    await tap('#cr-boxes'); await p.evaluate(() => [...document.querySelectorAll('.menu button')].find((b) => /Save this box as box 1/.test(b.textContent)).click()); await sleep(800);
+    await tap('#cr-whole');
+    check('mac: Whole page', (await p.$eval('#cr-from', (e) => e.textContent)) === 'Whole page');
+    await p.keyboard.press('1'); await sleep(200);
+    check('mac: key 1 uses saved box 1', (await p.$eval('#cr-from', (e) => e.textContent)) === 'Saved box 1');
   }
-  await tapOrClick('.og-crop-modal [data-close]'); await sleep(1500);
-  check(`${name}: the page tile shows the crop (new thumbnail)`, (await p.$eval('#bs-grid figure[data-p="2"] img', (e) => e.src)).includes(`v=${(await api('/items/' + sh.id)).updatedAt}`));
-  check(`${name}: Undo offers the crop`, /crop page 2/.test(await p.$eval('#cu-undo', (e) => e.textContent)));
-  await undoBtn(p);
+  await tap('.mg-back'); await sleep(1500);
+  check(`${name}: Cancel → back in the editor, page 2 selected, tagged "cropped"`, JSON.stringify(await sel()) === '[2]' && !!(await p.$(`${tile(2)} .pe-cropped`)), JSON.stringify(await sel()));
+  check(`${name}: Undo offers the crop`, /crop page 2/.test(await p.$eval('#pe-undo', (e) => e.title)));
+  await undo();
   crops = (await api(`/items/${sh.id}/crops`)).pages;
-  check(`${name}: Undo takes the crop off (the original stays in .history)`, !crops[1].crop && crops[1].trims === 0, JSON.stringify(crops[1]));
-  if (name === 'iphone') {
-    await p.tap('#bs-back'); await sleep(400);
-    check('iphone: ‹ All shows Recommended to check and the list', await p.$eval('#og-side', (e) => e.getBoundingClientRect().height > 200));
-    await p.screenshot({ path: path.join(SHOTS, 'organize-iphone-list.png') });
-  }
+  check(`${name}: Undo takes the crop off`, !crops[1].crop, JSON.stringify(crops[1]));
+
+  // ---- New song here → Done → Split into 2 sheets → Undo ----
+  await only(4);
+  await tap('#pe-dock [data-act="mark"]'); await sleep(900);
+  check(`${name}: "Song 2 starts here" line before page 4`, /Song 2 starts here/.test(await p.$eval('#pe-grid .pe-break', (e) => e.textContent).catch(() => '')) && (await p.$eval('#pe-grid .pe-break + .pe-tile', (e) => e.dataset.p)) === '4');
+  check(`${name}: the banner says what Done will do`, /new song at page 4.*Done/.test(await p.$eval('#pe-banner', (e) => e.textContent)));
+  check(`${name}: saved on the Mac`, '4' in (await api(`/sheets/${sh.id}/split`)).starts);
+  await p.screenshot({ path: path.join(SHOTS, `editor-song-${name}.png`) });
+  await tap('.pe-break [data-act="unmark"]'); await sleep(900);
+  check(`${name}: ✕ Remove takes the line away`, !(await p.$('#pe-grid .pe-break')) && !('4' in (await api(`/sheets/${sh.id}/split`)).starts));
+  await only(4);
+  await tap('#pe-dock [data-act="mark"]'); await sleep(900);
+  await tap('#pe-done'); await sleep(400);
+  check(`${name}: Done asks "Split into 2 sheets"`, /Split into 2 sheets/.test(await p.$eval('.modal [data-ok]', (e) => e.textContent).catch(() => '')));
+  await tap('.modal [data-ok]'); await sleep(2500);
+  const it1 = await api('/items/' + sh.id);
+  check(`${name}: split: this sheet keeps pages 1–3, back to the picker`, it1.pages === 3 && (await p.evaluate(() => location.hash)) === '#/manage/pages', `${it1.pages} ${await p.evaluate(() => location.hash)}`);
+  await open();
+  await undo();
+  check(`${name}: Undo puts the 6 pages back`, (await api('/items/' + sh.id)).pages === 6 && (await order(sh.id)) === '1,2,3,4,5,6');
+
+  // ---- Merge with… ----
+  await tap('#pe-dock [data-act="merge"]'); await sleep(900);
+  await p.type('#pe-mq', `${T} other`); await sleep(300);
+  await tap(`#pe-ml [data-id="${sh2.id}"]`); await sleep(400);
+  await tap('.modal [data-ok]'); await sleep(2500);
+  check(`${name}: Merge with… adds the other sheet's pages`, (await order(sh.id)) === '1,2,3,4,5,6,7,8' && (await api('/items/' + sh2.id)).deleted, await order(sh.id));
+  await undo();
+  check(`${name}: Undo the merge`, (await order(sh.id)) === '1,2,3,4,5,6' && !(await api('/items/' + sh2.id)).deleted);
   if (name !== 'mac') await p.close();
+  await post('/items/purge', { ids: [sh.id, sh2.id] });
 }
 
-// ---- the sheet view: Edit pages… opens this sheet in Organize pages; Back returns to the sheet ----
-console.log('mac: Edit pages from the sheet');
+// ---- books are not editable; the sheet ⋯ opens the editor / the crop, Back returns to the sheet ----
+console.log('mac: books, Edit pages… and Crop page…');
+const sh = await upload('Fix from the sheet', 1, 3);
+let book = await upload('Fix book', 4, 3);
+book = (await post('/items/book', { ids: [book.id], book: true })).items[0];
+await mac.goto(BASE + `#/manage/pages/${book.id}`, { waitUntil: 'networkidle2' }); await sleep(1200);
+check('a book is not editable here', !(await mac.$('#pe-grid .pe-tile')) && /Books are kept/.test(await mac.$eval('#pe-grid', (e) => e.textContent)));
 await mac.goto(BASE + `#/item/${sh.id}`, { waitUntil: 'networkidle0' }); await mac.reload({ waitUntil: 'networkidle0' }); await sleep(1200);
-await mac.waitForSelector('#it-more', { timeout: 8000 }); await mac.$eval('#it-more', (e) => e.click()); await sleep(400);
-const menuItems = await mac.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
-check('the sheet ⋯ has Edit pages… and Crop page…, no Split… / Join…', menuItems.includes('Edit pages…') && menuItems.includes('Crop page…') && !menuItems.some((x) => /^(Split|Join)…$/.test(x)), menuItems.join('|'));
-await mac.evaluate(() => [...document.querySelectorAll('.menu button')].find((b) => b.textContent.trim() === 'Edit pages…').click()); await sleep(1500);
-check('Edit pages opens this sheet in Organize pages', (await mac.evaluate(() => location.hash)).startsWith(`#/manage?id=${sh.id}`) && (await mac.$eval('#bs-grid', (e) => e.dataset.id)) === sh.id);
-check('Back says the sheet', (await mac.$eval('.cu-back', (e) => e.textContent)).includes(T));
-await mac.$eval('.cu-back', (e) => e.click()); await sleep(1000);
+const menuPick = async (label) => { await mac.$eval('#it-more', (e) => e.click()); await sleep(400); await mac.evaluate((l) => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === l).click(), label); await sleep(1500); };
+await menuPick('Edit pages…');
+check('Edit pages… opens this sheet in Fix pages', (await mac.evaluate(() => location.hash)) === `#/manage/pages/${sh.id}?back=item` && (await mac.$$eval('#pe-grid .pe-tile', (e) => e.length)) === 3);
+check('Back says the sheet', (await mac.$eval('.mg-back', (e) => e.textContent)).includes('Fix from the sheet'));
+await mac.click('.mg-back'); await sleep(1000);
 check('Back returns to the sheet', (await mac.evaluate(() => location.hash)) === `#/item/${sh.id}`);
+await sleep(600);
+await menuPick('Crop page…');
+check('Crop page… opens the crop of page 1', (await mac.evaluate(() => location.hash)).startsWith(`#/manage/pages/${sh.id}/crop/1`) && !!(await mac.$('#cr-stage img')));
+await mac.click('.mg-back'); await sleep(1000);
+check('…its Cancel returns to the sheet', (await mac.evaluate(() => location.hash)) === `#/item/${sh.id}`);
+await post('/items/purge', { ids: [sh.id, book.id] });
 
-// ---- Mac: Refresh → Recommended to check → merge, complete song, Show hidden ----
-console.log('mac: Recommended to check');
-const p = mac;
-await open(p, sh.id);
-for (let i = 0; i < 600 && (await api('/organize')).job; i++) await sleep(1000);  // a scan still running from before
-const at0 = (await api('/organize')).scan?.at || 0;
-await p.click('#og-refresh'); await sleep(500);
-check('Refresh shows progress', !!(await p.$('#og-prog')));
-for (let i = 0; i < 600 && ((await api('/organize')).scan?.at || 0) === at0; i++) await sleep(1000);
-await p.waitForFunction(() => !document.querySelector('#og-prog'), { timeout: 30000 }).catch(() => {});
-await sleep(1200);
-const cands = await p.$$eval('#og-cands li', (e) => e.map((x) => [x.dataset.id, x.textContent.replace(/\s+/g, ' ')]));
-const mc = cands.find(([id]) => id === sh.id);
-check('Refresh lists the two parts as one song in parts', mc && /One song in parts/.test(mc[1]) && /look like one song in parts/.test(mc[1]), JSON.stringify(cands.slice(0, 5)));
-const jobs = await api('/jobs');
-check('the scan ran as a job', jobs.some((j) => j.kind === 'organize' && j.status === 'done'));
-await p.screenshot({ path: path.join(SHOTS, 'organize-mac-recommended.png') });
-await p.click(`#og-cands li[data-id="${sh.id}"]`); await sleep(1200);
-check('the reason shows above the pages', /look like one song in parts/.test(await p.$eval('#og-why', (e) => e.textContent)));
-await p.click('#og-why [data-mergewith]'); await sleep(400);
-await p.click('.modal [data-ok]'); await sleep(2500);
-check('Merge adds the part 2 pages', (await order(sh.id)) === '1,2,3,4,5,6,7,8', await order(sh.id));
-check('part 2 went to the Trash (empty)', (await api('/items/' + sh2.id)).deleted);
-await undoBtn(p); await sleep(500);
-check('Undo the merge', (await order(sh.id)) === '1,2,3,4,5,6' && !(await api('/items/' + sh2.id)).deleted);
-// This is a complete song
-await p.click('#og-ok'); await sleep(1200);
-let g = await api('/organize');
-check('This is a complete song: saved', g.items.find((x) => x.id === sh.id)?.reviewed);
-check('…and gone from Recommended to check', !(await p.$(`#og-cands li[data-id="${sh.id}"]`)));
-await p.click('#og-hidden'); await sleep(300);
-check('Show hidden lists it', !!(await p.$(`.og-hidden-list li[data-id="${sh.id}"] [data-again]`)));
-await p.screenshot({ path: path.join(SHOTS, 'organize-mac-hidden.png') });
-check('an undoable Activities row', (await api('/activity')).some((a) => a.type === 'reviewed' && a.action === 'undo'));
-await undoBtn(p);
-g = await api('/organize');
-check('Undo: it can come up again', !g.items.find((x) => x.id === sh.id)?.reviewed);
-
-// ---- Trash tab ----
-console.log('Trash tab');
-await post('/items/trash', { ids: [sh2.id] });
-await p.goto(BASE + '#/trash', { waitUntil: 'networkidle0' }); await p.reload({ waitUntil: 'networkidle0' }); await sleep(1200);
-check('#/trash opens Manage library → Trash', (await p.evaluate(() => location.hash)) === '#/manage/trash' && (await p.$eval('.cu-tabs a.on', (e) => e.dataset.tab)) === 'trash');
-check('no Trash entry in the left bar', !/Trash/.test(await p.$eval('#side', (e) => e.textContent)));
-const row = `#bn .row[data-id="${sh2.id}"]`;
-check('the trashed sheet is listed', !!(await p.$(row)));
-await p.screenshot({ path: path.join(SHOTS, 'trash-mac.png') });
-await p.click(`${row} [data-act="restore"]`); await sleep(900);
-check('Restore works', !(await p.$(row)) && !(await api('/items/' + sh2.id)).deleted);
-await post('/items/trash', { ids: [sh2.id] });
-await p.reload({ waitUntil: 'networkidle0' }); await sleep(900);
-await p.click(`${row} [data-act="purge"]`); await sleep(300);
-check('Delete asks first', /for good/.test(await p.$eval('.modal h2', (e) => e.textContent)));
-await p.click('.modal [data-close]'); await sleep(300);
-check('Cancel keeps it', !!(await p.$(row)));
-await p.click('#bn-empty'); await sleep(300);
-check('Empty Trash asks first', /for good/.test(await p.$eval('.modal h2', (e) => e.textContent)));
-await p.click('.modal [data-close]'); await sleep(200);
-for (const [name, vp] of [['ipad', { width: 1032, height: 1376, hasTouch: true, isMobile: true }], ['iphone', { width: 420, height: 912, hasTouch: true, isMobile: true }]]) {
-  const q = await newPage(vp);
-  await q.goto(BASE + '#/bin', { waitUntil: 'networkidle0' }); await sleep(900);
-  check(`${name}: #/bin → Trash tab`, (await q.evaluate(() => location.hash)) === '#/manage/trash' && !!(await q.$(row)));
-  const fit = await q.evaluate(() => ({ sw: document.scrollingElement.scrollWidth, iw: innerWidth }));
-  check(`${name}: Trash fits the width`, fit.sw <= fit.iw + 1, JSON.stringify(fit));
-  await q.screenshot({ path: path.join(SHOTS, `trash-${name}.png`) });
-  await q.close();
-}
-
-await purgeOld();
 check('no page errors', !errs.length, errs.join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);
 await b.close();

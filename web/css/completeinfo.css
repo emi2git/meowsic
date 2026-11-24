@@ -1,13 +1,15 @@
-/* Manage library → Complete info (views/completeinfo.js): the whole page 1 fitted, then Key + Version + Save & next.
-   900 px and wider (Mac, iPad Pro both ways): the page left, the buttons right. Narrower (iPhone, small iPads
-   upright): the page across, the buttons under it, the actions kept at the bottom. */
-.cu.info { display: block; overflow-y: auto; -webkit-overflow-scrolling: touch; scroll-padding-bottom: 150px; }
-body[data-view="cleanup"] #main:has(.cu.info) { scroll-padding-bottom: 150px; }
-.ci { display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 36vw, 460px); grid-template-rows: minmax(0, 1fr); gap: 20px; padding: 16px 22px 20px; height: 100%; min-height: 0; box-sizing: border-box; }
-/* page 1: the whole page, fitted (contain) in its frame — never cropped, never scrolled; put in only once loaded */
-.ci-pic { position: relative; margin: 0; min-height: 0; overflow: hidden; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); cursor: zoom-in; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+/* Manage library → Complete info (views/completeinfo.js, in the flow header of views/manage.js): the sheet's title,
+   the WHOLE page fitted in its frame with a strip of its pages, then Key + Version, and one bottom bar
+   ‹ Back · Skip · Don't know · Save & next. 1200 px and wider (Mac, iPad across): the page left, the choices right. */
+.ci { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; padding: 20px; max-width: 980px; margin: 0 auto; }
+.ci-prev { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.ci-head { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; min-width: 0; }
+.ci-head h2 { font-size: 20px; overflow-wrap: anywhere; }
+.ci-head a, .ci-nopic a { color: var(--acc-text); font-weight: 600; }
+/* the page: the whole page, fitted (contain) in its frame — never cropped, never scrolled; put in only once loaded */
+.ci-pic { position: relative; margin: 0; height: clamp(300px, calc(var(--vh) - 660px), 900px); overflow: hidden; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); cursor: zoom-in; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .ci-pic .ci-img { position: absolute; inset: 0; margin: auto; display: block; width: auto; height: auto; max-width: calc(100% - 12px); max-height: calc(100% - 12px); object-fit: contain; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; box-shadow: 0 1px 4px rgba(0, 0, 0, .12); }
-.ci-ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--mute); font-size: 14px; text-align: center; padding: 12px; }
+.ci-ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--mute); font-size: 14px; text-align: center; padding: 12px; z-index: 1; }
 .ci-pic[data-state="ok"] .ci-ph { display: none; }
 .ci-pic:not([data-state="ok"]) .ci-zoomhint { display: none; }
 .ci-retry { min-height: 44px; padding: 0 18px; }
@@ -15,82 +17,74 @@ body[data-view="cleanup"] #main:has(.cu.info) { scroll-padding-bottom: 150px; }
 @keyframes ci-spin { to { transform: rotate(360deg); } }
 .ci-zoomhint { position: absolute; top: 8px; right: 8px; z-index: 1; font-size: 12px; font-weight: 650; padding: 4px 10px; border-radius: 999px; background: rgba(0, 0, 0, .6); color: #fff; pointer-events: none; }
 .ci-nopic { padding: 40px 20px; text-align: center; color: var(--mute); }
-.ci.zoomed .ci-pic { position: fixed; inset: 0; z-index: 60; border-radius: 0; border: 0; cursor: zoom-out; overflow: auto; -webkit-overflow-scrolling: touch; padding-top: env(safe-area-inset-top); }
+.ci.zoomed .ci-pic { position: fixed; inset: 0; height: auto; z-index: 60; border-radius: 0; border: 0; cursor: zoom-out; overflow: auto; -webkit-overflow-scrolling: touch; padding-top: env(safe-area-inset-top); }
 .ci.zoomed .ci-pic .ci-img { position: static; margin: 0 auto; width: max(100%, 1000px); max-width: none; max-height: none; box-shadow: none; }
 .ci.zoomed .ci-zoomhint { position: fixed; top: calc(8px + env(safe-area-inset-top)); }
-.ci-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; overflow-y: auto; padding-bottom: 4px; }
+.ci-strip { display: flex; gap: 8px; align-items: center; overflow-x: auto; padding: 4px 2px; }
+.ci-thumb { flex: none; width: 44px; min-height: 0; padding: 0; border: 1px solid var(--line2); border-radius: 4px; overflow: hidden; background: #fff; touch-action: manipulation; }
+.ci-thumb img { display: block; width: 100%; aspect-ratio: 8.5 / 11; object-fit: cover; object-position: top; }
+.ci-thumb.on { outline: 2px solid var(--acc); outline-offset: 2px; }
+.ci-strip .small { white-space: nowrap; }
+.ci-form { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
 .ci-saves:empty { display: none; }
 .ci-saves { display: flex; flex-direction: column; gap: 6px; }
 .ci-savefail { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; border-radius: 12px; background: color-mix(in srgb, var(--danger) 12%, var(--card)); border: 1px solid var(--danger); color: var(--ink); font-size: 14px; font-weight: 600; }
 .ci-savefail span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .ci-savefail button { min-height: 40px; flex: none; }
 .ci-saving { font-size: 13px; }
-.ci-head h2 { margin: 2px 0 0; font-size: 24px; line-height: 1.2; overflow-wrap: anywhere; }
-.ci-head p { margin: 4px 0 0; font-size: 14px; }
-.ci-head a, .ci-nopic a { color: var(--acc-text); font-weight: 600; text-decoration: none; }
-.ci-count { font-size: 13px; font-weight: 650; color: var(--mute); }
-.ci-field { display: flex; flex-direction: column; gap: 8px; }
-.ci-lab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
-.ci-lab > b { font-size: 17px; }
-.ci-ok { color: var(--ok); font-weight: 650; font-size: 14px; }
+.ci-field { display: flex; flex-direction: column; gap: 10px; }
+.ci-lab { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.ci-lab > b { font-size: 15px; color: var(--ink2); }
+.ci-ai { font-size: 12px; font-weight: 600; color: var(--acc-text); background: color-mix(in srgb, var(--acc-text) 12%, var(--card)); border-radius: 999px; padding: 2px 8px; }
+.ci-ok { color: var(--ok); font-weight: 650; font-size: 13px; }
 .ci-ok:empty { display: none; }
-.ci-sug { font-size: 13px; color: var(--mute); }
-.ci-sug b { color: var(--ink); }
-.ci-keys { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
-.ci-keys.minor { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-.ci-key, .ci-ver { flex-direction: column; gap: 0; min-height: 54px; padding: 4px 6px; border-radius: 12px; line-height: 1.15; border: 2px solid var(--line2); touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
-.ci .ci-acts button, .ci-otherrow button, .ci-savefail button, .ci-retry { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
-.ci-key b { font-size: 19px; font-weight: 700; }
-.ci-key small, .ci-ver small { font-size: 11px; font-weight: 500; color: var(--mute); white-space: normal; text-align: center; }
-.ci-vers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.ci-ver { min-height: 64px; position: relative; }
-.ci-ver b { font-size: 17px; }
-.ci-ver kbd { position: absolute; top: 5px; right: 8px; font: 600 10px var(--font); color: var(--mute); }
+.ci-keys { display: flex; flex-wrap: wrap; gap: 8px; }
+.ci-key, .ci-ver { border: 1px solid var(--line2); touch-action: manipulation; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+.ci-key { min-width: 64px; min-height: 48px; font-size: 17px; padding: 0 12px; }
+.ci-key b { font-weight: 650; }
+.ci-more { color: var(--acc-text); font-weight: 650; }
+.ci-acts button, .ci-otherrow button, .ci-savefail button, .ci-retry { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.ci-vers { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.ci-ver { flex-direction: column; gap: 0; min-height: 60px; position: relative; padding: 4px 6px; }
+.ci-ver b { font-size: 16px; }
+.ci-ver small { font-weight: 500; font-size: 12px; color: var(--mute); white-space: normal; text-align: center; }
+.ci-ver kbd { position: absolute; top: 4px; right: 7px; font: 600 10px var(--font); color: var(--mute); }
 .ci-key.on, .ci-ver.on { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
-.ci-key.on small, .ci-ver.on small, .ci-ver.on kbd { color: var(--acc-ink); opacity: .85; }
+.ci-ver.on small, .ci-ver.on kbd { color: var(--acc-ink); opacity: .85; }
 /* the AI's guess: a dashed hint only — not picked until tapped */
 .ci-key.hint, .ci-ver.hint { border: 2px dashed var(--acc); }
-.ci-otherrow { display: flex; gap: 6px; margin: 0; }
+.ci-sig { margin: 0; min-height: 1em; }
+.ci-sig:empty { display: none; }
+.ci-otherrow { display: flex; gap: 6px; margin: 0; max-width: 420px; }
 .ci-otherrow input { flex: 1; min-width: 0; min-height: 44px; padding: 0 12px; border: 1px solid var(--line2); border-radius: 12px; background: var(--card); font-size: 16px; }
 .ci-otherrow input.on { border: 2px solid var(--acc); font-weight: 700; }
 .ci-err { margin: 0; color: var(--danger); font-size: 13px; }
-.ci-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 4px; }
+.ci-foot { margin: 0; font-size: 13px; }
+.ci-foot:empty { display: none; }
+.ci-foot .link { font-size: 13px; }
+/* the bottom bar: always in reach */
+.ci-acts { position: sticky; bottom: 0; z-index: 5; display: flex; gap: 10px; align-items: center; padding: 12px 20px calc(12px + env(safe-area-inset-bottom)); background: var(--bg); border-top: 1px solid var(--line); }
 .ci-acts button { min-height: 48px; }
-.ci-acts .primary { flex: 1; min-width: 150px; font-size: 16px; }
+.ci-acts .primary { min-width: 220px; min-height: 52px; font-size: 17px; }
 .ci-acts .primary:disabled { opacity: .45; }
-.ci-foot { margin: 0; font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
-.ci-foot .link { font-size: 12px; }
 .ci-empty { text-align: center; padding: 60px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .ci-empty h2 { margin: 0; }
 .ci-empty p { margin: 0; }
-@media (min-width: 1800px) { .ci-vers { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-/* narrow (iPhone, small iPads upright): title, then the page as big as the room left, the buttons under it,
-   the actions kept at the bottom. iPad Pro upright (1024+) keeps the page beside the buttons: a bigger page. */
-@media (max-width: 899px) {
-  .ci { display: flex; flex-direction: column; height: auto; min-height: 100%; gap: 12px; padding: 12px 16px 0; }
-  .ci-pic { flex: 1 0 40vh; flex: 1 0 40dvh; }
-  .ci-side { display: contents; }  /* its parts become rows of the card: the title above the page */
-  .ci-saves, .ci-head { order: -1; }
-  .ci-acts { position: sticky; bottom: 0; margin: 0 -16px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-top: 1px solid var(--line); z-index: 5; }
-  .ci-foot { padding-bottom: 12px; }
+@media (min-width: 1200px) {
+  .ci { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); max-width: 1400px; align-items: start; }
+  .ci-pic { height: calc(var(--vh) - 290px); min-height: 360px; }
 }
 @media (max-width: 760px) {
-  .ci { gap: 10px; }
-  .ci-pic { flex-basis: 36vh; flex-basis: 36dvh; }
-  .ci-head p { font-size: 13px; margin-top: 2px; }
-  .ci-head h2 { font-size: 20px; }
-  .ci-key { min-height: 50px; padding: 4px 2px; }
-  .ci-key b { font-size: 17px; }
-  .ci-acts { flex-wrap: nowrap; gap: 6px; }
-  .ci-acts button { flex: 0 1 auto; padding: 0 10px; min-height: 46px; font-size: 14px; }
-  .ci-acts .primary { flex: 1 1 auto; min-width: 0; font-size: 15px; }
-  .ci-ver { min-height: 56px; }
-  /* iPhone: the tab bar is under the page */
-  :root[data-device="phone"] .ci-acts { padding-bottom: 10px; }
+  .ci { padding: 14px 16px; gap: 16px; }
+  .ci-pic { height: 36vh; height: 36dvh; min-height: 0; }
+  .ci-head h2 { font-size: 18px; }
+  .ci-key { min-width: 54px; }
+  .ci-vers { grid-template-columns: 1fr 1fr; }
+  .ci-acts { padding: 10px 12px; gap: 6px; }
+  .ci-acts button { padding: 0 10px; font-size: 15px; }
+  .ci-acts .primary { min-width: 0; flex: 1; font-size: 16px; }
 }
-/* phone: the three tabs get their own row under the title (Undo / ? stay up by the title) */
-@media (max-width: 760px) {
-  body[data-view="cleanup"] .cu-top .cu-tabs { order: 9; flex: 1 0 100%; flex-wrap: nowrap; }
-  body[data-view="cleanup"] .cu-top > button { min-height: 30px; padding-top: 0; padding-bottom: 0; }
-  body[data-view="cleanup"] .cu-top { row-gap: 4px; }
-}
+/* the bottom bar sits at the bottom of the screen even when the card is short (Mac, iPad across) */
+body[data-view="manage"] #main:has(.mg-info) { display: flex; flex-direction: column; }
+.mg-info { flex: 1 0 auto; display: flex; flex-direction: column; }
+.mg-info > .ci { flex: 1 0 auto; width: 100%; }

@@ -18,6 +18,7 @@ import { iconOn, toast, sheet as modal, confirmSheet, menu } from '../ui.js';
 import { store } from '../store.js';
 import { go } from '../app.js';
 import { isTouch } from '../device.js';
+import { attachMidi } from '../midiedit.js';
 
 export const post = (path, body) => fetch('/api' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : j.detail?.message || `Failed (${r.status})`); return j; });
@@ -56,6 +57,7 @@ export async function editNotes(view, it, host, opts = {}) {
   let steps = [{ ops: [], xml: base.xml, notes: base.notes }], at = 0;
   let sel = new Set(), anchor = null, several = false, busy = false, shown = false, closed = false, cueAt = null;
   let barPick = null; // a bar picked by tapping its empty space: { bar (0-based), staff }
+  let midiCtl = null; // a MIDI keyboard (midiedit.js): its chip in the bar
   const cur = () => steps[at];
   const nStaves = () => Math.max(1, +(cur().xml.match(/<staves>\s*(\d+)/)?.[1] || 1), ...cur().notes.map((n) => n.staff));
   const byRef = () => new Map(cur().notes.map((n) => [n.ref, n]));
@@ -165,7 +167,7 @@ export async function editNotes(view, it, host, opts = {}) {
     const off = (c) => (c ? '' : 'disabled');
     panel.innerHTML = `<div class="np-row"><b class="np-title">${opts.title || 'Edit notes'}</b>
       <span class="np-count" id="np-count">${p.length ? `${plural(ns.length, 'note')}${rs.length ? ` · ${plural(rs.length, 'rest')}` : ''} picked` : barPick ? `Bar ${barPick.bar + 1} picked (${staffName(barPick.staff, nst)})` : 'Pick notes on the score'}</span>
-      <span class="grow"></span>
+      ${midiCtl ? '<span class="np-midi-slot"></span>' : ''}<span class="grow"></span>
       <button data-a="playhere" class="np-play ${view.player?.playing ? 'on' : ''}" title="${view.player?.playing ? 'Pause (space)' : 'Play from the bar before the picked notes, as edited (space)'}" aria-label="${view.player?.playing ? 'Pause' : 'Play from here'}">${view.player?.playing ? '❚❚ Pause' : '▶ From here'}</button>
       ${pages ? `<span class="np-pages"><button class="icon-btn" data-a="prev" title="Page before (Shift ←)" aria-label="Page before" ${off(view.page > 1)}>${iconOn('left')}</button><span class="np-pageno" id="np-pageno">${view.page}/${view.pages}</span><button class="icon-btn" data-a="next" title="Next page (Shift →)" aria-label="Next page" ${off(view.page < view.pages)}>${iconOn('right')}</button></span>` : ''}
       <button class="icon-btn" data-a="undo" ${off(at > 0)} title="Undo (⌘Z)" aria-label="Undo">${iconOn('undo')}</button>
@@ -190,6 +192,7 @@ export async function editNotes(view, it, host, opts = {}) {
         <button data-a="down" class="np-move" ${off(down)} title="Move to the staff below (Shift ↓)">↓ ${nst === 2 ? 'To left hand' : toDown ? `To ${staffName(toDown, nst)}` : 'Staff down'}${down ? ` (${down})` : ''}</button>` : ''}
         <button class="primary" data-a="save" ${off(at > 0)}>Save…</button>
       </div>`;
+    midiCtl?.paint(panel.querySelector('.np-midi-slot'));
     host.style.setProperty('--np-h', panel.offsetHeight + 'px');
   };
 
@@ -478,6 +481,7 @@ export async function editNotes(view, it, host, opts = {}) {
     if (closed) return;
     if (saved !== true && at > 0 && !(await confirmSheet({ title: 'Close without saving?', body: 'The notes you changed here are not saved yet.', ok: 'Close', danger: true }))) return;
     closed = true;
+    midiCtl?.destroy();
     host.removeEventListener('scoredrawn', tag);
     host.removeEventListener('scoredrawn', markBar);
     paper.querySelectorAll('.np-barpick').forEach((r) => r.remove());
@@ -531,6 +535,10 @@ export async function editNotes(view, it, host, opts = {}) {
     get cueBar() { return cueAt; }, run: (op) => run(op), get barPick() { return barPick; }, pickBar: (bar, staff = 1) => { barPick = { bar, staff }; setSel([]); },
     get staves() { return nStaves(); } };
   window.__editNotes = api; // for automated tests
+  // a MIDI keyboard plays into the picked notes: midiedit.js, through these edits
+  midiCtl = attachMidi({ get notes() { return cur().notes; }, get sel() { return picked(); }, get busy() { return busy; }, get step() { return at; },
+    select: (refs) => { anchor = refs.at(-1) ?? null; setSel(refs); keepInView(); }, setPitch: (refs, midis) => run({ op: 'set', refs, midis }),
+    setLength: (q) => setLen(q), dot: () => dot(), tie: () => tie(), rest: () => del(), toast });
   if (opts.bar) sel = new Set(base.notes.filter((n) => !n.rest && n.bar === opts.bar - 1).map((n) => n.ref));
   draw();
   tag();

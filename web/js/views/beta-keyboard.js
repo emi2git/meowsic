@@ -18,17 +18,15 @@ import { pianoKey, audioCtx, loadPiano, ScorePlayer } from '../audio.js';
 // Timing for "Hold to set length": every press / release time is the event's own timeStamp (MIDIMessageEvent,
 // PointerEvent, KeyboardEvent: all on the performance.now() clock), never Date.now() or a timer callback.
 import { esc } from '../ui.js';
+import { pcName, noteName, now, evT, midi, askMidi, inputsOf, readMidi, TPQ, FN_KEYS, FN_BASES, HOLD_PLAIN, HOLD_DOTS,
+  holdThresholds, pickLen, CAL_DEFAULT, loadCal, saveCal, holdBeats, calibrate } from '../midi.js';
+export { TPQ, holdThresholds, pickLen, CAL_DEFAULT, loadCal, holdBeats, calibrate };
 
 const SONG_ID = 'm-b6xs990';
 const BARS = 8; // the excerpt: bars 1–8
 const LS = 'meowsic-beta-keyboard';
-const PC = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
-const pcName = (m) => PC[((m % 12) + 12) % 12];
-const noteName = (m) => pcName(m) + (Math.floor(m / 12) - 1);
 const WHITE = [0, 2, 4, 5, 7, 9, 11];
 const isWhite = (m) => WHITE.includes(((m % 12) + 12) % 12);
-const now = () => performance.now();
-const evT = (e) => (Number.isFinite(e?.timeStamp) && e.timeStamp > 0 ? e.timeStamp : now());
 
 function loadSettings() { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } }
 function saveSettings(s) { try { localStorage.setItem(LS, JSON.stringify(s)); } catch {} }
@@ -112,7 +110,7 @@ async function fetchSong() {
 }
 
 // ---------- the in-memory melody: bars of items { m: midi | null (rest), t: ticks, tie } ----------
-export const TPQ = 24; // ticks per quarter: 1/16 = 6, dotted 1/16 = 9, triplet 1/8 = 8
+// TPQ (midi.js) = 24 ticks per quarter: 1/16 = 6, dotted 1/16 = 9, triplet 1/8 = 8
 const LEN = { 1: 96, 2: 48, 4: 24, 8: 12, 6: 6 }; // number key → ticks (6 = sixteenth)
 const PLAIN = [96, 48, 24, 12, 6], DOTTED = [144, 72, 36, 18, 9];
 const LEN_NAME = { 144: 'dotted whole', 96: 'whole (1)', 72: 'dotted half', 48: 'half (1/2)', 36: 'dotted quarter', 24: 'quarter (1/4)', 18: 'dotted 1/8', 12: 'eighth (1/8)', 9: 'dotted 1/16', 6: 'sixteenth (1/16)', 3: '1/32' };
@@ -340,15 +338,7 @@ const CODES = { KeyA: 0, KeyW: 1, KeyS: 2, KeyE: 3, KeyD: 4, KeyF: 5, KeyT: 6, K
 const CODE_LABEL = (c) => ({ Semicolon: ';', Quote: "'" }[c] || c.slice(3));
 const typing = (t) => t && (t.isContentEditable || (/^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName) && t.type !== 'checkbox' && t.type !== 'range' && t.type !== 'radio'));
 
-// ---------- Web MIDI (kept for the page's life, shared between visits) ----------
-const midi = { access: null, status: navigator.requestMIDIAccess ? 'idle' : 'unsupported', error: '' };
-async function askMidi() {
-  if (!navigator.requestMIDIAccess) { midi.status = 'unsupported'; return; }
-  midi.status = 'asking';
-  try { midi.access = await navigator.requestMIDIAccess({ sysex: false }); midi.status = 'ok'; }
-  catch (e) { midi.status = e && (e.name === 'SecurityError' || e.name === 'NotAllowedError') ? 'denied' : 'error'; midi.error = e?.message || String(e); }
-}
-const inputsOf = () => (midi.access ? [...midi.access.inputs.values()].filter((i) => !i.state || i.state === 'connected') : []);
+// ---------- Web MIDI: midi.js (access kept for the page's life, shared between visits) ----------
 
 const STEPS = [
   { id: 'connect', title: 'Connect', intro: 'Plug the keyboard into the Mac with USB, switch it on, then press any key: it lights up below.' },
@@ -432,12 +422,7 @@ export function render(el, _ctx = {}) {
 
   // MIDI
   const attached = new Set();
-  const onMidi = (e) => {
-    const d = e.data; if (!d || d.length < 2) return;
-    const cmd = d[0] & 0xf0, t = evT(e);
-    if (cmd === 0x90 && d[2] > 0) emit({ type: 'on', midi: d[1], vel: d[2], t, src: 'midi' });
-    else if (cmd === 0x80 || cmd === 0x90) emit({ type: 'off', midi: d[1], vel: 0, t, src: 'midi' });
-  };
+  const onMidi = (e) => { const x = readMidi(e); if (x) emit(x); };
   const attach = () => {
     for (const inp of inputsOf()) if (!attached.has(inp)) {
       inp.addEventListener('midimessage', onMidi);
@@ -513,39 +498,10 @@ export default render;
 
 // ---------- the steps (each returns its clean-up) ----------
 // the lowest keys as length keys, from a C: C D E F G = 1 1/2 1/4 1/8 1/16, A = rest, C# = dot, D# = tie
-const FN_KEYS = [[0, 'len', 96, '1'], [2, 'len', 48, '1/2'], [4, 'len', 24, '1/4'], [5, 'len', 12, '1/8'], [7, 'len', 6, '1/16'], [9, 'rest', 0, 'Rest'], [1, 'dot', 0, 'Dot'], [3, 'tie', 0, 'Tie']];
-const FN_BASES = [36, 48, 60];
-// ---------- hold to set length ----------
-// Lengths (ticks) a hold can pick, short → long; dotted ones only with "Dotted" on.
-const HOLD_PLAIN = [6, 12, 24, 48, 96], HOLD_DOTS = [6, 9, 12, 18, 24, 36, 48, 72, 96];
-// the switch points (in beats) between neighbours: the geometric midpoint √(a·b), so a hold is judged by ratio
-// (0.36 beat is nearer 1/16 than 1/8), never by the arithmetic middle (which would round short holds up)
-export const holdThresholds = (dots = false) => { const L = dots ? HOLD_DOTS : HOLD_PLAIN; return L.slice(1).map((t, i) => Math.sqrt((L[i] / TPQ) * (t / TPQ))); };
-export function pickLen(beats, dots = false) {
-  const L = dots ? HOLD_DOTS : HOLD_PLAIN, th = holdThresholds(dots);
-  const k = th.findIndex((x) => beats < x);
-  return L[k < 0 ? L.length - 1 : k];
-}
+// FN_KEYS / FN_BASES: midi.js
+// ---------- hold to set length (thresholds, calibration: midi.js) ----------
 export const nearestLen = (beats) => pickLen(beats, true); // kept for older callers
-// the player's own timing, measured by Calibrate: ms subtracted from every hold (release latency) and a stretch
-export const CAL_DEFAULT = { latency: 25, stretch: 1 };
-const LS_CAL = 'meowsic-beta-keyboard-cal';
-export function loadCal() { try { const c = JSON.parse(localStorage.getItem(LS_CAL)); if (c && Number.isFinite(c.latency) && Number.isFinite(c.stretch) && c.stretch > 0) return { latency: c.latency, stretch: c.stretch, at: c.at }; } catch {} return { ...CAL_DEFAULT }; }
-function saveCal(c) { try { if (c) localStorage.setItem(LS_CAL, JSON.stringify(c)); else localStorage.removeItem(LS_CAL); } catch {} }
-// held ms → beats at the tempo, with the calibration applied
-export const holdBeats = (ms, bpm, cal = CAL_DEFAULT) => Math.max(0, (ms - cal.latency) * cal.stretch) / 1000 * (bpm / 60);
-const median = (xs) => { const a = [...xs].sort((x, y) => x - y), h = a.length >> 1; return a.length % 2 ? a[h] : (a[h - 1] + a[h]) / 2; };
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
-// 4 quarter notes held with the clicks (press on a click, let go on the next): holds = [{ on, off }] in ms.
-// The player's beat = the median time between presses; stretch maps it onto the tempo's beat, and latency is how
-// much longer (or, released early, shorter) each hold is than that beat. After it, these holds read as exactly 1/4.
-export function calibrate(holds, beatMs) {
-  const d = median(holds.map((h) => h.off - h.on));
-  const gaps = holds.slice(1).map((h, i) => h.on - holds[i].on);
-  let ioi = gaps.length ? median(gaps) : beatMs;
-  if (!(ioi > beatMs * 0.6 && ioi < beatMs * 1.6)) ioi = beatMs;
-  return { latency: Math.round(clamp(d - ioi, -300, 300)), stretch: +clamp(beatMs / ioi, 0.7, 1.4).toFixed(3) };
-}
 // a quiet metronome tick at audio time `when`; returns a stopper
 function softClick(when, accent = false, gain = 0.07) {
   try {

@@ -1,4 +1,4 @@
-// Manage library → Organize pages: books are not offered (read-only); split a sheet into songs, against a test server (BASE, default :5190). Never the real library.
+// Manage library → Fix pages: books are not offered (read-only); split a sheet into songs, against a test server (BASE, default :5190). Never the real library.
 // Makes (or reuses) the book "Booksplit test": 10 pages, each a colour + its big page number, so a
 // page can be recognised wherever it ends up. Marks 3 starts, reloads, makes the sheets, undoes.
 import puppeteer from 'puppeteer-core';
@@ -57,13 +57,14 @@ const pagesOf = (it) => page.evaluate(async (it, cols) => {
 }, it, Array.from({ length: N }, (_, k) => colour(k + 1)));
 check('pages recognisable by colour', (await pagesOf(before)).join() === '1,2,3,4,5,6,7,8,9,10', (await pagesOf(before)).join());
 
-// ---- books are read-only PDFs now: Organize pages never offers them (no splitting, merging, rearranging) ----
+// ---- books are read-only PDFs now: Fix pages never offers them (no splitting, merging, rearranging) ----
 for (const [name, vp] of [['mac', { width: 1440, height: 900 }], ['ipad', { width: 1032, height: 1376, hasTouch: true, isMobile: true }], ['iphone', { width: 420, height: 912, hasTouch: true, isMobile: true }]]) {
   const p = name === 'mac' ? page : await newPage(vp);
   await p.goto(BASE + `#/manage?id=${book.id}`, { waitUntil: 'networkidle0' }); await p.reload({ waitUntil: 'networkidle0' }); await sleep(900);
-  check(`${name}: Manage library tabs are Organize pages + Trash only`, (await p.$$eval('.cu-tabs a', (e) => e.map((x) => x.dataset.tab).join())) === 'organize,trash');
-  check(`${name}: the book does not open in Organize pages`, (await p.$eval('#bs-grid', (e) => e.dataset.id).catch(() => null)) !== book.id);
-  check(`${name}: the book is not in the list nor in Recommended`, !(await p.$(`#bs-list li[data-id="${book.id}"], #og-cands li[data-id="${book.id}"]`)));
+  check(`${name}: the book does not open in Fix pages`, (await p.evaluate(() => location.hash)) === `#/manage/pages/${book.id}` && !(await p.$('#pe-grid .pe-tile')));
+  await p.goto(BASE + '#/manage/pages', { waitUntil: 'networkidle0' }); await sleep(900);
+  await p.evaluate(() => document.querySelector('[data-seg="all"]').click()); await sleep(300);
+  check(`${name}: the book is not in the Fix pages list`, !(await p.$(`#pk-list [data-id="${book.id}"]`)) && !(await api('/organize')).items.some((x) => x.id === book.id));
   await p.goto(BASE + `#/item/${book.id}`, { waitUntil: 'networkidle0' }); await sleep(700);
   await p.$eval('#it-more', (e) => e.click()); await sleep(300);
   const m = await p.$$eval('.menu button', (e) => e.map((x) => x.querySelector('span').textContent.trim()));
@@ -99,12 +100,12 @@ check('the book keeps its pages', (await api('/items/' + book.id)).pages === N);
   }, T2);
   const probe = await api(`/items/${tb.id}/pages/2/title`);
   if (probe.error && !probe.title) console.log('  skip title detection (Vision not available):', probe.error);
-  else check('API reads the title of page 2 (books: read by the API only; Organize pages does not offer books)', probe.title === 'Moon River' && probe.confidence >= 0.5, JSON.stringify(probe));
+  else check('API reads the title of page 2 (books: read by the API only; Fix pages does not offer books)', probe.title === 'Moon River' && probe.confidence >= 0.5, JSON.stringify(probe));
   await post(`/books/${tb.id}/split`, { starts: {} });
   await post('/items/purge', { ids: [tb.id] });
 }
 
-// ---- Organize pages on a sheet (not a book): page 1 stays the first song ----
+// ---- Fix pages on a sheet (not a book): page 1 stays the first song ----
 {
   const T3 = 'Split songs test';
   const old = (await api('/items?deleted=true')).concat(await api('/items')).filter((x) => x.title.startsWith(T3) || ['Second', 'Third'].includes(x.title) && x.artist === 'E2E');
@@ -131,31 +132,33 @@ check('the book keeps its pages', (await api('/items/' + book.id)).pages === N);
     return out;
   }, it, cols6);
   await page.goto(BASE + '#/cleanup', { waitUntil: 'networkidle0' }); await sleep(500);
-  check('old #/cleanup goes to Organize pages', (await page.evaluate(() => location.hash)) === '#/manage');
-  await page.click('#og-find'); await page.keyboard.type(T3); await sleep(300);
-  check('the sheet is listed', !!(await page.$(`#bs-list li[data-id="${sh.id}"]`)));
-  await page.click(`#bs-list li[data-id="${sh.id}"]`); await sleep(1200);
-  check('its 6 pages shown', (await page.$$('#bs-grid figure')).length === 6);
-  check('page 1 always starts song 1', await page.$eval('#bs-grid figure[data-p="1"]', (e) => e.classList.contains('start') && /Song 1/.test(e.textContent)));
-  check('page 1 title box shows the sheet title', await page.$eval('#bs-grid figure[data-p="1"] input', (e) => e.placeholder) === T3);
-  check('Make off until a second song is marked', await page.$eval('#bs-make', (e) => e.disabled));
-  await page.waitForFunction(() => !/Reading/.test(document.querySelector('#bs-sugst')?.textContent || ''), { timeout: 30000 }).catch(() => {});
-  check('the Mac looked for other song starts', /no other song starts/.test(await page.$eval('#bs-sugst', (e) => e.textContent)) || !(await page.$eval('#bs-sug', (e) => e.hidden)));
-  await page.click('#bs-grid figure[data-p="3"] .bs-pg'); await sleep(300);
-  await page.keyboard.type('Second'); await page.keyboard.press('Enter');
-  await page.click('#bs-grid figure[data-p="5"] .bs-pg'); await sleep(300);
-  await page.keyboard.type('Third'); await page.keyboard.press('Enter'); await sleep(900);
+  check('old #/cleanup goes to Manage library', (await page.evaluate(() => location.hash)) === '#/manage');
+  await page.goto(BASE + '#/manage/pages', { waitUntil: 'networkidle0' }); await sleep(800);
+  await page.click('#pk-find'); await page.keyboard.type(T3); await sleep(300);
+  check('the sheet is listed', !!(await page.$(`#pk-list [data-id="${sh.id}"]`)));
+  await page.click(`#pk-list [data-id="${sh.id}"]`); await sleep(1500);
+  check('its 6 pages shown', (await page.$$('#pe-grid .pe-tile')).length === 6);
+  check('one song: no song lines, Done just goes back', !(await page.$('#pe-grid .pe-break')) && (await page.$eval('#pe-banner', (e) => e.hidden)));
+  check('page 1 cannot start a new song', await (async () => { await page.click('#pe-grid .pe-tile[data-p="1"]'); await sleep(200); return page.$eval('#pe-dock [data-act="mark"]', (e) => e.disabled); })());
+  const mark = async (n, title) => {
+    await page.click(`#pe-grid .pe-tile[data-p="${n}"]`); await sleep(200);
+    await page.keyboard.press('s'); await sleep(500);
+    await page.click(`#pe-grid [data-title="${n}"]`, { clickCount: 3 }); await page.keyboard.type(title); await page.keyboard.press('Enter'); await sleep(700);
+  };
+  await mark(3, 'Second'); await mark(5, 'Third'); await sleep(600);
   check('marks saved', JSON.stringify((await api(`/sheets/${sh.id}/split`)).starts) === JSON.stringify({ 3: 'Second', 5: 'Third' }), JSON.stringify((await api(`/sheets/${sh.id}/split`)).starts));
-  check('Make says 2 new sheets', (await page.$eval('#bs-make', (e) => e.textContent)) === 'Make 2 new sheets…');
-  await page.click('#bs-make'); await sleep(400);
-  const c3 = await page.$$eval('.bs-confirm li', (e) => e.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
-  check('confirm: first song stays, two new', c3.join('|') === `${T3} pages 1–2 (2 p) · stays in this sheet|Second pages 3–4 (2 p) · new sheet|Third pages 5–6 (2 p) · new sheet`, c3.join('|'));
+  check('two "starts here" lines, the banner says what Done does', (await page.$$('#pe-grid .pe-break')).length === 2 && /pages 3 and 5.*Done/.test(await page.$eval('#pe-banner', (e) => e.textContent)));
+  await page.click('#pe-done'); await sleep(400);
+  check('Done says Split into 3 sheets', (await page.$eval('.modal [data-ok]', (e) => e.textContent)) === 'Split into 3 sheets');
+  const c3 = await page.$$eval('.pe-confirm li', (e) => e.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
+  check('confirm: first song stays, two new', c3.join('|') === `${T3} pages 1–2 · stays in this sheet|Second pages 3–4 · new sheet|Third pages 5–6 · new sheet`, c3.join('|'));
   await page.click('.modal [data-ok]'); await sleep(2000);
   const all3 = await api('/items');
   const kept = all3.find((x) => x.id === sh.id), s2 = all3.find((x) => x.title === 'Second' && x.artist === 'E2E'), s3 = all3.find((x) => x.title === 'Third' && x.artist === 'E2E');
   check('sheet keeps pages 1–2', kept.pages === 2 && (await pagesOf6(kept)).join() === '1,2', `${kept.pages}`);
   check('Second = pages 3–4, Third = 5–6', s2 && s3 && (await pagesOf6(s2)).join() === '3,4' && (await pagesOf6(s3)).join() === '5,6');
-  check('Undo offers it', /split songs/.test(await page.$eval('#cu-undo', (e) => e.textContent)));
+  await page.goto(BASE + `#/manage/pages/${sh.id}`, { waitUntil: 'networkidle0' }); await sleep(1200);
+  check('Undo offers it', /split songs/.test(await page.$eval('#pe-undo', (e) => e.title)));
   await page.keyboard.press('z'); await sleep(2500);
   const back3 = await api('/items/' + sh.id);
   check('undo: all 6 pages back in order', back3.pages === 6 && (await pagesOf6(back3)).join() === '1,2,3,4,5,6');

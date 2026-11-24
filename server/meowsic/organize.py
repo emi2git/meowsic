@@ -1,4 +1,4 @@
-"""Manage library → Organize pages: every sheet (not books), plus "Recommended to check".
+"""Manage library → Fix pages (every sheet, not books) and Check suspect songs (the scan below).
 
 Books (PDF songbooks, method books) are read-only here: they are never listed, scanned or offered for
 rearranging, splitting or merging — a book is kept as the PDF it came in as.
@@ -9,7 +9,9 @@ and lists what looks fishy, most likely first, each with a short reason —
   order     page numbers (printed, or page dots) out of order
   duplicate the same page twice
   blank     a (nearly) blank page
-"This is a complete song" (organize_reviewed) hides an item from every scan; it is undoable in Activities
+Each candidate carries 'pages': the flagged page numbers (the new song's first page, the pages out of order, the
+twin pages, the blank pages; [] for merge — the whole sheet), which Check suspect songs highlights.
+"It's fine" (organize_reviewed) hides an item from every scan; it is undoable in Activities
 (step {op: 'reviewed'}) and "Show hidden" lists them. The newest scan is kept in organize_scan.
 What a page looks like (a tiny grey picture, its spread) is cached in work/organize-pages.json; titles come from
 the title cache (titles.py, the same Vision reading the editor's title detection uses) — the scan reads the
@@ -182,12 +184,12 @@ def merge_candidates(items: list[dict]) -> list[dict]:
         xs.sort(key=lambda x: (x[1] or 0, x[0]['createdAt'] or 0))
         first = xs[0][0]
         if marked:
-            out.append({'id': first['id'], 'kind': 'merge', 'score': 0.75, 'others': [x[0]['id'] for x in xs[1:]],
+            out.append({'id': first['id'], 'kind': 'merge', 'score': 0.75, 'others': [x[0]['id'] for x in xs[1:]], 'pages': [],
                         'reason': ' and '.join(f'“{x[0]["title"]}”' for x in xs[:3]) + ' look like one song in parts'})
         else:
             close = [x[0] for x in xs[1:] if abs((x[0]['createdAt'] or 0) - (first['createdAt'] or 0)) <= 15 * 60_000]
             if close:
-                out.append({'id': first['id'], 'kind': 'merge', 'score': 0.5, 'others': [x['id'] for x in close],
+                out.append({'id': first['id'], 'kind': 'merge', 'score': 0.5, 'others': [x['id'] for x in close], 'pages': [],
                             'reason': f'{len(close) + 1} sheets called “{first["title"]}”, added minutes apart — one song split in two?'})
     return out
 
@@ -332,7 +334,7 @@ def organize_scan(request: Request, body: dict = Body(default={})):
         finally: c2.close()
         ctx.update(progress=1, msg=f'Done — {len(res["candidates"])} to check', status='done', result={'candidates': len(res['candidates']), 'items': res['items']})
 
-    job = jobs.start_job(app, 'organize', 'Organize pages: find what to check', 'On this Mac', [], {}, runner=runner, thread=not body.get('wait'))
+    job = jobs.start_job(app, 'organize', 'Check suspect songs', 'On this Mac', [], {}, runner=runner, thread=not body.get('wait'))
     return jobs.get_job_row(app, job['id'])
 
 
@@ -343,6 +345,6 @@ def organize_reviewed(body: dict = Body(...), c=Depends(conn)):
     on = bool(body.get('on', True))
     if is_reviewed(c, it['id']) == on: return {'reviewed': on, 'activity': None}
     set_reviewed(c, it['id'], on)
-    aid = log_event(c, 'reviewed' if on else 'unreviewed', it['title'], 'a complete song — left out of Recommended to check' if on else 'back in Recommended to check')
+    aid = log_event(c, 'reviewed' if on else 'unreviewed', it['title'], 'marked fine — left out of Check suspect songs' if on else 'back in Check suspect songs')
     record_undo(c, aid, {'op': 'reviewed', 'id': it['id'], 'title': it['title'], 'on': on})
     return {'reviewed': on, 'activity': aid}

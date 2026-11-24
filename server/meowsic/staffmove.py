@@ -705,6 +705,7 @@ def edit(text: str, op: dict) -> tuple[str, list]:
       {op:'tie', refs}                a tie from each picked note to the next one of its pitch (tied already: off)
       {op:'slur', refs, next?}        a slur from the first picked note to the last (one note + next: to the next)
       {op:'unslur', refs}             every slur over a picked note goes
+      {op:'set', refs, midis}         the picked note / chord / rest takes exactly these pitches (noteset.py)
     Every voice of every bar still fills it. Ties and slurs stay (fix_ties / fix_slurs)."""
     out, touched, _ = edit_ex(text, op)
     return out, touched
@@ -717,7 +718,7 @@ def edit_ex(text: str, op: dict):
     if kind == 'alt': return use_measure(text, op.get('bar'), op.get('measure')), [], 0
     from .barops import OPS as BAR_OPS, bar_op
     if kind in BAR_OPS: return bar_op(text, op)  # Bar ▾: clear / add a staff in a bar, insert / delete bars, add / remove staves
-    if kind not in ('move', 'pitch', 'len', 'delete', 'add', 'tie', 'slur', 'unslur'): raise HTTPException(400, f'Unknown edit: {kind}')
+    if kind not in ('move', 'pitch', 'len', 'delete', 'add', 'tie', 'slur', 'unslur', 'set'): raise HTTPException(400, f'Unknown edit: {kind}')
     root = ET.fromstring(text.encode('utf-8'))
     pk, part, hands = edit_part(root)
     if part is None: raise HTTPException(400, 'This score has no notes')
@@ -731,7 +732,7 @@ def edit_ex(text: str, op: dict):
         n = all_notes[r]
         if n.find('grace') is not None: raise HTTPException(400, f'Note {r} is a grace note')
         if n.find('rest') is not None or n.find('pitch') is None:
-            if kind == 'add': rests.add(id(n)); continue
+            if kind in ('add', 'set'): rests.add(id(n)); continue
             raise HTTPException(400, f'Note {r} is a rest')
         want.add(id(n))
     if not want and not rests: raise HTTPException(400, 'Pick some notes first')
@@ -748,7 +749,10 @@ def edit_ex(text: str, op: dict):
     flats = _key_flats(part)
     bars = part.findall('measure')
     tidy = set()  # (bar index, staff, voice) edited: beams and rests tidied after (barnorm.py)
-    if kind in ('pitch', 'add'):
+    if kind == 'set':
+        from .noteset import set_op
+        touched, tidy = set_op(part, want, rests, op.get('midis'))
+    elif kind in ('pitch', 'add'):
         by = int(op.get('by', 4 if kind == 'add' else 0) or 0)
         div = Fr(1)
         for bi, m in enumerate(bars):
@@ -905,7 +909,8 @@ def _what(ops):
              'unslur': lambda n: f'{n} slur{"s" if n != 1 else ""} removed',
              'clearbar': lambda n: f'{n} bar{"s" if n != 1 else ""} cleared on one staff', 'fillbar': lambda n: f'{n} bar{"s" if n != 1 else ""} given a staff',
              'insbar': lambda n: f'{n} empty bar{"s" if n != 1 else ""} added', 'delbar': lambda n: f'{n} bar{"s" if n != 1 else ""} deleted',
-             'addstaff': lambda n: f'{n} staff added' if n == 1 else f'{n} staves added', 'delstaff': lambda n: f'{n} staff removed' if n == 1 else f'{n} staves removed'}
+             'addstaff': lambda n: f'{n} staff added' if n == 1 else f'{n} staves added', 'delstaff': lambda n: f'{n} staff removed' if n == 1 else f'{n} staves removed',
+             'set': lambda n: f'{s(n)} played in'}
     return ', '.join(words[k](n) for k, n in cnt.items() if k in words and n) or 'no notes'
 
 

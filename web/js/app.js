@@ -9,7 +9,7 @@ import { tagsView } from './views/organize.js';
 import { printView } from './views/print.js';
 import { statsView, settingsView, developerView } from './views/more.js';
 import { activityView } from './views/activity.js';
-import { cleanupView } from './views/cleanup.js';
+import { manageView } from './views/manage.js';
 import { photoImportView } from './views/photoimport.js';
 import { makeTagsView } from './views/maketags.js';
 import { helpView } from './views/help.js';
@@ -32,7 +32,7 @@ const ROUTES = {
   library: libraryView, item: itemView,
   'add-sheets': addSheetsView, 'add-photos': photoImportView, 'add-chords': addChordsView, 'add-score': addScoreView, jobs: addScoreView,
   tags: tagsView,
-  print: printView, stats: statsView, activity: activityView, activities: activityView, cleanup: cleanupView, manage: cleanupView, 'make-tags': makeTagsView, developer: developerView, settings: settingsView, help: helpView, beta: betaView,
+  print: printView, stats: statsView, activity: activityView, activities: activityView, manage: manageView, 'make-tags': makeTagsView, developer: developerView, settings: settingsView, help: helpView, beta: betaView,
 };
 
 // Beta pages load on demand (#/beta/keyboard → views/beta-keyboard.js, render(main, ctx)); a page not built yet shows "coming soon"
@@ -51,11 +51,9 @@ function betaView(main, ctx) {
 function route() {
   if (/^#\/?feedback\b/.test(location.hash)) return void location.replace('#/developer'); // feedback lives on Developer
   const { parts, q } = parseHash();
-  // #/manage = Manage library → Organize pages; the old #/cleanup, #/organize and #/manage/<old tab> go there
-  // Trash is a Manage library tab now: #/bin and #/trash go to #/manage/trash
-  if (parts[0] === 'bin' || parts[0] === 'trash') { location.replace('#/manage/trash'); return; }
-  if (parts[0] === 'cleanup' || parts[0] === 'organize' || (parts[0] === 'manage' && parts.length > 1 && !(['trash', 'info'].includes(parts[1]) && parts.length === 2))) { location.replace('#/manage' + (q.toString() ? '?' + q : '')); return; }
-  const name = parts[0] === 'manage' ? 'cleanup' : parts[0] || 'library';
+  const to = manageRedirect(parts, q);
+  if (to) { location.replace(to); return; }
+  const name = parts[0] || 'library';
   const view = ROUTES[name] || libraryView;
   if (typeof cleanup === 'function') cleanup();
   cleanup = null;
@@ -68,9 +66,26 @@ function route() {
   $('#main').focus({ preventScroll: true });
 }
 
+// Manage library (views/manage.js): #/manage, /review, /info, /trash, /pages, /pages/<id>, /pages/<id>/crop/<p>.
+// Old links: #/bin and #/trash → Trash; #/cleanup, #/organize and #/manage?id=X(&crop=P) → Fix pages on that sheet
+// (its crop); any other #/manage/<old tab> → the hub.
+export function manageRedirect(parts, q) {
+  if (parts[0] === 'bin' || parts[0] === 'trash') return '#/manage/trash';
+  if (!['manage', 'cleanup', 'organize'].includes(parts[0])) return null;
+  const id = q.get('id');
+  if (id && parts.length === 1) {
+    const back = q.get('back') === 'item' ? '?back=item' : '';
+    return `#/manage/pages/${encodeURIComponent(id)}${+q.get('crop') ? `/crop/${+q.get('crop')}` : ''}${back}`;
+  }
+  if (parts[0] !== 'manage') return '#/manage';
+  const [, a, , c, p] = parts, n = parts.length;
+  const ok = n === 1 || (n === 2 && ['review', 'info', 'trash', 'pages'].includes(a)) || (a === 'pages' && (n === 3 || (n === 5 && c === 'crop' && +p > 0)));
+  return ok ? null : '#/manage';
+}
+
 export function renderSide() {
   const { parts, q } = parseHash();
-  const v = parts[0] === 'manage' ? 'cleanup' : parts[0] || 'library';
+  const v = parts[0] || 'library';
   const items = store.items();
   const n = (k) => items.filter((x) => kindOf(x) === k).length;
   const kind = v === 'library' ? q.get('kind') || '' : null;
@@ -84,7 +99,7 @@ export function renderSide() {
       <h3>App</h3>
       <a class="nav${on(v === 'stats')}" href="#/stats">${icon('stats')}<span>Stats</span></a>
       <a class="nav${on(v === 'activity' || v === 'activities')}" href="#/activity"><span>Activities</span>${store.jobs().some((j) => j.status === 'running') ? '<i class="live">•</i>' : ''}</a>
-      <a class="nav${on(v === 'cleanup')}" href="#/manage"><span>Manage library</span></a>
+      <a class="nav${on(v === 'manage')}" href="#/manage"><span>Manage library</span></a>
       <a class="nav${on(v === 'tags' || v === 'make-tags')}" href="#/tags"><span>Tags</span></a>
       <a class="nav${on(v === 'settings' || v === 'help')}" href="#/settings">${icon('settings')}<span>Settings</span></a>
       <a class="nav${on(v === 'developer')}" href="#/developer"><span>Developer</span></a>
@@ -99,7 +114,7 @@ export function renderSide() {
     tab(HOME, 'library', 'Library', v === 'library' || v === 'item') +
     `<button id="tab-add" class="tab-add" aria-label="Add music">Add</button>` +
     tab('#/stats', 'stats', 'Stats', v === 'stats') +
-    `<button id="tab-more" class="${['bin', 'settings', 'print', 'activity', 'activities', 'developer', 'cleanup', 'manage', 'help', 'tags', 'make-tags', 'beta'].includes(v) ? 'on' : ''}">${icon('more')}<span>More</span></button>`;
+    `<button id="tab-more" class="${['bin', 'settings', 'print', 'activity', 'activities', 'developer', 'manage', 'help', 'tags', 'make-tags', 'beta'].includes(v) ? 'on' : ''}">${icon('more')}<span>More</span></button>`;
   $('#tab-add').onclick = (e) => addMenu(e.currentTarget);
   $('#tab-more').onclick = (e) => menu(e.currentTarget, [
     { label: 'Activities', icon: 'wave', run: () => go('#/activity') },
