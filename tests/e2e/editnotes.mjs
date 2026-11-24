@@ -232,9 +232,116 @@ async function run(name, vp, how) {
   await page.close();
 }
 
+// ---- the left hand, from the score bar's pencil (it used to edit the upper staff only) ----
+// bar 1: right hand a whole note, left hand eight 8ths with no beams; bar 2 repeats 4/4 (tidied away on an edit),
+// left hand quarter, quarter rest, half.
+const P = { 43: ['G', 2], 48: ['C', 3], 50: ['D', 3], 52: ['E', 3], 53: ['F', 3], 55: ['G', 3], 57: ['A', 3], 59: ['B', 3], 60: ['C', 4], 72: ['C', 5], 74: ['D', 5] };
+const N = (m, d, staff, ty) => `<note>${m ? `<pitch><step>${P[m][0]}</step><octave>${P[m][1]}</octave></pitch>` : '<rest/>'}<duration>${d}</duration><voice>${staff === 2 ? 5 : 1}</voice><type>${ty}</type><staff>${staff}</staff></note>`;
+const lhXml = (title) => '<?xml version="1.0" encoding="UTF-8"?>\n<score-partwise version="4.0"><work><work-title>' + title + '</work-title></work><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">'
+  + '<measure number="1"><attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>'
+  + N(72, 8, 1, 'whole') + '<backup><duration>8</duration></backup>' + [48, 50, 52, 53, 55, 57, 59, 60].map((m) => N(m, 1, 2, 'eighth')).join('') + '</measure>'
+  + '<measure number="2"><attributes><time><beats>4</beats><beat-type>4</beat-type></time></attributes>' + N(74, 8, 1, 'whole') + '<backup><duration>8</duration></backup>' + N(48, 2, 2, 'quarter') + N(0, 2, 2, 'quarter') + N(43, 4, 2, 'half') + '</measure></part></score-partwise>';
+// the staff-2 notes of a bar: [{beam, rest, midi-ish, dur}] from the editor's MusicXML
+const lhBar = (x, k) => x.split('<measure').slice(1)[k].split('<note').slice(1).filter((s) => /<staff>2</.test(s) && !/<chord\s*\/>/.test(s))
+  .map((s) => ({ beam: s.match(/<beam number="1">([^<]+)</)?.[1] || '', rest: /<rest\b/.test(s), type: s.match(/<type>(\w+)/)?.[1], dur: +s.match(/<duration>(\d+)/)[1] }));
+
+async function leftHand(name, vp) {
+  console.log(`\nLeft hand — ${name}`);
+  const touch = !!vp.hasTouch;
+  const title = `Left hand ${name} ${stamp}`;
+  const sc = await send('POST', '/items', { kind: 'score', title, artist: 'Test', musicxmlText: lhXml(title) });
+  const page = await b.newPage(); await page.setViewport(vp);
+  page.on('pageerror', (e) => errs.push(`LH ${name}: ${e.message}`));
+  page.on('console', (m) => m.type() === 'error' && !/404|409|favicon/.test(m.text()) && errs.push(`LH ${name}: ${m.text()}`));
+  const tapXY = async (x, y) => { if (touch) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); await sleep(150); };
+  const tap = async (sel) => { if (touch) await page.tap(sel); else await page.click(sel); await sleep(150); };
+  const act = (a) => tap(`.notes-panel [data-a="${a}"]`);
+  const EN = (f) => page.evaluate(f);
+  const idle = async () => { for (let i = 0; i < 60; i++) { await sleep(150); if (!(await EN(() => window.__editNotes?.busy))) break; } await sleep(700); };
+  const head = (pred) => page.evaluate((src) => {
+    const f = new Function('n', `return (${src})(n)`);
+    const n = window.__editNotes.notes.find(f);
+    const g = n && document.querySelector(`#paper g[data-ref="${n.ref}"]`);
+    if (!g) return null;
+    g.scrollIntoView({ block: 'center' });
+    const r = g.getBoundingClientRect();
+    return { ref: n.ref, x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }, pred.toString());
+  const pick = async (pred) => { await act('none'); const h = await head(pred); await tapXY(h.x, h.y); return h.ref; };
+  const xml = () => EN(() => window.__editNotes.xml);
+
+  await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' });
+  await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(800);
+  await tap('#sc-edit');
+  await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(800);
+  check('the score bar\'s pencil opens Edit notes (both hands)', !!(await page.$('.notes-panel')) && !(await page.$('.editbar')));
+  const lhTagged = await page.evaluate(() => window.__editNotes.notes.filter((n) => n.staff === 2).every((n) => document.querySelector(`#paper g[data-ref="${n.ref}"]`)));
+  check('every left-hand note and rest can be picked', lhTagged);
+  await page.screenshot({ path: `${SHOTS}/LH-${name}-before.png` });
+
+  // pitch: tap the left hand's first 8th → ♯
+  const c3 = await pick((n) => n.bar === 0 && n.staff === 2 && n.midi === 48);
+  check('tap picks a left-hand note', JSON.stringify(await EN(() => window.__editNotes.sel)) === `[${c3}]`, JSON.stringify(await EN(() => window.__editNotes.sel)));
+  await act('semi+'); await idle();
+  let ns = await EN(() => window.__editNotes.notes);
+  check('left hand ♯: C3 → C♯3', ns.some((n) => n.bar === 0 && n.staff === 2 && n.on === 0 && n.midi === 49));
+  let x = await xml();
+  check('after the edit the left-hand 8ths are beamed per half bar', lhBar(x, 0).map((n) => n.beam).join() === 'begin,continue,continue,end,begin,continue,continue,end', JSON.stringify(lhBar(x, 0)));
+  check('the repeated 4/4 in bar 2 is gone', !/<time>/.test(x.split('<measure').slice(1)[1]) && (x.match(/<time>/g) || []).length === 1);
+  check('bars still full', barsFull(x));
+
+  // delete: the last four 8ths of bar 1 (Mac: click + Shift-click, iPad: Pick several) → one half rest
+  const last = ns.filter((n) => n.bar === 0 && n.staff === 2 && n.on >= 2).sort((a, b) => a.on - b.on);
+  await act('none');
+  if (touch) {
+    await act('several');
+    for (const n of last) { const h = await page.evaluate((r) => { const g = document.querySelector(`#paper g[data-ref="${r}"]`); const b = g.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; }, n.ref); await tapXY(h.x, h.y); }
+    await act('several');
+  } else {
+    const a = await head((n) => n.bar === 0 && n.staff === 2 && n.on === 2), z = await head((n) => n.bar === 0 && n.staff === 2 && n.on === 3.5);
+    await tapXY(a.x, a.y);
+    await page.keyboard.down('Shift'); await page.mouse.click(z.x, z.y); await page.keyboard.up('Shift'); await sleep(150);
+  }
+  check('four left-hand 8ths picked', (await EN(() => window.__editNotes.sel.length)) === 4, JSON.stringify(await EN(() => window.__editNotes.sel)));
+  await act('del'); await idle();
+  x = await xml();
+  const b1 = lhBar(x, 0);
+  check('four 8th rests become one half rest', b1.filter((n) => n.rest).length === 1 && b1.find((n) => n.rest).type === 'half' && b1.find((n) => n.rest).dur === 4, JSON.stringify(b1));
+  check('the 8ths left stay beamed', b1.filter((n) => !n.rest).map((n) => n.beam).join() === 'begin,continue,continue,end');
+
+  // add: bar 2's left-hand C3 → ⅛ (an 8th rest after it), + Note on that rest → two 8ths, beamed
+  await pick((n) => n.bar === 1 && n.staff === 2 && n.midi === 48);
+  await tap('.notes-panel [data-len="0.5"]'); await idle();
+  await pick((n) => n.bar === 1 && n.staff === 2 && n.rest && n.on === 0.5);
+  await act('add'); await idle();
+  x = await xml(); ns = await EN(() => window.__editNotes.notes);
+  check('+ Note on a left-hand rest: a note there', ns.some((n) => n.bar === 1 && n.staff === 2 && n.on === 0.5 && !n.rest));
+  const b2 = lhBar(x, 1);
+  check('two adjacent left-hand 8ths are beamed', b2[0].beam === 'begin' && b2[1].beam === 'end' && b2[0].type === 'eighth' && b2[1].type === 'eighth', JSON.stringify(b2));
+  check('bar 2 still full (quarter rest, half note)', barsFull(x) && b2.length === 4 && b2[2].rest && b2[2].type === 'quarter', JSON.stringify(b2));
+
+  // move: the left hand's C♯3 to the right hand
+  await pick((n) => n.bar === 0 && n.staff === 2 && n.midi === 49);
+  await act('up'); await idle();
+  ns = await EN(() => window.__editNotes.notes);
+  check('left-hand note to the right hand', ns.some((n) => n.bar === 0 && n.staff === 1 && n.midi === 49) && !ns.some((n) => n.bar === 0 && n.staff === 2 && n.midi === 49) && barsFull(await xml()));
+  await page.screenshot({ path: `${SHOTS}/LH-${name}-after.png` });
+  const want = await xml();
+  await act('save'); await sleep(300);
+  await page.evaluate(() => document.querySelector('.np-save [data-mode="this"]').click()); await sleep(2500);
+  const saved = await xmlOf(sc.id);
+  check('saved: same as the editor showed', saved.replace(/\s+/g, '') === want.replace(/\s+/g, ''));
+  await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(600);
+  await page.screenshot({ path: `${SHOTS}/LH-${name}-saved.png` });
+  await send('POST', '/items/trash', { ids: [sc.id] }).catch(() => {});
+  await page.close();
+}
+
 await run('Mac', MAC, 'this');
 await run('iPad', IPAD, 'new');
 await run('iPhone', PHONE, 'close');
+await leftHand('Mac', MAC);
+await leftHand('iPad', IPAD);
 await b.close();
 if (errs.length) { console.log('\nconsole errors:'); errs.forEach((e) => console.log('  ', e)); }
 console.log(`\n${pass} passed, ${fail} failed${errs.length ? `, ${errs.length} console errors` : ''}`);

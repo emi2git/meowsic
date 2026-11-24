@@ -3,6 +3,8 @@
 import { iconOn, toast } from '../ui.js';
 import { isTriplet, twelfths, midiOf, nameOf } from '../musicxml.js';
 import { TuneModel, XmlModel } from '../scoremodel.js';
+import { store } from '../store.js';
+import { editNotes } from './editnotes.js';
 
 // ================= score editor =================
 // Like MuseScore / Flat: click a note on the staff to select it, then change it with the palette or keys:
@@ -33,6 +35,13 @@ const LETTER = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 export function scoreEditor(view, it, host, btn) {
   if (host.querySelector('.editbar')) { host.querySelector('.editbar').dispatchEvent(new Event('close')); return; }
   if (!view.editable) return toast('This version has no melody to edit.');
+  // a real score on the Mac: Edit notes (editnotes.js) — both hands (staff 1 and 2, any voice), the Mac rebuilds the
+  // bars and tidies beams / rests. The one-line bar below (XmlModel) only knows the upper staff.
+  if (view.real && store.mode === 'server') {
+    if (host.querySelector('.notes-panel')) { window.__editNotes?.close(); return; }
+    btn.classList.add('on');
+    return editNotes(view, it, host, { onDone: () => btn.classList.remove('on') });
+  }
   btn.classList.add('on');
   // sample scores edit their bars; real scores edit their MusicXML (upper staff)
   const model = view.real ? new XmlModel(view.xml()) : new TuneModel(view.tune);
