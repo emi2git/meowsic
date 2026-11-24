@@ -68,6 +68,12 @@ const P = {
   voice: '<path d="M5 21v-3.2a2 2 0 0 0-.7-1.5A7 7 0 0 1 9.6 4a6.3 6.3 0 0 1 6.3 6.2l1.6 3.3h-1.6v2.2a2 2 0 0 1-2 2h-1.7V21"/><path d="M19 8.2a4.6 4.6 0 0 1 0 5.6M21.4 5.8a8.4 8.4 0 0 1 0 10.4"/>',
   // ukulele chords: a small guitar body with a sound hole and a neck with tuning pegs
   ukulele: '<path d="M13.6 10.4l6-6M18.2 2.6l3.2 3.2M17 3.8l1 1M20.2 7l-1-1"/><path d="M13 11a3.2 3.2 0 0 0-4.7.2 3.1 3.1 0 0 1-2.3 1.2 3.9 3.9 0 0 0-2.6 6.6l1.6 1.6a3.9 3.9 0 0 0 6.6-2.6 3.1 3.1 0 0 1 1.2-2.3A3.2 3.2 0 0 0 13 11z"/><circle cx="9.2" cy="14.8" r="1.3"/><path d="M6.2 16.4l1.4 1.4"/>',
+  // Manage library (cards, page editor dock): kept on through iconOn
+  crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14M2 6h14a2 2 0 0 1 2 2v14"/>',
+  move: '<path d="M5 9l-3 3 3 3M19 9l3 3-3 3M2 12h20"/>',
+  join: '<path d="M6 4v4a4 4 0 0 0 4 4h4a4 4 0 0 1 4 4v4M18 4v4a4 4 0 0 1-4 4"/><path d="M15 17l3 3 3-3"/>',
+  pages: '<rect x="4" y="3" width="12" height="16" rx="2"/><path d="M8 21h10a2 2 0 0 0 2-2V7"/>',
+  warn: '<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/>',
   paw: '<ellipse cx="12" cy="16" rx="4.5" ry="3.8" fill="currentColor"/><circle cx="6" cy="10" r="2" fill="currentColor"/><circle cx="10" cy="6.5" r="2" fill="currentColor"/><circle cx="14" cy="6.5" r="2" fill="currentColor"/><circle cx="18" cy="10" r="2" fill="currentColor"/>',
 };
 // Icons are switched off for now (user request); every control carries a text label instead.

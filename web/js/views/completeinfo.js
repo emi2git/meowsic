@@ -1,5 +1,6 @@
 // Manage library → Complete info (#/manage/info): the sheets the AI fill could not name a Key or Version for,
-// one card at a time — the WHOLE page 1 fitted in its frame (tap: zoom), then two choices and one save:
+// one card at a time — the WHOLE page fitted in its frame (tap: zoom; the strip under it shows the other pages),
+// then two choices and one save:
 //   Key      common keys (with their key signature: 1♯, 2♭ …) or any other key typed ("F#m", "Db major")
 //   Version  Lead · Piano · Duet · Accompaniment
 // Nothing moves on by itself: pick Key and Version (a value the item already has counts as picked), then
@@ -9,10 +10,11 @@
 // Both are kept on the Mac, so every device has the same queue.
 // Taps: pointerdown + pointerup on the same button acts at once (iPad: no lost taps, no 300 ms wait); the click
 // that follows is ignored. The card is drawn once per song; a pick only changes classes (no re-render mid-tap).
-// Mac keys: 1–4 version · type a key (A–G…) + Enter · Enter = Save & next (when on) · S skip · X don't know · ← back · Space zoom.
+// The header (views/manage.js) shows "N of M" and a progress bar (onProgress). The bottom bar: ‹ Back · Skip · Don't know · Save & next.
+// Mac keys (? lists them): 1–4 version · type a key (A–G…) + Enter · Enter = Save & next (when on) · S skip · X don't know · ← back · Space zoom.
 import { store } from '../store.js';
 import { isDesktop } from '../device.js';
-import { $, esc, toast } from '../ui.js';
+import { $, esc, toast, sheet as modal } from '../ui.js';
 import { SHEET_VERSIONS } from './actions.js';
 import { pageSrc } from './sheet.js';
 
@@ -26,7 +28,7 @@ const api = async (method, path, body) => {
 // keys as the sheets store them ('Bb', 'F#m'); sig = its key signature, a help for reading page 1
 const MAJORS = [['C', '0'], ['G', '1♯'], ['D', '2♯'], ['A', '3♯'], ['E', '4♯'], ['F', '1♭'], ['Bb', '2♭'], ['Eb', '3♭'], ['Ab', '4♭']];
 const MINORS = [['Am', '0'], ['Em', '1♯'], ['Bm', '2♯'], ['Dm', '1♭'], ['Gm', '2♭'], ['Cm', '3♭']];
-const VERS = [['lead', 'Lead', 'melody + chords'], ['piano', 'Piano', 'both hands'], ['duet', 'Duet', 'two players'], ['accomp', 'Accompaniment', 'piano part, no melody']]
+const VERS = [['lead', 'Lead', 'melody + chords', 'Lead'], ['piano', 'Piano', 'both hands', 'Piano'], ['duet', 'Duet', 'two players', 'Duet'], ['accomp', 'Accompaniment', 'no melody', 'Accomp.']]
   .filter(([v]) => v in SHEET_VERSIONS);
 export const pretty = (k) => String(k || '').replace(/^([A-G])b/, '$1♭').replace(/^([A-G])#/, '$1♯');
 const verName = (v) => VERS.find(([x]) => x === v)?.[1] || v;
@@ -44,11 +46,15 @@ export function normKey(s, kind = 'sheet') {
 const same = (a, b) => !!a && !!b && normKey(a) === normKey(b);
 const isMissing = (v) => ['', '?', '??', 'unknown', 'none', 'n/a', '-', 'not set'].includes(String(v || '').trim().toLowerCase());
 
-// the tab badge: how many are still to do (any Manage library tab)
-export async function infoBadge(root) {
-  if (store.mode !== 'server') return;
-  try { const { count } = await api('GET', '/completeinfo/count'); const el = $('#cu-ninfo', root); if (el) el.textContent = count || ''; } catch {}
-}
+// "1 sharp in the key signature" for a key (as stored: 'G', 'Bbm', 'F#m'), '' when not a common key
+const SIG = Object.fromEntries([...MAJORS, ...MINORS]);
+const sigText = (k) => {
+  const sg = SIG[k]; if (sg == null) return '';
+  if (sg === '0') return 'No sharps or flats in the key signature';
+  const n = +sg[0], sharp = sg[1] === '♯';
+  return `${n} ${sharp ? 'sharp' : 'flat'}${n > 1 ? 's' : ''} in the key signature`;
+};
+const KEYS_HELP = [['1–4', 'Version'], ['A–G (+ Enter)', 'Type a key: “eb”, “f#m”…'], ['Enter / →', 'Save & next (when both are set)'], ['S', 'Skip'], ['X', 'Don’t know'], ['← / Backspace', 'Back to the last one'], ['Space', 'Zoom the page']];
 
 // page pictures, loaded off-page and put in only once decoded (no wrong size, no half picture, no stale song)
 const pics = new Map(); // src -> { im, ready: Promise<boolean> }
@@ -69,13 +75,13 @@ function loadPic(src) {
   return c;
 }
 
-export function completeInfoView(body) {
+export function completeInfoView(body, { onProgress = () => {} } = {}) {
   if (store.mode !== 'server') { body.innerHTML = '<p class="pad muted">Complete info needs the Mac.</p>'; return; }
   // sel[f] = {v, how: 'have' (the item has it: picked and confirmed) | 'user' (tapped here)}
-  const st = { q: null, hidden: 0, i: 0, sel: {}, back: [], done: 0, zoom: false, alive: true, err: '', gen: 0, saves: new Map(), retry: 0 };
+  const st = { q: null, hidden: 0, i: 0, sel: {}, back: [], done: 0, zoom: false, alive: true, err: '', gen: 0, saves: new Map(), retry: 0, pg: 1, other: false };
   const cur = () => st.q?.[st.i];
   const live = (r) => store.get(r.id) || r;
-  const badge = () => { const el = document.getElementById('cu-ninfo'); if (el) el.textContent = st.q?.length || ''; };
+  const badge = () => onProgress({ at: Math.min(st.i + 1, st.q?.length || 0), left: st.q?.length || 0, done: st.done });
   const needVersion = (r) => r.kind === 'sheet' || r.kind === 'chords';
   const complete = (r) => !!r && !!st.sel.key && (!needVersion(r) || !!st.sel.version);
 
@@ -88,7 +94,7 @@ export function completeInfoView(body) {
   // a new card: what the item has now counts as picked; the AI guess is only a hint
   const start = (sel) => {
     const r = cur();
-    st.sel = {}; st.err = ''; st.zoom = false;
+    st.sel = {}; st.err = ''; st.zoom = false; st.pg = 1; st.other = false;
     if (r) {
       const it = live(r);
       for (const f of ['key', 'version']) {
@@ -161,6 +167,13 @@ export function completeInfoView(body) {
     inp.blur(); inp.value = pretty(k);
     pick('key', k);
   };
+  // the strip under the page: show another page whole
+  const page = (p) => {
+    const r = cur(); if (!r || p === st.pg) return;
+    st.pg = p;
+    body.querySelectorAll('.ci-thumb').forEach((b) => b.classList.toggle('on', +b.dataset.p === p));
+    showPic(r, ++st.gen);
+  };
   const zoom = () => {
     if (!$('#ci-pic img', body)) return;
     st.zoom = !st.zoom;
@@ -169,21 +182,21 @@ export function completeInfoView(body) {
   };
 
   // ---------- the page picture ----------
-  const picSrc = (r) => {
+  const picSrc = (r, pg = 1) => {
     const it = live(r);
     if (r.kind !== 'sheet') return '';
-    if (it.pageFiles?.length) return pageSrc(it, 1);
-    return r.pages ? store.pageUrl(r.id, 1, it.updatedAt || r.updatedAt) : '';
+    if (it.pageFiles?.length) return pageSrc(it, Math.min(pg, it.pageFiles.length));
+    return r.pages ? store.pageUrl(r.id, pg, it.updatedAt || r.updatedAt) : '';
   };
   const showPic = (r, g, src0) => {
     const fig = $('#ci-pic', body); if (!fig) return;
-    const src = src0 || picSrc(r);
+    const src = src0 || picSrc(r, st.pg);
     fig.dataset.state = 'loading';
-    fig.querySelector('.ci-ph').innerHTML = '<span class="ci-spin" aria-hidden="true"></span><span>Loading page 1…</span>';
+    fig.querySelector('.ci-ph').innerHTML = `<span class="ci-spin" aria-hidden="true"></span><span>Loading page ${st.pg}…</span>`;
     const c = loadPic(src);
     const slow = setTimeout(() => {
       if (g !== st.gen || fig.dataset.state !== 'loading') return;
-      fig.querySelector('.ci-ph').innerHTML = '<span class="ci-spin" aria-hidden="true"></span><span>Still loading page 1…</span><button class="ci-retry" data-act="retry">Retry</button>';
+      fig.querySelector('.ci-ph').innerHTML = `<span class="ci-spin" aria-hidden="true"></span><span>Still loading page ${st.pg}…</span><button class="ci-retry" data-act="retry">Retry</button>`;
     }, 6000);
     c.ready.then((ok) => {
       clearTimeout(slow);
@@ -191,11 +204,11 @@ export function completeInfoView(body) {
       if (!ok) {
         pics.delete(src);
         fig.dataset.state = 'error';
-        fig.querySelector('.ci-ph').innerHTML = '<span>Couldn’t load page 1.</span><button class="ci-retry" data-act="retry">Retry</button>';
+        fig.querySelector('.ci-ph').innerHTML = `<span>Couldn’t load page ${st.pg}.</span><button class="ci-retry" data-act="retry">Retry</button>`;
         return;
       }
       const im = c.im;
-      im.alt = `Page 1 of ${r.title}`;
+      im.alt = `Page ${st.pg} of ${r.title}`;
       im.className = 'ci-img';
       fig.querySelector('.ci-img')?.remove();
       fig.prepend(im);
@@ -206,12 +219,12 @@ export function completeInfoView(body) {
   };
   const retryPic = () => {
     const r = cur(); if (!r) return;
-    const src = picSrc(r); pics.delete(src);
+    const src = picSrc(r, st.pg); pics.delete(src);
     showPic(r, st.gen, `${src}${src.includes('?') ? '&' : '?'}retry=${++st.retry}`);
   };
 
   // ---------- drawing: draw() = a new card; paint() = the picks only ----------
-  const keyBtn = ([k, sig]) => `<button type="button" class="ci-key" data-key="${k}" aria-pressed="false"><b>${pretty(k)}</b><small>${sig}</small></button>`;
+  const keyBtn = ([k]) => `<button type="button" class="ci-key" data-key="${k}" aria-pressed="false"><b>${pretty(k)}</b></button>`;
   const savesHtml = () => {
     const bad = [...st.saves.values()].filter((s) => s.status === 'failed');
     const busy = [...st.saves.values()].filter((s) => s.status === 'saving').length;
@@ -230,42 +243,46 @@ export function completeInfoView(body) {
         ${st.back.length ? '<button type="button" id="ci-back" data-act="back">‹ Back to the last one</button>' : ''}</div>`;
       return;
     }
-    const sug = (f) => (r.suggest?.[f] ? `<span class="ci-sug" title="${esc(r.suggest[f].why)}">Suggested: <b>${esc(f === 'key' ? pretty(r.suggest[f].value) : verName(r.suggest[f].value))}</b> · ${esc(r.suggest[f].why)}</span>` : '');
-    const pic = picSrc(r);
+    const sug = (f) => (r.suggest?.[f] ? `<span class="ci-ai" title="${esc(r.suggest[f].why)}">Suggested: ${esc(f === 'key' ? pretty(r.suggest[f].value) : verName(r.suggest[f].value))}</span>` : '');
+    const pic = picSrc(r), np = r.kind === 'sheet' ? Math.min(r.pages || 1, 12) : 0;
     body.innerHTML = `<div class="ci" id="ci-card">
-      <figure class="ci-pic" id="ci-pic" ${pic ? 'data-act="zoom" role="button" tabindex="0" aria-label="Zoom page 1"' : ''}>
-        ${pic ? `<div class="ci-ph"></div><span class="ci-zoomhint">Tap to zoom</span>`
-    : `<div class="ci-nopic">${r.kind === 'score' ? 'A score — no page photo.' : r.kind === 'chords' ? 'A chord chart.' : 'No page image.'}<br><a href="#/item/${encodeURIComponent(r.id)}">Open it ›</a></div>`}
-      </figure>
-      <section class="ci-side">
+      <div class="ci-prev">
         <div id="ci-saves" class="ci-saves">${savesHtml()}</div>
-        <div class="ci-head">
-          <span class="ci-count">${st.i + 1} of ${st.q.length}${st.done ? ` · ${st.done} done` : ''}${r.skipped ? ' · skipped before' : ''}</span>
-          <h2 id="ci-title">${esc(r.title)}</h2>
-          <p class="muted">${esc([r.artist, r.kind === 'sheet' ? `${r.pages} page${r.pages === 1 ? '' : 's'}` : r.kind === 'score' ? 'Score' : 'Chord chart'].filter(Boolean).join(' · '))} · <a href="#/item/${encodeURIComponent(r.id)}">Open</a></p>
-        </div>
+        <div class="ci-head"><h2 id="ci-title">${esc(r.title)}</h2>
+          <span class="muted small">${esc([r.artist, r.kind === 'sheet' ? `${r.pages} page${r.pages === 1 ? '' : 's'}` : r.kind === 'score' ? 'Score' : 'Chord chart'].filter(Boolean).join(' · '))}${r.skipped ? ' · skipped before' : ''}</span>
+          <span class="grow"></span><a class="small ci-open" href="#/item/${encodeURIComponent(r.id)}">Open sheet</a></div>
+        <figure class="ci-pic" id="ci-pic" ${pic ? 'data-act="zoom" role="button" tabindex="0" aria-label="Zoom the page"' : ''}>
+          ${pic ? `<div class="ci-ph"></div><span class="ci-zoomhint">Tap to zoom</span>`
+    : `<div class="ci-nopic">${r.kind === 'score' ? 'A score — no page photo.' : r.kind === 'chords' ? 'A chord chart.' : 'No page image.'}<br><a href="#/item/${encodeURIComponent(r.id)}">Open it ›</a></div>`}
+        </figure>
+        ${pic && np > 1 ? `<div class="ci-strip" role="group" aria-label="Pages">${Array.from({ length: np }, (_, k) => `<button type="button" class="ci-thumb" data-act="pg" data-p="${k + 1}" aria-label="Page ${k + 1}"><img src="/api/items/${encodeURIComponent(r.id)}/thumb/${k + 1}?w=120&v=${live(r).updatedAt || 0}" alt="" draggable="false" loading="lazy"></button>`).join('')}<span class="muted small">Tap a page to see it whole</span></div>` : ''}
+      </div>
+      <div class="ci-form">
         <div class="ci-field">
-          <div class="ci-lab"><b>Key</b><span class="ci-ok" id="ci-okkey"></span>${sug('key')}</div>
+          <div class="ci-lab"><b>Key</b>${sug('key')}<span class="ci-ok" id="ci-okkey"></span></div>
           <div class="ci-keys" id="ci-keys" role="group" aria-label="Major keys">${MAJORS.map(keyBtn).join('')}</div>
-          <div class="ci-keys minor" role="group" aria-label="Minor keys">${MINORS.map(keyBtn).join('')}</div>
-          <form class="ci-otherrow" id="ci-form" autocomplete="off"><input id="ci-other" placeholder="Other key: F#m, Db major…" aria-label="Other key" autocapitalize="off" spellcheck="false" enterkeyhint="done"><button type="button" id="ci-set" data-act="set">Set</button></form>
+          <div class="ci-keys minor" role="group" aria-label="Minor keys">${MINORS.map(keyBtn).join('')}<button type="button" class="ci-key ci-more" id="ci-more" data-act="other" aria-expanded="false">Other…</button></div>
+          <form class="ci-otherrow" id="ci-form" autocomplete="off" hidden><input id="ci-other" placeholder="Other key: F#m, Db major…" aria-label="Other key" autocapitalize="off" spellcheck="false" enterkeyhint="done"><button type="button" id="ci-set" data-act="set">Set</button></form>
+          <p class="ci-sig muted small" id="ci-sig"></p>
           <p class="ci-err" id="ci-err" role="alert" hidden></p>
         </div>
         ${needVersion(r) ? `<div class="ci-field">
-          <div class="ci-lab"><b>Version</b><span class="ci-ok" id="ci-okver"></span>${sug('version')}</div>
-          <div class="ci-vers" id="ci-vers" role="group" aria-label="Version">${VERS.map(([v, l, d], n) => `<button type="button" class="ci-ver" data-ver="${v}" aria-pressed="false"><b>${l}</b><small>${d}</small>${isDesktop() ? `<kbd>${n + 1}</kbd>` : ''}</button>`).join('')}</div></div>` : ''}
-        <div class="ci-acts">
-          <button type="button" id="ci-prev" data-act="back" ${st.back.length ? '' : 'disabled'} aria-label="Back to the last one">‹ Back</button>
-          <button type="button" id="ci-skip" data-act="skip">Skip</button>
-          <button type="button" id="ci-dunno" data-act="dunno">Don't know</button>
-          <button type="button" class="primary" id="ci-next" data-act="next" disabled>Save &amp; next ›</button>
-        </div>
-        <p class="ci-foot muted">${st.hidden ? `${st.hidden} hidden as “Don't know” · <button type="button" class="link" id="ci-again" data-act="again">Show again</button>` : ''}
-          ${isDesktop() ? '<span class="ci-keyshelp">Keys: 1–4 version · type a key + Enter · Enter = Save &amp; next · S skip · X don’t know · ← back · Space zoom</span>' : ''}</p>
-      </section></div>`;
-    body.scrollTop = 0;  // a new song starts at its top (iPhone: the page, not the buttons of the last one)
+          <div class="ci-lab"><b>Version</b>${sug('version')}<span class="ci-ok" id="ci-okver"></span></div>
+          <div class="ci-vers" id="ci-vers" role="group" aria-label="Version">${VERS.map(([v, , d, short], n) => `<button type="button" class="ci-ver" data-ver="${v}" aria-pressed="false"><b>${short}</b><small>${d}</small>${isDesktop() ? `<kbd>${n + 1}</kbd>` : ''}</button>`).join('')}</div></div>` : ''}
+        <p class="ci-foot muted">${st.hidden ? `${st.hidden} hidden as “Don't know” · <button type="button" class="link" id="ci-again" data-act="again">Show again</button>` : ''}</p>
+      </div></div>
+      <div class="ci-acts">
+        <button type="button" class="ghost" id="ci-prev" data-act="back" ${st.back.length ? '' : 'disabled'} aria-label="Back to the last one">‹<span class="hide-phone"> Back</span></button>
+        <button type="button" id="ci-skip" data-act="skip">Skip</button>
+        <button type="button" id="ci-dunno" data-act="dunno">Don't know</button>
+        <span class="grow hide-phone"></span>
+        ${isDesktop() ? '<button type="button" class="ghost" id="ci-keyshelp" data-act="keys" aria-label="Keys" title="Keys">?</button>' : ''}
+        <button type="button" class="primary" id="ci-next" data-act="next" disabled>Save &amp; next ›</button>
+      </div>`;
+    badge();
+    (body.closest('#main') || body).scrollTop = 0;  // a new song starts at its top (iPhone: the page, not the buttons of the last one)
     const inp = $('#ci-other', body), sk = st.sel.key;
-    if (sk && ![...MAJORS, ...MINORS].some(([k]) => same(k, sk.v))) inp.value = pretty(sk.v);
+    if (sk && ![...MAJORS, ...MINORS].some(([k]) => same(k, sk.v))) { inp.value = pretty(sk.v); st.other = true; }
     paint();
     if (pic) showPic(r, st.gen);
   };
@@ -287,8 +304,14 @@ export function completeInfoView(body) {
     const typedKey = !!sk && ![...MAJORS, ...MINORS].some(([k]) => same(k, sk.v));
     inp.classList.toggle('on', typedKey);
     if (sk && !typedKey && document.activeElement !== inp) inp.value = '';
+    const open = st.other || typedKey;
+    $('#ci-form', body).hidden = !open;
+    const more = $('#ci-more', body); more.setAttribute('aria-expanded', open); more.classList.toggle('on', typedKey);
+    const sigOf = sk ? sigText(sk.v) : hk ? sigText(normKey(hk) || hk) : '';
+    $('#ci-sig', body).textContent = sigOf;
     const ok = (el, s, name) => { if (el) el.textContent = s ? `✓ ${name(s.v)}${s.how === 'have' ? ' (already set)' : ''}` : ''; };
     ok($('#ci-okkey', body), sk, pretty); ok($('#ci-okver', body), sv, verName);
+    body.querySelectorAll('.ci-thumb').forEach((b) => b.classList.toggle('on', +b.dataset.p === st.pg));
     const e = $('#ci-err', body); e.hidden = !st.err; e.textContent = st.err;
     const nx = $('#ci-next', body); nx.disabled = !complete(r);
     nx.title = complete(r) ? '' : needVersion(r) && !sv ? (sk ? 'Pick a version' : 'Pick a key and a version') : 'Pick a key';
@@ -307,6 +330,9 @@ export function completeInfoView(body) {
       case 'again': return showAgain();
       case 'set': return typed();
       case 'zoom': return zoom();
+      case 'other': { st.other = !st.other || !!st.err; paint(); if (st.other) $('#ci-other', body)?.focus(); return; }
+      case 'pg': return page(+el.dataset.p);
+      case 'keys': return modal(`<h2>Keys</h2><table class="pe-keys">${KEYS_HELP.map(([k, d]) => `<tr><td><kbd>${k}</kbd></td><td>${d}</td></tr>`).join('')}</table><div class="modal-actions"><button class="primary" data-close>OK</button></div>`);
       case 'retry': return retryPic();
       case 'resave': { const s = st.saves.get(el.dataset.id); if (s) save(s); }
     }
@@ -344,7 +370,8 @@ export function completeInfoView(body) {
     if (inInput) { if (e.key === 'Escape') e.target.blur(); return; }
     if (e.key === 'Escape' && st.zoom) { zoom(); return; }
     if (/^[1-4]$/.test(e.key) && needVersion(cur()) && VERS[+e.key - 1]) { e.preventDefault(); pick('version', VERS[+e.key - 1][0]); }
-    else if (/^[a-gA-G]$/.test(e.key)) { e.preventDefault(); const inp = $('#ci-other', body); inp.value = e.key.toUpperCase(); inp.focus(); }
+    else if (/^[a-gA-G]$/.test(e.key)) { e.preventDefault(); st.other = true; paint(); const inp = $('#ci-other', body); inp.value = e.key.toUpperCase(); inp.focus(); }
+    else if (e.key === '?') { e.preventDefault(); act({ dataset: { act: 'keys' } }); }
     else if (e.key === 'Enter' || e.key === 'ArrowRight') { e.preventDefault(); if (complete(cur())) next(); }
     else if (e.key === 'ArrowLeft' || e.key === 'Backspace') { e.preventDefault(); back(); }
     else if (e.key === 's' || e.key === 'S') skip();
