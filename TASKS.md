@@ -41,6 +41,7 @@ Updated: 2026-11-24
 
 ## Done today (live)
 - Add score: only running/queued jobs, compact, below the form; done/failed live in Activities
+- Singing: Vietnamese lyrics keep every letter (Unicode, NFC; the A-Z reader cut most syllables) and each syllable is read as ARPAbet for SoulX-Singer (it has no Vietnamese phonemes)
 - OMR: keep all lyrics; chords from sheet fixed (all 5 benchmark songs 100%); scores remade, old copies in Trash
 - One Day More + Home NDP lyrics fitted; Home NDP lyric-loss bug (Revert) fixed + recovered
 - Verified badge (icon) + library ✓; Tags moved; Key column; library auto-fill on add

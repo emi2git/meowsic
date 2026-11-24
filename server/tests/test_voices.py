@@ -19,7 +19,7 @@ def test_voice_choices():
 def test_default_voice_is_take_c():
     # the user's final pick: zh_target (low male) sings every language unless a voice is passed
     assert sing.VOICE == 'zh_target' and set(sing.DEFAULT_VOICE.values()) == {'zh_target'}
-    assert set(sing.DEFAULT_VOICE) == {'English', 'Chinese'}  # Vietnamese lyrics read as 'English' (Latin letters)
+    assert set(sing.DEFAULT_VOICE) == {'English', 'Chinese', 'Vietnamese'}
 
 
 def test_auto_octave_for_a_low_male_voice():
