@@ -3,16 +3,18 @@
 //   one floating dock: Crop · Move · New song here · Merge with… · Delete
 //     Crop           #/manage/pages/<id>/crop/<p>: the ORIGINAL photo with the box (cropbox.js), full screen
 //     Move           drag a page (touch: hold, then drag), or Move then tap the place it goes; ⇧← / ⇧→ on Mac
-//     New song here  a "Song 2 starts here · ✕ Remove" line before the page; Done makes each song its own sheet
-//                    (after a confirm: "Split into N sheets"); the first song keeps this sheet
+//     New song here  a "Song 2 · title · ✕" line before the page; Make sheets makes each song its own sheet
+//                    (after a confirm: "Split into N sheets"); the first song keeps this sheet. Song breaks come
+//                    only from this button: the editor opens with none (no suggested starts, stale marks cleared)
 //     Merge with…    the pages of another sheet go after these; the other one, empty then, goes to the Trash
 //     Delete         the page goes to the sheet's history (never deleted for good); the last page → Trash
 // Every change goes to the Mac at once and gets an Activities row; Undo (header) rolls the newest one back.
+// No hint text on screen: Help (next to Done / Make sheets) explains it all in a dialog.
 import { store } from '../store.js';
 import { isDesktop } from '../device.js';
 import { $, esc, iconOn, toast, sheet as modal, confirmSheet, menu } from '../ui.js';
 import { cropStage, savedBoxes, boxOf, isFull, full } from '../cropbox.js';
-import { api, plural, range, sleep, thumb, listPages, head, taps, pushAct, pushUndo, undoLast, canUndo, undoLabel, onUndo, recent } from './managekit.js';
+import { api, plural, range, sleep, thumb, listPages, head, taps, pushAct, pushUndo, undoLast, canUndo, undoLabel, onUndo, HELP_IC } from './managekit.js';
 
 let CARRY = null;  // the last crop box set (any sheet): the next page starts with it ("Use this box for the next pages")
 const carryOn = () => { try { return localStorage.getItem('meowsic-crop-carry') !== '0'; } catch { return true; } };
@@ -20,7 +22,14 @@ const carryOn = () => { try { return localStorage.getItem('meowsic-crop-carry') 
 const KEYS = [
   ['← → ↑ ↓', 'Select the next page'], ['⇧ / ⌘ click', 'Select more pages'], ['⇧← / ⇧→', 'Move the page left / right'],
   ['S / Enter', 'A new song starts here (again: not)'], ['Delete', 'Delete the selected pages (Undo brings them back)'],
-  ['C', 'Crop the page'], ['M', 'Merge with another sheet'], ['Space', 'View the page large'], ['U / ⌘Z', 'Undo'], ['Esc', 'Clear the selection'],
+  ['C', 'Crop the page'], ['M', 'Merge with another sheet'], ['Space', 'View the page large'], ['U / ⌘Z', 'Undo'], ['?', 'Help'], ['Esc', 'Clear the selection'],
+];
+const HELP = [
+  ['Select', 'Tap a page to select it; tap more pages to select them too. Hold a page, then drag it to move it.'],
+  ['Crop', 'Draw the box around the music on the page.'], ['Move', 'Then tap the place the page goes.'],
+  ['New song here', 'The selected page starts a new song. ✕ on the line takes it back.'],
+  ['Merge', 'The pages of another sheet go after these.'], ['Delete', 'The page goes to the sheet’s history.'],
+  ['Undo', 'Takes back the last change.'], ['Make sheets', 'Each song becomes its own sheet (you confirm first).'],
 ];
 
 const backOf = (id, q) => (q?.get?.('back') === 'item' ? { href: `#/item/${encodeURIComponent(id)}`, label: store.get(id)?.title || 'Back' } : { href: '#/manage/pages', label: 'Back' });
@@ -31,14 +40,12 @@ export function editorView(main, { id, q }) {
   if (store.mode !== 'server') { main.innerHTML = head({ title: 'Fix pages', sub: null }) + '<p class="mg-pad muted">Fix pages needs the Mac.</p>'; return; }
   const back = backOf(id, q);
   const st = { b: null, crops: [], sel: new Set(), anchor: null, moving: 0, alive: true, q: Promise.resolve(), saving: {}, det: {}, busy: false, drag: null, dragged: false, items: null, scan: null };
-  main.innerHTML = `<div class="mg-full pe">${head({ back: back.href, backLabel: back.label, title: store.get(id)?.title || 'Fix pages', sub: '',
-    right: `<button class="ghost pe-undo" id="pe-undo" data-act="undo" title="Undo (U)" disabled>${iconOn('undo')}<span class="hide-phone">Undo</span></button>${isDesktop() ? '<button class="ghost" data-act="help" aria-label="Keys" title="Keys">?</button>' : ''}<button class="primary pe-done" id="pe-done" data-act="done">Done</button>` })}
-    <p class="pe-banner" id="pe-banner" hidden></p>
+  main.innerHTML = `<div class="mg-full pe">${head({ back: back.href, backLabel: back.label, title: store.get(id)?.title || 'Fix pages', sub: null,
+    right: `<button class="mg-ib pe-undo" id="pe-undo" data-act="undo" title="Undo (U)" aria-label="Undo" disabled>${iconOn('undo')}</button><button class="ghost pe-help" id="pe-help" data-act="help" title="Help (?)">${HELP_IC}<span>Help</span></button><button class="primary pe-done" id="pe-done" data-act="done">Done</button>` })}
     <div class="pe-grid" id="pe-grid"><p class="muted">Loading…</p></div>
     <nav class="pe-dock" id="pe-dock" aria-label="Page actions">
-      <span class="pe-hint" id="pe-hint"></span><span class="pe-sep"></span>
       <button class="pe-tool" data-act="crop">${iconOn('crop')}<span>Crop</span></button>
-      <button class="pe-tool" data-act="move">${iconOn('move')}<span>Move</span></button>
+      <button class="pe-tool" data-act="move">${iconOn('move')}<span id="pe-movel">Move</span></button>
       <button class="pe-tool" data-act="mark">${iconOn('split')}<span class="hide-phone" id="pe-markl">New song here</span><span class="only-phone" id="pe-markp">Split</span></button>
       <button class="pe-tool" data-act="merge">${iconOn('join')}<span class="hide-phone">Merge with…</span><span class="only-phone">Merge</span></button>
       <button class="pe-tool dng" data-act="delete">${iconOn('bin')}<span>Delete</span></button>
@@ -71,7 +78,6 @@ export function editorView(main, { id, q }) {
       $('#pe-dock', main).hidden = true; st.b = null; paintHead(); return;
     }
     if (!st.alive) return;
-    recent(id);
     $('#pe-dock', main).hidden = false;
     render();
   };
@@ -84,28 +90,20 @@ export function editorView(main, { id, q }) {
   const render = () => {
     const sg = segs();
     $('.mg-t h2', main).textContent = st.b.title;
-    grid.innerHTML = sg.map((x) => (x.k === 0 ? (sg.length > 1 ? `<div class="pe-songhead">Song 1 · ${esc(nameOf(x))}</div>` : '')
-      : `<div class="pe-break" data-start="${x.start}"><span class="pe-bt">Song ${x.k + 1} starts here</span><input class="pe-title" data-title="${x.start}" value="${esc(st.b.starts[x.start] || '')}" placeholder="Title" aria-label="Title of song ${x.k + 1}" enterkeyhint="done"><small class="pe-det" data-det="${x.start}"></small><button class="ghost pe-x" data-act="unmark" data-p="${x.start}">✕ Remove</button></div>`)
+    grid.innerHTML = sg.map((x) => (x.k === 0 ? ''
+      : `<div class="pe-break" data-start="${x.start}"><span class="pe-bt">Song ${x.k + 1}</span><input class="pe-title" data-title="${x.start}" value="${esc(st.b.starts[x.start] || '')}" placeholder="Title" aria-label="Title of song ${x.k + 1}" enterkeyhint="done"><button class="mg-ib pe-x" data-act="unmark" data-p="${x.start}" title="Not a new song" aria-label="Not a new song">${iconOn('close')}</button></div>`)
       + Array.from({ length: x.end - x.start + 1 }, (_, i) => tileHtml(x.start + i)).join('')).join('');
     grid.querySelectorAll('.pe-title').forEach((inp) => {
       const p = +inp.dataset.title;
-      inp.oninput = () => { st.b.starts[p] = inp.value; det(p).typed = true; paintDet(p); saveTitle(p); };
+      inp.oninput = () => { st.b.starts[p] = inp.value; det(p).typed = true; saveTitle(p); };
       inp.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); inp.blur(); } };
       inp.onblur = () => flushTitle(p);
-      paintDet(p);
     });
     paint();
-  };
-  const paintDet = (p) => {
-    const h = grid.querySelector(`[data-det="${p}"]`); if (!h) return;
-    const d = det(p), v = (st.b.starts[p] || '').trim();
-    h.textContent = d.typed ? '' : d.state === 'busy' && !v ? 'Reading the title…' : d.state === 'fail' && !v ? 'couldn’t read the title' : '';
   };
   const paintHead = () => {
     const u = $('#pe-undo', main);
     if (u) { u.disabled = !canUndo() || st.busy; u.title = canUndo() ? `Undo ${undoLabel()} (U)` : 'Undo (U)'; }
-    const s = $('#mg-sub', main);
-    if (s && st.b) s.textContent = `${plural(n(), 'page')} · ${isDesktop() ? 'click' : 'tap'} a page to select it`;
   };
   const paint = () => {
     if (!st.b) return;
@@ -115,21 +113,18 @@ export function editorView(main, { id, q }) {
       t.classList.toggle('moving', st.moving === p);
     }
     grid.classList.toggle('pe-moving', !!st.moving);
-    const ms = marks(), one = st.sel.size === 1 ? [...st.sel][0] : 0;
-    const ban = $('#pe-banner', main);
-    ban.hidden = !ms.length && !st.moving;
-    ban.innerHTML = st.moving ? `${iconOn('move')}<span>Tap the page whose place page ${st.moving} should take. <button class="link" data-act="cancel-move">Cancel</button></span>`
-      : ms.length ? `${iconOn('split')}<span>You marked a new song at ${listPages(ms)}. <b>Done</b> will make ${ms.length === 1 ? 'it a separate sheet' : 'them separate sheets'}.</span>` : '';
-    $('#pe-hint', main).textContent = st.sel.size === 0 ? (isDesktop() ? 'Click a page' : 'Tap a page') : st.sel.size === 1 ? `Page ${one}` : `${st.sel.size} pages`;
+    const one = st.sel.size === 1 ? [...st.sel][0] : 0;
     const dock = $('#pe-dock', main), b = (a) => dock.querySelector(`[data-act="${a}"]`);
     b('crop').disabled = !st.sel.size;
-    b('move').disabled = !one || n() < 2;
+    b('move').disabled = !st.moving && (!one || n() < 2);
+    b('move').classList.toggle('on', !!st.moving);
+    $('#pe-movel', main).textContent = st.moving ? 'Cancel' : 'Move';
     b('mark').disabled = !one || one === 1;
     b('delete').disabled = !st.sel.size;
     const isStart = one > 1 && one in st.b.starts;
     $('#pe-markl', main).textContent = isStart ? 'Not a new song' : 'New song here';
     $('#pe-markp', main).textContent = isStart ? 'Unsplit' : 'Split';
-    $('#pe-done', main).textContent = 'Done';
+    $('#pe-done', main).textContent = marks().length ? 'Make sheets' : 'Done';
     paintHead();
   };
 
@@ -175,7 +170,7 @@ export function editorView(main, { id, q }) {
     const d = det(p);
     if (d.state === 'busy') return;
     if (!d.state) {
-      d.state = 'busy'; paintDet(p);
+      d.state = 'busy';
       let r = null;
       try { r = await api('GET', `/items/${encodeURIComponent(id)}/pages/${p}/title`); } catch {}
       const ok = !!(r && r.title && r.confidence >= 0.5);
@@ -186,7 +181,6 @@ export function editorView(main, { id, q }) {
       st.b.starts[p] = d.title; st.saving[p] = 0; flushTitle(p);
       const inp = grid.querySelector(`[data-title="${p}"]`); if (inp && document.activeElement !== inp) inp.value = d.title;
     }
-    paintDet(p);
   };
 
   // ---------- reorder / delete (one Activities row each) ----------
@@ -235,7 +229,7 @@ export function editorView(main, { id, q }) {
     if (!st.b) return;
     if (!st.items) { try { const r = await api('GET', '/organize'); st.items = r.items; st.scan = r.scan; } catch (e) { return toast(e.message); } }
     const sugg = (st.scan?.candidates || []).filter((c) => c.kind === 'merge' && (c.id === id || c.others?.includes(id))).flatMap((c) => [c.id, ...c.others]).filter((x) => x !== id);
-    const m = modal(`<h2>Merge with…</h2><p class="muted small">Pick the sheet whose pages come after the pages of “${esc(st.b.title)}”.</p>
+    const m = modal(`<h2>Merge with…</h2>
       <input id="pe-mq" type="search" placeholder="Find a sheet" aria-label="Find a sheet" autocomplete="off">
       <ul class="mg-rows pe-pick" id="pe-ml"></ul><div class="modal-actions"><button data-close>Cancel</button></div>`);
     const list = () => {
@@ -256,7 +250,6 @@ export function editorView(main, { id, q }) {
     const sg = segs(), made = sg.length - 1;
     const m = modal(`<h2>Split “${esc(st.b.title)}” into ${plural(sg.length, 'sheet')}?</h2>
       <ol class="pe-confirm">${sg.map((x) => `<li><b>${esc(nameOf(x))}</b> <span class="muted">${range(x.start, x.end)}${x.k === 0 ? ' · stays in this sheet' : ' · new sheet'}</span></li>`).join('')}</ol>
-      <p class="muted small">The first song keeps this sheet (its plays, notes and history). Undo puts everything back.</p>
       <div class="modal-actions"><button data-close>Not yet</button><button class="primary" data-ok>Split into ${plural(sg.length, 'sheet')}</button></div>`);
     m.el.querySelector('[data-ok]').onclick = () => busy(async () => {
       const title = st.b.title;
@@ -279,8 +272,10 @@ export function editorView(main, { id, q }) {
     m.el.querySelectorAll('[data-a]').forEach((b) => { b.onclick = () => { p = Math.max(1, Math.min(n(), p + +b.dataset.a)); show(); }; });
     show();
   };
-  const help = () => modal(`<h2>Fix pages</h2><p class="muted small">Every change is saved on the Mac at once and can be undone. Deleted pages are kept in the sheet’s history.</p>
-    <table class="pe-keys">${KEYS.map(([k, d]) => `<tr><td><kbd>${k}</kbd></td><td>${d}</td></tr>`).join('')}</table><div class="modal-actions"><button class="primary" data-close>OK</button></div>`);
+  const help = () => modal(`<div class="pe-helpdlg" id="pe-helpdlg"><h2>Fix pages</h2>
+    <dl class="pe-helpl">${HELP.map(([k, d]) => `<dt>${k}</dt><dd>${d}</dd>`).join('')}</dl>
+    ${isDesktop() ? `<table class="pe-keys">${KEYS.map(([k, d]) => `<tr><td><kbd>${k}</kbd></td><td>${d}</td></tr>`).join('')}</table>` : ''}
+    <div class="modal-actions"><button class="primary" data-close id="pe-helpx">Close</button></div></div>`);
 
   const crop = () => { const p = [...st.sel].sort((a, b) => a - b)[0]; if (!p) return; location.hash = `#/manage/pages/${encodeURIComponent(id)}/crop/${p}${q?.get?.('back') === 'item' ? '?back=item&from=editor' : ''}`; };
   const act = (el, e) => {
@@ -291,9 +286,8 @@ export function editorView(main, { id, q }) {
     if (a === 'done') return done();
     if (a === 'help') return help();
     if (a === 'unmark') return toggleMark(+el.dataset.p);
-    if (a === 'cancel-move') { st.moving = 0; return paint(); }
     if (a === 'crop') return crop();
-    if (a === 'move') { st.moving = [...st.sel][0]; return paint(); }
+    if (a === 'move') { st.moving = st.moving ? 0 : [...st.sel][0]; return paint(); }
     if (a === 'mark') return toggleMark([...st.sel][0]);
     if (a === 'merge') return mergePick();
     if (a === 'delete') return delPages();
@@ -375,22 +369,19 @@ export function editorView(main, { id, q }) {
   addEventListener('keydown', onKey);
   const offUndo = onUndo(paintHead);
 
-  // from Check suspect songs: ?mark=4,7 pre-marks the suggested song starts; ?sel=3 selects a page (back from Crop)
+  // opens with no song breaks: marks left on the Mac from an earlier visit (or old suggested starts) are cleared;
+  // ?sel=3 selects a page (back from Crop: the marks made before Crop stay)
   (async () => {
+    const sel = +q?.get?.('sel') || 0;
     await load();
     if (!st.b) return;
-    const mk = (q?.get?.('mark') || '').split(',').map(Number).filter((p) => p > 1 && p <= n() && !(p in st.b.starts));
-    const sel = +q?.get?.('sel') || 0;
-    if (q?.get?.('mark') || sel) history.replaceState(null, '', editorHash(id, q));
-    if (sel && sel <= n()) { st.sel = new Set([sel]); st.anchor = sel; paint(); focusTile(sel); }
-    if (mk.length) {
-      const prev = { ...st.b.starts };
-      for (const p of mk) st.b.starts[p] = st.b.guess?.[p] || '';
-      render(); mk.forEach(detect);
-      pushUndo('new song', () => api('POST', `/sheets/${encodeURIComponent(id)}/split`, { starts: prev }));
-      const all = { ...st.b.starts };
-      st.q = st.q.then(() => api('POST', `/sheets/${encodeURIComponent(id)}/split`, { starts: all })).catch((e) => toast(e.message));
+    if (!sel && Object.keys(st.b.starts || {}).length) {
+      st.b.starts = {};
+      st.q = api('POST', `/sheets/${encodeURIComponent(id)}/split`, { starts: {} }).catch(() => {});
+      render();
     }
+    if (q?.get?.('sel') || q?.get?.('mark')) history.replaceState(null, '', editorHash(id, q));
+    if (sel && sel <= n()) { st.sel = new Set([sel]); st.anchor = sel; paint(); focusTile(sel); }
   })();
   paintHead();
   return () => { st.alive = false; flushAll(); offTaps(); offUndo(); removeEventListener('keydown', onKey); removeEventListener('pointermove', pmove); removeEventListener('pointerup', pup); st.drag?.ghost.remove(); };
@@ -403,12 +394,12 @@ export function cropView(main, { id, page, q }) {
   const leave = (p) => { location.hash = toItem ? `#/item/${encodeURIComponent(id)}` : editorHash(id, q, p ? `sel=${p}` : ''); };
   const st = { info: null, p: page, stage: null, ver: store.get(id)?.updatedAt || 0, working: false, alive: true, boxes: null };
   const cancelHref = toItem ? `#/item/${encodeURIComponent(id)}` : editorHash(id, q, `sel=${page}`);
-  main.innerHTML = `<div class="mg-full pe-crop">${head({ back: cancelHref, backLabel: 'Cancel', title: 'Crop', sub: 'Drag the corners or edges',
+  main.innerHTML = `<div class="mg-full pe-crop">${head({ back: cancelHref, backLabel: 'Cancel', title: 'Crop', sub: null,
     right: '<button id="cr-ok" data-act="ok" title="Crop this page">Crop</button><button id="cr-oknext" class="primary" data-act="next" title="Crop and go to the next page (Enter)">Crop &amp; next ›</button>' })}
     <div class="cu-stage pe-cstage" id="cr-stage"><p class="muted">Loading…</p></div>
     <div class="pe-cbar">
       <label class="pe-toggle"><input type="checkbox" id="cr-carry" ${carryOn() ? 'checked' : ''}><span class="pe-sw" aria-hidden="true"></span><span>Use this box for the next pages</span></label>
-      <span class="grow"></span><span class="muted small pe-from" id="cr-from"></span>
+      <span class="grow"></span>
       <button data-act="boxes" id="cr-boxes">Saved boxes</button>
       <button data-act="whole" id="cr-whole" title="Whole page (W)">Whole page</button>
       <button class="ghost" data-act="orig" id="cr-orig" title="The photo as it came in" hidden>Back to original photo</button>
@@ -417,7 +408,7 @@ export function cropView(main, { id, page, q }) {
   const show = () => {
     const p = st.p, pi = st.info[p - 1];
     const [box, from] = pi.crop ? [pi.crop, 'Cropped'] : CARRY && carryOn() ? [CARRY, 'Same box as the last page'] : pi.suggest ? [pi.suggest, 'Suggested'] : [full(), 'Whole page'];
-    st.stage = cropStage($('#cr-stage', main), { src: `/api/items/${encodeURIComponent(id)}/pages/${p}/original?v=${st.ver}`, box, from, onChange: (_, f) => { const el = $('#cr-from', main); if (el) el.textContent = f; } });
+    st.stage = cropStage($('#cr-stage', main), { src: `/api/items/${encodeURIComponent(id)}/pages/${p}/original?v=${st.ver}`, box, from, onChange: (_, f) => { const el = $('#cr-stage', main); if (el) el.dataset.from = f; } });  // where the box came from: data-from (no label on screen)
     $('.mg-t h2', main).innerHTML = `<span class="hide-phone">Crop page </span>${p} of ${total()}`;
     $('#cr-orig', main).hidden = !pi.trims;
     $('#cr-oknext', main).innerHTML = p < total() ? 'Crop &amp; next ›' : 'Crop &amp; finish';

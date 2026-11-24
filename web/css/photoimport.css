@@ -36,13 +36,6 @@ body[data-view="add-photos"] .pi-top { flex: none; }
 .pi.crop .cu-stage { flex: 1; }
 .pi-strip { flex: none; }
 .pi-done { padding-top: 24px; } .pi-made { padding-left: 20px; } .pi-made li { margin: 6px 0; font-size: 16px; }
-/* Manage library → Split songs (cleanup-books.js in 'sheets' mode): laid out like Books → sheets, plus the Mac's suggested starts */
-.cu.songsplit { display: flex; flex-direction: column; flex: 1; min-height: 0; }
-.bs-bar .grow { flex: 1; }
-.bs-grid figure.suggested .bs-pg { border: 3px dashed var(--acc); }
-.bs-grid figure.suggested .bs-flag { background: var(--acc); }
-.bs-list li .bs-sev { color: var(--ink2); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bs-list li.several { border-left: 4px solid var(--warn); }
 .pi-from { margin-bottom: 14px; text-decoration: none; color: inherit; text-align: left; gap: 14px; }
 .pi-from b { font-size: 18px; }
 @media (max-width: 760px) {
