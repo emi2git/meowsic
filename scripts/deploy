@@ -1,0 +1,123 @@
+#!/bin/zsh
+# Deploy origin/v2 to the live app (~/git/apps/meowsic), from any checkout:   ~/git/apps/meowsic/scripts/deploy
+# (the whole script is read before it runs, so the fast-forward may safely replace this very file)
+#
+#   1. refuses unless the live checkout is on branch v2 with a clean tree (no edits, no untracked files)
+#   2. git fetch + merge --ff-only origin/v2 (never a real merge here: merges happen in worktrees)
+#   3. backs up the DB (backups/pre-deploy-<time>.db, sqlite online backup) whenever something changed
+#   4. restarts the server only when server/ differs from the code the running server started with
+#      (health's serverSha; refuses while a job is running unless --force)
+#   5. health check: /api/health answers, sha = HEAD, shell = web/sw.js's cache name, /sw.js serves it
+# Safe to run again: with nothing new it only re-checks (and restarts if an earlier run left old server code).
+#
+#   scripts/deploy             deploy
+#   scripts/deploy --dry-run   say what would happen, change nothing
+#   scripts/deploy --check     health check only
+#   scripts/deploy --restart   restart even if server/ did not change
+#   scripts/deploy --force     restart even while a job is running (the job is marked failed on start)
+# (MEOWSIC_DEPLOY_LIVE / _DATA / _PORT override the three places, only for testing this script on a copy)
+emulate -L zsh
+setopt err_exit pipe_fail no_unset
+typeset -g SELF=${0:A}
+
+main() {
+  local LIVE=${MEOWSIC_DEPLOY_LIVE:-$HOME/git/apps/meowsic} DATA=${MEOWSIC_DEPLOY_DATA:-$HOME/Documents/Meowsic}
+  local PORT=${MEOWSIC_DEPLOY_PORT:-5180}
+  local CA=$HOME/Documents/Meowsic/certs/meowsic-ca.pem URL=https://localhost:$PORT
+  local dry=0 check=0 force_restart=0 force=0 a
+  for a in "$@"; do
+    case $a in
+      --dry-run) dry=1 ;; --check) check=1 ;; --restart) force_restart=1 ;; --force) force=1 ;;
+      -h|--help) sed -n '2,18p' "$SELF"; return 0 ;;
+      *) print -u2 "unknown option $a"; return 2 ;;
+    esac
+  done
+  say() { print -- "deploy: $*"; }
+  die() { print -u2 -- "deploy: REFUSED: $*"; exit 1; }
+  health() { curl -fsS --max-time 4 --cacert "$CA" "$URL/api/health" 2>/dev/null; }
+  field() { /usr/bin/python3 -c "import json,sys; print(json.load(sys.stdin).get('$1') or '')" 2>/dev/null; }
+  sw_shell() { sed -nE "s/^const SHELL = '([^']+)'.*/\1/p" "$LIVE/web/sw.js"; }
+
+  cd "$LIVE"
+
+  if (( check )); then do_check; return; fi
+
+  [[ $(git branch --show-current) == v2 ]] || die "the live checkout is not on branch v2"
+  [[ -z $(git status --porcelain) ]] || { git status --short | head -20 >&2; die "the live tree is dirty (above); never edit or merge in the live folder"; }
+
+  git fetch -q origin v2
+  local old=$(git rev-parse HEAD) new=$(git rev-parse origin/v2)
+  if [[ $old != $new ]]; then
+    git merge-base --is-ancestor "$old" "$new" || die "origin/v2 is not a fast-forward of the live HEAD (${old[1,12]}); fix v2 in a worktree"
+  fi
+
+  # what the running server started with: its serverSha (older servers do not say: then the old HEAD)
+  local h=$(health || true) ran
+  ran=$(print -r -- "$h" | field serverSha)
+  [[ -n $ran ]] && git cat-file -e "${ran}^{commit}" 2>/dev/null || ran=$old
+  local restart=0 why=''
+  if (( force_restart )); then restart=1; why='asked'
+  elif [[ -z $h ]]; then restart=1; why='the server does not answer'
+  elif ! git diff --quiet "$ran" "$new" -- server/; then restart=1; why="server/ changed since ${ran[1,12]}"
+  fi
+  local webchg=0
+  git diff --quiet "$old" "$new" -- web/ || webchg=1
+  local oldshell=$(git show "${old}:web/sw.js" | sed -nE "s/^const SHELL = '([^']+)'.*/\1/p")
+  local newshell=$(git show "${new}:web/sw.js" | sed -nE "s/^const SHELL = '([^']+)'.*/\1/p")
+
+  say "live ${old[1,12]} -> origin/v2 ${new[1,12]} ($(git rev-list --count $old..$new) commit(s)); web changed: $webchg; restart: $restart${why:+ ($why)}"
+  (( webchg )) && [[ $oldshell == $newshell ]] && say "WARNING: web/ changed but the shell cache is still $newshell: bump SHELL in web/sw.js if index.html / css / icons changed"
+  if (( dry )); then say "dry run: nothing changed"; return 0; fi
+
+  if [[ $old != $new ]] || (( restart )); then
+    local stamp=$(date +%Y%m%d-%H%M%S) dest
+    dest=$DATA/backups/pre-deploy-$stamp.db
+    mkdir -p "$DATA/backups"
+    /usr/bin/python3 -c "import sqlite3,sys; s=sqlite3.connect(sys.argv[1]); d=sqlite3.connect(sys.argv[2]); s.backup(d); d.close(); s.close()" "$DATA/meowsic.db" "$dest"
+    [[ -s $dest ]] || die "the DB backup failed ($dest)"
+    say "DB backed up: $dest"
+  fi
+  if [[ $old != $new ]]; then git merge -q --ff-only "$new"; say "fast-forwarded to ${new[1,12]}"; fi
+
+  if (( restart )); then
+    if [[ -n $h ]] && (( ! force )); then
+      local running=$(curl -fsS --max-time 4 --cacert "$CA" "$URL/api/jobs" | /usr/bin/python3 -c "import json,sys; print(sum(j.get('status') in ('running','queued') for j in json.load(sys.stdin)))" 2>/dev/null || print 0)
+      (( running == 0 )) || die "$running job(s) running: the code is in place, run again when they finish (or --force)"
+    fi
+    local pids=(${(f)"$(lsof -nP -iTCP:$PORT -sTCP:LISTEN -t 2>/dev/null || true)"}) p
+    for p in $pids; do
+      ps -o command= -p $p | grep -q -- '-m meowsic' || die "port $PORT is held by something else (pid $p): $(ps -o command= -p $p)"
+      kill $p 2>/dev/null || true
+    done
+    for p in $pids; do
+      local i=0; while kill -0 $p 2>/dev/null && (( i++ < 30 )); do sleep 0.5; done
+      if kill -0 $p 2>/dev/null; then kill -9 $p 2>/dev/null || true; fi
+    done
+    mkdir -p "$DATA/work"
+    (cd server && MEOWSIC_PORT=$PORT MEOWSIC_DATA=$DATA nohup ./start.sh >> "$DATA/work/server.log" 2>&1 &)
+    say "server restarted (log $DATA/work/server.log)"
+  fi
+  do_check
+}
+
+do_check() {
+  local i h='' head=$(git rev-parse --short=12 HEAD)
+  # up to 30 s: a restart takes a few seconds, and health re-reads the sha at most every 5 s
+  for i in {1..60}; do h=$(health || true); [[ -n $h && $(print -r -- "$h" | field sha) == $head ]] && break; sleep 0.5; done
+  [[ -n $h ]] || { print -u2 "deploy: FAILED: $URL/api/health does not answer (log $DATA/work/server.log)"; exit 1; }
+  local shell=$(sw_shell) bad=0
+  local sha=$(print -r -- "$h" | field sha) ssha=$(print -r -- "$h" | field serverSha) hshell=$(print -r -- "$h" | field shell)
+  [[ $sha == $head ]] || { print -u2 "deploy: health sha '$sha' != HEAD $head"; bad=1; }
+  [[ $hshell == $shell ]] || { print -u2 "deploy: health shell '$hshell' != web/sw.js $shell"; bad=1; }
+  curl -fsS --max-time 4 --cacert "$CA" "$URL/sw.js" | grep -q "'$shell'" || { print -u2 "deploy: /sw.js does not serve $shell"; bad=1; }
+  if [[ -n $ssha ]] && ! git diff --quiet "$ssha" HEAD -- server/; then print -u2 "deploy: the running server is older than server/ (started at $ssha): run with --restart"; bad=1; fi
+  local ip=$(ipconfig getifaddr en0 2>/dev/null || true)
+  if [[ -n $ip ]]; then
+    curl -fsS --max-time 4 --cacert "$CA" "https://$ip:$PORT/api/health" >/dev/null 2>&1 && print "deploy: LAN https://$ip:$PORT ok" || print "deploy: note: https://$ip:$PORT did not answer (certificate or Wi-Fi?)"
+  fi
+  (( bad == 0 )) || { print -u2 "deploy: FAILED health check"; exit 1; }
+  print "deploy: OK  sha $sha  serverSha ${ssha:-?}  shell $hshell"
+}
+
+main "$@"
+exit $?

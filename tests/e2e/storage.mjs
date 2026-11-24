@@ -10,6 +10,7 @@ import fs from 'fs';
 import { spawn } from 'child_process';
 const BASE = process.env.BASE || 'http://localhost:5228/';
 const PREVIEW = process.env.PREVIEW, SERVER = process.env.SERVER;
+const SHELL = fs.readFileSync(new URL('../../web/sw.js', import.meta.url), 'utf8').match(/const SHELL = '([^']+)'/)[1]; // the shell cache name now
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let srv;
 const up = async () => { try { return (await fetch(BASE + 'api/health')).ok; } catch { return false; } };
@@ -115,7 +116,7 @@ try {
   const cl = await saved();
   check('Clear: no saved pages left', !cl.urls.some((x) => /\/(pages|thumb|file)\//.test(x.url)), JSON.stringify(cl.urls));
   check('Clear: Settings says 0 pages', /^0 pages/.test(await page.$eval('#st-pages', (e) => e.textContent)));
-  const kept = await page.evaluate(async () => ({ shell: await caches.has('meowsic-shell-v3'), items: (await import('/js/store.js')).store.items().length, list: !!localStorage.getItem('meowsic-cache-v1') }));
+  const kept = await page.evaluate(async (SHELL) => ({ shell: await caches.has(SHELL), items: (await import('/js/store.js')).store.items().length, list: !!localStorage.getItem('meowsic-cache-v1') }), SHELL);
   check('Clear keeps the app shell and the library list', kept.shell && kept.items > 0 && kept.list, JSON.stringify(kept));
 
   // ---- the UI preview (no Mac): Settings shows the card too ----

@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""A test server for this checkout: free port above 5300, its own temp data folder (never ~/Documents/Meowsic).
+
+  scripts/dev-server                 real server, empty temp library; prints the URL; Ctrl-C stops it
+  scripts/dev-server --data DIR      reuse a data folder (e.g. a COPY of the live one: cp -c is instant on APFS)
+  scripts/dev-server --port 5401     a fixed port
+  scripts/dev-server --preview       the static UI preview instead (serve.py; open <url>/?preview=1)
+
+The temp folder is kept when the server stops (its path is printed) so a failed test can be looked at.
+"""
+import argparse
+import signal
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import meowsic_dev as dev  # noqa: E402
+
+ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+ap.add_argument('--data')
+ap.add_argument('--port', type=int)
+ap.add_argument('--preview', action='store_true')
+a = ap.parse_args()
+if a.port and a.port <= 5300: sys.exit('use a port above 5300 (5180 is the live app)')
+if a.preview:
+    p = dev.preview(a.port)
+    print(f'UI preview: {p.url}?preview=1   (log {p.log})', flush=True)
+else:
+    p = dev.server(a.data, a.port)
+    print(f'Server: {p.url}   data: {p.data}   log: {p.log}', flush=True)
+signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+try:
+    while p.p.poll() is None: time.sleep(1)
+    print(f'server stopped (exit {p.p.returncode}); log: {p.log}')
+except (KeyboardInterrupt, SystemExit):
+    pass
+finally:
+    p.stop()

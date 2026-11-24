@@ -1,6 +1,6 @@
 # Meowsic 2.0 — work log
 
-Read this first when resuming. Newest entries at the bottom. Task list with status: TASKS.md.
+History of the first build days (Nov 23, newest at the bottom), kept for the reasons behind early choices. Read CLAUDE.md first; current tasks: TASKS.md; later history: git log.
 
 ## 2026-11-23 01:20 — user away ~8 h, asked me to finish everything
 State:

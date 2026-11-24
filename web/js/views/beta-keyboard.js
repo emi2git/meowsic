@@ -100,6 +100,7 @@ function fallbackSong() {
 }
 
 async function fetchSong() {
+  if (new URLSearchParams(location.search).has('preview')) return fallbackSong(); // UI preview: no Mac, no real song
   try {
     const r = await fetch(`/api/items/${SONG_ID}/musicxml`);
     if (!r.ok) throw new Error(String(r.status));
@@ -493,14 +494,12 @@ export function render(el, _ctx = {}) {
     piano.destroy();
   };
 }
-export const betaKeyboardView = render;
 export default render;
 
 // ---------- the steps (each returns its clean-up) ----------
 // the lowest keys as length keys, from a C: C D E F G = 1 1/2 1/4 1/8 1/16, A = rest, C# = dot, D# = tie
 // FN_KEYS / FN_BASES: midi.js
 // ---------- hold to set length (thresholds, calibration: midi.js) ----------
-export const nearestLen = (beats) => pickLen(beats, true); // kept for older callers
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 // a quiet metronome tick at audio time `when`; returns a stopper
 function softClick(when, accent = false, gain = 0.07) {

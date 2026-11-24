@@ -1,29 +1,19 @@
 # Meowsic 2.0
 
-One app for all sheet music, chord charts and scores: the old iPad Meowsic, Emi Songbook and
-Emi Music Note in one. A web app (PWA) served from the Mac, used on Mac, iPad and iPhone.
+One app for all the family's sheet music, chord charts, books and scores. It replaces the old iPad Meowsic, Emi Songbook and Emi
+Music Note. It is a web app (PWA) served from the Mac over HTTPS, used on the Mac, iPad and iPhone, and it works offline
+with what was opened before.
 
-**Status: phase 1 — UI with mock data.** Nothing talks to a server yet; changes are kept in the
-browser only (Settings → Reset mock data). The old iPad app is kept as git tag `v1`.
+- **Read and play**: sheets and books page by page, chord charts in any key with piano / ukulele shapes, scores drawn and
+  played on piano, with zoom per device, kids note names, ink and printing.
+- **Add music**: photos or PDFs, the Photos album, chord search, a recording or link turned into a score, or a sheet
+  read into a score (beta).
+- **Edit**: Edit notes (notes, rests, bars, staves, repeats, lyrics, MIDI keyboard), Simple piano versions, Check bars.
+- **Manage library**: fix pages and crops, split / join songs, books, complete song info, Trash. Every change has Undo for 24 hours.
+- Everything stays on this Mac. All AI runs offline, and nothing is sent to outside services.
 
-## Run the UI preview
+Open https://localhost:5180 on the Mac, or https://192.168.1.50:5180 on the iPad / iPhone (they trust the Meowsic
+certificate once). `~/Applications/Meowsic.app` starts the server if it is not running.
 
-    python3 serve.py        (port 5180, caching off)
-
-Open http://localhost:5180 on the Mac, or http://<mac-name>.local:5180 on an iPad / iPhone on
-the same Wi-Fi. The microphone (tuner) needs https, which arrives with the server in phase 2.
-
-## Layout
-
-    web/
-      index.html, css/app.css, manifest.webmanifest, icon.svg
-      js/app.js          shell + router (sidebar on iPad/Mac, tab bar on iPhone)
-      js/store.js        mock store (phase 2 swaps this for the Mac server + offline cache)
-      js/mock.js         mock library (public-domain lyrics and tunes; drawn sheet pages)
-      js/chords.js       chord parsing, transpose, ukulele shapes (from Emi Songbook)
-      js/chordchart.js   chord charts: easiest key, rendering
-      js/musicxml.js     mock scores: MusicXML + playback notes
-      js/audio.js        piano playback, metronome, tuner
-      js/views/          library, item viewers, performance, add, organize, print, stats/tools/settings
-      vendor/            OpenSheetMusicDisplay, Salamander piano samples (CC BY 3.0)
-
+**For engineers and Claude sessions: read [CLAUDE.md](CLAUDE.md) first.** It covers where things live, how to run, test
+and deploy, and the rules. More: [docs/architecture.md](docs/architecture.md), [TASKS.md](TASKS.md), [WORKLOG.md](WORKLOG.md).

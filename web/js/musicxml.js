@@ -104,8 +104,6 @@ export const VERSIONS = { original: 'Original', clear: 'Simple Piano', lead: 'Le
 Object.defineProperty(VERSIONS, 'easy', { value: 'Piano easy', enumerable: false });
 // no longer offered; old scores keep their label
 for (const [k, v] of Object.entries({ vocal: 'Piano + vocals', duet: 'Piano duet', accomp: 'Piano accompaniment', pro: 'Piano pro' })) Object.defineProperty(VERSIONS, k, { value: v, enumerable: false });
-export const VERSION_HELP = { original: 'What is played in the recording, both hands', vocal: 'Melody with lyrics above the piano', lead: 'Melody, lyrics and chord names',
-  duet: 'Two players: melody up high, accompaniment below', accomp: 'Only the accompaniment, no melody', clear: 'Both hands as written, one note at a time (the top note on the right, the bass note on the left)', pro: 'Fuller chords for advanced players' };
 
 export function musicXml(tune, version) {
   if (version === 'lead') return head(tune.title, ['Melody']) + `<part id="P1">${melodyPart(tune, { harmony: true, lyrics: true })}</part></score-partwise>`;

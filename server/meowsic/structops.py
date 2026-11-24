@@ -21,7 +21,12 @@ import math
 import xml.etree.ElementTree as ET
 from fractions import Fraction as Fr
 
-from fastapi import HTTPException
+try:
+    from fastapi import HTTPException
+except ImportError:  # sing/sing.py reads scores (singscore -> unroll) in SoulX-Singer's venv, which has no fastapi
+    class HTTPException(Exception):
+        def __init__(self, status_code, detail=''):
+            super().__init__(detail); self.status_code, self.detail = status_code, detail
 
 OPS = ('pickup', 'keysig', 'timesig', 'repeat', 'ending')
 

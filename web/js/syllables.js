@@ -131,12 +131,3 @@ export function syllabify(text, lang = 'auto') {
   return out;
 }
 
-// text for the box from syllables: words joined by spaces, syllables by "-"
-export function syllablesText(syls) {
-  let s = '';
-  for (const x of syls) {
-    s += x.text;
-    s += x.syllabic === 'begin' || x.syllabic === 'middle' ? '-' : ' ';
-  }
-  return s.trim();
-}

@@ -15,7 +15,6 @@ export const chordsMode = () => { try { const m = localStorage.getItem(KEY); ret
 export const setChordsMode = (m) => { try { localStorage.setItem(KEY, MODES.includes(m) ? m : 'off'); } catch {} };
 export const nextMode = (m) => MODES[(MODES.indexOf(m) + 1) % MODES.length];
 export const MODE_LABEL = { piano: 'Piano chords', uke: 'Ukulele chords', off: 'Chords off' };
-export const ukeOn = () => chordsMode() === 'uke';
 
 export const baseChord = (name) => String(name || '').replace(/\s+/g, '').replace(/\/.*$/, '');
 

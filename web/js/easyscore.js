@@ -11,10 +11,8 @@ const NAT = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const ACC = { '-2': '𝄫', '-1': '♭', 0: '', 1: '♯', 2: '𝄪' };
 const SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif";
 
-// off by default; the toggle is remembered on this device, for every score (`it` unused, kept for callers)
-export const isAiScore = (it) => !!it.ai || /^meowsic ai$/i.test(String(it.source || '').trim());
+// note-name stems (kids): off by default; the toggle is remembered on this device, for every score
 export const KIDS_KEY = 'meowsic-kids';
-export const easyKey = () => KIDS_KEY;
 export function easyOn() {
   try { return localStorage.getItem(KIDS_KEY) === '1'; } catch { return false; }
 }
@@ -67,17 +65,6 @@ function growHeads(vf, grow) {
       try { return draw.call(this); } finally { this.glyph = gl; }
     };
   }
-}
-
-// the credit line ("Words and Music by …"): the MusicXML creator, composer first, shown as given
-// (Meowsic's own "Transcribed by Meowsic" / "Made by Meowsic" line is not the song's credit)
-export function creditOf(xmlText) {
-  if (!xmlText) return '';
-  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-  const cs = [...doc.querySelectorAll('identification > creator')].filter((x) => !/^(made|transcribed|arranged|read) by meowsic$/i.test(x.textContent.trim()));
-  const c = cs.find((x) => x.getAttribute('type') === 'composer') || cs[0];
-  const t = (c?.textContent || '').trim();
-  return /^music21$/i.test(t) ? '' : t === 'Meowsic AI' ? 'Meowsic' : t; // music21's default stamp is not a credit; the old name reads "Meowsic"
 }
 
 // what Meowsic did, drawn small on a score: Arranged (a version made from another score), Read (photo → score),
@@ -175,7 +162,6 @@ export function snapHarmonies(doc) {
   }
   return moved;
 }
-export const hasChordSymbols =(xml) => /<harmony[\s>]/.test(xml || '');
 
 // every graphical note of the drawn score, staff by staff (tab staves left out)
 function* graphicalNotes(osmd) {
@@ -329,35 +315,6 @@ export function keyboardSvg(name, { scale = 1 } = {}) {
   return { width: width * scale, height: height * scale, inner: s, svg: `<svg class="kbd" data-chord="${esc(name)}" data-notes="${esc((v || []).map((n) => n.name).join(' '))}" width="${(width * scale).toFixed(1)}" height="${(height * scale).toFixed(1)}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">${s}</svg>` };
 }
 
-// the keyboard row drawn into OSMD's first page, in the room left under the title
-// (TitleBottomDistance += KBD_ROOM when laying out). Screen and print.
-export const KBD_ROOM = 10; // OSMD units (10 svg units each) kept free under the title
-export const PRINT_ROOM = KBD_ROOM;
-export function drawKeyboardRow(osmd, svg, { title } = {}) {
-  svg.querySelector(':scope > g.easy-kbd-row')?.remove();
-  const chords = chordsOf(osmd);
-  if (!chords.length) return 0;
-  const t = [...svg.querySelectorAll('text')].find((x) => x.textContent.trim() === String(title || osmd.Sheet?.TitleString || '').trim());
-  const vb = (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number);
-  const W = vb[2] || +svg.getAttribute('width') || 794;
-  let y = 60;
-  if (t) { const bb = t.getBBox(); y = bb.y + bb.height + 8; }
-  const ks = chords.map((c) => ({ c, ...keyboardSvg(c) }));
-  const gap = 16, sum = ks.reduce((a, k) => a + k.width, 0);
-  const room = KBD_ROOM * 10 - 6;
-  const scale = Math.min(room / ks[0].height, (W * 0.9 - gap * Math.max(0, ks.length - 1)) / Math.max(1, sum));
-  const total = sum * scale + gap * Math.max(0, ks.length - 1);
-  let x = (W - total) / 2, out = '';
-  for (const k of ks) {
-    out += `<g class="kbd" data-chord="${esc(k.c)}" data-notes="${esc((chordVoicing(k.c) || []).map((n) => n.name).join(' '))}" transform="translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${scale.toFixed(3)})">${k.inner}</g>`;
-    x += k.width * scale + gap;
-  }
-  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  g.setAttribute('class', 'easy-kbd-row');
-  g.innerHTML = out;
-  svg.append(g);
-  return chords.length;
-}
 export function decoratePrintPage(osmd) {
   drawNoteLetters(osmd);
 }

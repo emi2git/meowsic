@@ -1,4 +1,5 @@
-"""Jobs (transcriptions, "make another version", AI tag suggestions, photo → score, lyrics from a sheet) with a pluggable runner.
+"""Jobs (transcriptions, AI tag suggestions, photo → score, lyrics from a sheet, singing; kind 'version' = another
+arrangement of a score, no longer offered in the UI) with a pluggable runner.
 
 A runner is `fn(ctx: JobContext)`, run on its own thread (`app.state.job_runner`; the real ones are in
 runners.py, `stub_runner` just says the engine is not installed).

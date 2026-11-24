@@ -1,6 +1,6 @@
 // print a real score: notation laid out on A4 pages (temp server :5190)
 import puppeteer from 'puppeteer-core';
-const BASE = 'http://localhost:5190/';
+const BASE = process.env.BASE || 'http://localhost:5190/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });
 const page = await b.newPage(); await page.setViewport({ width: 1440, height: 900 });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));

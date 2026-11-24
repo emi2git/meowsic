@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""Run every test: pytest (server/tests) and the e2e suites (tests/e2e), each e2e suite against its own fresh
+server or UI preview on a free port above 5300 with a temp data folder. Prints a summary; exit 1 if anything failed.
+
+  scripts/test-all                 pytest + the main suites (MAIN below), 4 at a time
+  scripts/test-all flows menus     only these e2e suites (no pytest)
+  scripts/test-all --no-pytest     the main suites only
+  scripts/test-all -j 6            6 suites at a time
+  scripts/test-all --smoke         pytest + flows.mjs only (= scripts/test-smoke)
+  scripts/test-all --every         every suite, also the extra ones
+  scripts/test-all --list          what each suite needs
+
+Logs and screenshots go to a temp folder (printed at the end). Never touches ~/Documents/Meowsic or :5180.
+"""
+import argparse
+import concurrent.futures as cf
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import meowsic_dev as dev  # noqa: E402
+
+E2E = dev.REPO / 'tests' / 'e2e'
+
+# suite -> how it runs. 'preview' = serve.py (sample data, ?preview=1); 'server' = a fresh temp server;
+# 'restart' = the test stops / starts the server itself (gets SERVER = the shell command); env = extra env.
+SUITES = {
+    'flows': 'preview', 'keycolumn': 'preview', 'playback': 'preview', 'scorezoom': 'preview', 'topcast': 'preview',
+    'touchseek': 'preview', 'betakeyboard': 'preview',
+    'activities': 'server', 'addchords': 'server', 'addmusic': 'server', 'aimusic': 'server', 'books': 'server',
+    'booksplit': 'server', 'checkbars': 'server', 'completeinfo': 'server', 'dailycleanup': 'server', 'easyscore': 'server',
+    'editnotes': 'server', 'feedback': 'server', 'jobs': 'server', 'langtoggle': 'server', 'libversion': 'server',
+    'lyricmode': 'server', 'manage': 'server', 'menus': 'server', 'metadata': 'server', 'midiedit': 'server',
+    'notenames': 'server', 'organizepages': 'server', 'photoimport': 'server', 'quickfeedback': 'server', 'real': 'server',
+    'realedit': 'server', 'renameopen': 'server', 'resync': 'server', 'simplepiano': 'server', 'swipeclose': 'server',
+    'textinput': 'server', 'touchfill': 'server', 'touchlib': 'server', 'touchpages': 'server', 'touchview': 'server',
+    'verified': 'server', 'voice': 'server',
+    'omr': 'server', 'printscore': 'server',
+    'offline': 'restart', 'storage': 'restart',
+}
+# not run here: reallib (read-only look at the LIVE library), renderall (every score of a library: point BASE at a
+# copy), shots (screenshots for a human to look at).
+OK_RX = re.compile(r'(\d+)\s+passed,\s+(\d+)\s+failed')
+
+
+def run_suite(name, out_dir, timeout):
+    kind = SUITES[name]
+    log = out_dir / f'{name}.log'
+    shots = out_dir / f'{name}-shots'; shots.mkdir(exist_ok=True)
+    t0 = time.time()
+    env = {**os.environ, 'SHOTS': str(shots), 'OUT': str(shots)}
+    procs = []
+    try:
+        if kind == 'preview':
+            pv = dev.preview(log_dir=out_dir); procs.append(pv)
+            env.update(PREVIEW=pv.url.rstrip('/'), PORT=str(pv.port), BASE=pv.url.rstrip('/') if name != 'textinput' else '')
+        else:
+            data = dev.temp_data(f'e2e-{name}')
+            senv = {}
+            if name == 'photoimport':  # a fake Photos album instead of the real one
+                album = out_dir / 'fake-album'
+                if not album.exists(): subprocess.run([sys.executable, str(E2E / 'make_fake_album.py'), str(album)], check=True, capture_output=True)
+                senv['MEOWSIC_FAKE_PHOTOS'] = str(album)
+            port = dev.free_port()
+            base = f'http://127.0.0.1:{port}/'
+            env.update(BASE=base, FILL_BASE=base, TOUCH_BASE=base, DATA=str(data), MDATA=str(data), DB=str(data / 'meowsic.db'))
+            if kind == 'restart':
+                env['SERVER'] = (f'cd {dev.SERVER} && MEOWSIC_CERT= MEOWSIC_KEY= exec {dev.PY} -m meowsic --host 127.0.0.1 '
+                                 f'--port {port} --data {data} >> {out_dir / (name + "-server.log")} 2>&1')
+            else:
+                procs.append(dev.server(data, port, log_dir=out_dir, env=senv))
+        with open(log, 'w') as f:
+            try:
+                r = subprocess.run(['node', f'{name}.mjs'], cwd=E2E, env=env, stdout=f, stderr=subprocess.STDOUT, timeout=timeout)
+                code = r.returncode
+            except subprocess.TimeoutExpired:
+                code = 'timeout'
+    except Exception as e:
+        log.write_text(f'setup failed: {e}\n'); code = 'setup'
+    finally:
+        for p in procs: p.stop()
+        if kind == 'restart': subprocess.run(['pkill', '-f', f'--data {env.get("DATA", "@@none")}'], capture_output=True)
+    text = log.read_text(errors='ignore')
+    m = OK_RX.findall(text)
+    passed, failed = (int(m[-1][0]), int(m[-1][1])) if m else (None, None)
+    ok = code == 0 and not failed
+    return {'name': name, 'ok': ok, 'code': code, 'passed': passed, 'failed': failed, 'secs': time.time() - t0, 'log': log}
+
+
+def pytest(out_dir):
+    t0 = time.time()
+    log = out_dir / 'pytest.log'
+    with open(log, 'w') as f:
+        r = subprocess.run([str(dev.PY), '-m', 'pytest', '-q'], cwd=dev.SERVER, stdout=f, stderr=subprocess.STDOUT)
+    tail = log.read_text().strip().splitlines()[-1:] or ['']
+    return {'name': 'pytest', 'ok': r.returncode == 0, 'code': r.returncode, 'summary': tail[0], 'secs': time.time() - t0, 'log': log}
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('suites', nargs='*')
+    ap.add_argument('--no-pytest', action='store_true')
+    ap.add_argument('-j', type=int, default=4)
+    ap.add_argument('--timeout', type=int, default=900, help='seconds per suite')
+    ap.add_argument('--every', action='store_true', help='every suite in SUITES, not only MAIN')
+    ap.add_argument('--list', action='store_true')
+    ap.add_argument('--smoke', action='store_true', help='pytest + flows only (scripts/test-smoke)')
+    ap.add_argument('--no-retry', dest='retry', action='store_false', help='no second go for a failed suite')
+    a = ap.parse_args()
+    if a.list:
+        for n, k in SUITES.items(): print(f'{n:14} {k:8} {"main" if n in MAIN else "extra: needs a library copy (BASE), or slow"}')
+        return 0
+    names = ['flows'] if a.smoke else a.suites or (list(SUITES) if a.every else MAIN)
+    bad = [n for n in names if n not in SUITES]
+    if bad: sys.exit(f'unknown suite(s): {", ".join(bad)} (see --list)')
+    out = Path(tempfile.mkdtemp(prefix='meowsic-test-'))
+    print(f'logs: {out}')
+    results = []
+    def show(r):
+        what = r.get('summary') or (f"{r['passed']} passed, {r['failed']} failed" if r.get('passed') is not None else f"exit {r['code']}")
+        print(f"  {'ok  ' if r['ok'] else 'FAIL'} {r['name']:14} {what}  ({r['secs']:.0f} s)", flush=True)
+    with cf.ThreadPoolExecutor(max(1, a.j) + 1) as ex:
+        futs = [] if (a.no_pytest or (a.suites and not a.smoke)) else [ex.submit(pytest, out)]
+        sem = __import__('threading').Semaphore(max(1, a.j))
+        def limited(n):
+            with sem: return run_suite(n, out, a.timeout)
+        futs += [ex.submit(limited, n) for n in names]
+        for f in cf.as_completed(futs):
+            r = f.result(); results.append(r); show(r)
+    # timing checks can fail when 4 Chromes share the Mac: a failed suite gets one more go, alone
+    again = [r for r in results if not r['ok'] and r['name'] != 'pytest'] if a.retry else []
+    if again: print(f"\nAgain, one at a time: {', '.join(r['name'] for r in again)}")
+    for r in again:
+        r2 = run_suite(r['name'], out, a.timeout); r2['retried'] = True; show(r2)
+        results[results.index(r)] = r2
+    results.sort(key=lambda r: (r['ok'], r['name']))
+    fails = [r for r in results if not r['ok']]
+    checks = sum(r.get('passed') or 0 for r in results)
+    retried = [r['name'] for r in results if r.get('retried') and r['ok']]
+    print(f"\nSummary: {len(results) - len(fails)}/{len(results)} suites ok, {checks} e2e checks passed"
+          + (f" (passed on the second go: {', '.join(retried)})" if retried else '')
+          + ''.join(f"\n  {r['name']}: {r.get('summary') or r['code']}" for r in results if r['name'] == 'pytest'))
+    for r in fails: print(f"  FAILED {r['name']}  log: {r['log']}")
+    if not fails: shutil.rmtree(out, ignore_errors=True)
+    return 1 if fails else 0
+
+
+# the suites that pass on a fresh temp server / the preview. The others need songs a fresh server lacks (run them with
+# BASE pointing at a dev-server on a COPY of the library: scripts/dev-server --data <copy>), or are slow and heavy
+# (voice: loads the SoulX-Singer model; may time out while another sing job runs).
+MAIN = ['flows', 'keycolumn', 'playback', 'scorezoom', 'topcast', 'touchseek', 'betakeyboard',
+        'activities', 'addmusic', 'booksplit', 'completeinfo', 'dailycleanup', 'editnotes', 'feedback', 'jobs', 'langtoggle',
+        'lyricmode', 'manage', 'menus', 'midiedit', 'organizepages', 'photoimport', 'quickfeedback', 'renameopen',
+        'swipeclose', 'textinput', 'verified', 'offline', 'storage']
+if __name__ == '__main__':
+    sys.exit(main())

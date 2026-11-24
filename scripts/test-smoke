@@ -1,0 +1,4 @@
+#!/bin/zsh
+# Quick check before a push: pytest + flows.mjs (the UI preview smoke test, ~200 checks) on a free port.
+#   scripts/test-smoke
+exec "${0:A:h}/test-all" --smoke "$@"

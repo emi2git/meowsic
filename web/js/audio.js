@@ -276,11 +276,4 @@ export function pianoKey(pitch, vel = 90) {
   };
 }
 
-// a metronome tick at audio time `when` (accent = the first beat of a bar)
-export function clickAt(when, accent = false) {
-  const c = audioCtx(), o = c.createOscillator(), g = c.createGain();
-  o.frequency.value = accent ? 1600 : 1000;
-  g.gain.setValueAtTime(0, when); g.gain.linearRampToValueAtTime(accent ? 0.5 : 0.32, when + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, when + 0.06);
-  o.connect(g); g.connect(c.destination); o.start(when); o.stop(when + 0.08);
-}
 

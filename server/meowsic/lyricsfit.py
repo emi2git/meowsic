@@ -1,4 +1,5 @@
-"""Add lyrics from a sheet to a score (score ⋯ → "Add lyrics from a sheet…", job kind 'lyrics').
+"""Add lyrics from a sheet to a score (job kind 'lyrics'; no menu entry since Nov 2026: Claude-only, through
+POST /api/items/{id}/lyrics/sheet in lyricsedit.py and ~/git/scripts/meowsic-sheet-lyrics.py).
 
 1. The sheet's photos → omr/omr.py --first-verse (homr + Audiveris + Apple Vision): the sheet's tune with its
    words under it, one syllable per note. Kept in work/lyricsfit/<sheet id>-<updatedAt>/ for the next time.

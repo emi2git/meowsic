@@ -8,6 +8,12 @@ def test_static_ui_no_store(client):
     assert client.get('/api/health').headers['cache-control'] == 'no-store'
 
 
+def test_health_says_what_runs(client):
+    h = client.get('/api/health').json()
+    assert h['ok'] is True and h['shell'].startswith('meowsic-shell-v')
+    assert len(h['sha']) == 12 and h['serverSha'] == h['sha']  # this checkout, not restarted since
+
+
 def test_db_created(client, data):
     assert (data / 'meowsic.db').is_file() and (data / 'items').is_dir()
 

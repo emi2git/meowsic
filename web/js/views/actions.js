@@ -2,7 +2,6 @@
 import { store } from '../store.js';
 import { esc, sheet, toast, menu, tagPicker } from '../ui.js';
 import { go } from '../app.js';
-import { sheetUrl } from '../sheet-art.js';
 import { openInfo } from './info.js';
 
 // The item menus. Info (info.js) is the one place to read and edit an item (title, artist, album, key, version,
@@ -29,14 +28,6 @@ export function download(name, data, type = 'application/octet-stream') {
   a.download = name;
   document.body.append(a); a.click(); a.remove();
   if (!data?.url) setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-}
-
-export function thumbHtml(it) {
-  if (it.kind === 'sheet') {
-    const src = it.upload ? store.sessionImage(`${it.id}:1`) || sheetUrl(it.title, 1, it.pages) : sheetUrl(it.title, 1, it.pages, { artist: it.artist });
-    return `<span class="thumb t-sheet"><img src="${src}" alt="" loading="lazy"></span>`;
-  }
-  return `<span class="thumb t-${it.kind}">${esc(String(it.key).split(' ')[0])}</span>`;
 }
 
 // "C major" → "C", "A minor" → "Am", "Key G" → "G"

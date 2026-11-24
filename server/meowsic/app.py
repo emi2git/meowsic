@@ -11,6 +11,7 @@ from .db import WEB_DIR, Config, connect, init_db, log_event
 from .items import conn
 from . import feedback  # Utilities → Feedback
 from . import completeinfo  # Manage library → Complete info
+from .version import version
 
 
 def create_app(data=None, background=True) -> FastAPI:
@@ -48,7 +49,8 @@ def create_app(data=None, background=True) -> FastAPI:
 
     @app.get('/api/health')
     def health():
-        return {'ok': True, 'data': str(cfg.data)}
+        """The app's 'is the Mac there?' ping, and what is running: {ok, data, sha, serverSha, shell} (version.py)."""
+        return {'ok': True, 'data': str(cfg.data), **version()}
 
     # ---- settings: {key: any JSON} ----
     @app.get('/api/settings')

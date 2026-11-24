@@ -32,14 +32,15 @@ for (const [name, d] of Object.entries(DEV)) {
   await p.evaluate(() => localStorage.clear());
   await p.goto(BASE + '#/library', { waitUntil: 'networkidle0' }); await sleep(400);
   // give the five newest sheets known keys, the sixth none
-  const ids = await p.evaluate((KEYS) => {
-    const k = Object.keys(localStorage).find((x) => x.startsWith('meowsic-mock'));
-    const db = JSON.parse(localStorage.getItem(k)), list = Array.isArray(db) ? db : db.items;
-    const sheets = list.filter((x) => x.kind === 'sheet' && !x.deleted && !x.book).sort((a, b) => b.createdAt - a.createdAt).slice(0, 6);
-    sheets.forEach((s, i) => { s.key = KEYS[i] || ''; });
-    localStorage.setItem(k, JSON.stringify(db));
-    return sheets.map((s) => s.id);
+  // (through the store: the preview saves its sample library only after a change)
+  const ids = await p.evaluate(async (KEYS) => {
+    const { store } = await import('/js/store.js');
+    const sheets = store.items().filter((x) => x.kind === 'sheet' && !x.book).sort((a, b) => b.createdAt - a.createdAt).slice(0, 6);
+    const ids = sheets.map((s) => s.id);
+    ids.forEach((id, i) => store.update(id, { key: KEYS[i] || '' }));
+    return ids;
   }, KEYS);
+  await sleep(500); // the store saves 200 ms after a change
   await p.reload({ waitUntil: 'networkidle0' }); await sleep(300);
   await p.evaluate(() => (location.hash = '#/library?kind=sheet')); await sleep(700);
   // newest first (the default order), so all six are on page 1

@@ -23,8 +23,6 @@ const narrowQ = matchMedia(`(max-width: ${PHONE_MAX}px)`);
 
 export const isTouch = () => coarse.matches;
 export const isNarrow = () => narrowQ.matches;
-export const isPhone = () => isTouch() && isNarrow();
-export const isTablet = () => isTouch() && !isNarrow();
 export const isDesktop = () => !isTouch();
 export const device = () => (!isTouch() ? 'desktop' : isNarrow() ? 'phone' : 'tablet');
 

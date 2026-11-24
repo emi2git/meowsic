@@ -1,7 +1,7 @@
 # omr — sheet photo → score (beta), offline
 
 `omr.py --out DIR --title "Song" page1.png [page2.png …]` → `DIR/score.musicxml` + `DIR/report.json`.
-Used by the server job kind `omr` (sheet ⋯ → "Make a score (beta)…"), and with `--first-verse` (several lines of words under a staff: keep the top one) by the job kind `lyrics` (score ⋯ → "Add lyrics from a sheet…", server/meowsic/lyricsfit.py).
+Used by the server job kind `omr` (sheet ⋯ → "Make a score (beta)…"), and with `--first-verse` (several lines of words under a staff: keep the top one) by the job kind `lyrics` (Claude-only since the menu entry went: server/meowsic/lyricsfit.py, `~/git/scripts/meowsic-sheet-lyrics.py`).
 
 | Step | Tool |
 |---|---|

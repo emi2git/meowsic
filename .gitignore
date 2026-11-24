@@ -31,3 +31,7 @@ web/takes/
 
 # symlinks into the live folder (worktrees): no trailing slash, so a symlink can't be committed
 tests/e2e/node_modules
+omr/.venv
+omr/work/
+migrate/.venv
+scripts/__pycache__/
