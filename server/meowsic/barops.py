@@ -4,7 +4,7 @@ staffmove.py hands over here, so they get undo / redo, the preview, Save and the
 Bars are 0-based (as notes() gives them); staves are 1-based (1 = the top staff of the edited part).
   {op:'clearbar', bar, staff}        that staff of that bar becomes one whole-bar rest (its notes, and lyrics on
                                      them, go; chord names stay, on a staff that still has a note at their time)
-  {op:'fillbar',  bar, staff}        a staff the bar has no voice on gets a whole-bar rest, so notes can be added
+  {op:'addhand',  bar, staff}        a staff the bar has no voice on gets a whole-bar rest, so notes can be added
   {op:'insbar',   bar, after?}       an empty bar (whole rests on every staff of every part) before / after it
   {op:'delbar',   bar}               the bar goes from every part; what it set up (key, time, clef, tempo, the page
                                      layout) carries on into the next bar; a tie into it goes (counted)
@@ -23,7 +23,7 @@ from fastapi import HTTPException
 
 from .easerests import _beat, _put
 
-OPS = ('clearbar', 'fillbar', 'insbar', 'delbar', 'addstaff', 'delstaff')
+OPS = ('clearbar', 'addhand', 'insbar', 'delbar', 'addstaff', 'delstaff')
 ATTR_ORDER = ['footnote', 'level', 'divisions', 'key', 'time', 'staves', 'part-symbol', 'instruments', 'clef', 'staff-details',
               'transpose', 'for-part', 'directive', 'measure-style']
 CLEFS = {'treble': ('G', '2'), 'bass': ('F', '4')}
@@ -345,7 +345,7 @@ def bar_op(text, op):
     if part is None: raise HTTPException(400, 'This score has no notes')
     ms = part.findall('measure')
     bi = None
-    if kind in ('clearbar', 'fillbar', 'insbar', 'delbar'):
+    if kind in ('clearbar', 'addhand', 'insbar', 'delbar'):
         bi = _int(op.get('bar'), 'bar')
         if not 0 <= bi < len(ms): raise HTTPException(400, f'No bar {bi + 1} in this score')
     parts = root.findall('part')
@@ -366,7 +366,7 @@ def bar_op(text, op):
     out = []
     fill = set()
     if kind == 'clearbar': clear_bar(part, bi, _int(op.get('staff'), 'staff'), out); fill.add((pk, bi))
-    elif kind == 'fillbar': fill_bar(part, bi, _int(op.get('staff'), 'staff'), out); fill.add((pk, bi))
+    elif kind == 'addhand': fill_bar(part, bi, _int(op.get('staff'), 'staff'), out); fill.add((pk, bi))
     elif kind == 'insbar': insert_bar(root, bi, bool(op.get('after')), part, out)
     elif kind == 'delbar': delete_bar(root, bi)
     elif kind == 'addstaff': add_staff(part, _int(op.get('at', staves(part) + 1), 'at'), str(op.get('clef') or 'bass'), out)

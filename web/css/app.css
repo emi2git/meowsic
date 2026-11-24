@@ -1259,6 +1259,15 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .np-tools .stepper button { min-height: 42px; min-width: 40px; padding: 0 8px; font-size: 16px; }
 .np-tools .stepper button.on { background: var(--acc-soft); color: var(--acc-text); }
 .nh-rest { cursor: pointer; }
+.nh-rest:hover path, .nh-rest:hover rect { fill: var(--acc-text); stroke: var(--acc-text); }
+/* notes a longer rest took time from: shown until the next edit */
+.viewer .nh-took:not(.nh-on) path, .viewer .nh-took:not(.nh-on) ellipse { fill: var(--warn) !important; stroke: var(--warn) !important; }
+.np-tools .np-fill { font-weight: 600; }
+/* bars not complete (incomplete.js): a tint and a badge "2 of 4 beats"; tap the badge for the fixes */
+#osmd.ib-host { position: relative; }
+.ib-mark { position: absolute; z-index: 3; background: color-mix(in srgb, var(--warn) 13%, transparent); border: 1.5px dashed var(--warn); border-radius: 5px; pointer-events: none; }
+.ib-badge { position: absolute; z-index: 5; min-height: 22px; padding: 1px 9px; border: 0; border-radius: 11px; background: var(--warn); color: var(--card); font-size: 12px; font-weight: 700; line-height: 20px; white-space: nowrap; cursor: pointer; box-shadow: 0 1px 4px rgba(0, 0, 0, .2); }
+:root[data-device="tablet"] .ib-badge, :root[data-device="phone"] .ib-badge { min-height: 28px; line-height: 26px; padding: 1px 12px; font-size: 13px; }
 :root[data-device="phone"] .np-tools .stepper { flex: 1 1 100%; }
 :root[data-device="phone"] .np-tools .stepper button { flex: 1; min-width: 0; min-height: 44px; }
 

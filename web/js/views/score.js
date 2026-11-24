@@ -9,6 +9,7 @@ import { ScorePlayer, VoicePlayer } from '../audio.js';
 import { scoreEditor } from './scoreeditor.js';
 import { editNotes } from './editnotes.js';
 import { checkBadge } from './checkbars.js';
+import { incompleteBars, barFixSheet, fixBarOp } from '../incomplete.js';
 import { InkLayer } from './annotate.js';
 import { attachSwipe, flipBy } from '../swipe.js';
 import { isTouch, isNarrow } from '../device.js';
@@ -215,8 +216,60 @@ export function scoreBody(root, it, { perform = false } = {}) {
     goPage(k < 0 ? 0 : k);
   };
   const pageStops = () => (!paged || !pages.length ? stops : stops.filter((s) => { const y = s.top + stopOff + s.h / 2; return y >= pages[page].start && y < pages[page].end; }));
+  // bars not complete (a voice short of / over the time signature): a tint and a badge "2 of 4 beats" on each,
+  // from the MusicXML itself (so after a save, a reload or offline too) until the bar is complete. Tapping the badge
+  // offers Fill with rest / Change time for this bar (Edit notes, when open, takes the tap: one undo step there).
+  let incomplete = [];
+  const markIncomplete = () => {
+    const osv = $('#osmd', root), svg = osv?.querySelector('svg');
+    osv?.querySelectorAll('.ib-mark, .ib-badge').forEach((e) => e.remove());
+    incomplete = real ? incompleteBars(xmlText) : [];
+    if (!incomplete.length || !svg || !osmd?.GraphicSheet) return;
+    osv.classList.add('ib-host');
+    const vb = (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number);
+    const sr = svg.getBoundingClientRect(), or = osv.getBoundingClientRect();
+    const unit = (vb[2] ? sr.width / vb[2] : zoom * zBase()) * 10;
+    for (const b of incomplete) {
+      const gms = (osmd.GraphicSheet.MeasureList[b.bar - 1] || []).filter(Boolean);
+      if (!gms.length) continue;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const gm of gms) {
+        const ps = gm.PositionAndShape, q = ps.AbsolutePosition;
+        x0 = Math.min(x0, q.x + ps.BorderLeft); x1 = Math.max(x1, q.x + ps.BorderRight);
+        y0 = Math.min(y0, q.y + ps.BorderTop); y1 = Math.max(y1, q.y + ps.BorderBottom);
+      }
+      const left = sr.left - or.left + x0 * unit, top = sr.top - or.top + y0 * unit;
+      const mk = document.createElement('div');
+      mk.className = 'ib-mark';
+      mk.dataset.bar = b.bar;
+      Object.assign(mk.style, { left: left - 2 + 'px', top: top - 4 + 'px', width: (x1 - x0) * unit + 4 + 'px', height: (y1 - y0) * unit + 8 + 'px' });
+      const bd = document.createElement('button');
+      bd.className = 'ib-badge';
+      bd.dataset.bar = b.bar;
+      bd.title = `Bar ${b.bar} is not complete — tap to fix`;
+      bd.setAttribute('aria-label', `Bar ${b.bar}: ${b.words} — fix`);
+      bd.textContent = b.words;
+      Object.assign(bd.style, { left: left + 'px', top: top - 22 + 'px' });
+      bd.addEventListener('click', (e) => { e.stopPropagation(); bd.dispatchEvent(new CustomEvent('barfix', { detail: b, bubbles: true })); });
+      osv.append(mk, bd);
+    }
+  };
+  // not editing: the fix is saved at once (Activities can undo it)
+  root.addEventListener('barfix', async (e) => {
+    const b = e.detail, how = await barFixSheet(b);
+    if (!how) return;
+    try {
+      const r = await fetch(`/api/items/${encodeURIComponent(it.id)}/editnotes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ops: [fixBarOp(b, how)], mode: 'this' }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : 'Could not fix the bar');
+      const was = store.get(it.id);
+      if (was && j.item) Object.assign(was, { updatedAt: j.item.updatedAt, musicxmlOriginal: j.item.musicxmlOriginal });
+      await loadReal(); makePlayer(); await render();
+      toast(how === 'fill' ? `Bar ${b.bar} filled with rests` : `Bar ${b.bar} has its own time now`, { label: 'Activities', run: () => go('#/activity') });
+    } catch (err) { toast(err.message); }
+  });
   const afterLayout = (follow) => {
-    decorate(); tagNotes(); measureStops(); repaginate();
+    decorate(); tagNotes(); measureStops(); repaginate(); markIncomplete();
     place(player?.now() || 0, follow);
     ink?.fit();
     root.dispatchEvent(new CustomEvent('scoredrawn', { bubbles: true })); // the ukulele panel reads the drawn chords
@@ -479,6 +532,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     undo() { ink?.undo(); }, clear() { ink?.clear(); },
     xml() { return real ? xmlText : musicXml({ ...tune, title: it.title }, version); },
     get real() { return real; },
+    get incomplete() { return incomplete; },
     get totalQ() { return real ? Math.ceil(info.totalQ) : tune.measures.reduce((s, m) => s + barBeats(tune, m), 0); },
     seekAt: qAt, seek: seekTo, snapAt, barStarts, barOfQ,
     get cueQ() { return cued ? cueQ : 0; },

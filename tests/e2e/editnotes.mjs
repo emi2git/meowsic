@@ -209,7 +209,7 @@ async function run(name, vp, how) {
     check('8↓: an octave down', (await notesNow()).some((n) => n.bar === 2 && n.on === 1 && n.midi === 49));
     await tap('.notes-panel [data-len="2"]'); await idle();
     nn = await notesNow();
-    check('½: a half note, written over the next beat, bar still full', nn.some((n) => n.bar === 2 && n.on === 1 && n.dur === 2 && n.midi === 49) && !nn.some((n) => n.bar === 2 && n.staff === 1 && n.on === 2 && !n.rest) && barsFull(await EN(() => window.__editNotes.xml)));
+    check('½: a half note on beat 2 (written quarter~quarter tied, by the meter), over the next beat, bar still full', nn.some((n) => n.bar === 2 && n.on === 1 && n.dur === 1 && n.midi === 49 && n.tie) && nn.some((n) => n.bar === 2 && n.on === 2 && n.midi === 49) && !nn.some((n) => n.bar === 2 && n.staff === 1 && n.on === 2 && !n.rest && n.midi !== 49) && barsFull(await EN(() => window.__editNotes.xml)));
     await act('del'); await idle();
     nn = await notesNow();
     check('Delete: a rest in its place', !nn.some((n) => n.bar === 2 && n.midi === 49) && nn.some((n) => n.bar === 2 && n.staff === 1 && n.on === 1 && n.rest) && barsFull(await EN(() => window.__editNotes.xml)));
@@ -673,7 +673,11 @@ async function barTools(name, vp) {
 async function editBarFits() {
   console.log('\nEdit bar on iPads');
   const title = `Edit bar fits ${stamp}`;
-  const pv0 = await send('POST', '/items', { kind: 'score', title, musicxmlText: scoreXml(title) });
+  const pv = await send('POST', '/items', { kind: 'score', title: title + ' src', musicxmlText: scoreXml(title) });
+  const p0 = await send('POST', `/items/${pv.id}/editnotes/preview`, { ops: [] });
+  const one = await send('POST', `/items/${pv.id}/editnotes/preview`, { ops: [{ op: 'delete', refs: [p0.notes.find((n) => n.bar === 0 && n.staff === 1 && n.on === 1).ref] }] });
+  await send('POST', '/items/trash', { ids: [pv.id] }).catch(() => {});
+  const pv0 = await send('POST', '/items', { kind: 'score', title, musicxmlText: one.xml });
   const wrapped = () => page.evaluate(() => [...document.querySelectorAll('.notes-panel .np-row, .notes-panel .np-acts')].filter((row) => {
     const kids = [...row.children].filter((k) => k.offsetParent && !k.classList.contains('grow'));
     const bot = Math.min(...kids.map((k) => k.getBoundingClientRect().bottom));
@@ -692,6 +696,8 @@ async function editBarFits() {
     bad.push(...(await wrapped()).map((c) => `nothing picked: ${c}`));
     await page.evaluate(() => window.__editNotes.select([window.__editNotes.notes.find((n) => !n.rest && n.staff === 1).ref])); await sleep(200);
     bad.push(...(await wrapped()).map((c) => `a note: ${c}`));
+    await page.evaluate(() => window.__editNotes.select([window.__editNotes.notes.find((n) => n.rest)?.ref ?? window.__editNotes.notes[0].ref])); await sleep(200);
+    bad.push(...(await wrapped()).map((c) => `a rest: ${c}`));
     await page.evaluate(() => window.__editNotes.pickBar(3, 2)); await sleep(200);
     bad.push(...(await wrapped()).map((c) => `a bar: ${c}`));
     await page.evaluate(() => window.__editNotes.run({ op: 'addstaff', at: 1, clef: 'treble' }));
@@ -710,6 +716,204 @@ async function editBarFits() {
 
 if (process.env.ONLY === 'fits') { await editBarFits(); await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
 if (process.env.ONLY === 'bar') { await barTools('Mac', MAC); await barTools('iPad', IPAD); await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
+// ---- rests: pick one in either hand (whole-bar rests too), change its length, Undo; Fill next rest ----
+// bar 1: right hand C5 · quarter rest · D5 · E5, left hand a whole-bar rest; bar 2: right hand C5 · quarter rest ·
+// half rest, left hand C3 whole; bar 3: both hands quarter · quarter rest · quarter · quarter; bar 4: whole notes;
+// bar 5: right hand a whole-bar rest, left hand G2 whole.
+const restXml = (title) => '<?xml version="1.0" encoding="UTF-8"?>\n<score-partwise version="4.0"><work><work-title>' + title + '</work-title></work><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">'
+  + '<measure number="1"><attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>'
+  + N(72, 2, 1, 'quarter') + N(0, 2, 1, 'quarter') + N(74, 2, 1, 'quarter') + '<note><pitch><step>E</step><octave>5</octave></pitch><duration>2</duration><voice>1</voice><type>quarter</type><staff>1</staff><lyric number="1"><text>la</text></lyric></note>'
+  + '<backup><duration>8</duration></backup><note><rest measure="yes"/><duration>8</duration><voice>5</voice><staff>2</staff></note></measure>'
+  + '<measure number="2">' + N(72, 2, 1, 'quarter') + N(0, 2, 1, 'quarter') + N(0, 4, 1, 'half') + '<backup><duration>8</duration></backup>' + N(48, 8, 2, 'whole') + '</measure>'
+  + '<measure number="3">' + N(72, 2, 1, 'quarter') + N(0, 2, 1, 'quarter') + N(74, 2, 1, 'quarter') + N(72, 2, 1, 'quarter') + '<backup><duration>8</duration></backup>'
+  + N(48, 2, 2, 'quarter') + N(0, 2, 2, 'quarter') + N(50, 2, 2, 'quarter') + N(48, 2, 2, 'quarter') + '</measure>'
+  + '<measure number="4">' + N(74, 8, 1, 'whole') + '<backup><duration>8</duration></backup>' + N(50, 8, 2, 'whole') + '</measure>'
+  + '<measure number="5"><note><rest measure="yes"/><duration>8</duration><voice>1</voice><staff>1</staff></note><backup><duration>8</duration></backup>' + N(43, 8, 2, 'whole') + '</measure></part></score-partwise>';
+
+async function rests(name, vp) {
+  console.log(`\nRests — ${name}`);
+  const touch = !!vp.hasTouch;
+  const title = `Rests ${name} ${stamp}`;
+  P[76] = ['E', 5];
+  const sc = await send('POST', '/items', { kind: 'score', title, artist: 'Test', musicxmlText: restXml(title) });
+  const page = await b.newPage(); await page.setViewport(vp);
+  page.on('pageerror', (e) => errs.push(`Rests ${name}: ${e.message}`));
+  page.on('console', (m) => m.type() === 'error' && !/404|409|400|favicon/.test(m.text()) && errs.push(`Rests ${name}: ${m.text()}`));
+  const tapXY = async (x, y) => { if (touch) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); await sleep(150); };
+  // the panel draws itself again on edits / player events: a button found a moment ago may be gone — try again
+  const tap = async (sel) => { for (let k = 0; ; k++) { try { if (touch) await page.tap(sel); else await page.click(sel); break; } catch (e) { if (k > 4 || !/detached|not clickable|No element/.test(e.message)) throw e; await sleep(200); } } await sleep(150); };
+  const act = (a) => tap(`.notes-panel [data-a="${a}"]`);
+  const EN = (f) => page.evaluate(f);
+  const idle = async () => { for (let i = 0; i < 60; i++) { await sleep(150); if (!(await EN(() => window.__editNotes?.busy))) break; } await sleep(700); };
+  const head = (pred) => page.evaluate((src) => {
+    const f = new Function('n', `return (${src})(n)`);
+    const n = window.__editNotes.notes.find(f);
+    const g = n && document.querySelector(`#paper g[data-ref="${n.ref}"]`);
+    if (!g) return null;
+    g.scrollIntoView({ block: 'center' });
+    const r = g.getBoundingClientRect();
+    return { ref: n.ref, x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }, pred.toString());
+  const pick = async (pred) => { await act('none'); const h = await head(pred); if (!h) return null; await tapXY(h.x, h.y); return h.ref; };
+  const sel = () => EN(() => window.__editNotes.sel);
+  const notes = () => EN(() => window.__editNotes.notes);
+  const voice = async (bar, staff) => (await notes()).filter((n) => n.bar === bar && n.staff === staff).sort((a, z) => a.on - z.on).map((n) => `${n.rest ? 'R' : n.midi}@${n.on}:${n.dur}`).join(' ');
+  const toastText = () => EN(() => { const t = document.querySelector('#toast'); return t && !t.hidden ? t.textContent : ''; });
+  const len = (q) => tap(`.notes-panel [data-len="${q}"]`);
+
+  await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' });
+  await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(800);
+  await tap('#sc-edit');
+  await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(800);
+  const restsTagged = await EN(() => window.__editNotes.notes.filter((n) => n.rest).every((n) => document.querySelector(`#paper g[data-ref="${n.ref}"].nh-rest`)));
+  check('every rest (both hands, the whole-bar rest too) can be picked', restsTagged);
+
+  // 1. the left hand's whole-bar rest → ¼: the quarter stays (not joined back), the rest of the bar rests; Undo
+  const lr = await pick((n) => n.bar === 0 && n.staff === 2 && n.rest);
+  check('tap picks the left-hand whole-bar rest', JSON.stringify(await sel()) === `[${lr}]`, JSON.stringify(await sel()));
+  check('the picked rest is coloured', await page.$eval(`#paper g[data-ref="${lr}"]`, (g) => g.classList.contains('nh-on')));
+  check('rest picked: length buttons on, “+ Note here” shown, a hint', await page.$eval('.notes-panel [data-len="1"]', (e) => !e.disabled)
+    && (await page.$eval('.notes-panel [data-a="add"]', (e) => e.textContent.trim())) === '+ Note here' && !!(await page.$('.np-rest-help')));
+  if (name === 'iPhone') await page.screenshot({ path: `${SHOTS}/Rests-${name}-picked.png` });
+  await len(1); await idle();
+  check('left-hand rest → a quarter rest, then quarter + half', (await voice(0, 2)) === 'R@0:1 R@1:1 R@2:2', await voice(0, 2));
+  { const s = await sel(), m = (await notes()).find((n) => n.ref === s[0]); check('the shortened rest stays picked', s.length === 1 && m?.rest && m.staff === 2 && m.on === 0 && m.dur === 1, JSON.stringify(m)); }
+  check('offer: pull the next notes earlier', /Pull the next notes earlier/.test(await toastText()), await toastText());
+  check('bars still full', barsFull(await EN(() => window.__editNotes.xml)));
+  await act('undo'); await idle();
+  check('Undo: the whole-bar rest is back', (await voice(0, 2)) === 'R@0:4', await voice(0, 2));
+
+  // 2. the right hand's quarter rest (beat 2) → ½: takes the D5 (gone; said), split by the beat; Undo brings it back
+  await pick((n) => n.bar === 0 && n.staff === 1 && n.rest);
+  { const s = await sel(), m = (await notes()).find((n) => n.ref === s[0]); check('tap picks the right-hand rest', s.length === 1 && m?.rest && m.staff === 1 && m.on === 1, JSON.stringify(m)); }
+  await len(2); await idle();
+  const t2 = await toastText();
+  check('right-hand rest longer: the D5 is gone, E5 and its lyric stay', (await voice(0, 1)) === '72@0:1 R@1:1 R@2:1 76@3:1' && /<text>la<\/text>/.test(await EN(() => window.__editNotes.xml)), await voice(0, 1));
+  check('the toast names the note taken and the split', /took time from D5 on beat 3 \(gone\)/.test(t2) && /half rest on beat 2/.test(t2) && /Undo/.test(t2), t2);
+  if (name !== 'iPhone') await page.screenshot({ path: `${SHOTS}/Rests-${name}-longer.png` });
+  await act('undo'); await idle();
+  check('Undo: the D5 is back', (await voice(0, 1)) === '72@0:1 R@1:1 74@2:1 76@3:1', await voice(0, 1));
+
+  // 3. too long for the bar: refused, nothing changes
+  const st = await EN(() => window.__editNotes.step);
+  await pick((n) => n.bar === 0 && n.staff === 1 && n.rest);
+  await len(4); await idle();
+  check('a whole rest from beat 2: refused with a clear message', /Too long for the bar/.test(await toastText()) && (await EN(() => window.__editNotes.step)) === st, await toastText());
+
+  // 4. shorter + "Pull the next notes earlier": the D5 / E5 come an 8th earlier (one undo step)
+  await pick((n) => n.bar === 0 && n.staff === 1 && n.rest);
+  await len(0.5); await idle();
+  const s4 = await EN(() => window.__editNotes.step);
+  await page.evaluate(() => document.querySelector('#toast button')?.click()); await idle();
+  const v4 = await voice(0, 1);
+  check('pull: D5 on the and of 2, an 8th rest at the end', v4.startsWith('72@0:1 R@1:0.5 74@1.5:0.5') && v4.endsWith('R@3.5:0.5') && (await EN(() => window.__editNotes.step)) === s4, v4);
+  await act('undo'); await idle();
+  check('Undo after pull: back as it was (one step)', (await voice(0, 1)) === '72@0:1 R@1:1 74@2:1 76@3:1', await voice(0, 1));
+
+  // 5. Fill next rest (Mac: E) on bar 2's C5: one rest per press, the C5 stays picked; then nothing more to fill
+  const c5 = await pick((n) => n.bar === 1 && n.staff === 1 && n.midi === 72);
+  check('Fill next rest is on for a note with a rest after it', await page.$eval('.notes-panel [data-a="fill"]', (e) => !e.disabled));
+  const fill = async () => { if (touch) await act('fill'); else { await page.keyboard.press('e'); await sleep(150); } await idle(); };
+  await fill();
+  check('fill 1: C5 a half note, the half rest after it stays', (await voice(1, 1)) === '72@0:2 R@2:2' && (await sel()).length === 1, await voice(1, 1));
+  check('the play start is a bar before the edit (bar 1)', (await EN(() => window.__editNotes.cueBar)) === 1, String(await EN(() => window.__editNotes.cueBar)));
+  await fill();
+  check('fill 2: C5 a whole note', (await voice(1, 1)) === '72@0:4', await voice(1, 1));
+  check('then Fill next rest is off (last in its bar)', await page.$eval('.notes-panel [data-a="fill"]', (e) => e.disabled));
+  await act('undo'); await idle(); await act('undo'); await idle();
+  check('Undo twice: C5 · rests again', (await voice(1, 1)) === '72@0:1 R@1:1 R@2:2', await voice(1, 1));
+  // a note right before a note: Mac E says so
+  if (!touch) {
+    await pick((n) => n.bar === 0 && n.staff === 1 && n.midi === 74);
+    await page.keyboard.press('e'); await sleep(300);
+    check('no rest after the note: says so', /No rest after this note/.test(await toastText()), await toastText());
+  }
+  // 6. + Note here on the left-hand rest → a note
+  await pick((n) => n.bar === 0 && n.staff === 2 && n.rest);
+  await act('add'); await idle();
+  check('+ Note here turns the rest into a note', (await notes()).some((n) => n.bar === 0 && n.staff === 2 && !n.rest));
+  void c5;
+
+  // 7. Remove rest (Delete): bar 1's right-hand rest — the notes after it come earlier, the bar is left short and shown
+  const badge = (bar) => page.$eval(`.ib-badge[data-bar="${bar}"]`, (e) => { const r = e.getBoundingClientRect(); return { text: e.textContent, x: r.left + r.width / 2, y: r.top + r.height / 2 }; }).catch(() => null);
+  const tapBadge = async (bar) => { const h = await badge(bar); if (h) await tapXY(h.x, h.y); await sleep(300); };
+  const sheetBtn = async (text) => { await page.evaluate((t) => [...document.querySelectorAll('.modal button')].find((x) => x.textContent.trim() === t)?.click(), text); await sleep(200); };
+  await pick((n) => n.bar === 0 && n.staff === 1 && n.rest);
+  check('rest picked: the Delete button says Remove rest', (await page.$eval('.notes-panel [data-a="del"]', (e) => e.textContent.trim())) === 'Remove rest');
+  if (touch) await act('del'); else { await page.keyboard.press('Backspace'); await sleep(150); }
+  await idle();
+  check('Remove rest: D5 / E5 come a beat earlier, no rest added', (await voice(0, 1)) === '72@0:1 74@1:1 76@2:1', await voice(0, 1));
+  const bd = await badge(1);
+  check('the short bar is tinted with a badge “3 of 4 beats”', bd?.text === '3 of 4 beats' && !!(await page.$('.ib-mark[data-bar="1"]')), JSON.stringify(bd));
+  check('offer: Previous note fills it instead', /Previous note fills it instead/.test(await toastText()), await toastText());
+  if (name !== 'iPhone') await page.screenshot({ path: `${SHOTS}/Rests-${name}-short-bar.png` });
+  // playing a short bar: no crash
+  await act('playhere'); await sleep(1200);
+  const playing = await EN(() => window.__score.player.playing && window.__score.player.now() > 0);
+  await act('playhere'); await sleep(200);
+  check('a short bar plays as it is', playing);
+  const s7 = await EN(() => window.__editNotes.step);
+  await page.evaluate(() => document.querySelector('#toast button')?.click()); await idle();
+  check('Previous note fills it: C5 a half note, the bar full, the badge gone, one step', (await voice(0, 1)) === '72@0:2 74@2:1 76@3:1' && !(await badge(1)) && (await EN(() => window.__editNotes.step)) === s7, await voice(0, 1));
+  await act('undo'); await idle();
+  check('Undo: the rest is back', (await voice(0, 1)) === '72@0:1 R@1:1 74@2:1 76@3:1', await voice(0, 1));
+
+  // 8. bar 3: both hands' rests removed → 3 beats; the badge → Fill with rest; Undo; → Change time for this bar
+  await EN(() => window.__editNotes.select(window.__editNotes.notes.filter((n) => n.bar === 2 && n.rest).map((n) => n.ref)));
+  await act('del'); await idle();
+  check('both hands: bar 3 is 3 of 4 beats', (await badge(3))?.text === '3 of 4 beats', JSON.stringify(await badge(3)));
+  await tapBadge(3);
+  check('tapping the badge offers the fixes', !!(await page.$('.ib-fix')) && (await page.$$eval('.ib-fix button', (e) => e.map((x) => x.textContent.trim()).join('|'))) === 'Keep editing|Change time for this bar|Fill with rest');
+  await sheetBtn('Keep editing');
+  check('Keep editing: nothing changes', !(await page.$('.ib-fix')) && !!(await badge(3)));
+  await tapBadge(3); await sheetBtn('Fill with rest'); await idle();
+  check('Fill with rest: a rest at the end of both hands, the badge gone', (await voice(2, 1)).endsWith('R@3:1') && (await voice(2, 2)).endsWith('R@3:1') && !(await badge(3)), await voice(2, 1));
+  await act('undo'); await idle();
+  check('Undo: the bar is short again', !!(await badge(3)));
+  await tapBadge(3); await sheetBtn('Change time for this bar'); await idle();
+  const xs = await EN(() => window.__editNotes.xml);
+  const tms = xs.split('<measure').slice(1).map((m) => (m.match(/<beats>(\d+)<\/beats>\s*<beat-type>(\d+)/) || []).slice(1).join('/'));
+  check('Change time: bar 3 in 3/4, bar 4 back in 4/4, no badge', tms[2] === '3/4' && tms[3] === '4/4' && !(await badge(3)), tms.join(','));
+  if (name !== 'iPhone') await page.screenshot({ path: `${SHOTS}/Rests-${name}-bar-time.png` });
+
+  // 9. a rest that ends its bar (bar 2's half rest): pull notes from the next bar
+  await pick((n) => n.bar === 1 && n.staff === 1 && n.rest && n.on === 2);
+  await act('del'); await sleep(300);
+  check('a rest at the end of its bar: two ways offered', !!(await page.$('.np-rmrest')));
+  await sheetBtn('Pull notes from the next bar'); await idle();
+  check('pulled: bar 2 goes on with bar 3’s notes', (await voice(1, 1)) === '72@0:1 R@1:1 72@2:1 74@3:1', await voice(1, 1));
+  await act('undo'); await idle();
+
+  // 10. a whole-bar rest (bar 5): Remove rest → Delete this bar
+  const nBars = async () => (await EN(() => window.__editNotes.xml)).split('<measure').length - 1;
+  const before = await nBars();
+  await pick((n) => n.bar === 4 && n.staff === 1 && n.rest);
+  await act('del'); await sleep(300);
+  check('a whole-bar rest offers Delete this bar', /Delete bar 5\?/.test(await page.$eval('.modal h2', (e) => e.textContent).catch(() => '')));
+  await page.evaluate(() => document.querySelector('.modal [data-ok]').click()); await idle();
+  check('the bar is gone', (await nBars()) === before - 1, `${before} → ${await nBars()}`);
+  await act('undo'); await idle();
+  check('Undo: the bar is back', (await nBars()) === before);
+
+  // 11. save with a short bar: allowed, says so; after a reload the badge is still there
+  await pick((n) => n.bar === 0 && n.staff === 1 && n.rest);
+  await act('del'); await idle();
+  await act('save'); await sleep(300);
+  await page.evaluate(() => document.querySelector('.np-save [data-mode="this"]').click()); await sleep(2500);
+  check('saved with a warning: 1 bar not complete', /1 bar not complete/.test(await toastText()), await toastText());
+  await page.reload({ waitUntil: 'networkidle0' }); await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(1000);
+  check('after a reload the short bar still shows', (await badge(1))?.text === '3 of 4 beats');
+  // not editing: the badge fixes it at once (saved; Activities can undo)
+  await tapBadge(1); await sheetBtn('Fill with rest'); await sleep(2500);
+  check('not editing: Fill with rest saves, the badge goes', !(await badge(1)) && /R@|rest/.test(await xmlOf(sc.id)) && !(await page.$('.ib-badge')));
+  await send('POST', '/items/trash', { ids: [sc.id] }).catch(() => {});
+  await page.close();
+}
+
+await rests('Mac', MAC);
+await rests('iPad', IPAD);
+await rests('iPhone', PHONE);
+if (process.env.ONLY === 'rests') { await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
 await cueAndArcs('Mac', MAC);
 await cueAndArcs('iPad', IPAD);
 await cueAndArcs('iPhone', PHONE);

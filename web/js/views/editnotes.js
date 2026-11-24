@@ -2,8 +2,14 @@
 // them. Tap / click a note (or a rest) to pick it; ⌘ / Ctrl-click (iPad / iPhone: "Pick several") adds or takes one
 // away; Shift-click picks the range on that staff from the last note picked; drag a box to pick everything in it;
 // "Whole bar" picks every note of the picked notes' bars on their staves. Then:
-//   ♭ / ♯ a semitone down / up (↓ / ↑), 8↓ / 8↑ an octave (⌘↓ / ⌘↑), a length (2–6 = 1/16 … whole, . = dotted),
-//   Delete (a rest stays), + Note (a third above, in the chord; on a rest: a note there, then move it up / down),
+//   ♭ / ♯ a semitone down / up (↓ / ↑), 8↓ / 8↑ an octave (⌘↓ / ⌘↑), a length (2–6 = 1/16 … whole, . = dotted) —
+//   of a note or a rest (a rest made shorter leaves a rest after it, or "Pull the next notes earlier"; made longer it
+//   takes the time of what follows in the bar — the notes it shortened or took are named and shown, Undo brings them
+//   back; too long for the bar: refused) —, →| Fill next rest (E: the note takes in the one rest after it, each press
+//   one more; never a note), Delete (a rest stays; on a rest: Remove rest — what follows comes earlier and the bar is
+//   left short, "Previous note fills it" a tap away; a rest at the end of its bar: pull notes from the next bar or the
+//   note before fills it; a whole-bar rest: Delete this bar), + Note (a third above, in the chord; on a rest: "+ Note here"
+//   turns it into a note, then move it up / down),
 //   and, in a piano part, to the right / left hand (Shift ↑ / Shift ↓); ⌒ Tie (T) to the next note of the same
 //   pitch, ⁀ Slur (S) over the picked notes (on a slurred note: takes it away). Ties and slurs stay through every edit.
 // ← / → pick the note before / after on that staff (the page turns with it); Shift ← / → or ‹ › / the page dots turn
@@ -11,6 +17,9 @@
 // orange line) goes to one bar before the first bar edited, so Play — or "▶ From here", which starts a bar before the picked
 // notes — plays the change as it is drawn (not saved yet). Tapping the score here picks notes; it never moves
 // the line.
+// A bar left short / over-full is never filled on its own: it is tinted with a badge ("3 of 4 beats", score.js +
+// incomplete.js); tapping the badge here offers Fill with rest / Change time for this bar / Keep editing (one undo
+// step); saving with such bars is allowed and says how many.
 // The Mac rebuilds the bars (server/meowsic/staffmove.py: every voice of both staves stays full, chords together,
 // rests where a hand has nothing to play) and the score draws again at once. Undo / redo inside the editor;
 // Save into this score (the file before stays in .history, Activities can undo it) or as a new version.
@@ -18,6 +27,7 @@ import { iconOn, toast, sheet as modal, confirmSheet, menu } from '../ui.js';
 import { store } from '../store.js';
 import { go } from '../app.js';
 import { isTouch } from '../device.js';
+import { barFixSheet, fixBarOp } from '../incomplete.js';
 import { lyricMode } from './lyricmode.js'; // [lyrics]
 import { attachMidi } from '../midiedit.js';
 
@@ -64,7 +74,7 @@ export async function editNotes(view, it, host, opts = {}) {
   host.classList.add('noting');
   // steps[0] = the score as saved; each edit adds one (its ops = every edit so far, replayed by the Mac)
   let steps = [{ ops: [], xml: base.xml, notes: base.notes }], at = 0;
-  let sel = new Set(), anchor = null, several = false, busy = false, shown = false, closed = false, cueAt = null;
+  let sel = new Set(), anchor = null, several = false, busy = false, shown = false, closed = false, cueAt = null, took = new Set();
   let barPick = null; // a bar picked by tapping its empty space: { bar (0-based), staff }
   let midiCtl = null; // a MIDI keyboard (midiedit.js): its chip in the bar
   const cur = () => steps[at];
@@ -112,6 +122,7 @@ export async function editNotes(view, it, host, opts = {}) {
             el.classList.add('nh-hit');
             el.classList.toggle('nh-rest', x.rest);
             el.classList.toggle('nh-on', sel.has(g[i].ref));
+            el.classList.toggle('nh-took', took.has(g[i].ref));
           });
         });
       }
@@ -158,9 +169,15 @@ export async function editNotes(view, it, host, opts = {}) {
       b.svg.insertBefore(r, b.svg.firstChild);
     }
   };
-  const untag = () => paper.querySelectorAll('g[data-ref]').forEach((g) => { g.classList.remove('nh-hit', 'nh-on', 'nh-rest'); delete g.dataset.ref; });
+  const untag = () => paper.querySelectorAll('g[data-ref]').forEach((g) => { g.classList.remove('nh-hit', 'nh-on', 'nh-rest', 'nh-took'); delete g.dataset.ref; });
   host.addEventListener('scoredrawn', tag);
   host.addEventListener('scoredrawn', markBar);
+  const onBarFix = async (e) => {
+    e.stopPropagation();
+    const b = e.detail, how = await barFixSheet(b);
+    if (how) run(fixBarOp(b, how), null, { bar: b.bar - 1 });
+  };
+  host.addEventListener('barfix', onBarFix, true);
 
   // ---- the panel ----
   const picked = () => [...sel].map((r) => byRef().get(r)).filter(Boolean);
@@ -170,7 +187,11 @@ export async function editNotes(view, it, host, opts = {}) {
     const nst = nStaves(), [toUp, toDown] = [moveDest(-1), moveDest(1)];
     const up = toUp ? ns.filter((n) => n.staff !== toUp).length : 0, down = toDown ? ns.filter((n) => n.staff !== toDown).length : 0;
     const tgt = target();
-    const len = ns.length && ns.every((n) => n.dur === ns[0].dur) ? ns[0].dur : null;
+    // the length buttons: of the notes picked, else of the rests picked
+    const ls = ns.length ? ns : rs;
+    const len = ls.length && ls.every((n) => n.dur === ls[0].dur) ? ls[0].dur : null;
+    const onlyRests = rs.length && !ns.length;
+    const lname = (l) => (onlyRests ? `${l.replace(' note', '')} rest` : l);
     const baseLen = len == null ? null : DOTTED.has(len) ? len / 1.5 : len;
     const pages = view.pages > 1;
     const off = (c) => (c ? '' : 'disabled');
@@ -182,16 +203,18 @@ export async function editNotes(view, it, host, opts = {}) {
       <button class="icon-btn" data-a="undo" ${off(at > 0)} title="Undo (⌘Z)" aria-label="Undo">${iconOn('undo')}</button>
       <button class="icon-btn" data-a="redo" ${off(at < steps.length - 1)} title="Redo (⇧⌘Z)" aria-label="Redo"><span class="flip">${iconOn('undo')}</span></button>
       <button class="icon-btn" data-a="close" title="Close (Esc)" aria-label="Close">${iconOn('close')}</button></div>
-      <p class="muted np-help">${isTouch() ? 'Tap notes or rests to pick them, or drag a box around them; tap a bar’s empty space for Bar ▾. “Several” adds each tap.' : 'Click a note or rest to pick it · click a bar’s empty space for Bar ▾ · ⌘-click adds one · Shift-click picks a range · drag a box around notes. Keys: ← → next note, ↑ ↓ semitone, ⌘↑ ⌘↓ octave, 2–6 length, . dotted, T tie, S slur, N add, Delete, space play, Shift ← → page.'} Every bar stays full.</p>
+      ${onlyRests ? `<p class="muted np-help np-rest-help">${plural(rs.length, 'rest')} picked: a length button makes ${rs.length === 1 ? 'it' : 'them'} longer or shorter; “+ Note here” turns ${rs.length === 1 ? 'it' : 'them'} into a note.</p>` : ''}
+      <p class="muted np-help">${isTouch() ? 'Tap notes or rests to pick them, or drag a box around them; tap a bar’s empty space for Bar ▾. “Several” adds each tap.' : 'Click a note or rest to pick it · click a bar’s empty space for Bar ▾ · ⌘-click adds one · Shift-click picks a range · drag a box around notes. Keys: ← → next note, ↑ ↓ semitone, ⌘↑ ⌘↓ octave, 2–6 length (notes or rests), . dotted, E fill next rest, T tie, S slur, N add, Delete, space play, Shift ← → page.'} A bar left short shows a badge: tap it to fix.</p>
       <div class="np-acts np-tools">
         ${isTouch() ? `<button data-a="several" class="${several ? 'on' : ''}" aria-pressed="${several}" title="Pick several: each tap adds a note">Several</button>` : ''}
         <button data-a="barmenu" class="np-barmenu" aria-haspopup="menu" title="Bar and staff tools: clear or add a hand, insert or delete a bar, add or remove a staff">${tgt ? `Bar ${tgt.bar + 1}` : 'Bar'} ▾</button>
         <span class="stepper np-pitch" aria-label="Pitch"><button data-a="oct-" ${off(ns.length)} title="Octave down (⌘↓)" aria-label="Octave down">8↓</button><button data-a="semi-" ${off(ns.length)} title="Semitone down (↓)" aria-label="Semitone down">♭</button><button data-a="semi+" ${off(ns.length)} title="Semitone up (↑)" aria-label="Semitone up">♯</button><button data-a="oct+" ${off(ns.length)} title="Octave up (⌘↑)" aria-label="Octave up">8↑</button></span>
-        <span class="stepper np-len" aria-label="Length">${LENS.map(([q, g, l, k]) => `<button data-len="${q}" class="${baseLen === q ? 'on' : ''}" ${off(ns.length)} title="${l} (${k})" aria-label="${l}">${g}</button>`).join('')}<button data-a="dot" class="${len != null && DOTTED.has(len) ? 'on' : ''}" ${off(len != null)} title="Dotted (.)" aria-label="Dotted">•</button></span>
-        <button data-a="tie" class="np-arc ${ns.length && ns.every((n) => n.tie) ? 'on' : ''}" ${off(ns.length)} title="Tie (T): to the next note of the same pitch (tied: takes it away)" aria-label="Tie">${TIE_IC}</button>
-        <button data-a="slur" class="np-arc ${ns.length && ns.every((n) => n.slur) ? 'on' : ''}" ${off(ns.length)} title="Slur (S): over the picked notes; one note: to the next one (slurred: takes it away)" aria-label="Slur">${SLUR_IC}</button>
-        <button data-a="add" ${off(p.length)} title="Add a note (N): a third above, or on a rest" aria-label="Add a note">+♪</button>
-        <button data-a="del" ${off(ns.length)} title="Delete (⌫): a rest takes its place" aria-label="Delete" class="np-icon">${iconOn('bin')}</button>
+        <span class="stepper np-len" aria-label="Length">${LENS.map(([q, g, l, k]) => `<button data-len="${q}" class="${baseLen === q ? 'on' : ''}" ${off(p.length)} title="${lname(l)} (${k})" aria-label="${lname(l)}">${g}</button>`).join('')}<button data-a="dot" class="${len != null && DOTTED.has(len) ? 'on' : ''}" ${off(len != null)} title="Dotted (.)" aria-label="Dotted">•</button></span>
+        <button data-a="fill" class="np-fill np-icon" ${off(ns.some((n) => n.fill))} title="Fill next rest (E): the note takes in the rest right after it — press again for the next one" aria-label="Fill next rest">→|</button>
+        ${onlyRests ? '' : `<button data-a="tie" class="np-arc ${ns.length && ns.every((n) => n.tie) ? 'on' : ''}" ${off(ns.length)} title="Tie (T): to the next note of the same pitch (tied: takes it away)" aria-label="Tie">${TIE_IC}</button>
+        <button data-a="slur" class="np-arc ${ns.length && ns.every((n) => n.slur) ? 'on' : ''}" ${off(ns.length)} title="Slur (S): over the picked notes; one note: to the next one (slurred: takes it away)" aria-label="Slur">${SLUR_IC}</button>`}
+        <button data-a="add" ${off(p.length)} title="${onlyRests ? 'Turn the rest into a note (N), then move it with ↑ ↓' : 'Add a note (N): a third above, or on a rest'}" aria-label="${onlyRests ? 'Note here' : 'Add a note'}">${onlyRests ? '+ Note here' : '+♪'}</button>
+        <button data-a="del" class="np-icon" ${off(p.length)} title="${onlyRests ? 'Remove rest (⌫): what follows comes earlier' : 'Delete (⌫): a rest takes its place'}" aria-label="${onlyRests ? 'Remove rest' : 'Delete'}">${iconOn('bin')}</button>
       </div>
       <div class="np-acts">
         <button data-a="none" ${off(p.length)}>Clear</button>
@@ -227,7 +250,7 @@ export async function editNotes(view, it, host, opts = {}) {
 
   // pointer on the score: tap a note, or drag a box (the score's own tap-to-seek / swipes wait while editing)
   let press = null, box = null;
-  const inPaper = (e) => !!e.target.closest?.('#paper') && !e.target.closest('.notes-panel');
+  const inPaper = (e) => !!e.target.closest?.('#paper') && !e.target.closest('.notes-panel') && !e.target.closest('.ib-badge');
   const onDown = (e) => {
     if (!inPaper(e) || e.button > 0) return;
     e.stopPropagation();
@@ -294,29 +317,48 @@ export async function editNotes(view, it, host, opts = {}) {
     return bs.length ? Math.min(...bs) : null;
   };
   const keepInView = () => { const r = [...sel][0]; if (r != null) view.showEl(paper.querySelector(`g[data-ref="${r}"]`)); };
-  const run = async (op, onErr) => {
-    if (busy) return;
+  // replace: this op takes the place of the last edit (still one undo step), e.g. "Pull the next notes earlier";
+  // after(j): an offer shown when nothing else needs saying ({ text, label, run })
+  const run = async (op, onErr, { replace = false, after, bar: atBar } = {}) => {
+    if (busy || (replace && at === 0)) return;
     busy = true;
     try {
-      const ops = [...cur().ops, op];
-      const bar = op.bar ?? firstBar(op.refs);
+      const from = replace ? at - 1 : at;
+      const ops = [...steps[from].ops, op];
+      const bar = atBar ?? (op.bar != null ? op.bar : firstBar(op.refs, steps[from].notes));
       const j = await post(`${url}/preview`, { ops });
-      steps = steps.slice(0, at + 1);
-      steps.push({ ops, xml: j.xml, notes: j.notes, sel: [...sel], bar: bar ?? firstBar(j.moved, j.notes), barPick });
-      at++;
+      const prevSel = replace ? steps[at].sel : [...sel], prevPick = replace ? steps[at].barPick : barPick;
+      steps = steps.slice(0, from + 1);
+      steps.push({ ops, xml: j.xml, notes: j.notes, sel: prevSel, bar: bar ?? firstBar(j.moved, j.notes), barPick: prevPick });
+      at = from + 1;
       if (op.op !== 'lyrics') { // [lyrics] words: the picked note stays
         sel = new Set(op.op === 'addstaff' ? [] : j.moved);
         const bars = new Set(j.notes.map((n) => n.bar)).size;
         barPick = op.op === 'delbar' && bars ? { bar: Math.min(op.bar, bars - 1), staff: 1 } : sel.size ? null : barPick && barPick.staff <= nStaves() ? barPick : null;
       }
+      took = new Set(j.tookRefs || []);
       draw();
       await show(j.xml);
-      cue(cur().bar, !j.tiesGone);
+      const said = [];
+      if (j.took?.length) said.push(tookWords(j.took));
+      if (j.said?.length) said.push(...j.said);
       const why = op.op === 'delbar' ? 'it went into the deleted bar' : op.op === 'insbar' ? 'the new bar is between its notes' : null;
-      if (j.tiesGone) toast(why ? (j.tiesGone === 1 ? `A tie was taken away: ${why}` : `${j.tiesGone} ties were taken away: ${why}`)
+      if (j.tiesGone) said.push(why ? (j.tiesGone === 1 ? `A tie was taken away: ${why}` : `${j.tiesGone} ties were taken away: ${why}`)
         : j.tiesGone === 1 ? 'A tie was taken away: its two notes no longer meet on one pitch' : `${j.tiesGone} ties were taken away: their notes no longer meet on one pitch`);
+      const offer = !said.length && after?.(j);
+      cue(cur().bar, !said.length && !offer);
+      if (said.length) toast(said.join(' · '));
+      else if (offer) toast(offer.text, offer);
       keepInView();
     } catch (e) { if (!onErr?.(e)) toast(e.message); } finally { busy = false; }
+  };
+  const LEN_NAME = { 4: 'whole', 3: 'dotted half', 2: 'half', 1.5: 'dotted quarter', 1: 'quarter', 0.75: 'dotted 8th', 0.5: '8th', 0.375: 'dotted 16th', 0.25: '16th' };
+  const lenName = (q) => LEN_NAME[q] || `${q}-beat`;
+  // "The rest took time from D5 on beat 2 (gone), F5 on beat 4 (now a 8th) · 1 lyric syllable went with it — Undo brings them back"
+  const tookWords = (t) => {
+    const ly = t.reduce((a, x) => a + (x.lyrics || 0), 0);
+    return `The rest took time from ${t.map((x) => `${x.what} on beat ${x.beat}${x.now ? ` (now ${/^[aeiou8]/.test(lenName(x.now)) ? 'an' : 'a'} ${lenName(x.now)})` : ' (gone)'}`).join(', ')}`
+      + (ly ? ` · ${plural(ly, 'lyric syllable')} went with ${t.length === 1 ? 'it' : 'them'}` : '') + ' — Undo brings them back';
   };
   const noteRefs = () => picked().filter((n) => !n.rest).map((n) => n.ref);
   const need = (refs, f) => (refs.length ? f(refs) : toast('Pick a note first'));
@@ -365,7 +407,7 @@ export async function editNotes(view, it, host, opts = {}) {
       for (let s = 1; s <= n; s++) {
         const here = inBar(b, s);
         entries.push({ label: `Add ${the(s)} to ${label}`, run: () => {
-          if (!here.length) return run({ op: 'fillbar', bar: b, staff: s });
+          if (!here.length) return run({ op: 'addhand', bar: b, staff: s });
           barPick = null; setSel(here.filter((x) => x.rest).map((x) => x.ref));
           toast(here.some((x) => !x.rest) ? `${label[0].toUpperCase() + label.slice(1)} has ${the(s)} already` : `${the(s)[0].toUpperCase() + the(s).slice(1)} rests in ${label}: its rest is picked — use + Note`);
         } });
@@ -392,14 +434,64 @@ export async function editNotes(view, it, host, opts = {}) {
     menu(anchor, entries);
   };
   const pitch = (by) => need(noteRefs(), (refs) => run({ op: 'pitch', refs, by }));
-  const setLen = (q) => need(noteRefs(), (refs) => run({ op: 'len', refs, q }));
+  // a length: of the picked notes, or (only rests picked) of the rests. A rest made shorter: offer to pull the
+  // notes after it earlier instead of the rest it leaves (that replaces this edit: still one undo step)
+  const lenRefs = () => { const p = picked(), ns = p.filter((n) => !n.rest); return (ns.length ? ns : p).map((n) => n.ref); };
+  const setLen = (q) => {
+    const refs = lenRefs();
+    if (!refs.length) return toast('Pick a note or rest first');
+    const m = byRef(), rs = refs.map((r) => m.get(r)).filter((n) => n?.rest);
+    const op = { op: 'len', refs, q };
+    const shorter = rs.length && rs.every((n) => q < n.dur);
+    run(op, null, shorter ? { after: () => ({ text: 'Rest shorter: a rest fills the time after it', label: 'Pull the next notes earlier',
+      run: () => { if (steps[at].ops.at(-1) === op) run({ ...op, pull: true }, null, { replace: true }); } }) } : {});
+  };
   const dot = () => {
-    const ns = picked().filter((n) => !n.rest);
-    if (!ns.length) return toast('Pick a note first');
-    const d = ns[0].dur;
+    const p = picked(), ns = p.filter((n) => !n.rest), ls = ns.length ? ns : p;
+    if (!ls.length) return toast('Pick a note or rest first');
+    const d = ls[0].dur;
     setLen(DOTTED.has(d) ? d / 1.5 : d * 1.5);
   };
-  const del = () => need(noteRefs(), (refs) => run({ op: 'delete', refs }));
+  // →| Fill next rest: each press, the picked note takes in the one rest right after it (the note stays picked)
+  const fill = () => {
+    const ns = picked().filter((n) => !n.rest);
+    if (!ns.length) return toast('Pick a note first');
+    const go = ns.filter((n) => n.fill);
+    if (!go.length) return toast('No rest after this note to fill');
+    run({ op: 'fill', refs: go.map((n) => n.ref) });
+  };
+  // Delete: notes (a rest takes their place); only rests picked: Remove rest
+  const del = () => {
+    const p = picked();
+    if (p.some((n) => !n.rest)) return run({ op: 'delete', refs: noteRefs() });
+    if (!p.length) return toast('Pick a note or rest first');
+    removeRest(p);
+  };
+  const sameVoice = (r) => cur().notes.filter((n) => n.bar === r.bar && n.staff === r.staff && n.voice === r.voice && n.ref !== r.ref);
+  const removeRest = async (rs) => {
+    const refs = rs.map((n) => n.ref);
+    const r = rs[0];
+    // a whole-bar rest (all its voice has in the bar): the bar itself can go
+    if (rs.length === 1 && !sameVoice(r).length) {
+      const others = cur().notes.filter((n) => n.bar === r.bar && !n.rest).length;
+      if (!(await confirmSheet({ title: `Delete bar ${r.bar + 1}?`, body: `This rest is the whole bar. Delete this bar${others ? ` — and the ${plural(others, 'note')} the other hand plays in it` : ''}? The bars after it move up. Undo brings it back.`, ok: 'Delete this bar', danger: !!others }))) return;
+      return run({ op: 'delbar', bar: r.bar });
+    }
+    // the rest ends its bar: nothing to close up in the bar — pull from the next bar, or the note before fills it
+    if (rs.length === 1 && !sameVoice(r).some((n) => n.on > r.on + 1e-6)) {
+      const how = await new Promise((done) => {
+        let k = null;
+        const s = modal(`<h2>Remove this rest</h2><p class="muted">It ends bar ${r.bar + 1}, so nothing in the bar comes after it.</p>
+          <div class="modal-actions np-rmrest"><button data-close>Cancel</button><button data-k="ripple">Pull notes from the next bar</button><button class="primary" data-k="fill">Previous note fills it</button></div>`, { onClose: () => done(k) });
+        s.el.querySelectorAll('[data-k]').forEach((x) => x.addEventListener('click', () => { k = x.dataset.k; s.close(); }));
+      });
+      if (how) run({ op: 'restdel', refs, how });
+      return;
+    }
+    const op = { op: 'restdel', refs, how: 'close' };
+    run(op, null, { after: () => ({ text: 'Rest removed: the notes after it came earlier — the bar is short now', label: 'Previous note fills it instead',
+      run: () => { if (steps[at].ops.at(-1) === op) run({ ...op, how: 'fill' }, null, { replace: true }); } }) });
+  };
   // a tie: to the next note of the same pitch; not the same pitch → offer a slur instead
   const tie = () => need(noteRefs(), (refs) => run({ op: 'tie', refs }, (e) => {
     if (!/Slur/.test(e.message)) return false;
@@ -453,6 +545,7 @@ export async function editNotes(view, it, host, opts = {}) {
     busy = true;
     sel = new Set(k < at ? steps[at].sel || [] : []);
     barPick = k < at ? steps[at].barPick || null : null;
+    took = new Set();
     const bar = steps[Math.max(at, k)].bar;
     at = k;
     draw();
@@ -474,17 +567,18 @@ export async function editNotes(view, it, host, opts = {}) {
         const j = await post(url, { ops: [...cur().ops, ...(mode === 'this' ? opts.extraOps?.() || [] : [])], mode, sha: base.sha });
         s.close();
         await close(true);
+        const short = j.incomplete?.length || 0;
         if (mode === 'new') {
           store.putItem(j.item);
           if (edited != null) window.__meowsicCue = { id: j.item.id, bar: edited }; // the new score opens cued there
-          toast('Saved as a new version — this score is unchanged', { label: 'Activities', run: () => go('#/activity') });
+          toast(`Saved as a new version — this score is unchanged${short ? ` · ${plural(short, 'bar')} not complete` : ''}`, { label: 'Activities', run: () => go('#/activity') });
           go(`#/item/${encodeURIComponent(j.item.id)}`);
         } else {
           const was = store.get(it.id);
           if (was) Object.assign(was, { updatedAt: j.item.updatedAt, musicxmlOriginal: j.item.musicxmlOriginal });
           await view.reload();
           if (edited != null) view.cueBar(edited);
-          toast('Notes saved — Activities can undo it', { label: 'Activities', run: () => go('#/activity') });
+          toast(short ? `Notes saved · ${short} bar${short === 1 ? '' : 's'} not complete` : 'Notes saved — Activities can undo it', { label: 'Activities', run: () => go('#/activity') });
         }
         opts.onDone?.(j);
       } catch (e) { s.close(); toast(e.message); } finally { busy = false; }
@@ -500,6 +594,7 @@ export async function editNotes(view, it, host, opts = {}) {
     host.removeEventListener('scoredrawn', markBar);
     paper.querySelectorAll('.np-barpick').forEach((r) => r.remove());
     document.querySelector('.menu')?.remove();
+    host.removeEventListener('barfix', onBarFix, true);
     host.removeEventListener('pointerdown', onDown, true); host.removeEventListener('pointermove', onMove, true);
     host.removeEventListener('pointerup', onUp, true); host.removeEventListener('pointercancel', onUp, true);
     for (const t of ['touchstart', 'touchmove', 'touchend', 'click']) host.removeEventListener(t, stop, true);
@@ -519,7 +614,7 @@ export async function editNotes(view, it, host, opts = {}) {
     const a = e.target.closest('[data-a]')?.dataset.a;
     if (!a) return;
     ({ close: () => close(), undo: () => goStep(at - 1), redo: () => goStep(at + 1), save, up: () => moveTo(-1), down: () => moveTo(1), barmenu: () => barMenu(e.target.closest('[data-a]')),
-      'semi-': () => pitch(-1), 'semi+': () => pitch(1), 'oct-': () => pitch(-12), 'oct+': () => pitch(12), dot, del, add,
+      'semi-': () => pitch(-1), 'semi+': () => pitch(1), 'oct-': () => pitch(-12), 'oct+': () => pitch(12), dot, del, add, fill,
       bar: wholeBar, none: () => setSel([]), several: () => { several = !several; draw(); }, tie, slur, playhere: playHere,
       prev: () => turn(-1), next: () => turn(1) })[a]?.();
   });
@@ -536,7 +631,7 @@ export async function editNotes(view, it, host, opts = {}) {
     else if (!mod) {
       const len = LENS.find((x) => x[3] === e.key);
       f = len ? () => setLen(len[0]) : { ArrowUp: () => pitch(1), ArrowDown: () => pitch(-1), ArrowLeft: () => stepNote(-1), ArrowRight: () => stepNote(1),
-        '.': dot, n: add, N: add, t: tie, T: tie, s: slur, S: slur, ...(e.target.closest?.('button') ? {} : { ' ': playHere }), Delete: del, Backspace: del,
+        '.': dot, e: fill, E: fill, n: add, N: add, t: tie, T: tie, s: slur, S: slur, ...(e.target.closest?.('button') ? {} : { ' ': playHere }), Delete: del, Backspace: del,
         b: wholeBar, B: wholeBar, Escape: () => (sel.size ? setSel([]) : close()) }[e.key];
     }
     if (!f) return;
@@ -549,7 +644,7 @@ export async function editNotes(view, it, host, opts = {}) {
   const api = { get sel() { return [...sel]; }, get notes() { return cur().notes; }, get step() { return at; }, get steps() { return steps.length; },
     get ops() { return cur().ops; }, get xml() { return cur().xml; }, select: (refs) => setSel(refs), get busy() { return busy; }, close,
     get cueBar() { return cueAt; }, run: (op) => run(op), get barPick() { return barPick; }, pickBar: (bar, staff = 1) => { barPick = { bar, staff }; setSel([]); },
-    get staves() { return nStaves(); }, get lyrics() { return lyr; } };
+    get staves() { return nStaves(); }, get took() { return [...took]; }, get lyrics() { return lyr; } };
   window.__editNotes = api; // for automated tests
   // a MIDI keyboard plays into the picked notes: midiedit.js, through these edits
   midiCtl = attachMidi({ get notes() { return cur().notes; }, get sel() { return picked(); }, get busy() { return busy; }, get step() { return at; },

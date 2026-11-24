@@ -14,8 +14,11 @@ move(text, refs, to) changes the <staff> of the chosen notes and rebuilds only t
   again per beat; a moved note loses its stem direction (the renderer picks one).
 Grace notes stay where they are (with the note they lead into when that note stays in its voice).
 After every edit the edited staff / voice of each edited bar is tidied (barnorm.normalize_bar: beams by beat group,
-rests joined into the largest rests that keep the beat) and so is the whole score (barnorm.tidy_score: no repeated
-time signature / key / clef, edited bars full).
+rests joined into the largest rests that keep the beat, notes spelled by the meter; the rest / note the user just set
+is kept as set unless notationally wrong) and so is the whole score (barnorm.tidy_score: no repeated time signature /
+key / clef). A bar left short or over-full (Remove rest …) is never filled on its own: incomplete_bars reports it
+(the preview / save answer `incomplete`; web/js/incomplete.js shows it on the score) until Fill with rest
+(op fillbar) or Change time for this bar (op bartime) fixes it.
 
 refs = indexes among the part's <note> elements (as notes() gives them). ops = [{op, refs, …}, …] applied in order
 (the refs of an op are in the score as the ops before it left it).
@@ -71,7 +74,8 @@ def piano_part(root):
 
 
 def notes(root):
-    """The notes of the part you edit (edit_part): [{ref, bar, on, dur, staff, midi, voice, rest?}] (on / dur in
+    """The notes of the part you edit (edit_part): [{ref, bar, on, dur, staff, midi, voice, rest?, tie?, slur?, fill?}]
+    (fill: a rest follows it (its tied notes) straight away in its voice, for "Fill next rest"; on / dur in
     quarters, on from the start of its bar; ref = index among the part's <note>s). Rests too (rest: True, midi
     None); no grace notes."""
     k, part, _ = edit_part(root)
@@ -91,6 +95,8 @@ def notes(root):
     out, div = [], Fr(1)
     for bi, m in enumerate(part.findall('measure')):
         t, last = Fr(0), Fr(0)
+        fill = {}
+        for vo in _read_bar(m, Fr(1))[0]: fill.update(fill_info(vo.evs))
         for e in m:
             if e.tag == 'attributes' and e.findtext('divisions'): div = Fr(int(float(e.findtext('divisions'))))
             elif e.tag == 'backup': t -= _dur(e) / div
@@ -102,7 +108,8 @@ def notes(root):
                 at = last if chord else t
                 if not chord: last, t = t, t + d
                 out.append({'ref': ref[id(e)], 'bar': bi, 'on': float(at), 'dur': float(d), 'staff': int(_st(e)), 'midi': _midi(e), 'voice': _vo(e),
-                            **({'rest': True} if e.find('rest') is not None or e.find('pitch') is None else {}), **marks(e)})
+                            **({'rest': True} if e.find('rest') is not None or e.find('pitch') is None else {}), **marks(e),
+                            **({'fill': True} if id(e) in fill else {})})
     return out
 
 
@@ -212,13 +219,13 @@ def _as_chord(ns):
         if k: _put(n, ET.Element('chord'))
 
 
-def _normalize(vo, div, beat, bar_len):
-    """Rests in a row joined and written again per beat."""
+def _normalize(vo, div, beat, bar_len, keep=frozenset()):
+    """Rests in a row joined and written again per beat (a rest the user just set — keep: ids — stays as it is)."""
     out, run = [], None
     def flush():
         if run: out.extend(_rests(run[0], run[1], div, beat, bar_len, vo.num, vo.staff))
     for ev in vo.evs:
-        if ev.plain_rest and not ev.graces:
+        if ev.plain_rest and not ev.graces and not (ev.notes and id(ev.notes[0]) in keep):
             if run and run[0] + run[1] == ev.on: run = (run[0], run[1] + ev.dur)
             else: flush(); run = (ev.on, ev.dur)
             continue
@@ -436,6 +443,284 @@ def _lengthen(voices, want, q, div, beat, bar_len):
             vo.touched = True
             done.extend(ev.notes)
     return done
+
+
+VALUE_NAME = {Fr(4): 'whole', Fr(3): 'dotted half', Fr(2): 'half', Fr(3, 2): 'dotted quarter', Fr(1): 'quarter',
+              Fr(3, 4): 'dotted 8th', Fr(1, 2): '8th', Fr(3, 8): 'dotted 16th', Fr(1, 4): '16th', Fr(1, 8): '32nd'}
+
+
+def value_name(q):
+    q = Fr(q)
+    return VALUE_NAME.get(q) or f'{float(q):g}-beat'
+
+
+def _beat_no(on_q, tsig):
+    b = on_q / Fr(4, tsig[1]) + 1
+    return f'{int(b)}' if b.denominator == 1 else f'{float(b):g}'
+
+
+def pitch_name(n):
+    p = n.find('pitch')
+    if p is None: return 'rest'
+    alt = int(float(p.findtext('alter') or 0))
+    return f'{p.findtext("step")}{"♯" * alt if alt > 0 else "♭" * -alt}{p.findtext("octave")}'
+
+
+def _as_tied(vo, ev, on, total, div, tie_in=None, tie_out=None):
+    """The chord ev written from `on` for `total` divisions: ev itself as the first piece (longest written values
+    first; barnorm spells them by the meter after), tied copies for the rest. Its tie into it stays only when it
+    still starts where it did; its tie out stays on the last piece. Returns [Ev] and the tie starts added."""
+    qs = [v for v, _, _ in pieces(Fr(total) / div)]
+    tie_in = {id(n): _has_tie(n, 'stop') and on == ev.on for n in ev.notes} if tie_in is None else {id(n): tie_in for n in ev.notes}
+    tie_out = {id(n): _has_tie(n, 'start') for n in ev.notes} if tie_out is None else {id(n): tie_out for n in ev.notes}
+    out, t, base = [], on, ev.notes
+    for k, q in enumerate(qs):
+        if k == 0: ns = base
+        else:
+            ns = [copy.deepcopy(n) for n in base]
+            for n in ns:
+                for tag in ('lyric', 'accidental', 'beam', 'stem'):
+                    for e in n.findall(tag): n.remove(e)
+                nt = n.find('notations')
+                if nt is not None:
+                    for c in [c for c in nt if c.tag != 'tied']: nt.remove(c)
+        for j, n in enumerate(ns):
+            src = base[j]
+            _set_type(n, q, div)
+            _drop_tie(n, 'start'); _drop_tie(n, 'stop')
+            if k > 0 or tie_in[id(src)]: _add_tie(n, 'stop')
+            if k < len(qs) - 1 or tie_out[id(src)]: _add_tie(n, 'start')
+        out.append(Ev(t, q * div, ns, 'notes', ev.graces if k == 0 else []))
+        t += q * div
+    return out, (len(qs) - 1) * len(ev.notes)
+
+
+def _relen_rest(vo, ev, q, div, beat, bar_len, tsig, pull, took):
+    """A rest picked gets q quarters. Shorter: the time freed is a rest after it (pull: the rest of the voice comes
+    earlier, the rest goes at its end). Longer: it takes the time from what follows in the voice — rests, then
+    notes (a note only partly covered keeps its end, shortened; one covered goes; took gets each). Returns the
+    tie starts added."""
+    if ev.notes[0].find('time-modification') is not None: raise HTTPException(400, 'Rests in a triplet keep their length')
+    d = q * div
+    if ev.on + d > bar_len:
+        room = (bar_len - ev.on) / div
+        raise HTTPException(400, f'Too long for the bar: a {value_name(q)} rest from beat {_beat_no(ev.on / div, tsig)} '
+                                 f'runs past the bar line — there is room for a {value_name(room)} rest there')
+    end, new_end, added = ev.end, ev.on + d, 0
+    if new_end < end:
+        freed = end - new_end
+        if pull:
+            vend = max(x.end for x in vo.evs)
+            for x in vo.evs:
+                if x is not ev and x.on >= end: x.on -= freed
+            tail = _rests(vend - freed, freed, div, beat, bar_len, vo.num, vo.staff)
+        else: tail = _rests(new_end, freed, div, beat, bar_len, vo.num, vo.staff)
+        vo.evs = sorted(vo.evs + tail, key=lambda e: e.on)
+    elif new_end > end:
+        out = []
+        for x in vo.evs:
+            if x is ev or x.on < end or x.on >= new_end: out.append(x); continue
+            if x.end <= new_end:  # covered: goes
+                if x.kind == 'notes' and x.dur > 0:
+                    took.append({'notes': x.notes, 'was': Fr(x.dur) / div, 'now': Fr(0), 'on': Fr(x.on) / div,
+                                 'lyrics': sum(len(n.findall('lyric')) for n in x.notes)})
+                continue
+            rem = x.end - new_end
+            if x.kind == 'rest': out.extend(_rests(new_end, rem, div, beat, bar_len, vo.num, vo.staff)); continue
+            if x.kind == 'gap': x.on, x.dur = new_end, rem; out.append(x); continue
+            if x.dur == 0 or x.notes[0].find('time-modification') is not None or not fits(rem / div, div):
+                took.append({'notes': x.notes, 'was': Fr(x.dur) / div, 'now': Fr(0), 'on': Fr(x.on) / div,
+                             'lyrics': sum(len(n.findall('lyric')) for n in x.notes)})
+                out.extend(_rests(new_end, rem, div, beat, bar_len, vo.num, vo.staff)); continue
+            took.append({'notes': x.notes, 'was': Fr(x.dur) / div, 'now': rem / div, 'on': Fr(x.on) / div, 'lyrics': 0})
+            evs, n_add = _as_tied(vo, x, new_end, rem, div, tie_in=False)
+            out.extend(evs); added += n_add
+        vo.evs = sorted(out, key=lambda e: e.on)
+    ev.dur = d
+    _set_type(ev.notes[0], q, div)
+    vo.touched = True
+    return added
+
+
+def fill_info(evs):
+    """{id(note): True} for each chord whose tied chain (inside the bar) is followed straight away by a rest."""
+    out = {}
+    for i, e in enumerate(evs):
+        if e.kind != 'notes' or e.dur == 0: continue
+        j = _chain_end(evs, i)
+        if j + 1 < len(evs) and evs[j + 1].kind == 'rest' and evs[j + 1].on == evs[j].end:
+            for n in e.notes: out[id(n)] = True
+    return out
+
+
+def _chain_end(evs, i):
+    """Index of the last event of the tied chain starting at evs[i] (same pitches, tied, back to back)."""
+    pit = lambda e: sorted(_midi(n) or 0 for n in e.notes)
+    j = i
+    while j + 1 < len(evs):
+        x, y = evs[j], evs[j + 1]
+        if not (y.kind == 'notes' and y.dur > 0 and y.on == x.end and pit(y) == pit(x)
+                and all(_has_tie(n, 'start') for n in x.notes) and all(_has_tie(n, 'stop') for n in y.notes)): break
+        j += 1
+    return j
+
+
+def _fill_next(vo, ev, div):
+    """The chord ev (with the notes tied on from it in the bar) takes in the one rest right after it. Never a note.
+    Returns the tie starts added (+) / taken away (−)."""
+    i = vo.evs.index(ev)
+    j = _chain_end(vo.evs, i)
+    nxt = vo.evs[j + 1] if j + 1 < len(vo.evs) else None
+    if nxt is None or nxt.on != vo.evs[j].end:
+        raise HTTPException(400, 'No rest after this note: it lasts to the end of the bar')
+    if nxt.kind != 'rest': raise HTTPException(400, 'No rest after this note to fill')
+    if ev.notes[0].find('time-modification') is not None: raise HTTPException(400, 'Notes in a triplet keep their length')
+    total = nxt.end - ev.on
+    if not fits(total / div, div): raise HTTPException(400, 'That length cannot be written in this score')
+    chain = vo.evs[i:j + 1]
+    byp = lambda ns: sorted(ns, key=lambda n: _midi(n) or 0)
+    tail = lambda n: [c for c in (n.find('notations') if n.find('notations') is not None else [])
+                      if c.tag == 'fermata' or (c.tag == 'slur' and c.get('type') == 'stop')]
+    marks = {} if len(chain) == 1 else {k: tail(n) for k, n in enumerate(byp(chain[-1].notes))}
+    evs, added = _as_tied(vo, ev, ev.on, total, div, tie_out=False)
+    for k, cs in marks.items():  # the old last piece's slur stop / fermata: on the new last piece
+        tgt = byp(evs[-1].notes)[k]
+        for c in cs: _notations(tgt).append(c)
+    vo.evs = vo.evs[:i] + evs + vo.evs[j + 2:]
+    vo.touched = True
+    return added - (len(chain) - 1) * len(ev.notes)
+
+
+def _close_gap(vo, ev, div, beat, bar_len):
+    """Remove rest: what follows it in the voice comes earlier by its length. The bar is left short (never filled
+    on its own: incomplete_bars shows it, with Fill with rest / Change time for this bar)."""
+    if ev.notes[0].find('time-modification') is not None: raise HTTPException(400, 'Rests in a triplet stay')
+    after = [x for x in vo.evs if x is not ev and x.on >= ev.end]
+    if not any(x.kind == 'notes' and x.dur for x in after):
+        raise HTTPException(400, 'Nothing after this rest in its bar to move up')
+    for x in after: x.on -= ev.dur
+    vo.evs = [x for x in vo.evs if x is not ev]
+    vo.touched = True
+
+
+def _fill_from_before(vo, ev, div):
+    """Remove rest: the note (tied chain) right before it takes its time (Fill next rest from that note)."""
+    i = vo.evs.index(ev)
+    if i == 0 or vo.evs[i - 1].kind != 'notes' or not vo.evs[i - 1].dur or vo.evs[i - 1].end != ev.on:
+        raise HTTPException(400, 'No note right before this rest to fill it')
+    j = i - 1
+    while j > 0 and vo.evs[j - 1].kind == 'notes' and _chain_end(vo.evs, j - 1) >= i - 1: j -= 1
+    first = vo.evs[j]
+    return first, _fill_next(vo, first, div)
+
+
+def _split_ev(ev, segs, div):
+    """ev (a chord or rest) written as tied pieces over segs = [(bar key, local onset, length)] (divisions): the
+    first piece is ev itself (lyrics, marks), the others copies with nothing but the tie; the tie into ev stays on
+    the first piece, its tie out on the last. Returns [(bar key, Ev)]."""
+    lens = [(k, on + sum(v * div for v, _, _ in pieces(Fr(d) / div)[:p]), v * div)
+            for k, on, d in segs for p, (v, _, _) in enumerate(pieces(Fr(d) / div))]
+    if ev.kind == 'gap': return [(k, Ev(on, d, [], 'gap')) for k, on, d in lens]
+    if ev.kind == 'rest':
+        out = []
+        for i, (k, on, d) in enumerate(lens):
+            n = ev.notes[0] if i == 0 else copy.deepcopy(ev.notes[0])
+            _set_type(n, Fr(d) / div, div)
+            out.append((k, Ev(on, d, [n], 'rest')))
+        return out
+    tie_in = [_has_tie(n, 'stop') for n in ev.notes]
+    tie_out = [_has_tie(n, 'start') for n in ev.notes]
+    out = []
+    for i, (k, on, d) in enumerate(lens):
+        if i == 0: ns = ev.notes
+        else:
+            ns = [copy.deepcopy(n) for n in ev.notes]
+            for n in ns:
+                for tag in ('lyric', 'accidental', 'beam', 'stem'):
+                    for e in n.findall(tag): n.remove(e)
+                nt = n.find('notations')
+                if nt is not None:
+                    for c in [c for c in nt if c.tag != 'tied']: nt.remove(c)
+        for j, n in enumerate(ns):
+            _set_type(n, Fr(d) / div, div)
+            _drop_tie(n, 'start'); _drop_tie(n, 'stop')
+            if i > 0 or tie_in[j]: _add_tie(n, 'stop')
+            if i < len(lens) - 1 or tie_out[j]: _add_tie(n, 'start')
+        out.append((k, Ev(on, d, ns, 'notes', ev.graces if i == 0 else [])))
+    return out
+
+
+def _ripple(part, rest_el):
+    """Remove rest + pull notes from the next bars: in the rest's staff / voice, everything after it comes earlier
+    by its length across the bar lines (notes over a bar line tied), up to the last bar the voice has in a row; that
+    bar ends with the rest's time as a rest. Returns ({bar index}, staff, voice, tie starts added)."""
+    bars = part.findall('measure')
+    div, tsig, info = Fr(1), (4, 4), []
+    for m in bars:
+        for a in m.findall('attributes'):
+            if a.findtext('divisions'): div = Fr(int(float(a.findtext('divisions'))))
+            tm = a.find('time')
+            if tm is not None and (tm.findtext('beats') or '').strip().isdigit():
+                tsig = (int(tm.findtext('beats')), int(tm.findtext('beat-type') or 4))
+        info.append((div, tsig))
+    bi = next(k for k, m in enumerate(bars) if any(n is rest_el for n in m.iter('note')))
+    st, vn = _st(rest_el), _vo(rest_el)
+    rows, off, evs = [], Fr(0), []
+    for k in range(bi, len(bars)):
+        dv, ts = info[k]
+        if dv != info[bi][0]: break
+        voices, other, longest = _read_bar(bars[k], dv)
+        vo = next((v for v in voices if v.staff == st and v.num == vn), None)
+        if vo is None: break
+        L = Fr(4 * ts[0], ts[1]) * dv
+        rows.append((k, voices, other, vo, off, L, ts))
+        evs += [(off + e.on, e) for e in vo.evs]
+        off += L
+    div = info[bi][0]
+    rest = next(e for _, e in evs if e.notes and e.notes[0] is rest_el)
+    r_on = next(a for a, e in evs if e is rest)
+    if len(rows) < 2: raise HTTPException(400, 'No bar after this one to pull notes from')
+    flat, end = [], off
+    for a, e in evs:
+        if e is rest: continue
+        flat.append((a - rest.dur if a > r_on else a, e))
+    flat.append((end - rest.dur, Ev(Fr(0), rest.dur, [rest_el], 'rest')))
+    per = {k: [] for k, *_ in rows}
+    added = 0
+    for a, e in flat:
+        segs, t, left = [], a, e.dur
+        for k, _, _, _, o, L, _ in rows:
+            if left <= 0: break
+            if t >= o + L or t < o: continue
+            d = min(left, o + L - t)
+            segs.append((k, t - o, d)); t += d; left -= d
+        if len(segs) > 1 and e.notes and e.notes[0].find('time-modification') is not None:
+            raise HTTPException(400, 'A triplet would cross the bar line')
+        if e.kind == 'rest' and len(segs) == 1 and len(pieces(Fr(segs[0][2]) / div)) == 1:
+            e.on = segs[0][1]; per[segs[0][0]].append(e); continue
+        if e.kind == 'notes' and len(segs) == 1 and segs[0][2] == e.dur:
+            e.on = segs[0][1]; per[segs[0][0]].append(e); continue
+        if any(not fits(Fr(d) / div, div) for _, _, d in segs): raise HTTPException(400, 'Those lengths cannot be written across the bar line')
+        got = _split_ev(e, segs, div)
+        if e.kind == 'notes': added += (len(got) - 1) * len(e.notes)
+        for k, x in got: per[k].append(x)
+    for k, voices, other, vo, o, L, ts in rows:
+        vo.evs = sorted(per[k], key=lambda x: x.on)
+        vo.touched = True
+        _normalize(vo, div, _beat(ts), L)
+        voices.sort(key=lambda v: (v.staff, v.first))
+        _write_bar(bars[k], voices, other, L, div, _beat(ts))
+    return {k for k, *_ in rows}, st, vn, added
+
+
+def delete_bar(root, bi):
+    """The bar bi goes from every part (barops.delete_bar: key, time, clef, tempo and layout go on to the next bar;
+    the closing bar line stays); the bars after it are numbered again. Edits use bar_op (ties, slurs, bars to check)."""
+    from .barops import _renumber, delete_bar as _delete
+    parts = root.findall('part')
+    if not parts or not 0 <= bi < len(parts[0].findall('measure')): raise HTTPException(400, 'No such bar')
+    _delete(root, bi)
+    _renumber(root)
 
 
 def _key_flats(part):
@@ -696,7 +981,18 @@ def edit(text: str, op: dict) -> tuple[str, list]:
     """One editing step -> (new MusicXML, refs of the notes it touched, in the new score). op:
       {op:'move', refs, to: 1|2}      to the upper / lower staff of the piano part
       {op:'pitch', refs, by}          semitones up (+) / down (-)
-      {op:'len', refs, q}             a written length in quarters (1/16 … whole, dotted too)
+      {op:'len', refs, q, pull?}      a written length in quarters (1/16 … whole, dotted too), notes or rests;
+                                      a rest made shorter leaves a rest after it (pull: the notes after it come
+                                      earlier instead); made longer it takes the time of what follows (rests,
+                                      notes: shortened or gone — preview's `took`); too long for the bar: refused
+      {op:'fill', refs}               each picked note takes in the one rest right after it (never a note)
+      {op:'restdel', refs, how}       a rest removed: how 'close' (default: what follows comes earlier, the bar is
+                                      left short — incomplete_bars), 'fill' (the note before takes its time) or
+                                      'ripple' (close + the next bars' notes pulled earlier over the bar lines)
+      {op:'delbar', bar}              bar (0-based) deleted from every part (a whole-bar rest's "Delete this bar")
+      {op:'fillbar', bar}             a short bar: rests to its end (every voice)
+      {op:'bartime', bar}             a short / long bar gets a time signature of its own length (3/4, 2/4, 5/8 …);
+                                      the next bar gets the time back, so only that bar changes
       {op:'delete', refs}             gone (a rest where nothing is left)
       {op:'add', refs, by?, midi?}    a note `by` semitones (default 4) above each picked note, in its chord; a
                                       picked rest becomes a note (`midi`, default the middle of its staff)
@@ -711,8 +1007,11 @@ def edit(text: str, op: dict) -> tuple[str, list]:
     return out, touched
 
 
-def edit_ex(text: str, op: dict):
-    """edit() -> (text, touched refs, how many ties went because their notes no longer meet)."""
+def edit_ex(text: str, op: dict, info=None):
+    """edit() -> (text, touched refs, how many ties went because their notes no longer meet). info (a dict) gets
+    took: [{bar, beat, what, was, now, lyrics}] notes a longer rest took time from (now 0: gone), tookRefs: the
+    shortened ones in the new score, said: [words] when a length picked was written another way by the meter."""
+    info = {} if info is None else info
     kind = op.get('op') or ('move' if 'to' in op else None)
     if kind == 'unmark': return unmark(text, op.get('bars')), [], 0
     if kind == 'alt': return use_measure(text, op.get('bar'), op.get('measure')), [], 0
@@ -720,8 +1019,9 @@ def edit_ex(text: str, op: dict):
         from .lyricsedit import set_lyrics
         return set_lyrics(text, op), [], 0
     from .barops import OPS as BAR_OPS, bar_op
-    if kind in BAR_OPS: return bar_op(text, op)  # Bar ▾: clear / add a staff in a bar, insert / delete bars, add / remove staves
-    if kind not in ('move', 'pitch', 'len', 'delete', 'add', 'tie', 'slur', 'unslur', 'set'): raise HTTPException(400, f'Unknown edit: {kind}')
+    if kind in BAR_OPS: return bar_op(text, op)  # Bar ▾: clear / add a hand in a bar, insert / delete bars, add / remove staves
+    if kind in ('fillbar', 'bartime'): return _bar_op(text, kind, op, info), [], 0
+    if kind not in ('move', 'pitch', 'len', 'fill', 'restdel', 'delete', 'add', 'tie', 'slur', 'unslur', 'set'): raise HTTPException(400, f'Unknown edit: {kind}')
     root = ET.fromstring(text.encode('utf-8'))
     pk, part, hands = edit_part(root)
     if part is None: raise HTTPException(400, 'This score has no notes')
@@ -735,10 +1035,13 @@ def edit_ex(text: str, op: dict):
         n = all_notes[r]
         if n.find('grace') is not None: raise HTTPException(400, f'Note {r} is a grace note')
         if n.find('rest') is not None or n.find('pitch') is None:
-            if kind in ('add', 'set'): rests.add(id(n)); continue
-            raise HTTPException(400, f'Note {r} is a rest')
+            if kind in ('add', 'len', 'restdel', 'set'): rests.add(id(n)); continue
+            raise HTTPException(400, 'No rest after this note to fill' if kind == 'fill' else f'Note {r} is a rest')
+        if kind == 'restdel': raise HTTPException(400, 'Pick a rest to remove')
         want.add(id(n))
     if not want and not rests: raise HTTPException(400, 'Pick some notes first')
+    how = op.get('how') or 'close'
+    if kind == 'restdel' and how not in ('close', 'fill', 'ripple'): raise HTTPException(400, 'how: close, fill or ripple')
     ties_before = _tie_count(part)
     if kind in ('tie', 'slur', 'unslur'):
         touched = _tie_op(part, want) if kind == 'tie' else _slur_op(part, want, kind == 'slur', bool(op.get('next')))
@@ -747,12 +1050,23 @@ def edit_ex(text: str, op: dict):
         ref = {id(e): i for i, e in enumerate(part.iter('note'))}
         return _head(text) + ET.tostring(root, encoding='unicode') + '\n', sorted({ref[id(e)] for e in touched if id(e) in ref}), 0
     if kind == 'pitch': want = _tie_chain(part, want)  # a tied note and its partners change together
+    if kind == 'delete':  # one note written as tied pieces in its bar (the meter's spelling) goes as a whole
+        bar_of = {id(n): k for k, m in enumerate(part.findall('measure')) for n in m.iter('note')}
+        bars_picked = {bar_of[i] for i in want}
+        want = {i for i in _tie_chain(part, want) if bar_of.get(i) in bars_picked}
     snap = _slur_mark(part)
     touched = []
     flats = _key_flats(part)
     bars = part.findall('measure')
     tidy = set()  # (bar index, staff, voice) edited: beams and rests tidied after (barnorm.py)
-    if kind == 'set':
+    keep = set()  # what the user just set: barnorm never joins / spells it again (unless notationally wrong)
+    took, added = [], 0
+    if kind == 'restdel' and how == 'ripple':
+        if len(rests) != 1: raise HTTPException(400, 'Pull notes from the next bar: one rest at a time')
+        el = next(n for n in all_notes if id(n) in rests)
+        done, st, vn, added = _ripple(part, el)
+        tidy.update((b, st, vn) for b in done)
+    elif kind == 'set':
         from .noteset import set_op
         touched, tidy = set_op(part, want, rests, op.get('midis'))
     elif kind in ('pitch', 'add'):
@@ -798,20 +1112,40 @@ def edit_ex(text: str, op: dict):
                 tm = a.find('time')
                 if tm is not None and (tm.findtext('beats') or '').strip().isdigit():
                     tsig = (int(tm.findtext('beats')), int(tm.findtext('beat-type') or 4))
-            if not any(id(n) in want and (kind != 'move' or _st(n) != to) for n in m.iter('note')): continue
+            if not any((id(n) in want or id(n) in rests) and (kind != 'move' or _st(n) != to) for n in m.iter('note')): continue
             if kind == 'len' and (q * div).denominator != 1: raise HTTPException(400, 'That length is too short for this score')
             beat = _beat(tsig)
             voices, other, bar_len = _read_bar(m, div)
             bar_len = bar_len or Fr(4 * tsig[0], tsig[1]) * div
             if kind == 'len':
-                touched += _lengthen(voices, want, q, div, beat, bar_len)
+                if want:
+                    touched += _lengthen(voices, want, q, div, beat, bar_len)
+                    keep.update(want)
+                for vo in voices:
+                    for ev in [e for e in vo.evs if e.kind == 'rest' and e.notes and id(e.notes[0]) in rests]:
+                        if ev not in vo.evs: continue
+                        t0 = len(took)
+                        added += _relen_rest(vo, ev, q, div, beat, bar_len, tsig, bool(op.get('pull')), took)
+                        for x in took[t0:]: x['bar'], x['tsig'] = bars.index(m), tsig
+                        touched.append(ev.notes[0]); keep.add(id(ev.notes[0]))
+            elif kind == 'restdel':
+                for vo in voices:
+                    for ev in sorted([e for e in vo.evs if e.kind == 'rest' and e.notes and id(e.notes[0]) in rests], key=lambda e: -e.on):
+                        if how == 'close': _close_gap(vo, ev, div, beat, bar_len)
+                        else:
+                            first, a = _fill_from_before(vo, ev, div)
+                            added += a; touched.extend(first.notes)
+            elif kind == 'fill':
+                for vo in voices:
+                    for ev in [e for e in vo.evs if e.kind == 'notes' and e.dur and any(id(n) in want for n in e.notes)]:
+                        if ev in vo.evs: added += _fill_next(vo, ev, div); touched.extend(ev.notes)
             else:
                 taken = _take_out(voices, want, to if kind == 'move' else None)
                 for vo in voices:
                     if vo.touched: _normalize(vo, div, beat, bar_len)
                 if kind == 'move': touched += _place(voices, taken, to, div, beat, bar_len)
             for vo in voices:
-                if vo.touched: _normalize(vo, div, beat, bar_len)
+                if vo.touched: _normalize(vo, div, beat, bar_len, keep)
             # a voice with only rests goes when its staff has another voice (the lowest number stays)
             for vo in sorted(voices, key=lambda v: (len(v.num), v.num), reverse=True):
                 if vo.touched and all(e.kind != 'notes' for e in vo.evs) and any(o is not vo and o.staff == vo.staff for o in voices):
@@ -819,6 +1153,7 @@ def edit_ex(text: str, op: dict):
             voices.sort(key=lambda v: (v.staff, v.first))  # upper staff first, then lower, each as the bar had them
             _write_bar(m, voices, other, bar_len, div, beat)
             tidy.update((bars.index(m), vo.staff, vo.num) for vo in voices if vo.touched)
+    nb = {}
     if tidy:
         from .barnorm import normalize_bar
         div, tsig = Fr(1), (4, 4)
@@ -829,15 +1164,26 @@ def edit_ex(text: str, op: dict):
                 if tm is not None and (tm.findtext('beats') or '').strip().isdigit():
                     tsig = (int(tm.findtext('beats')), int(tm.findtext('beat-type') or 4))
             for b, st, v in sorted(tidy):
-                if b == bi: normalize_bar(m, st, v, tsig, div)
+                if b == bi:
+                    s0 = len(nb.get('split', []))
+                    normalize_bar(m, st, v, tsig, div, keep=keep, info=nb)
+                    for a, qq, ps, what in nb.get('split', [])[s0:]:
+                        info.setdefault('said', []).append(
+                            f'Bar {bi + 1}: a {value_name(qq)} {what} on beat {_beat_no(a, tsig)} is written as '
+                            + ' + '.join(value_name(x) for x in ps) + (' rests' if what == 'rest' else ' (tied)')
+                            + ' to keep the beat readable')
     from .barnorm import tidy_score
-    tidy_score(root, {(pk, b) for b, _, _ in tidy})  # no repeated time / key / clef; edited bars full
+    tidy_score(root)  # no repeated time / key / clef (a bar left short is shown as such, never filled: incomplete_bars)
     fix_slurs(part, snap)
     fix_ties(part)
-    gone = max(0, ties_before - _tie_count(part))
+    gone = max(0, ties_before + added + nb.get('ties', 0) - _tie_count(part))
     ET.indent(root, space='  ')
     out = _head(text) + ET.tostring(root, encoding='unicode') + '\n'
     ref = {id(e): i for i, e in enumerate(part.iter('note'))}
+    if took:
+        info['took'] = [{'bar': x['bar'] + 1, 'beat': _beat_no(x['on'], x['tsig']), 'what': '+'.join(pitch_name(n) for n in x['notes']),
+                         'was': float(x['was']), 'now': float(x['now']), 'lyrics': x['lyrics']} for x in took]
+        info['tookRefs'] = sorted(ref[id(n)] for x in took if x['now'] for n in x['notes'] if id(n) in ref)
     return out, sorted(ref[id(e)] for e in touched if id(e) in ref), gone
 
 
@@ -849,13 +1195,105 @@ def move(text: str, refs, to) -> tuple[str, list]:
 def apply_ops(text, ops, info=None):
     """All the edits in order -> (text, refs the last one touched). info (a dict) gets tiesGone: ties the last
     edit had to drop (their notes no longer meet)."""
-    moved, gone = [], 0
+    moved, gone, last = [], 0, {}
     if not isinstance(ops, list): raise HTTPException(400, 'ops: a list of edits')
     for op in ops:
         if not isinstance(op, dict): raise HTTPException(400, 'ops: a list of edits')
-        text, moved, gone = edit_ex(text, op)
-    if info is not None: info['tiesGone'] = gone
+        last = {}
+        text, moved, gone = edit_ex(text, op, last)
+    if info is not None: info.update(last); info['tiesGone'] = gone
     return text, moved
+
+
+def incomplete_bars(root):
+    """Bars of the edit part where a voice does not fill the time signature: [{bar (1-based), have, need (quarters),
+    words: '2 of 4 beats'}]. The first bar when short (a pickup) and bars marked implicit are not counted."""
+    k, part, _ = edit_part(root)
+    if part is None: return []
+    out, div, tsig = [], Fr(1), (4, 4)
+    for bi, m in enumerate(part.findall('measure')):
+        for a in m.findall('attributes'):
+            if a.findtext('divisions'): div = Fr(int(float(a.findtext('divisions'))))
+            tm = a.find('time')
+            if tm is not None and (tm.findtext('beats') or '').strip().isdigit():
+                tsig = (int(tm.findtext('beats')), int(tm.findtext('beat-type') or 4))
+        if m.get('implicit') == 'yes': continue
+        voices, _, _ = _read_bar(m, div)
+        ends = [Fr(v.evs[-1].end) / div for v in voices if v.evs and any(e.kind != 'gap' for e in v.evs)]
+        if not ends: continue
+        L = Fr(4 * tsig[0], tsig[1])
+        over, short = max(ends), min(ends)
+        if over > L: have = over
+        elif short < L and not (bi == 0 and over < L): have = short
+        else: continue
+        unit = Fr(4, tsig[1])
+        out.append({'bar': bi + 1, 'have': float(have), 'need': float(L), 'over': have > L,
+                    'words': f'{float(have / unit):g} of {tsig[0]} beats'})
+    return out
+
+
+def _time_for(q):
+    """A time signature for a bar of q quarters: 3/4, 2/4, 5/8, 7/16 …"""
+    q = Fr(q)
+    if q.denominator == 1: return int(q), 4
+    if (q * 2).denominator == 1: return int(q * 2), 8
+    return int(q * 4), 16
+
+
+def _bar_op(text, kind, op, info):
+    """delbar / fillbar / bartime on bar op['bar'] (0-based)."""
+    from .barnorm import tidy_score
+    root = ET.fromstring(text.encode('utf-8'))
+    pk, part, _ = edit_part(root)
+    if part is None: raise HTTPException(400, 'This score has no notes')
+    try: bi = int(op.get('bar'))
+    except (TypeError, ValueError): raise HTTPException(400, 'bar: a bar number')
+    bars = part.findall('measure')
+    if not 0 <= bi < len(bars): raise HTTPException(400, 'No such bar')
+    if kind == 'delbar':
+        delete_bar(root, bi)
+    elif kind == 'fillbar':
+        st = tidy_score(root, {(pk, bi)}, whole=True)
+        if not st['filled']: raise HTTPException(400, 'Nothing to fill: the bar is full (or longer than its time)')
+    else:
+        div, tsig, tm_el = Fr(1), (4, 4), None
+        for m in bars[:bi + 1]:
+            for a in m.findall('attributes'):
+                if a.findtext('divisions'): div = Fr(int(float(a.findtext('divisions'))))
+                tm = a.find('time')
+                if tm is not None and (tm.findtext('beats') or '').strip().isdigit():
+                    tsig, tm_el = (int(tm.findtext('beats')), int(tm.findtext('beat-type') or 4)), tm
+        voices, _, _ = _read_bar(bars[bi], div)
+        ends = [Fr(v.evs[-1].end) / div for v in voices if v.evs]
+        if not ends: raise HTTPException(400, 'This bar is empty')
+        q, L = max(ends), Fr(4 * tsig[0], tsig[1])
+        if q == L and min(ends) == L: raise HTTPException(400, 'This bar is complete already')
+        if q == L: raise HTTPException(400, 'The bar is as long as its time: fill it with rests instead')
+        beats, bt = _time_for(q)
+        old = copy.deepcopy(tm_el) if tm_el is not None else ET.fromstring('<time><beats>4</beats><beat-type>4</beat-type></time>')
+        for p in root.findall('part'):
+            ms = p.findall('measure')
+            if bi >= len(ms): continue
+            new = ET.Element('time'); ET.SubElement(new, 'beats').text = str(beats); ET.SubElement(new, 'beat-type').text = str(bt)
+            _put_time(ms[bi], new)
+            if bi + 1 < len(ms) and not any(a.find('time') is not None for a in ms[bi + 1].findall('attributes')):
+                _put_time(ms[bi + 1], copy.deepcopy(old))
+        tidy_score(root, {(pk, bi)}, whole=True)  # a voice shorter than the new length: rests to its end
+        info.setdefault('said', []).append(f'Bar {bi + 1} is in {beats}/{bt} now; bar {bi + 2} goes back to {tsig[0]}/{tsig[1]}'
+                                           if bi + 1 < len(bars) else f'Bar {bi + 1} is in {beats}/{bt} now')
+    ET.indent(root, space='  ')
+    return _head(text) + ET.tostring(root, encoding='unicode') + '\n'
+
+
+def _put_time(m, time_el):
+    """The bar's own time signature (in its first <attributes>, made when it has none)."""
+    from .barnorm import _sort_attrs
+    a = m.find('attributes')
+    if a is None or [c.tag for c in m].index('attributes') > min([i for i, c in enumerate(m) if c.tag == 'note'] or [0]):
+        a = ET.Element('attributes'); m.insert(0, a)
+    for t in a.findall('time'): a.remove(t)
+    a.append(time_el)
+    _sort_attrs(a)
 
 
 # ---------- the endpoints ----------
@@ -884,7 +1322,9 @@ def preview(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cf
     from .barnorm import tidy_score
     over = [num for _, num in tidy_score(ET.fromstring(out.encode('utf-8')))['overfull']]
     return {'xml': out, 'notes': notes(ET.fromstring(out.encode('utf-8'))), 'moved': moved, 'part': k, 'hands': hands, 'overfull': over,
-            'check': check_bars(out), 'sha': _sha(text), 'changed': bool(body.get('ops')), 'tiesGone': info['tiesGone']}
+            'check': check_bars(out), 'sha': _sha(text), 'changed': bool(body.get('ops')), 'tiesGone': info['tiesGone'],
+            'took': info.get('took', []), 'tookRefs': info.get('tookRefs', []), 'said': info.get('said', []),
+            'incomplete': incomplete_bars(ET.fromstring(out.encode('utf-8')))}
 
 
 def keep(d, name):
@@ -903,15 +1343,18 @@ def _what(ops):
     for o in ops:
         k = o.get('op') or ('move' if 'to' in o else '')
         k = f'move{o.get("to")}' if k == 'move' else k
-        cnt[k] = cnt.get(k, 0) + (len(o.get('bars') or []) if k == 'unmark' else 1 if k in ('alt', 'clearbar', 'fillbar', 'insbar', 'delbar', 'addstaff', 'delstaff') else len(o.get('refs') or []))
+        cnt[k] = cnt.get(k, 0) + (len(o.get('bars') or []) if k == 'unmark' else 1 if k in ('alt', 'delbar', 'fillbar', 'bartime', 'clearbar', 'addhand', 'insbar', 'addstaff', 'delstaff') else len(o.get('refs') or []))
     words = {'move1': lambda n: f'{s(n)} to the right hand', 'move2': lambda n: f'{s(n)} to the left hand', 'move3': lambda n: f'{s(n)} to staff 3',
-             'pitch': lambda n: f'{s(n)} higher / lower', 'len': lambda n: f'{s(n)} longer / shorter', 'delete': lambda n: f'{s(n)} deleted',
+             'pitch': lambda n: f'{s(n)} higher / lower', 'len': lambda n: f'{n} note{"s" if n != 1 else ""} / rest{"s" if n != 1 else ""} longer / shorter',
+             'fill': lambda n: f'{s(n)} filled into the rest after', 'restdel': lambda n: f'{n} rest{"s" if n != 1 else ""} removed',
+             'delbar': lambda n: f'{n} bar{"s" if n != 1 else ""} deleted', 'fillbar': lambda n: f'{n} short bar{"s" if n != 1 else ""} filled with rests',
+             'bartime': lambda n: f'{n} bar{"s" if n != 1 else ""} given {"their" if n != 1 else "its"} own time signature', 'delete': lambda n: f'{s(n)} deleted',
              'add': lambda n: f'{s(n)} added', 'unmark': lambda n: f'{n} bar{"s" if n != 1 else ""} checked',
              'alt': lambda n: f'{n} bar{"s" if n != 1 else ""} from the other reading',
              'tie': lambda n: f'{n} tie{"s" if n != 1 else ""} changed', 'slur': lambda n: f'{n} slur{"s" if n != 1 else ""} added',
              'unslur': lambda n: f'{n} slur{"s" if n != 1 else ""} removed',
-             'clearbar': lambda n: f'{n} bar{"s" if n != 1 else ""} cleared on one staff', 'fillbar': lambda n: f'{n} bar{"s" if n != 1 else ""} given a staff',
-             'insbar': lambda n: f'{n} empty bar{"s" if n != 1 else ""} added', 'delbar': lambda n: f'{n} bar{"s" if n != 1 else ""} deleted',
+             'clearbar': lambda n: f'{n} bar{"s" if n != 1 else ""} cleared on one staff', 'addhand': lambda n: f'{n} bar{"s" if n != 1 else ""} given a staff',
+             'insbar': lambda n: f'{n} empty bar{"s" if n != 1 else ""} added',
              'addstaff': lambda n: f'{n} staff added' if n == 1 else f'{n} staves added', 'delstaff': lambda n: f'{n} staff removed' if n == 1 else f'{n} staves removed',
              'set': lambda n: f'{s(n)} played in'}
     verses = sorted({str(o.get('verse') or '1') for o in ops if o.get('op') == 'lyrics'}, key=lambda v: (len(v), v))
@@ -954,7 +1397,7 @@ def save(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg))
         refresh_staves(c, cf, new['id'])
         aid = record_undo(c, 'edit-notes', {'op': 'created', 'ids': [new['id']], 'titles': [new['title']]},
                           f'Edited notes: {it["title"]}', f'New score, {what} (the score it came from is untouched)')
-        return {'ok': True, 'mode': 'new', 'item': get_item(c, new['id']), 'activity': aid}
+        return {'ok': True, 'mode': 'new', 'item': get_item(c, new['id']), 'activity': aid, 'incomplete': incomplete_bars(ET.fromstring(out.encode('utf-8')))}
     d = p.parent
     hist = keep(d, p.name)
     orig = it.get('musicxmlOriginal')
@@ -968,4 +1411,4 @@ def save(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg))
     aid = record_undo(c, 'edit-notes', {'op': 'musicxml', 'id': it['id'], 'title': it['title'], 'file': p.name, 'before': hist,
                                         'beforeSha': _sha(text), 'afterSha': _sha(out), 'what': 'notes were edited'},
                       f'Edited notes: {it["title"]}', f'{what}; the score before is kept in {hist}')
-    return {'ok': True, 'mode': 'this', 'item': get_item(c, it['id']), 'activity': aid, 'history': hist, 'sha': _sha(out), 'check': check_bars(out)}
+    return {'ok': True, 'mode': 'this', 'item': get_item(c, it['id']), 'activity': aid, 'history': hist, 'sha': _sha(out), 'check': check_bars(out), 'incomplete': incomplete_bars(ET.fromstring(out.encode('utf-8')))}

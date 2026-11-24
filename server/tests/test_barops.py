@@ -68,14 +68,14 @@ def test_add_left_hand_to_a_bar_that_has_none():
     m2 = r.findall('.//measure')[1]
     for k in [e for e in list(m2) if e.tag == 'backup' or (e.tag == 'note' and e.findtext('staff') == '2')]: m2.remove(k)
     x = sm._head(x) + ET.tostring(r, encoding='unicode')
-    out, rests, _ = op(x, op='fillbar', bar=1, staff=2)
+    out, rests, _ = op(x, op='addhand', bar=1, staff=2)
     assert bars(out) and len(rests) == 1
     n = next(n for n in sm.notes(root(out)) if n['ref'] == rests[0])
     assert n['rest'] and n['bar'] == 1 and n['staff'] == 2 and n['voice'] == '5'
     # a bar that has the hand already: nothing changes, its rests / notes come back to pick
-    same, got, _ = op(out, op='fillbar', bar=1, staff=2)
+    same, got, _ = op(out, op='addhand', bar=1, staff=2)
     assert music(same) == music(out) and got
-    with pytest.raises(HTTPException): op(x, op='fillbar', bar=1, staff=3)
+    with pytest.raises(HTTPException): op(x, op='addhand', bar=1, staff=3)
 
 
 def test_single_staff_gets_a_left_hand_staff():

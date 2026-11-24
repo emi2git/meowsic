@@ -84,8 +84,11 @@ def test_44_sixteenths_beam_per_beat_in_that_half():
 
 
 def test_44_rest_and_quarter_break_beams():
+    m = norm(bar(E8('C5'), n('R', 0.5), E8('D5'), E8('E5'), n('G5', 1), E8('F5'), E8('A5')))
+    assert beams(m) == ['', '', 'begin', 'end', '', 'begin', 'end']
+    # the quarter over beat 3 is spelled 8th~8th (the meter), so the second half beams in four
     m = norm(bar(E8('C5'), n('R', 0.5), E8('D5'), E8('E5'), E8('F5'), n('G5', 1), E8('A5')))
-    assert beams(m) == ['', '', 'begin', 'end', '', '', '']
+    assert beams(m) == ['', '', 'begin', 'end', 'begin', 'continue', 'continue', 'end']
 
 
 def test_44_dotted_eighth_sixteenth_hook():
