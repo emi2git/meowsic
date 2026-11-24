@@ -72,3 +72,9 @@ body[data-view="cleanup"] #main:has(.cu.info) { scroll-padding-bottom: 150px; }
   /* iPhone: the tab bar is under the page */
   :root[data-device="phone"] .ci-acts { padding-bottom: 10px; }
 }
+/* phone: the three tabs get their own row under the title (Undo / ? stay up by the title) */
+@media (max-width: 760px) {
+  body[data-view="cleanup"] .cu-top .cu-tabs { order: 9; flex: 1 0 100%; flex-wrap: nowrap; }
+  body[data-view="cleanup"] .cu-top > button { min-height: 30px; padding-top: 0; padding-bottom: 0; }
+  body[data-view="cleanup"] .cu-top { row-gap: 4px; }
+}
