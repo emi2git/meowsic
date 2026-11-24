@@ -41,6 +41,7 @@ Updated: 2026-11-24
 - Record your own singing/talking voice (future beta, in Feedback)
 
 ## Done today (live)
+- Play chords: score toolbar toggle plays the chord names above the bars as piano chords with the score (repeats, from here, tempo, stop; remembered per device)
 - Add score: only running/queued jobs, compact, below the form; done/failed live in Activities
 - Singing: Vietnamese lyrics keep every letter (Unicode, NFC; the A-Z reader cut most syllables) and each syllable is read as ARPAbet for SoulX-Singer (it has no Vietnamese phonemes)
 - OMR: keep all lyrics; chords from sheet fixed (all 5 benchmark songs 100%); scores remade, old copies in Trash

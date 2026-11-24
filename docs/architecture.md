@@ -38,6 +38,9 @@ FastAPI server (server/meowsic, Python 3.12) ── SQLite ~/Documents/Meowsic/m
   (`saved.js`, Settings → Storage on this device). `/api/health` is never cached.
 - `device.js` decides phone / tablet / desktop once (`data-device` on `<html>`). CSS and JS both read it.
 - Scores are drawn with OpenSheetMusicDisplay (`web/vendor/osmd.min.js`) and played with sampled piano (`audio.js`, Salamander, CC BY 3.0).
+  The toolbar's Play chords toggle (this device, `meowsic-chordplay`; hidden when a score has no `<harmony>`) also plays the chord
+  names as piano chords: `musicxml.js xmlInfo` reads them, `chordplay.js` voices them (its grammar mirrors `chordname.py`;
+  `server/tests/test_chordplay.py` runs it in node against the Python) and `ScorePlayer` schedules them in the play order.
 
 ## Changes, undo, clean-up
 - `undolog.record_undo(c, type, step, …)` writes an Activities row with the step needed to roll it back. Steps made within a

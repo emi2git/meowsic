@@ -100,14 +100,18 @@ function pianoVoice(out, pitch, vel, when, held) {
   }
   src.connect(env); env.connect(out);
   src.start(when); src.stop(when + held + tail);
+  return { src, env, end: when + held + tail };
 }
 
 // ---------- score player: notes in quarter-note time; tempo, loop, transpose ----------
 // segments: [[fromQ, toQ], …] in the order they are played (repeats and endings, musicxml.js playOrder), or null:
 // at the end of each the clock jumps to the next (the playhead with it); A–B loop mode ignores them.
+// chords: the chord symbols as piano chords ([{q, d, n, v}], chordplay.js chordEvents), heard while chordsOn; a chord
+// already sounding where Play starts (or a loop jumps back to) is struck there for the rest of its length.
 export class ScorePlayer {
-  constructor({ notes, bpm, beats, onTick, onEnd, segments = null }) {
-    Object.assign(this, { notes, bpm, beats, onTick, onEnd, segments });
+  constructor({ notes, bpm, beats, onTick, onEnd, segments = null, chords = [] }) {
+    Object.assign(this, { notes, bpm, beats, onTick, onEnd, segments, chords });
+    this.chordsOn = false; this.chordVoices = []; this.heardChords = []; // heardChords: [q, midi] as scheduled (for tests)
     this.seg = 0; this.played = []; this.heard = []; // played: [segment index, …] as they start (for tests)
     this.rate = 1; this.shift = 0;
     this.loop = null; // [startQ, endQ]
@@ -146,10 +150,11 @@ export class ScorePlayer {
       this.seg = k < 0 ? this.segments.length - 1 : k;
       this.played = [this.seg];
     }
-    this.heard = [];
+    this.heard = []; this.heardChords = []; this.chordVoices = [];
     this.q0 = this.posQ; this.t0 = c.currentTime + 0.12;
     this.anchors = [{ q0: this.q0, t0: this.t0 }];
     this.scheduledTo = this.posQ;
+    this.carryChords(this.posQ);
     this.playing = true;
     this.timer = setInterval(() => this.pump(), 50);
     this.pump();
@@ -170,6 +175,7 @@ export class ScorePlayer {
         pianoVoice(this.out, n.n + this.shift, n.v, Math.max(this.ctx.currentTime, when), Math.max(0.08, n.d / this.qps));
         if (this.heard.length < 4000) this.heard.push([n.q, n.n]); // what was played, in order (for tests)
       }
+      if (this.chordsOn) for (const n of this.chords) if (n.q >= a && n.q < b) this.chordVoice(n, n.q, n.d);
       this.scheduledTo = b;
       if (b < stopQ) break;
       const tEnd = this.t0 + (stopQ - this.q0) / this.qps;
@@ -178,9 +184,31 @@ export class ScorePlayer {
       else break;
       this.t0 = tEnd; this.scheduledTo = this.q0;
       this.anchors = [...this.anchors.slice(-1), { q0: this.q0, t0: this.t0 }];
+      this.carryChords(this.q0);
     }
     const last = !segs || this.seg === segs.length - 1;
     if (!this.loop && last && this.now() >= (segs ? segs.at(-1)[1] : this.endQ) + 0.5) { this.pause(); this.posQ = 0; this.onEnd?.(); }
+  }
+  chordVoice(n, q, d) {
+    const when = this.t0 + (q - this.q0) / this.qps;
+    const v = pianoVoice(this.out, n.n + this.shift, n.v, Math.max(this.ctx.currentTime, when), Math.max(0.08, d / this.qps - 0.02));
+    const t = this.ctx.currentTime;
+    this.chordVoices = this.chordVoices.filter((x) => x.end > t); this.chordVoices.push(v);
+    if (this.heardChords.length < 4000) this.heardChords.push([q, n.n]);
+  }
+  // a chord that started before q and still sounds there (Play from the middle of it, a jump back): struck at q
+  carryChords(q) {
+    if (!this.chordsOn) return;
+    for (const n of this.chords) if (n.q < q - 1e-6 && n.q + n.d > q + 1e-3) this.chordVoice(n, q, n.q + n.d - q);
+  }
+  // the Chords toggle while playing: on = from the chord sounding now; off = the chords already on their way fade out
+  setChords(on) {
+    on = !!on;
+    if (on === this.chordsOn) return;
+    this.chordsOn = on;
+    if (!this.playing) return;
+    if (on) { const q = this.now(); for (const n of this.chords) if (n.q < q && n.q + n.d > q + 0.05) this.chordVoice(n, q, n.q + n.d - q); for (const n of this.chords) if (n.q >= q && n.q < this.scheduledTo) this.chordVoice(n, n.q, n.d); }
+    else { const t = this.ctx.currentTime; for (const v of this.chordVoices) { try { v.env.gain.cancelScheduledValues(t); v.env.gain.setTargetAtTime(0, t, 0.05); v.src.stop(t + 0.4); } catch {} } this.chordVoices = []; }
   }
   pause() {
     if (!this.playing) return;
