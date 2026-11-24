@@ -25,6 +25,48 @@ export const KIDS_GROW = 1.85;
 export function kidsRules(r) {
   r.VoiceSpacingMultiplierVexflow = 1.25; r.VoiceSpacingAddendVexflow = 5; r.MinNoteDistance = 4;
   r.BetweenStaffDistance += 2.5; r.StaffDistance += 3;
+  r.KidsHeadScale = KIDS_GROW; // read by the VexFlow hook below: heads are big before layout
+  hookBigHeads();
+}
+
+// Big heads, engraved properly: each VexFlow StaveNote OSMD builds gets its noteheads scaled (glyph_font_scale)
+// *before* layout, so VexFlow itself puts the stem at the head's edge (right going up, left going down), and
+// spaces beams, flags, dots, accidentals and ties for the big head. Only for scores whose rules ask for it
+// (kidsRules); grace and cue notes stay small. Ledger lines are widened to fit (VexFlow sizes them unscaled).
+function hookBigHeads() {
+  const C = window.opensheetmusicdisplay?.VexFlowConverter;
+  if (!C?.StaveNote || C.StaveNote.kidsHook) return;
+  const orig = C.StaveNote;
+  const hooked = function (gve, ...rest) {
+    const vf = orig.call(this, gve, ...rest);
+    try {
+      const g = gve?.parentStaffEntry?.parentMeasure?.parentSourceMeasure?.Rules?.KidsHeadScale;
+      if (g && vf && !gve.parentVoiceEntry?.IsGrace && !gve.notes?.[0]?.sourceNote?.IsCueNote) growHeads(vf, g);
+    } catch (e) { console.warn('kids heads', e); }
+    return vf;
+  };
+  hooked.kidsHook = true;
+  C.StaveNote = hooked;
+}
+function growHeads(vf, grow) {
+  if (vf.isRest?.() || !vf.render_options || !vf.keyProps?.length) return;
+  // a chord: heads a third apart (one staff space) would overlap when big, so they grow less
+  const lines = vf.keyProps.map((k) => k.line).sort((a, b) => a - b);
+  let s = grow;
+  for (let i = 1; i < lines.length; i++) { const d = lines[i] - lines[i - 1]; if (d >= 1 && d < 2) s = Math.min(s, 1.15 * d); }
+  const base = vf.render_options.glyph_font_scale;
+  vf.render_options.glyph_font_scale = base * s;
+  vf.kidsScale = s;
+  vf.reset();
+  // ledger lines: VexFlow sizes them by the unscaled glyph width — draw them with the big head's width
+  const draw = vf.drawLedgerLines;
+  if (typeof draw === 'function') {
+    vf.drawLedgerLines = function () {
+      const gl = this.glyph, sc = this.render_options.glyph_font_scale;
+      this.glyph = Object.create(gl, { getWidth: { value: () => gl.getWidth(sc) } });
+      try { return draw.call(this); } finally { this.glyph = gl; }
+    };
+  }
 }
 
 // the credit line ("Words and Music by …"): the MusicXML creator, composer first, shown as given
@@ -160,13 +202,15 @@ export function drawNoteLetters(osmd, { grow: grow0 = KIDS_GROW, minPx = 0 } = {
     if (!layer) { layer = document.createElementNS('http://www.w3.org/2000/svg', 'g'); layer.setAttribute('class', 'nl-letters'); layer.setAttribute('pointer-events', 'none'); svg.append(layer); svgs.add(svg); }
     // lowest head first ↔ lowest pitch first
     const boxes = heads.map((h) => ({ h, b: h.getBBox() })).sort((a, b) => b.b.y - a.b.y);
-    let grow = grow0;
+    // heads already made big by VexFlow (hookBigHeads): stems sit at their edges — no growing here
+    const native = !!gve.vfStaveNote?.kidsScale;
+    let grow = native ? 1 : grow0;
     // a chord: heads a step or a third apart only grow into the room between them
     for (let i = 1; i < boxes.length; i++) {
       const a = boxes[i - 1].b, c = boxes[i].b;
-      if (Math.abs(a.x - c.x) < a.width * 0.6) grow = Math.min(grow, Math.max(1, (Math.abs(a.y - c.y) / a.height) * 0.98));
+      if (!native && Math.abs(a.x - c.x) < a.width * 0.6) grow = Math.min(grow, Math.max(1, (Math.abs(a.y - c.y) / a.height) * 0.98));
     }
-    if (minPx) {
+    if (minPx && !native) {
       if (!pxPer.has(svg)) { const vb = (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number); pxPer.set(svg, vb[2] ? svg.getBoundingClientRect().width / vb[2] : 1); }
       const px = boxes[0].b.height * 0.8 * pxPer.get(svg);
       if (px > 0 && px < minPx) grow = Math.max(grow, Math.min(2.2, minPx / px));
