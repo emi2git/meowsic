@@ -839,7 +839,7 @@ async function rests(name, vp) {
   const tapBadge = async (bar) => { const h = await badge(bar); if (h) await tapXY(h.x, h.y); await sleep(300); };
   const sheetBtn = async (text) => { await page.evaluate((t) => [...document.querySelectorAll('.modal button')].find((x) => x.textContent.trim() === t)?.click(), text); await sleep(200); };
   await pick((n) => n.bar === 0 && n.staff === 1 && n.rest);
-  check('rest picked: the Delete button says Remove rest', (await page.$eval('.notes-panel [data-a="del"]', (e) => e.textContent.trim())) === 'Remove rest');
+  check('rest picked: the Delete button says Remove rest (its label: an icon button)', (await page.$eval('.notes-panel [data-a="del"]', (e) => e.getAttribute('aria-label'))) === 'Remove rest');
   if (touch) await act('del'); else { await page.keyboard.press('Backspace'); await sleep(150); }
   await idle();
   check('Remove rest: D5 / E5 come a beat earlier, no rest added', (await voice(0, 1)) === '72@0:1 74@1:1 76@2:1', await voice(0, 1));
