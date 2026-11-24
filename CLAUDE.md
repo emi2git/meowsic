@@ -6,6 +6,7 @@ One app for the family's sheet music, chord charts, books and scores, used on Ma
 - **omr/**: sheet photo → score (homr + Audiveris + Apple Vision), with its own `omr/.venv`.
 - **sing/**: "Make it sing (beta)", run in SoulX-Singer's venv at `~/ai/SoulX-Singer/.venv`. Default singer for every song (English, Vietnamese, Mandarin): `zh_target`, a low male voice (the user's pick, "take C"); the auto octave (`octave_for`) fits the melody to its range. `{voice, octave}` on the sing job still picks another.
 - **migrate/**: one-off importers from the three old apps (done; the old data stays read-only).
+- **Making scores for the user** (from a sheet, video or lyrics) → read `docs/score-playbook.md` first.
 - More detail: `docs/architecture.md`. History: `WORKLOG.md`, `docs/history/`. Task list: `TASKS.md`.
 
 ## Where things live
