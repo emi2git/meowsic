@@ -4,31 +4,22 @@
 // Claude sets the status (New → In progress → Fixed / Won't fix); Fixed and Won't fix can't be edited or removed.
 // Offline: notes and edits wait in the store's outbox and are sent when the Mac is back (the app's own ids,
 // so a resend is not stored twice). A copy of the list is kept on this device to show offline.
-import { store, uid } from '../store.js';
+import { store } from '../store.js';
 import { $, esc, toast, confirmSheet } from '../ui.js';
-import { device } from '../device.js';
+import { fbCache as ls, fbCall as call, sendFeedback } from '../feedbackapi.js';
 
-const CACHE = 'meowsic-feedback-v1';
 const STATUS = { new: 'New', in_progress: 'In progress', fixed: 'Fixed', wontfix: 'Won’t fix' };
 const LOCKED = new Set(['fixed', 'wontfix']);
-const DEVICE = { desktop: 'Mac', tablet: 'iPad', phone: 'iPhone' };
-const ls = { get() { try { return JSON.parse(localStorage.getItem(CACHE)) || []; } catch { return []; } }, set(v) { try { localStorage.setItem(CACHE, JSON.stringify(v)); } catch {} } };
 const fmt = (t) => new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', ...(new Date(t).getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}), hour: '2-digit', minute: '2-digit' });
 const firstLine = (s) => (s || '').split('\n').find((l) => l.trim())?.trim() || '';
-
-// one request to the Mac: {ok, data} | {queued} (no network: waits in the outbox) | {error, status}
-async function call(method, path, body) {
-  if (store.mode === 'mock') return { ok: true, data: null };
-  if (store.mode === 'offline') { store.api(method, path, body); return { queued: true }; }
-  try {
-    const r = await fetch('/api' + path, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
-    if (r.headers.get('X-Meowsic-Offline')) throw new Error('offline');
-    const j = await r.json().catch(() => ({}));
-    return r.ok ? { ok: true, data: j } : { error: j.detail || `Failed (${r.status})`, status: r.status };
-  } catch {
-    store.api(method, path, body); // tries once more, then queues (and the app goes offline)
-    return { queued: true };
-  }
+const KIND = { score: 'Score', sheet: 'Sheet', chords: 'Chord chart' };
+// quick feedback from a score / sheet / chord view: the song it is about (a link) and where in it
+export function aboutHtml(f) {
+  if (!f.item?.id) return '';
+  const c = f.context || {};
+  const where = [c.page ? `page ${c.page}${c.pages ? ' of ' + c.pages : ''}` : '', c.bar ? `bar ${c.bar}` : '', c.timeSec != null ? `${c.timeSec} s` : ''].filter(Boolean).join(' · ');
+  const more = [c.version ? `version ${c.version}` : '', c.zoom ? `zoom ${c.zoom}` : '', c.device && c.device !== f.device ? c.device : ''].filter(Boolean).join(' · ');
+  return `<p class="fb-about">${KIND[f.item.kind] || 'Item'}: <a href="#/item/${encodeURIComponent(f.item.id)}">${esc(f.item.title || 'Untitled')}</a>${where ? ` <span class="muted">· ${esc(where)}</span>` : ''}</p>${more ? `<p class="muted small fb-ctx">${esc(more)}</p>` : ''}`;
 }
 
 export function feedbackView(main) {
@@ -58,8 +49,9 @@ export function feedbackView(main) {
       const locked = LOCKED.has(f.status), ed = editing === f.id;
       return `<details class="fb-item fb-${f.status}" data-id="${esc(f.id)}"${open.has(f.id) || ed ? ' open' : ''}>
         <summary><span class="fb-when">${esc(fmt(f.createdAt))}</span><span class="fb-st fb-s-${f.status}">${STATUS[f.status] || esc(f.status)}</span>${f.pending ? '<span class="fb-wait">Waiting to send</span>' : ''}
-          <span class="fb-first">${esc(firstLine(f.text))}</span></summary>
+          <span class="fb-first">${f.item?.title ? `<span class="fb-on">${esc(f.item.title)}</span> ` : ''}${esc(firstLine(f.text))}</span></summary>
         <div class="fb-body">
+          ${aboutHtml(f)}
           ${ed ? `<textarea class="fb-edit" rows="5" aria-label="Edit feedback">${esc(f.text)}</textarea>`
             : `<div class="fb-text">${esc(f.text)}</div>`}
           ${f.fixNote ? `<p class="fb-fix"><b>${f.status === 'wontfix' ? 'Note' : 'Fix'}:</b> ${esc(f.fixNote)}</p>` : ''}
@@ -90,12 +82,10 @@ export function feedbackView(main) {
   send.onclick = async () => {
     const text = ta.value.trim();
     if (!text) return;
-    const now = Date.now();
-    const f = { id: uid('fb'), text, createdAt: now, updatedAt: now, status: 'new', fixedAt: null, fixNote: '', device: DEVICE[device()] || '', removedAt: null };
     send.disabled = true;
-    const r = await call('POST', '/feedback', { id: f.id, text, device: f.device, createdAt: now });
+    const r = await sendFeedback(text);
     if (r.error) { toast(r.error); send.disabled = false; return; }
-    rows.unshift(r.data?.id ? r.data : { ...f, pending: !!r.queued });
+    rows = [r.row, ...rows.filter((x) => x.id !== r.row.id)];
     keep();
     ta.value = ''; ta.dispatchEvent(new Event('input'));
     toast(r.queued ? 'Saved here — sent when the Mac is back' : 'Thanks — feedback saved');

@@ -64,17 +64,17 @@ for (const [dev, vp] of DEVICES) {
   check(`${dev}: Add score fits`, await noHScroll());
   await p.screenshot({ path: `${SHOTS}/${dev}-4-score.png` });
 
-  // Help under App (iPhone: More)
+  // Help: not in the menu, a link on the Settings page (iPhone: More → Settings)
   if (phone) {
     await p.click('#tab-more'); await sleep(250);
     const util = await p.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
-    check(`${dev}: More menu has Help`, util.includes('Help'), util.join('|'));
-    await p.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Help').click()); await sleep(400);
+    check(`${dev}: More menu has Settings and Keyboard, no Help`, util.includes('Settings') && util.includes('Keyboard') && !util.includes('Help'), util.join('|'));
+    await p.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Settings').click()); await sleep(400);
   } else {
-    const under = await p.evaluate(() => { const h3 = [...document.querySelectorAll('#side h3')].find((x) => x.textContent === 'App'); const a = document.querySelector('#side a[href="#/help"]'); return !!(h3 && a && (h3.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING)); });
-    check(`${dev}: Help link under App`, under);
-    await p.click('#side a[href="#/help"]'); await sleep(400);
+    check(`${dev}: no Help in the left bar`, !(await p.$('#side a[href="#/help"]')));
+    await p.click('#side a[href="#/settings"]'); await sleep(400);
   }
+  await p.click('#main .top a[href="#/help"]'); await sleep(400);
   const help = await p.$eval('#main', (e) => e.innerText);
   check(`${dev}: Help page explains every source`, (await hash()) === '#/help' && ['Sheet', 'Chords', 'Score', 'Photos', 'Camera', 'YouTube', 'Audio file', 'Paste', 'SHEET'].every((w) => help.includes(w)), help.slice(0, 200));
   check(`${dev}: Help is plain bullets`, (await p.$$eval('.help-sec li', (e) => e.length)) >= 12);

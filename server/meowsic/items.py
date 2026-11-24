@@ -114,7 +114,7 @@ def create_item(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
 
 
 def check_version(kind, v):
-    """Sheets and chord charts: 'lead' | 'piano' | 'duet' | '' (any case, 'Lead' too). Scores: their own versions."""
+    """Sheets and chord charts: 'lead' | 'piano' | 'duet' | 'accomp' | '' (any case, 'Lead' too). Scores: their own versions."""
     v = (v or '').strip().lower() if isinstance(v, str) or v is None else v
     allowed = {'sheet': SHEET_VERSIONS, 'chords': SHEET_VERSIONS, 'score': SCORE_VERSIONS}.get(kind, ())
     if v not in allowed:
@@ -535,6 +535,9 @@ async def put_musicxml(item_id: str, request: Request, c=Depends(conn), cf=Depen
     if not orig and cur.is_file():
         orig = f'{it["folder"]} (original).musicxml'
         shutil.copyfile(cur, d / orig)
+    if cur.is_file():  # notes only: the page sends its drawn copy (display credits / title) — the file's own stay
+        from .scorecarry import keep_header
+        text = keep_header(cur.read_text(encoding='utf-8'), text)
     cur.write_text(text)
     c.execute('UPDATE score SET musicxml=?, musicxml_original=? WHERE item_id=?', (name, orig, item_id))
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), item_id))
@@ -544,7 +547,27 @@ async def put_musicxml(item_id: str, request: Request, c=Depends(conn), cf=Depen
 @router.post('/items/{item_id}/musicxml/revert')
 def revert_musicxml(item_id: str, c=Depends(conn), cf=Depends(cfg)):
     it, d = score_paths(c, cf, item_id)
+    """Revert note edits: the notes of "<id> (original).musicxml" (before any Edit notes / Simple piano / bar fix),
+    with the lyrics, chord symbols, title and credits the score has now (scorecarry.carry: words move to the
+    matching notes). The file before goes to .history/revert-<ms>-<name>; an Activities row undoes it."""
+    from .lyricsedit import sha
+    from .scorecarry import carry
     if not it['musicxmlOriginal']: raise HTTPException(409, 'Nothing to revert')
-    shutil.copyfile(safe_file(d, it['musicxmlOriginal']), safe_file(d, it['musicxml']))
+    cur = safe_file(d, it['musicxml'])
+    now = cur.read_text(encoding='utf-8') if cur.is_file() else ''
+    out, rep = carry(now, safe_file(d, it['musicxmlOriginal']).read_text(encoding='utf-8'))
+    hist = None
+    if cur.is_file():
+        (d / '.history').mkdir(exist_ok=True)
+        hist = f'.history/revert-{now_ms()}-{cur.name}'
+        while (d / hist).exists(): hist = f'.history/revert-{now_ms() + 1}-{cur.name}'
+        shutil.copyfile(cur, d / hist)
+    cur.write_text(out, encoding='utf-8')
     c.execute('UPDATE item SET updated_at=? WHERE id=?', (now_ms(), item_id))
-    return {'ok': True, 'staves': refresh_staves(c, cf, item_id)}
+    aid = None
+    if hist:
+        kept = f', {rep["placed"]} of {rep["syllables"]} syllables kept' if rep['syllables'] else ''
+        aid = record_undo(c, 'edit-notes', {'op': 'musicxml', 'id': item_id, 'title': it['title'], 'file': cur.name, 'before': hist,
+                                             'beforeSha': sha(now), 'afterSha': sha(out), 'what': 'note edits were reverted'},
+                          f'Reverted note edits: {it["title"]}', f'Back to the original notes{kept}; the score before is kept in {hist}')
+    return {'ok': True, 'staves': refresh_staves(c, cf, item_id), 'activity': aid, 'kept': rep}

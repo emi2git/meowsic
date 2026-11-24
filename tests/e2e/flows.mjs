@@ -423,14 +423,43 @@ check('Settings has no old-app import or mock reset', !/Bring in the old apps|Re
 await go('#/developer'); await sleep(200);
 check('Developer page is the feedback box (old-app note gone), no mock data card', (await count('#fb-text')) === 1 && !/Bring in the old apps/.test(await text('#main')) && !/mock/i.test(await text('#main')));
 check('Developer in the left bar', (await text('#side')).includes('Developer'));
-check('left bar: Manage library, no Trash of its own (it is a Manage library tab)', /Manage library/.test(await text('#side')) && !/Trash/.test(await text('#side')) && !/Utilities/i.test(await text('#side')) && /Organize/i.test(await text('#side')) && !/\bBin\b/.test(await text('#side')));
-{ // every left-bar item has the same font, size and weight; section headers share one small style
+check('left bar: Manage library, no Trash of its own (it is a Manage library tab)', /Manage library/.test(await text('#side')) && !/Trash/.test(await text('#side')) && !/Utilities/i.test(await text('#side')) && !/Organize/i.test(await text('#side')) && !/\bBin\b/.test(await text('#side')));
+{ // every left-bar item has the same font, size and weight (Library, the top entry, may be bolder); small section headers: App, Beta
   const f = await page.evaluate(() => {
     const st = (e) => { const c = getComputedStyle(e); return [c.fontFamily, c.fontSize, c.fontWeight].join('/'); };
-    return { nav: [...new Set([...document.querySelectorAll('#side .nav span')].map(st))], h: [...new Set([...document.querySelectorAll('#side h3')].map(st))], heads: [...document.querySelectorAll('#side h3')].map((e) => e.textContent) };
+    const r = (e) => e.getBoundingClientRect();
+    const lib = document.querySelector('#side .nav.lib'), settings = document.querySelector('#side a[href="#/settings"]');
+    const lc = getComputedStyle(lib.querySelector('span')), sc = getComputedStyle(settings.querySelector('span')), cnt = lib.querySelector('i');
+    return { nav: [...new Set([...document.querySelectorAll('#side .nav:not(.lib) span')].map(st))], h: [...new Set([...document.querySelectorAll('#side h3')].map(st))], heads: [...document.querySelectorAll('#side h3')].map((e) => e.textContent),
+      lib: { text: lib.querySelector('span').textContent, href: lib.getAttribute('href'), first: !lib.previousElementSibling, count: cnt?.textContent,
+        right: !!cnt && Math.abs(r(cnt).right - (r(lib).right - parseFloat(getComputedStyle(lib).paddingRight))) < 1.5,
+        family: lc.fontFamily, size: lc.fontSize, weight: +lc.fontWeight,
+        aligned: r(lib).left === r(settings).left && r(lib.querySelector('span')).left === r(settings.querySelector('span')).left },
+      ref: { family: sc.fontFamily, size: sc.fontSize, weight: +sc.fontWeight },
+      sub: [...document.querySelectorAll('#side .nav.sub')].map((a) => ({ indent: r(a.querySelector('span')).left - r(lib.querySelector('span')).left, right: Math.abs(r(a.querySelector('i')).right - r(cnt).right) < 1.5 })) };
   });
+  const total = (await db()).items.filter((x) => !x.deleted).length;
   check('left bar: all nav labels share one font/size/weight', f.nav.length === 1, f.nav.join(' ; '));
-  check('left bar: section headers share one style', f.h.length === 1 && f.heads.join('|') === 'Library|Activity|Organize|App', f.heads.join('|') + ' ' + f.h.join(' ; '));
+  check('left bar: section headers App then Beta, one style', f.h.length === 1 && f.heads.join('|') === 'App|Beta', f.heads.join('|') + ' ' + f.h.join(' ; '));
+  check('left bar: no All music row', !/All music/.test(await text('#side')));
+  check('left bar: Library is the top entry and opens All music', f.lib.first && f.lib.text === 'Library' && f.lib.href === '#/library', JSON.stringify(f.lib));
+  check('left bar: Library shows the total count, right-aligned', +f.lib.count === total && f.lib.right, JSON.stringify(f.lib) + ' total ' + total);
+  check('left bar: Library same font and size, a bit bolder, aligned with the rest', f.lib.family === f.ref.family && f.lib.size === f.ref.size && f.lib.weight > f.ref.weight && f.lib.weight <= 700 && f.lib.aligned, JSON.stringify([f.lib, f.ref]));
+  check('left bar: Sheets/Scores/Chords/Books indented under Library, counts right-aligned', f.sub.length === 4 && f.sub.every((x) => x.indent >= 12 && x.right), JSON.stringify(f.sub));
+  check('left bar: no Help (it lives in Settings)', !(await page.$('#side a[href="#/help"]')) && !/\bHelp\b/.test(await text('#side')));
+  await go('#/library');
+  check('on All music, Library is highlighted', (await count('#side .nav.on')) === 1 && (await page.$eval('#side .nav.on', (e) => e.classList.contains('lib'))));
+  await go('#/settings');
+  check('Settings has a Help link', (await count('#main .top a[href="#/help"]')) === 1);
+  await page.click('#main .top a[href="#/help"]'); await sleep(400);
+  check('Help page still opens from Settings', (await page.evaluate(() => location.hash)) === '#/help' && /Help/.test(await text('#main h1')));
+  const beta = await page.evaluate(() => { const h = [...document.querySelectorAll('#side nav > *')]; const i = h.findIndex((e) => e.tagName === 'H3' && e.textContent === 'Beta'); return { last: i === h.length - 2, item: h[i + 1]?.textContent.trim(), href: h[i + 1]?.getAttribute('href'), afterApp: i > h.findIndex((e) => e.textContent === 'App') }; });
+  check('left bar: Beta section last, after App, with Keyboard → #/beta/keyboard', beta.last && beta.afterApp && beta.item === 'Keyboard' && beta.href === '#/beta/keyboard', JSON.stringify(beta));
+  await page.click('#side a[href="#/beta/keyboard"]'); await sleep(800);
+  const kb = await page.evaluate(() => ({ hash: location.hash, h1: document.querySelector('#main h1')?.textContent, on: document.querySelector('#side .nav.on')?.getAttribute('href'), body: document.querySelector('#main').textContent }));
+  check('Keyboard opens #/beta/keyboard (page or coming soon), Keyboard lit', kb.hash === '#/beta/keyboard' && kb.on === '#/beta/keyboard' && (/Coming soon/.test(kb.body) || kb.body.trim().length > 20), JSON.stringify(kb).slice(0, 300));
+  await go('#/beta/nope'); await sleep(300);
+  check('unknown beta page shows coming soon', /Coming soon/.test(await text('#main')));
 }
 console.log('Make tags');
 await go('#/tags');

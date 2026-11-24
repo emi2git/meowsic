@@ -1,10 +1,15 @@
 """Feedback (Utilities → Feedback, #/feedback): notes the user sends about the app, for Claude to work through.
 
+Quick feedback (the speech-bubble button in a score, sheet or chord view) also sends what it is about:
+item_id / item_kind / item_title and a small context JSON ({page, pages, bar, timeSec, zoom, version, device, view}).
+
 Status: new → in_progress → fixed (or wontfix). Fixed / Won't fix rows are locked: no edit, no remove (409).
 Nothing is ever deleted: Remove sets removed_at; every edit, status change and removal first copies the row's
 previous state into feedback_history. The user only writes text; Claude sets the status
 (PATCH {status, fixNote}, or ~/git/scripts/meowsic-feedback.py).
 """
+import json
+
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from .db import now_ms, uid
@@ -13,6 +18,7 @@ from .items import conn
 STATUSES = ('new', 'in_progress', 'fixed', 'wontfix')
 LOCKED = ('fixed', 'wontfix')
 MAX_TEXT = 20000
+MAX_CTX = 4000
 
 router = APIRouter(prefix='/api/feedback')
 
@@ -43,12 +49,28 @@ def ensure_schema(c):
     );
     CREATE INDEX IF NOT EXISTS feedback_history_fb ON feedback_history(feedback_id);
     """)
+    # quick feedback from an item view: what it was about (added later; older tables get the columns)
+    have = {r[1] for r in c.execute('PRAGMA table_info(feedback)')}
+    for col, decl in (('item_id', "TEXT NOT NULL DEFAULT ''"), ('item_kind', "TEXT NOT NULL DEFAULT ''"),
+                      ('item_title', "TEXT NOT NULL DEFAULT ''"), ('context', "TEXT NOT NULL DEFAULT '{}'")):
+        if col not in have: c.execute(f'ALTER TABLE feedback ADD COLUMN {col} {decl}')
     c.commit()
 # ===== end feedback migration =====
 
 
+def _ctx(raw):
+    try:
+        v = json.loads(raw or '{}')
+        return v if isinstance(v, dict) else {}
+    except ValueError:
+        return {}
+
+
 def fb_json(r) -> dict:
-    return {'id': r['id'], 'text': r['text'], 'createdAt': r['created_at'], 'updatedAt': r['updated_at'], 'status': r['status'],
+    keys = r.keys()
+    item = {'id': r['item_id'], 'kind': r['item_kind'], 'title': r['item_title']} if 'item_id' in keys and r['item_id'] else None
+    return {'item': item, 'context': _ctx(r['context']) if 'context' in keys else {},
+            'id': r['id'], 'text': r['text'], 'createdAt': r['created_at'], 'updatedAt': r['updated_at'], 'status': r['status'],
             'fixedAt': r['fixed_at'], 'fixNote': r['fix_note'], 'device': r['device'], 'removedAt': r['removed_at'],
             'locked': r['status'] in LOCKED}
 
@@ -86,15 +108,21 @@ def get_feedback(fid: str, c=Depends(conn)):
 
 @router.post('', status_code=201)
 def add_feedback(body: dict = Body(...), c=Depends(conn)):
-    """{text, device?, id?, createdAt?}: the app sends its own id so a retried (offline outbox) send is not stored twice."""
+    """{text, device?, id?, createdAt?, item?: {id, kind, title}, context?: {…}}: the app sends its own id so a retried (offline outbox) send is not stored twice."""
     text = _text(body.get('text'))
     fid = str(body.get('id') or '') or uid('fb')
     old = c.execute('SELECT * FROM feedback WHERE id=?', (fid,)).fetchone()
     if old: return fb_json(old)
     now = now_ms()
     at = body.get('createdAt') if isinstance(body.get('createdAt'), int) and 0 < body['createdAt'] <= now + 60000 else now
-    c.execute('INSERT INTO feedback(id, text, created_at, updated_at, status, device) VALUES (?,?,?,?,?,?)',
-              (fid, text, at, now, 'new', str(body.get('device') or '')[:60]))
+    item = body.get('item') if isinstance(body.get('item'), dict) else {}
+    ctx = body.get('context') if isinstance(body.get('context'), dict) else {}
+    ctx_s = json.dumps(ctx, ensure_ascii=False)
+    if len(ctx_s) > MAX_CTX: ctx_s = '{}'
+    c.execute('INSERT INTO feedback(id, text, created_at, updated_at, status, device, item_id, item_kind, item_title, context)'
+              ' VALUES (?,?,?,?,?,?,?,?,?,?)',
+              (fid, text, at, now, 'new', str(body.get('device') or '')[:60], str(item.get('id') or '')[:120],
+               str(item.get('kind') or '')[:20], str(item.get('title') or '')[:300], ctx_s))
     return fb_json(_get(c, fid))
 
 

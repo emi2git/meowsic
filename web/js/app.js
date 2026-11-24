@@ -32,8 +32,21 @@ const ROUTES = {
   library: libraryView, item: itemView,
   'add-sheets': addSheetsView, 'add-photos': photoImportView, 'add-chords': addChordsView, 'add-score': addScoreView, jobs: addScoreView,
   tags: tagsView,
-  print: printView, stats: statsView, activity: activityView, activities: activityView, cleanup: cleanupView, manage: cleanupView, 'make-tags': makeTagsView, developer: developerView, settings: settingsView, help: helpView,
+  print: printView, stats: statsView, activity: activityView, activities: activityView, cleanup: cleanupView, manage: cleanupView, 'make-tags': makeTagsView, developer: developerView, settings: settingsView, help: helpView, beta: betaView,
 };
+
+// Beta pages load on demand (#/beta/keyboard → views/beta-keyboard.js, render(main, ctx)); a page not built yet shows "coming soon"
+const BETA = { keyboard: 'Keyboard' };
+function betaView(main, ctx) {
+  const page = ctx.parts[1] || 'keyboard';
+  const soon = () => { main.innerHTML = `<header class="top"><h1>${BETA[page] || 'Beta'}</h1><span class="pill">Beta</span></header><div class="pad narrow"><section class="card beta-soon"><h2>${icon('piano')} Coming soon</h2><p class="muted small">This beta page isn’t ready yet.</p></section></div>`; };
+  let done = false, inner = null;
+  main.innerHTML = `<header class="top"><h1>${BETA[page] || 'Beta'}</h1></header>`;
+  (BETA[page] ? import(`./views/beta-${page}.js`) : Promise.reject(new Error('no such beta page')))
+    .then((m) => { if (done) return; const r = m.render || m.default; if (typeof r !== 'function') return soon(); inner = r(main, ctx); })
+    .catch(() => { if (!done) soon(); });
+  return () => { done = true; if (typeof inner === 'function') inner(); };
+}
 
 function route() {
   if (/^#\/?feedback\b/.test(location.hash)) return void location.replace('#/developer'); // feedback lives on Developer
@@ -41,7 +54,7 @@ function route() {
   // #/manage = Manage library → Organize pages; the old #/cleanup, #/organize and #/manage/<old tab> go there
   // Trash is a Manage library tab now: #/bin and #/trash go to #/manage/trash
   if (parts[0] === 'bin' || parts[0] === 'trash') { location.replace('#/manage/trash'); return; }
-  if (parts[0] === 'cleanup' || parts[0] === 'organize' || (parts[0] === 'manage' && parts.length > 1 && !(parts[1] === 'trash' && parts.length === 2))) { location.replace('#/manage' + (q.toString() ? '?' + q : '')); return; }
+  if (parts[0] === 'cleanup' || parts[0] === 'organize' || (parts[0] === 'manage' && parts.length > 1 && !(['trash', 'info'].includes(parts[1]) && parts.length === 2))) { location.replace('#/manage' + (q.toString() ? '?' + q : '')); return; }
   const name = parts[0] === 'manage' ? 'cleanup' : parts[0] || 'library';
   const view = ROUTES[name] || libraryView;
   if (typeof cleanup === 'function') cleanup();
@@ -66,19 +79,17 @@ export function renderSide() {
     <a class="brand" href="${HOME}"><span><b>Meowsic</b><small>2.0</small></span></a>
     <button class="add-btn primary" id="side-add">${icon('plus')}Add music</button>
     <nav aria-label="Main">
-      <h3>Library</h3>
-      <a class="nav${on(kind === '')}" href="#/library">${icon('library')}<span>All music</span><i>${items.length}</i></a>
+      <a class="nav lib${on(kind === '')}" href="#/library">${icon('library')}<span>Library</span><i>${items.length}</i></a>
       ${['sheet', 'score', 'chords', 'book'].map((k) => `<a class="nav sub${on(kind === k)}" href="#/library?kind=${k}">${icon(KIND[k].icon)}<span>${KIND[k].plural}</span><i>${n(k)}</i></a>`).join('')}
-      <h3>Activity</h3>
+      <h3>App</h3>
       <a class="nav${on(v === 'stats')}" href="#/stats">${icon('stats')}<span>Stats</span></a>
       <a class="nav${on(v === 'activity' || v === 'activities')}" href="#/activity"><span>Activities</span>${store.jobs().some((j) => j.status === 'running') ? '<i class="live">•</i>' : ''}</a>
-      <h3>Organize</h3>
       <a class="nav${on(v === 'cleanup')}" href="#/manage"><span>Manage library</span></a>
       <a class="nav${on(v === 'tags' || v === 'make-tags')}" href="#/tags"><span>Tags</span></a>
-      <h3>App</h3>
-      <a class="nav${on(v === 'settings')}" href="#/settings">${icon('settings')}<span>Settings</span></a>
-      <a class="nav${on(v === 'help')}" href="#/help"><span>Help</span></a>
+      <a class="nav${on(v === 'settings' || v === 'help')}" href="#/settings">${icon('settings')}<span>Settings</span></a>
       <a class="nav${on(v === 'developer')}" href="#/developer"><span>Developer</span></a>
+      <h3>Beta</h3>
+      <a class="nav${on(v === 'beta' && (parts[1] || 'keyboard') === 'keyboard')}" href="#/beta/keyboard">${icon('piano')}<span>Keyboard</span></a>
     </nav>
     <div class="side-foot ${store.mode}">${icon('wifi')}<span>${store.mode === 'server' ? 'Connected to the Mac' : store.mode === 'offline' ? (store.items().length ? 'Offline — your last copy' : 'Can’t reach the Mac') : 'Preview'}</span></div>`;
   $('#side-add').onclick = (e) => addMenu(e.currentTarget);
@@ -88,15 +99,15 @@ export function renderSide() {
     tab(HOME, 'library', 'Library', v === 'library' || v === 'item') +
     `<button id="tab-add" class="tab-add" aria-label="Add music">Add</button>` +
     tab('#/stats', 'stats', 'Stats', v === 'stats') +
-    `<button id="tab-more" class="${['bin', 'settings', 'print', 'activity', 'activities', 'developer', 'cleanup', 'manage', 'help', 'tags', 'make-tags'].includes(v) ? 'on' : ''}">${icon('more')}<span>More</span></button>`;
+    `<button id="tab-more" class="${['bin', 'settings', 'print', 'activity', 'activities', 'developer', 'cleanup', 'manage', 'help', 'tags', 'make-tags', 'beta'].includes(v) ? 'on' : ''}">${icon('more')}<span>More</span></button>`;
   $('#tab-add').onclick = (e) => addMenu(e.currentTarget);
   $('#tab-more').onclick = (e) => menu(e.currentTarget, [
     { label: 'Activities', icon: 'wave', run: () => go('#/activity') },
     { label: 'Manage library', icon: 'tools', run: () => go('#/manage') },
     { label: 'Tags', icon: 'tag', run: () => go('#/tags') },
     { label: 'Settings', icon: 'settings', run: () => go('#/settings') },
-    { label: 'Help', icon: 'info', run: () => go('#/help') },
     { label: 'Developer', icon: 'tools', run: () => go('#/developer') },
+    { label: 'Keyboard', icon: 'piano', run: () => go('#/beta/keyboard') },
   ]);
 }
 

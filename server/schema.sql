@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS sheet (            -- kind = 'sheet'
   source    TEXT NOT NULL CHECK (source IN ('photos','pdf')),
   pages     INTEGER NOT NULL,
   book      INTEGER NOT NULL DEFAULT 0,       -- 1 = a book (many songs); files in items/Books/<title>/
-  version   TEXT NOT NULL DEFAULT '',         -- 'lead' | 'piano' | 'duet'; '' = not known
+  version   TEXT NOT NULL DEFAULT '',         -- 'lead' | 'piano' | 'duet' | 'accomp'; '' = not known
   key       TEXT NOT NULL DEFAULT ''          -- 'C', 'Am', 'F#m', 'Eb major' (as written); '' = not known
 );
 CREATE TABLE IF NOT EXISTS sheet_page (

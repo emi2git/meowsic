@@ -253,7 +253,7 @@ KIND_COLS = {  # kind -> (table, {JSON name -> column})
                         'midi': 'midi', 'pdf': 'pdf', 'key': 'key', 'bpm': 'bpm', 'source': 'source', 'groupId': 'group_id', 'ai': 'ai',
                         'sourceUrl': 'source_url', 'staves': 'staves', 'vocalAudio': 'vocal_audio', 'vocalBpm': 'vocal_bpm'}),
 }
-SHEET_VERSIONS = ('', 'lead', 'piano', 'duet')  # shown as Lead / Piano / Duet (chord charts too)
+SHEET_VERSIONS = ('', 'lead', 'piano', 'duet', 'accomp')  # shown as Lead / Piano / Duet / Accomp. (chord charts too)
 SCORE_VERSIONS = ('original', 'vocal', 'lead', 'duet', 'accomp', 'clear', 'pro', 'easy')
 KIND_DEFAULTS = {
     'sheet': {'source': 'photos', 'pages': 0, 'book': 0, 'version': '', 'key': ''},

@@ -124,7 +124,7 @@ export function settingsView(main) {
   let theme = 'light';
   try { theme = localStorage.getItem('meowsic-theme') || 'light'; } catch {}
   const items = store.items();
-  main.innerHTML = `<header class="top"><h1>Settings</h1></header>
+  main.innerHTML = `<header class="top"><h1>Settings</h1><a class="help-link" id="st-help" href="#/help">${icon('info')}Help</a></header>
     <div class="pad narrow settings">
       <section class="card"><h2>${icon('wifi')} Mac connection</h2>
         <dl class="kv"><dt>Server</dt><dd>${esc(location.host)} <span class="pill ${store.mode === 'server' ? 'ok' : ''}">${store.mode === 'server' ? 'Connected' : 'Offline'}</span></dd>

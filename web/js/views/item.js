@@ -8,6 +8,7 @@ import { sheetBody, sheetToolbar, sheetTools, sheetExports, startInk } from './s
 import { chordsBody, chordsToolbar, chordsExports } from './chordsview.js';
 import { scoreBody, scoreToolbar, scoreExportMenu, scoreTools } from './score.js';
 import { verifiedBadgeHtml, wireVerified } from './verified.js';
+import { quickFeedbackButton, closeQuickFeedback } from '../quickfeedback.js';
 
 export function itemView(main, { parts }) {
   const it = store.get(parts[1]);
@@ -62,6 +63,9 @@ export function itemView(main, { parts }) {
     $('#it-more', main).before(ink);
   }
 
+  // speech bubble: quick feedback about this item (quickfeedback.js)
+  ($('#it-full', main) || $('#it-more', main)).before(quickFeedbackButton(it, () => view));
+
   // ⋯ = Info · the kind's tools · Export ▸ · Move to Trash (actions.viewerMenu); Info is where everything is edited
   $('#it-title', main).onclick = () => openInfo(it.id);
   $('#it-more', main).onclick = (e) => viewerMenu(e.currentTarget, it.id, it.kind === 'sheet' ? { tools: sheetTools(it, view), exports: sheetExports(it, view) }
@@ -96,5 +100,5 @@ export function itemView(main, { parts }) {
     if (pf !== lastFiles) { lastFiles = pf; view?.redraw?.(); }
   });
   const opened = Date.now();
-  return () => { document.removeEventListener('keydown', zoomKey); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); off(); offBar?.(); view.destroy(); store.logPlay(it.id, opened, Date.now()); };
+  return () => { closeQuickFeedback(); document.removeEventListener('keydown', zoomKey); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); off(); offBar?.(); view.destroy(); store.logPlay(it.id, opened, Date.now()); };
 }

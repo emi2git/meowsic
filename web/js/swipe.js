@@ -11,9 +11,9 @@ export function backToLibrary() {
 }
 
 // a tool or editor is open (Fit lyrics, Edit notes, pen, Simple piano, Check bars,
-// Info or any sheet / menu, crop): swipe up / down then never closes the view — only plain viewing does.
+// Info or any sheet / menu, crop, the quick feedback popover): swipe up / down then never closes the view — only plain viewing does.
 // The chords strip at the top of a score is a display aid, not a tool: swipes still close the score with it on.
-const TOOLS = '.modal-wrap, .menu, .fitly, .fitting, .editbar, .notes-panel, .editing, .inkbar, .inking, .sp-panel, .simplifying, .cb-panel, .cu-frames';
+const TOOLS = '.modal-wrap, .menu, .fitly, .fitting, .editbar, .notes-panel, .editing, .inkbar, .inking, .sp-panel, .simplifying, .cb-panel, .cu-frames, .qfb';
 export const toolOpen = () => !!document.querySelector(TOOLS);
 
 export function attachSwipe(el, { onLeft, onRight, onUp = backToLibrary, onDown, canStart = () => true, scroller = null, upAtEnd = false }) {
