@@ -2,7 +2,7 @@
 // Score view: an icon-only round toggle beside the title (seal outline, grey; aria-label/title "Not verified"); tap → filled green seal
 // with a check ("Verified") and the item has the
 // tag "Verified" (made if missing); an Activities row whose Undo takes it back; the library row shows a small ✓.
-// Tags moved under Utilities (left bar after Manage library; iPhone: the Utilities menu, not the tab bar).
+// Tags is in the Organize section (left bar after Manage library; iPhone: the More menu, not the tab bar).
 // Mac, iPad Pro 13 and iPhone Air; screenshots in SHOTS.
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
@@ -81,25 +81,25 @@ for (const [name, vp, dev] of [['Mac', MAC, 'mac'], ['iPad Pro 13', IPAD, 'ipad'
   t = await waitTags(sc.id, (x) => !x.includes('Verified'));
   check('tap again → off, tag removed', !(await badge(page))?.on && !t.includes('Verified'), JSON.stringify(t));
 
-  // Tags lives under Utilities now
+  // Tags lives under Organize now
   if (vp === PHONE) {
     check('tab bar has no Tags', !(await page.$('#tabbar a[href="#/tags"]')));
     await page.goto(BASE + '#/library', { waitUntil: 'networkidle0' }); await sleep(500);
     await tap('#tab-more');
     const util = await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
-    check('Utilities menu: Activities, Manage library, Tags, Help, Settings, Developer', util.join('|') === 'Activities|Manage library|Tags|Help|Settings|Developer', util.join('|'));
-    await page.screenshot({ path: `${SHOTS}/${dev}-utilities.png` });
+    check('More menu: Activities, Manage library, Tags, Settings, Help, Developer', util.join('|') === 'Activities|Manage library|Tags|Settings|Help|Developer', util.join('|'));
+    await page.screenshot({ path: `${SHOTS}/${dev}-more.png` });
     await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.includes('Tags')).click()); await sleep(500);
-    check('Tags opens the tags page; Utilities tab lit', (await page.evaluate(() => location.hash)) === '#/tags' && (await page.$eval('#tab-more', (e) => e.classList.contains('on'))));
+    check('Tags opens the tags page; More tab lit', (await page.evaluate(() => location.hash)) === '#/tags' && (await page.$eval('#tab-more', (e) => e.classList.contains('on'))));
   } else {
     await page.goto(BASE + '#/tags', { waitUntil: 'networkidle0' }); await sleep(500);
     const side = await page.evaluate(() => {
       const nav = [...document.querySelectorAll('#side nav > *')].map((e) => e.textContent.trim().replace(/\d+$/, '').trim());
       return { nav, on: document.querySelector('#side a[href="#/tags"]')?.classList.contains('on') };
     });
-    const u = side.nav.indexOf('Utilities');
-    check('left bar: Tags under Utilities, after Manage library, before Settings', u > 0 && side.nav.indexOf('Tags') === side.nav.indexOf('Manage library') + 1 && side.nav.indexOf('Tags') > u && side.nav.indexOf('Tags') < side.nav.indexOf('Settings'), side.nav.join('|'));
-    check('main section has no Tags (Books then Stats)', side.nav.indexOf('Stats') === side.nav.indexOf('Books') + 1, side.nav.join('|'));
+    const u = side.nav.indexOf('Organize');
+    check('left bar: Tags under Organize, after Manage library, before Settings', u > 0 && side.nav.indexOf('Tags') === side.nav.indexOf('Manage library') + 1 && side.nav.indexOf('Tags') > u && side.nav.indexOf('Tags') < side.nav.indexOf('Settings'), side.nav.join('|'));
+    check('left bar order: Library / Activity / Organize / App', side.nav.join('|') === 'Library|All music|Sheets|Scores|Chords|Books|Activity|Stats|Activities|Organize|Manage library|Tags|App|Settings|Help|Developer', side.nav.join('|'));
     check('Tags link lit on the tags page', side.on);
     if (vp === MAC) await page.screenshot({ path: `${SHOTS}/${dev}-sidebar.png` });
   }

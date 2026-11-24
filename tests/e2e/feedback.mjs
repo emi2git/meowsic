@@ -33,9 +33,9 @@ for (const [name, vp, short] of [['Mac', MAC, 'mac'], ['iPad Pro 13', IPAD, 'ipa
   check('page is Developer, old-app card gone', (await page.$eval('h1', (e) => e.textContent)) === 'Developer' && !(await page.$eval('#main', (e) => e.textContent)).includes('Bring in the old apps'));
   if (vp === PHONE) {
     await page.click('#tab-more'); await sleep(200);
-    check('iPhone Utilities menu has Developer', (await page.$eval('.menu', (e) => e.textContent)).includes('Developer'));
+    check('iPhone More menu has Developer', (await page.$eval('.menu', (e) => e.textContent)).includes('Developer'));
     await page.evaluate(() => document.querySelector('.menu')?.remove());
-  } else check('left bar Utilities has Developer, highlighted', await page.$eval('#side a[href="#/developer"]', (e) => e.classList.contains('on')));
+  } else check('left bar App has Developer, highlighted', await page.$eval('#side a[href="#/developer"]', (e) => e.classList.contains('on')));
   check('mic on the feedback box', await page.evaluate(() => { const m = document.querySelector('#fb-text + .ti-mic'); return !!m && !m.hidden; }));
   check('Submit off while empty', await page.$eval('#fb-send', (e) => e.disabled));
 

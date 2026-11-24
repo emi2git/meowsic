@@ -1,4 +1,4 @@
-// Help (Utilities): where music can come from and how each Add path works. Add music itself stays short.
+// Help (App section; iPhone: More): where music can come from and how each Add path works. Add music itself stays short.
 import { store } from '../store.js';
 
 const sec = (id, title, items) => `<section class="card help-sec" id="help-${id}"><h2>${title}</h2><ul>${items.map((x) => `<li>${x}</li>`).join('')}</ul></section>`;

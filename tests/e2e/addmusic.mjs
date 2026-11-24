@@ -1,5 +1,5 @@
 // Add music = three short choices (Sheet, Chords, Score); each opens its flow with compact source
-// buttons (one or two words); the long "from where" text lives in Help under Utilities.
+// buttons (one or two words); the long "from where" text lives in Help (App section; iPhone: More).
 // Mac, iPad (1032x1376 touch) and iPhone (420x912 touch).
 //   BASE=http://localhost:5190/ (server) or BASE='http://localhost:5181/?preview=1' (preview)   SHOTS=<dir>
 import puppeteer from 'puppeteer-core';
@@ -64,15 +64,15 @@ for (const [dev, vp] of DEVICES) {
   check(`${dev}: Add score fits`, await noHScroll());
   await p.screenshot({ path: `${SHOTS}/${dev}-4-score.png` });
 
-  // Help under Utilities
+  // Help under App (iPhone: More)
   if (phone) {
     await p.click('#tab-more'); await sleep(250);
     const util = await p.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
-    check(`${dev}: Utilities menu has Help`, util.includes('Help'), util.join('|'));
+    check(`${dev}: More menu has Help`, util.includes('Help'), util.join('|'));
     await p.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Help').click()); await sleep(400);
   } else {
-    const under = await p.evaluate(() => { const h3 = [...document.querySelectorAll('#side h3')].find((x) => x.textContent === 'Utilities'); const a = document.querySelector('#side a[href="#/help"]'); return !!(h3 && a && (h3.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING)); });
-    check(`${dev}: Help link under Utilities`, under);
+    const under = await p.evaluate(() => { const h3 = [...document.querySelectorAll('#side h3')].find((x) => x.textContent === 'App'); const a = document.querySelector('#side a[href="#/help"]'); return !!(h3 && a && (h3.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING)); });
+    check(`${dev}: Help link under App`, under);
     await p.click('#side a[href="#/help"]'); await sleep(400);
   }
   const help = await p.$eval('#main', (e) => e.innerText);

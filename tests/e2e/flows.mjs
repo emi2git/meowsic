@@ -424,7 +424,15 @@ check('Settings has no old-app import or mock reset', !/Bring in the old apps|Re
 await go('#/developer'); await sleep(200);
 check('Developer page is the feedback box (old-app note gone), no mock data card', (await count('#fb-text')) === 1 && !/Bring in the old apps/.test(await text('#main')) && !/mock/i.test(await text('#main')));
 check('Developer in the left bar', (await text('#side')).includes('Developer'));
-check('left bar: Manage library, no Trash of its own (it is a Manage library tab)', /Manage library/.test(await text('#side')) && !/Trash/.test(await text('#side')) && /Utilities/i.test(await text('#side')) && !/\bBin\b/.test(await text('#side')));
+check('left bar: Manage library, no Trash of its own (it is a Manage library tab)', /Manage library/.test(await text('#side')) && !/Trash/.test(await text('#side')) && !/Utilities/i.test(await text('#side')) && /Organize/i.test(await text('#side')) && !/\bBin\b/.test(await text('#side')));
+{ // every left-bar item has the same font, size and weight; section headers share one small style
+  const f = await page.evaluate(() => {
+    const st = (e) => { const c = getComputedStyle(e); return [c.fontFamily, c.fontSize, c.fontWeight].join('/'); };
+    return { nav: [...new Set([...document.querySelectorAll('#side .nav span')].map(st))], h: [...new Set([...document.querySelectorAll('#side h3')].map(st))], heads: [...document.querySelectorAll('#side h3')].map((e) => e.textContent) };
+  });
+  check('left bar: all nav labels share one font/size/weight', f.nav.length === 1, f.nav.join(' ; '));
+  check('left bar: section headers share one style', f.h.length === 1 && f.heads.join('|') === 'Library|Activity|Organize|App', f.heads.join('|') + ' ' + f.h.join(' ; '));
+}
 console.log('Make tags');
 await go('#/tags');
 check('Tags page: Create tag + Generate tags buttons', /Create tag/.test(await text('.top')) && /Generate tags/.test(await text('.top')));

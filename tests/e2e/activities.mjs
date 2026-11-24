@@ -50,7 +50,7 @@ for (const [name, vp] of [['iPad Pro 13', IPAD], ['iPhone Air', PHONE]]) {
   check('page is called Activities', (await page.$eval('h1', (e) => e.textContent)) === 'Activities');
   if (vp === PHONE) {
     await page.click('#tab-more'); await sleep(200);
-    check('iPhone Utilities menu says Activities, not Logs', await page.evaluate(() => { const t = document.querySelector('.menu')?.textContent || ''; return t.includes('Activities') && !t.includes('Logs'); }));
+    check('iPhone More menu says Activities, not Logs', await page.evaluate(() => { const t = document.querySelector('.menu')?.textContent || ''; return t.includes('Activities') && !t.includes('Logs'); }));
     await page.keyboard.press('Escape'); await page.evaluate(() => document.querySelector('.menu')?.remove());
   } else check('left bar says Activities, not Logs', await page.$eval('#side', (e) => e.textContent.includes('Activities') && !/\bLogs\b/.test(e.textContent)));
   let r = await waitRow(page, nu);
