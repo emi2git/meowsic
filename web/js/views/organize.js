@@ -1,6 +1,7 @@
 // Tags (filter, print all) and the bin.
 import { store } from '../store.js';
-import { $, esc, icon, iconOn, badge, ago, menu, toast, promptSheet, confirmSheet, CAT } from '../ui.js';
+import { $, esc, iconOn, ago, menu, toast, promptSheet, confirmSheet, KIND, kindOf } from '../ui.js';
+import { taps } from './managekit.js';
 import { go } from '../app.js';
 import { itemMenu } from './actions.js';
 
@@ -32,30 +33,30 @@ export function tagsView(main) {
 }
 
 // ================= bin =================
-// Manage library → Trash (#/manage/trash; #/bin and #/trash go there): embedded = drawn in that tab's body
-export function binView(main, { embedded = false } = {}) {
-  const empty = `<button class="danger-text" id="bn-empty">${icon('bin')}Empty Trash</button>`;
-  main.innerHTML = `${embedded ? `<div class="bn-bar"><span class="grow"></span>${empty}</div>` : `<header class="top"><h1>Trash</h1><span class="grow"></span>${empty}</header>`}
-    <p class="pad muted">Items stay here until you delete them for good. Deleting for good also removes their page images and files from the Mac.</p><ul class="rows" id="bn"></ul>`;
+// Manage library → Trash (#/manage/trash; #/bin and #/trash go there): Restore, Delete (for good, after a confirm), Empty Trash
+export function binView(main) {
+  main.innerHTML = `<header class="top mg-top"><a class="mg-back" href="#/manage">‹ Manage</a><div class="mg-t"><h1>Trash</h1></div><span class="grow"></span><button class="danger-text" id="bn-empty" data-act="empty">Empty Trash</button></header>
+    <div class="mg-pad mg-wrap"><ul class="mg-rows bn-rows" id="bn"></ul>
+    <p class="muted small">Items stay here until you delete them for good. Deleting for good also removes their page images and files from the Mac.</p></div>`;
   const draw = () => {
     const items = store.items({ deleted: true }).sort((a, b) => b.deletedAt - a.deletedAt);
     $('#bn-empty', main).disabled = !items.length;
-    $('#bn', main).innerHTML = items.map((it) => `<li class="row" data-id="${it.id}">
-      <div class="row-main"><div class="row-title">${esc(it.title)}</div><div class="row-sub">${badge(it)}<span>Deleted ${ago(it.deletedAt)}</span></div></div>
-      <button data-act="restore">${icon('restore')}<span>Restore</span></button><button class="danger-text" data-act="purge">${icon('bin')}<span>Delete</span></button></li>`).join('') ||
-      `<li class="empty">${CAT}<p>Trash is empty.</p></li>`;
+    $('#bn', main).innerHTML = items.map((it) => `<li class="mg-row row" data-id="${it.id}">
+      <span class="mg-rt"><b class="row-title">${esc(it.title)}</b><small>${KIND[kindOf(it)]?.label || 'Item'} · deleted ${ago(it.deletedAt).toLowerCase()}</small></span>
+      <button data-act="restore">Restore</button><button class="danger-text" data-act="purge">Delete</button></li>`).join('') ||
+      `<li class="mg-empty muted">Trash is empty.</li>`;
   };
-  $('#bn', main).onclick = async (e) => {
-    const b = e.target.closest('[data-act]');
-    if (!b) return;
+  const off = taps(main, '[data-act]', async (b) => {
+    if (b.dataset.act === 'empty') {
+      const ids = store.items({ deleted: true }).map((x) => x.id);
+      if (await confirmSheet({ title: `Delete ${ids.length} item${ids.length === 1 ? '' : 's'} for good?`, body: 'This cannot be undone.', ok: 'Empty Trash', danger: true })) store.purge(ids);
+      return;
+    }
     const id = b.closest('.row').dataset.id, it = store.get(id);
     if (b.dataset.act === 'restore') { store.restore(id); toast(`Restored “${it.title}”`); }
     else if (await confirmSheet({ title: `Delete “${it.title}” for good?`, body: 'This cannot be undone.', ok: 'Delete for good', danger: true })) store.purge(id);
-  };
-  $('#bn-empty', main).onclick = async () => {
-    const ids = store.items({ deleted: true }).map((x) => x.id);
-    if (await confirmSheet({ title: `Delete ${ids.length} item${ids.length === 1 ? '' : 's'} for good?`, body: 'This cannot be undone.', ok: 'Empty Trash', danger: true })) store.purge(ids);
-  };
+  });
   draw();
-  return store.on(draw);
+  const off2 = store.on(draw);
+  return () => { off(); off2(); };
 }

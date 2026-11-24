@@ -235,14 +235,14 @@ export function startInk(view, host) {
 }
 
 // the sheet's ⋯ tools (actions.viewerMenu). Pages — reorder, split, merge, delete, crop — are edited in one place,
-// Manage library → Organize pages; Crop page… opens it on the crop of the page shown. Books are read-only PDFs:
-// no page editing and no Make a score (Organize pages leaves them out).
+// Manage library → Fix pages; Crop page… opens the crop of the page shown (and comes back here). Books are
+// read-only PDFs: no page editing and no Make a score (Fix pages leaves them out).
 export function sheetTools(it, view) {
   if (store.mode !== 'server' || it.book) return [];
-  const org = `#/manage?id=${encodeURIComponent(it.id)}&back=item`;
+  const org = `#/manage/pages/${encodeURIComponent(it.id)}`;
   return [
-    ...(it.pageFiles?.length ? [{ label: 'Edit pages…', icon: 'edit', run: () => go(org) },
-      { label: 'Crop page…', icon: 'edit', run: () => go(`${org}&crop=${view?.page || 1}`) }] : []),
+    ...(it.pageFiles?.length ? [{ label: 'Edit pages…', icon: 'edit', run: () => go(`${org}?back=item`) },
+      { label: 'Crop page…', icon: 'edit', run: () => go(`${org}/crop/${view?.page || 1}?back=item`) }] : []),
     { label: 'Make a score…', icon: 'wave', run: () => makeScore(it) },
   ];
 }

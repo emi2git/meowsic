@@ -1,6 +1,6 @@
 // Manage library → Complete info against a test server (BASE, default :5381, a temp data folder). Never the real library.
 // Per device (Mac, iPad Pro 13 upright + across, iPhone Air; touch devices use real page.touchscreen.tap):
-//   · the tab shows the count; page 1 is the WHOLE page fitted in its frame (aspect kept, inside, no scroll, as big
+//   · the header shows "1 of N" + a progress bar; page 1 is the WHOLE page fitted in its frame (aspect kept, inside, no scroll, as big
 //     as the frame allows) on 3 cards in a row (tall and wide pages), never the last song's picture
 //   · a slow page shows "Loading page 1…" first; a failed one shows Retry, and Retry loads it
 //   · the AI guess is a dashed hint only; a tap on a version picks it and does NOT move on
@@ -61,11 +61,12 @@ const state = (page) => page.evaluate(() => ({
   keyHint: [...document.querySelectorAll('.ci-key.hint')].map((e) => e.dataset.key),
   verHint: [...document.querySelectorAll('.ci-ver.hint')].map((e) => e.dataset.ver),
   okKey: document.querySelector('#ci-okkey')?.textContent || '',
-  badge: document.querySelector('#cu-ninfo')?.textContent || '',
-  tabOn: document.querySelector('.cu-tabs a.on')?.dataset.tab,
+  badge: (document.querySelector('#mg-sub')?.textContent || '').match(/of (\d+)/)?.[1] || '',
+  tabOn: document.querySelector('.mg-progress i') && document.querySelector('.mg-t h2')?.textContent,
   next: document.querySelector('#ci-next')?.disabled,
   empty: !!document.querySelector('.ci-empty'),
-  sug: document.querySelector('.ci-sug')?.textContent || '',
+  sug: document.querySelector('.ci-ai')?.textContent || '',
+  sig: document.querySelector('#ci-sig')?.textContent || '',
   fail: [...document.querySelectorAll('.ci-savefail')].map((e) => e.textContent),
   other: document.querySelector('#ci-other')?.value,
   overflowX: document.documentElement.scrollWidth > innerWidth + 1,
@@ -143,8 +144,9 @@ for (const [name, dev, vp] of DEVICES) {
   rules.slow = null;
   check('card 1: the whole page fitted in its frame', p.ok, JSON.stringify(p));
   let s = await state(page);
-  check('Complete info tab is on, badge = count', s.tabOn === 'info' && s.badge === String(q0.count), JSON.stringify(s));
+  check('Complete info header: "1 of N" + progress bar', s.tabOn === 'Complete info' && s.badge === String(q0.count), JSON.stringify(s));
   check('the AI guess D is a dashed hint, not picked; Save & next off', JSON.stringify(s.keyHint) === '["D"]' && !s.keyOn.length && /Suggested: D/.test(s.sug) && s.next === true, JSON.stringify(s));
+  check('the key signature is said once, under the keys (2 sharps for D)', s.sig === '2 sharps in the key signature' && !(await page.$('.ci-key small')), s.sig);
   check('no sideways scroll; actions on screen', !s.overflowX && s.actsVisible, JSON.stringify(s));
   await page.screenshot({ path: `${SHOTS}/${dev}-card.png` });
 
@@ -191,6 +193,8 @@ for (const [name, dev, vp] of DEVICES) {
 
   // card 3 (a very tall page): its picture fails first → Retry; typed key; Accompaniment
   check('card 3 (a tall page): fitted whole', (await waitPic(page, s3.id)).ok, JSON.stringify(await pic(page, s3.id)));
+  check('the other-key box is hidden until Other…', await page.$eval('#ci-form', (e) => e.hidden));
+  await tap('#ci-more');
   await tap('#ci-other'); await page.type('#ci-other', 'H7'); await tap('#ci-set');
   check('a wrong key is refused with a message', /not a key/.test(await page.$eval('#ci-err', (e) => (e.hidden ? '' : e.textContent))), '');
   await page.$eval('#ci-other', (e) => (e.value = '')); await tap('#ci-other'); await page.type('#ci-other', 'f# minor'); await tap('#ci-set');

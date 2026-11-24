@@ -2,13 +2,13 @@
 // meowsic.db, written to make a sing job "run" and to give a score a voice). SHOTS = folder for screenshots.
 //   library row ⋯  Info · Move to Trash
 //   sheet          Info · Edit pages… · Crop page… · Make a score… · Export ▸ (Print / PDF…, Page 1 as an image) · Move to Trash
-//   book           Info · Export ▸ · Move to Trash   (read-only: no page editing, not in Organize pages)
+//   book           Info · Export ▸ · Move to Trash   (read-only: no page editing, not in Fix pages)
 //   score          Info · Make another version… · Edit notes… · Add lyrics from a sheet… · Fit lyrics… · Request singing voice
 //                  · Export ▸ (MusicXML, MIDI, Print / PDF…) · Move to Trash — no Kids note names / Chords (toolbar toggles)
 //   singing voice  only with lyrics; "Singing voice in progress…" (disabled) while its job runs; "Redo singing voice" once
 //                  it has one; the toolbar Voice toggle is hidden until the score has a voice
 //   chords         Info · Export ▸ (Print / PDF…, Text file) · Move to Trash
-//   Info popup     fields + Save, no Actions section; no "(beta)" anywhere; Crop page… opens the crop in Organize pages
+//   Info popup     fields + Save, no Actions section; no "(beta)" anywhere; Crop page… opens the crop in Fix pages
 import { execFileSync } from 'node:child_process';
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5190/';
@@ -167,23 +167,23 @@ await openMore(mac); await tapMenu(mac, 'Export'); await tapMenu(mac, 'Print / P
 check('Export ▸ Print / PDF… opens the print view', (await mac.evaluate(() => location.hash)).startsWith(`#/print?item=${score.id}`), await mac.evaluate(() => location.hash));
 await openItem(mac, sheet);
 await openMore(mac); await tapMenu(mac, 'Crop page…'); await sleep(2500);
-check('Crop page… opens Organize pages on this sheet, in the crop', (await mac.evaluate(() => location.hash)).startsWith(`#/manage?id=${sheet.id}`) && !!(await mac.$('#cr-stage')), await mac.evaluate(() => location.hash));
+check('Crop page… opens the full-screen crop of page 1 in Fix pages', (await mac.evaluate(() => location.hash)) === `#/manage/pages/${sheet.id}/crop/1?back=item` && !!(await mac.$('#cr-stage img')), await mac.evaluate(() => location.hash));
 await shot(mac, 'mac-crop');
-await mac.evaluate(() => document.querySelector('.modal [data-close]')?.click()); await sleep(300);
+await mac.click('.mg-back'); await sleep(800);
+check('…Cancel returns to the sheet', (await mac.evaluate(() => location.hash)) === `#/item/${sheet.id}`);
 await openItem(mac, sheet);
 await openMore(mac); await tapMenu(mac, 'Edit pages…'); await sleep(2000);
-check('Edit pages… opens Organize pages on this sheet', (await mac.$eval('#bs-grid', (e) => e.dataset.id).catch(() => null)) === sheet.id);
-// books are read-only: not in Organize pages, even asked for by id
-await mac.goto(`${BASE}#/manage?id=${book.id}`, { waitUntil: 'networkidle2' }); await sleep(1500);
-const og = await mac.evaluate(() => ({ grid: document.querySelector('#bs-grid')?.dataset.id || null, list: [...document.querySelectorAll('#bs-list li[data-id]')].map((x) => x.dataset.id) }));
-check('a book is not offered in Organize pages', og.grid !== book.id && !og.list.includes(book.id) && og.list.includes(sheet.id), JSON.stringify(og));
-// a sheet marked "This is a complete song" is not opened again when Organize pages comes back to it (bug b)
-await mac.goto(`${BASE}#/manage?id=${sheet.id}`, { waitUntil: 'networkidle2' }); await sleep(1500);
-await mac.$eval('#og-ok', (e) => e.click()); await sleep(800);
-check('marked complete', (await api('/organize')).items.find((x) => x.id === sheet.id)?.reviewed === true);
-await mac.goto(`${BASE}#/library`, { waitUntil: 'networkidle2' }); await mac.goto(`${BASE}#/manage`, { waitUntil: 'networkidle2' }); await sleep(1500);
-check('coming back, the complete song is not opened again', (await mac.$eval('#bs-grid', (e) => e.dataset.id).catch(() => null)) !== sheet.id);
-await post('/organize/reviewed', { id: sheet.id, on: false });
+check('Edit pages… opens this sheet in Fix pages', (await mac.evaluate(() => location.hash)) === `#/manage/pages/${sheet.id}?back=item` && (await mac.$$eval('#pe-grid .pe-tile', (e) => e.length)) === 2);
+// old deep links still land there
+await mac.goto(`${BASE}#/manage?id=${sheet.id}&back=item&crop=2`, { waitUntil: 'networkidle2' }); await sleep(1200);
+check('old #/manage?id=…&crop=2 → the new crop route', (await mac.evaluate(() => location.hash)) === `#/manage/pages/${sheet.id}/crop/2?back=item`);
+// books are read-only: not in Fix pages, even asked for by id
+await mac.goto(`${BASE}#/manage/pages/${book.id}`, { waitUntil: 'networkidle2' }); await sleep(1500);
+check('a book is not editable in Fix pages', !(await mac.$('#pe-grid .pe-tile')));
+await mac.goto(`${BASE}#/manage/pages`, { waitUntil: 'networkidle2' }); await sleep(800);
+await mac.evaluate(() => document.querySelector('[data-seg="all"]').click()); await sleep(300);
+const og = await mac.$$eval('#pk-list [data-id]', (e) => e.map((x) => x.dataset.id));
+check('the Fix pages list has the sheet, not the book', !og.includes(book.id) && og.includes(sheet.id), JSON.stringify(og));
 await openItem(mac, sheet);
 const sm = await openMore(mac); await closeMenu(mac);
 check('Make a score is not beta', sm.includes('Make a score…') && !/beta/i.test(sm), sm);
