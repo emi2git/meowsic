@@ -193,3 +193,45 @@ export class VoicePlayer {
   destroy() { this.stopClock(); this.el.removeAttribute('src'); try { this.el.load(); } catch {} }
 }
 
+// ---------- one live key (Keyboard beta): sounds from the press until release() ----------
+let liveOut = null;
+export function pianoKey(pitch, vel = 90) {
+  const c = audioCtx();
+  if (!piano.length) loadPiano();
+  if (!liveOut || liveOut.context !== c) {
+    liveOut = c.createGain(); liveOut.gain.value = 0.85;
+    const comp = c.createDynamicsCompressor();
+    liveOut.connect(comp); comp.connect(c.destination);
+  }
+  const now = c.currentTime, env = c.createGain();
+  let src;
+  if (piano.length) {
+    const s = piano.reduce((b, x) => (Math.abs(x.note - pitch) < Math.abs(b.note - pitch) ? x : b));
+    src = c.createBufferSource(); src.buffer = s.buf;
+    src.playbackRate.value = Math.pow(2, (pitch - s.note) / 12);
+    env.gain.setValueAtTime(Math.pow(vel / 127, 1.2), now);
+  } else {
+    src = c.createOscillator(); src.type = 'triangle';
+    src.frequency.value = 440 * Math.pow(2, (pitch - 69) / 12);
+    env.gain.setValueAtTime(0, now);
+    env.gain.linearRampToValueAtTime((vel / 127) * 0.25, now + 0.006);
+    env.gain.setTargetAtTime(0, now + 0.01, 0.6);
+  }
+  src.connect(env); env.connect(liveOut);
+  src.start(now); src.stop(now + 8);
+  let done = false;
+  return () => {
+    if (done) return; done = true;
+    const t = c.currentTime;
+    try { env.gain.cancelScheduledValues(t); env.gain.setTargetAtTime(0, t, 0.12); src.stop(t + 0.8); } catch {}
+  };
+}
+
+// a metronome tick at audio time `when` (accent = the first beat of a bar)
+export function clickAt(when, accent = false) {
+  const c = audioCtx(), o = c.createOscillator(), g = c.createGain();
+  o.frequency.value = accent ? 1600 : 1000;
+  g.gain.setValueAtTime(0, when); g.gain.linearRampToValueAtTime(accent ? 0.5 : 0.32, when + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, when + 0.06);
+  o.connect(g); g.connect(c.destination); o.start(when); o.stop(when + 0.08);
+}
+
