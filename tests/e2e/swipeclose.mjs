@@ -1,5 +1,5 @@
 // Swipe up / down closes a sheet or score only in plain viewing mode: with a tool open (Fit lyrics, Edit notes,
-// Annotate, Info) it does nothing. iPad + iPhone touch emulation, against a test server (BASE, default :5378,
+// Annotate, Info) it does nothing. The chords strip at the top of a score is a display aid, not a tool: with it on, swipes still close. iPad + iPhone touch emulation, against a test server (BASE, default :5378,
 // a scratchpad copy of the data — never the real library). Makes its own sheet (two icon pages) and score.
 import puppeteer from 'puppeteer-core';
 import { readFileSync } from 'node:fs';
@@ -71,6 +71,14 @@ async function run(name, vp) {
     for (const dir of ['down', 'up']) await swipe(dir);
     check(`score: swipe with ${label.replace('…', '')} open stays`, (await hash()).startsWith('#/item/') && !!(await page.$(sel)), await hash());
   }
+  // the chords strip (piano / ukulele) is not a tool: swipe up / down still closes the score
+  for (const [mode, dir] of [['uke', 'down'], ['piano', 'up']]) {
+    await page.evaluate((m) => localStorage.setItem('meowsic-chords', m), mode);
+    await open(score); await page.waitForSelector('.chord-strip', { timeout: 5000 }); await sleep(500);
+    await swipe(dir);
+    check(`score: swipe ${dir} with the ${mode} chords strip on closes`, (await hash()).startsWith('#/library'), await hash());
+  }
+  await page.evaluate(() => localStorage.removeItem('meowsic-chords'));
   // page turns sideways still work on the sheet
   await open(sheet);
   const box = await page.$eval('.pages', (e) => { const r = e.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });

@@ -2,8 +2,9 @@
 // follow transpose), in order of first use, each once; a score without symbols gets them from its notes (the Mac's
 // chord finder, server/meowsic/scorechords.py) — as GCEA ukulele chord boxes: fret dots with finger numbers, a
 // barre, open strings, the position — or as small piano keyboards with the chord's keys shaded. Slash chords show their base chord (D/F♯ → D). Tap a box: the places the
-// chord is used light up in the score. Remembered on this device, off by default. Mac / iPad: a card on the right
-// of the score; iPhone: a bottom sheet.
+// chord is used light up in the score. Remembered on this device, off by default. Every device: one compact row at the
+// top of the score (under the toolbar, above the music), scrolling sideways when there are many chords; the score
+// below fits the rest of the height (its ResizeObserver lays it out again). Off = no strip, full height.
 import { ukeShape, transposeChord, splitChord, esc } from './chords.js';
 import { chordsOf, keyboardSvg } from './easyscore.js';
 
@@ -84,19 +85,16 @@ function chordLabels(osmd) {
   return out;
 }
 
-// the panel; view = the score view (osmd, transpose, events), host = .viewer
+// the strip; view = the score view (osmd, transpose, events), host = .viewer (it goes between the toolbar and .viewer-body)
 export function ukePanel(view, it, host, mode = 'uke') {
   const panel = document.createElement('div');
-  panel.className = 'uke-panel';
-  panel.setAttribute('role', 'dialog');
+  panel.className = 'chord-strip';
+  panel.setAttribute('role', 'region');
   panel.dataset.mode = mode;
   panel.setAttribute('aria-label', MODE_LABEL[mode]);
-  host.append(panel);
+  const body = host.querySelector('.viewer-body');
+  if (body) host.insertBefore(panel, body); else host.append(panel);
   host.classList.add('uke-on');
-  // Mac / iPad: the card starts under the toolbar(s) (iPad portrait has two rows), never over them
-  const fit = () => { const body = host.querySelector('.viewer-body'); panel.style.top = body && !matchMedia('(max-width: 760px) and (pointer: coarse)').matches ? `${body.offsetTop + 8}px` : ''; };
-  fit();
-  const ro = new ResizeObserver(fit); ro.observe(host);
   let found = null, pick = null; // chords from the notes (server), once
   const names = async () => {
     const drawn = chordsOf(view.osmd || {});
@@ -119,10 +117,13 @@ export function ukePanel(view, it, host, mode = 'uke') {
     const { list, from } = await names();
     if (!panel.isConnected) return;
     if (pick && !list.includes(pick)) pick = null;
-    panel.innerHTML = `<div class="uk-head"><b>${MODE_LABEL[mode]}</b><span class="muted">${list.length ? `${list.length} chord${list.length > 1 ? 's' : ''}${from === 'notes' ? ' · worked out from the notes' : ''}` : ''}</span>
-      <button class="icon-btn uk-close" aria-label="Close the chords" title="Close">✕</button></div>
-      <div class="uk-grid">${list.length ? list.map((c) => `<button class="uk-chord ${c === pick ? 'on' : ''}" data-chord="${esc(c)}" aria-pressed="${c === pick}" title="Show where ${esc(c)} is played">${mode === 'piano' ? pianoBox(c) : ukeBox(c)}</button>`).join('')
-        : '<p class="muted uk-none">No chords in this score</p>'}</div>`;
+    const n = `${list.length} chord${list.length > 1 ? 's' : ''}${from === 'notes' ? ' · worked out from the notes' : ''}`;
+    const sx = panel.querySelector('.uk-row')?.scrollLeft || 0; // a redraw (transpose, zoom) keeps the strip where it was
+    panel.title = list.length ? `${MODE_LABEL[mode]}: ${n}` : MODE_LABEL[mode];
+    panel.innerHTML = `<div class="uk-row">${list.length ? list.map((c) => `<button class="uk-chord ${c === pick ? 'on' : ''}" data-chord="${esc(c)}" aria-pressed="${c === pick}" title="Show where ${esc(c)} is played">${mode === 'piano' ? pianoBox(c) : ukeBox(c)}</button>`).join('')
+        : '<p class="muted uk-none">No chords in this score</p>'}</div>
+      <button class="icon-btn uk-close" aria-label="Close the chords" title="Close">✕</button>`;
+    panel.querySelector('.uk-row').scrollLeft = sx;
     light();
   };
   panel.addEventListener('click', (e) => {
@@ -136,5 +137,5 @@ export function ukePanel(view, it, host, mode = 'uke') {
   const onDrawn = () => draw();
   host.addEventListener('scoredrawn', onDrawn);
   draw();
-  return { el: panel, refresh: draw, setMode(m) { mode = m; panel.dataset.mode = m; panel.setAttribute('aria-label', MODE_LABEL[m]); draw(); }, destroy() { ro.disconnect(); host.removeEventListener('scoredrawn', onDrawn); host.querySelectorAll('.uke-hit').forEach((e) => e.classList.remove('uke-hit')); panel.remove(); host.classList.remove('uke-on'); } };
+  return { el: panel, refresh: draw, setMode(m) { mode = m; panel.dataset.mode = m; panel.setAttribute('aria-label', MODE_LABEL[m]); draw(); }, destroy() { host.removeEventListener('scoredrawn', onDrawn); host.querySelectorAll('.uke-hit').forEach((e) => e.classList.remove('uke-hit')); panel.remove(); host.classList.remove('uke-on'); } };
 }
