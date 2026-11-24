@@ -119,15 +119,16 @@ export function scoreBody(root, it, { perform = false } = {}) {
     bar?.remove();
     bar = document.createElement('div');
     bar.className = 'playbar';
+    bar.innerHTML = '<i class="pb-grip" aria-hidden="true"></i>'; // a grip at its top: easy to grab with a finger
     (el.parentElement || $('#osmd', root)).append(bar);
     stopOff = bar.parentElement.getBoundingClientRect().top - sheet.getBoundingClientRect().top;
   };
 
   // the play start you picked (tap / drag the line, or Edit notes' cue): Play starts there, Stop comes back to it
-  let cueQ = 0, cued = false, quiet = false;
+  let cueQ = 0, cued = false, quiet = false, keepBar = false;
   const place = (q, follow = true) => {
     if (!stops.length || !bar) return;
-    if (!player?.playing && q <= 0 && !cued) { bar.style.display = 'none'; return; }
+    if (!player?.playing && q <= 0 && !cued && !keepBar) { bar.style.display = 'none'; return; }
     if (quiet) follow = false;
     let i = stops.findIndex((s) => s.q > q) - 1;
     if (i < 0) i = q <= stops[0].q ? 0 : stops.length - 1;
@@ -456,8 +457,10 @@ export function scoreBody(root, it, { perform = false } = {}) {
     seekTo(s[Math.max(0, Math.min(s.length - 1, c.bar - 1))] || 0, { follow: false });
   });
   paper.addEventListener('pointerdown', (e) => {
-    if (busy() || e.button > 0) return;
-    if (bar && e.target === bar) {
+    const onBar = !!bar && e.target.closest?.('.playbar') === bar;
+    if (e.button > 0 || inkTool || (busy() && !onBar)) return;
+    if (onBar) {
+      e.stopPropagation();
       e.preventDefault();
       drag = { id: e.pointerId, was: player?.playing };
       if (drag.was) player.pause();
@@ -469,14 +472,33 @@ export function scoreBody(root, it, { perform = false } = {}) {
   });
   paper.addEventListener('pointermove', (e) => {
     if (!drag || e.pointerId !== drag.id) return;
-    seekTo(qAt(e.clientX, e.clientY));
+    e.preventDefault();
+    // paged (iPad / iPhone): hold the line at the page's left / right edge to drag it onto the page before / after
+    const pr = paper.getBoundingClientRect(), d = !paged ? 0 : e.clientX >= pr.right - 18 ? 1 : e.clientX <= pr.left + 18 ? -1 : 0;
+    if (d !== (drag.edge || 0)) {
+      clearTimeout(drag.edgeT); drag.edge = d;
+      if (d) {
+        const dd = drag;
+        dd.edgeT = setTimeout(function turn() {
+          if (drag !== dd || dd.edge !== d || page + d < 0 || page + d >= pages.length) return;
+          goPage(page + d);
+          const on = pageStops();
+          if (on.length) seekTo((d > 0 ? on[0] : on.at(-1)).q, { follow: false });
+          dd.edgeT = setTimeout(turn, 900);
+        }, 600);
+      }
+    }
+    if (d) return;
+    const q = qAt(e.clientX, e.clientY);
+    if (q != null) seekTo(nearestStop(q), { follow: false }); // snaps to the nearest note as it moves, on any line of the page
   });
   const endDrag = (e) => {
     if (drag && e.pointerId === drag.id) {
-      const was = drag.was; drag = null; dragEnd = Date.now();
+      const was = drag.was; clearTimeout(drag.edgeT); drag = null; dragEnd = Date.now();
       bar?.classList.remove('dragging');
-      seekTo(nearestStop(player?.now() ?? null)); // lands on a note
-      if (was) player.play().catch(() => {});
+      seekTo(nearestStop(player?.now() ?? null), { follow: false }); // lands on a note
+      root.dispatchEvent(new CustomEvent('cuedrag', { detail: { q: cueQ, bar: barOfQ(cueQ) }, bubbles: true }));
+      if (was) player.play().catch(() => {}); // dragged while playing: plays on from the new spot
       return;
     }
     const t = tap; tap = null;
@@ -489,7 +511,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
   // iPad / iPhone: pages like a sheet — swipe left / right or tap the page's left / right edge
   // turns, swipe up / down = back to the library; a tap elsewhere on the music moves the line
   const scroller = () => root.closest('.scroll-host');
-  const canSwipe = () => !busy() && !drag && Date.now() - dragEnd > 300;
+  const canSwipe = (e) => !busy() && !drag && Date.now() - dragEnd > 300 && !e?.target?.closest?.('.playbar');
   const offSwipe = !paged ? (perform ? () => {} : attachSwipe(root, { scroller, upAtEnd: true, canStart: canSwipe,
     onLeft: () => flipBy(scroller(), 1), onRight: () => flipBy(scroller(), -1) }))
     : pagerInput(paper, { next: () => goPage(page + 1), prev: () => goPage(page - 1), canStart: (e) => canSwipe() && e?.target !== bar, edge: 0.14 });
@@ -561,6 +583,9 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get totalQ() { return real ? Math.ceil(info.totalQ) : tune.measures.reduce((s, m) => s + barBeats(tune, m), 0); },
     seekAt: qAt, seek: seekTo, snapAt, barStarts, barOfQ,
     get cueQ() { return cued ? cueQ : 0; },
+    get dragging() { return !!drag; },
+    // Edit notes: the orange line stays on show (at the start when nothing is cued), so it can be dragged
+    keepBar(on) { keepBar = !!on; if (!player?.playing) place(cued ? cueQ : (player?.posQ || 0), false); },
     // the start one bar before bar bi (0-based; bar 1 stays on bar 1), the page not turned; → the 1-based bar
     cueBar(bi) { const s = barStarts(), k = Math.max(0, Math.min(s.length - 1, bi - 1)); player?.pause(); seekTo(s[k] || 0, { follow: false }); return k + 1; },
     // Stop: back to the start you picked; Stop again there (or with no start picked) = back to the beginning

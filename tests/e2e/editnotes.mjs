@@ -399,7 +399,10 @@ async function cueAndArcs(name, vp) {
     check('Stop: back to the cue, the line stays', !s.playing && s.q === 12 && (await lineOn()), JSON.stringify(s));
     await tap('#sc-stop'); await sleep(250);
     s = await S();
-    check('Stop again: back to the beginning, the line goes', s.q === 0 && s.cue === 0 && !(await lineOn()), JSON.stringify(s));
+    // (Edit notes keeps the line on show at the start, so its grip can be dragged — cuedrag.mjs)
+    const atStart = await page.$eval('.playbar', (e) => new DOMMatrix(getComputedStyle(e).transform).m41);
+    const first = await page.evaluate(() => { const g = document.querySelector('#paper g[data-ref]'); const h = document.querySelector('.playbar').parentElement; return g.getBoundingClientRect().left - h.getBoundingClientRect().left; });
+    check('Stop again: back to the beginning, the line at the start', s.q === 0 && s.cue === 0 && (await lineOn()) && Math.abs(atStart - first) < 40, JSON.stringify({ s, atStart, first }));
   }
   await select([r5]);
   await act('playhere'); await sleep(700);

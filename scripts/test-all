@@ -34,7 +34,7 @@ SUITES = {
     'flows': 'preview', 'keycolumn': 'preview', 'playback': 'preview', 'scorezoom': 'preview', 'topcast': 'preview',
     'touchseek': 'preview', 'betakeyboard': 'preview',
     'activities': 'server', 'chordplay': 'server', 'addchords': 'server', 'addmusic': 'server', 'aimusic': 'server', 'books': 'server',
-    'booksplit': 'server', 'checkbars': 'server', 'completeinfo': 'server', 'dailycleanup': 'server', 'easyscore': 'server',
+    'booksplit': 'server', 'checkbars': 'server', 'completeinfo': 'server', 'cuedrag': 'server', 'dailycleanup': 'server', 'easyscore': 'server',
     'editnotes': 'server', 'editperf': 'server', 'feedback': 'server', 'jobs': 'server', 'langtoggle': 'server', 'libversion': 'server',
     'lyricmode': 'server', 'manage': 'server', 'menus': 'server', 'metadata': 'server', 'midiedit': 'server',
     'notenames': 'server', 'organizepages': 'server', 'photoimport': 'server', 'quickfeedback': 'server', 'real': 'server',
@@ -155,7 +155,7 @@ def main():
 # BASE pointing at a dev-server on a COPY of the library: scripts/dev-server --data <copy>), or are slow and heavy
 # (voice: loads the SoulX-Singer model; may time out while another sing job runs).
 MAIN = ['flows', 'keycolumn', 'playback', 'scorezoom', 'topcast', 'touchseek', 'betakeyboard',
-        'activities', 'chordplay', 'addmusic', 'booksplit', 'completeinfo', 'dailycleanup', 'editnotes', 'editperf', 'feedback', 'jobs', 'langtoggle',
+        'activities', 'chordplay', 'addmusic', 'booksplit', 'completeinfo', 'cuedrag', 'dailycleanup', 'editnotes', 'editperf', 'feedback', 'jobs', 'langtoggle',
         'lyricmode', 'manage', 'menus', 'midiedit', 'organizepages', 'photoimport', 'quickfeedback', 'renameopen',
         'swipeclose', 'textinput', 'verified', 'offline', 'storage']
 if __name__ == '__main__':
