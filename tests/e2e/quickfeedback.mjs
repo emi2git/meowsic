@@ -1,7 +1,7 @@
 // Quick feedback (js/quickfeedback.js): the speech-bubble button in a score, sheet and chord view opens a popover
 // with a text box whose mic starts at once, "About: <title> · page N / bar N", Send / Cancel. Send → toast
 // "Feedback sent", the note is on the Mac with the item and its context (page, bar, zoom, version, device), and the
-// Developer list shows the song (a link that opens it) and the details. While the popover is open a swipe up does
+// Feedback list shows the song (a link that opens it) and the details. While the popover is open a swipe up does
 // not close the view (swipe.js toolOpen). iPad Pro 13 + iPhone Air + Mac, against a test server (BASE, default
 // :5317, a temp data folder — never the real library). Speech recognition is a stand-in that "hears" a sentence.
 // SHOTS = folder for screenshots.
@@ -126,7 +126,7 @@ async function run(name, vp, short) {
     check(`${k}: Cancel closes, nothing sent`, !(await page.$('.qfb')) && !(await api('/feedback')).some((f) => f.text.startsWith('Should not be sent')));
   }
 
-  // ---- Developer → Feedback list ----
+  // ---- Feedback list ----
   await page.evaluate(() => { location.hash = '#/developer'; }); await sleep(900);
   for (const it of [score, sheet, chords]) {
     const said = `Quick ${it.kind} ${short} ${stamp}`;

@@ -50,9 +50,9 @@ NOT_UNDOABLE = {  # types logged without rollback info: why
     'delete': 'Deleted for good — the files are gone, there is nothing to bring back.',
     'print': 'Printing changes nothing in the library.',
     'rollback': 'This is a rollback itself. Undo the change again from the library instead.',
-    'unbooksplit': 'This put a book back together already; make the sheets again in Manage library → Organize pages.',
+    'unbooksplit': 'This put a book back together already; make the sheets again in Manage library → Fix pages.',
     'photo-unimport': 'This undid a From Photos import already; add the photos again from Add music → From Photos.',
-    'unsongsplit': 'This put a sheet back together already; split it again in Manage library → Organize pages.',
+    'unsongsplit': 'This put a sheet back together already; split it again in Manage library → Fix pages.',
     'migrate': 'This one-off change kept no history log.',
     'tags-job': 'AI tag suggestions change nothing until you apply them.',
 }
@@ -81,7 +81,7 @@ def describe(step) -> str:
     if op == 'pages':
         gone = [x['page'] for x in step.get('deleted') or []]
         return f'{_q(step.get("title", ""))}: ' + ', '.join((['pages back in their old order'] if step['order'] != sorted(step['order']) else []) + ([f'page{"s" if len(gone) != 1 else ""} {", ".join(map(str, gone))} back from .history'] if gone else []))
-    if op == 'reviewed': return f'{_q(step.get("title", ""))}: ' + ('show it in Recommended to check again' if step.get('on') else 'mark it a complete song again')
+    if op == 'reviewed': return f'{_q(step.get("title", ""))}: ' + ('show it in Check suspect songs again' if step.get('on') else 'mark it fine again')
     if op == 'crop': return f'{_q(step.get("title", ""))} page {step["page"]}: ' + ('back to the original photo' if not step.get('before') else 'back to the crop before')
     if op == 'mark': return f'{"Mark" if step.get("before") else "Unmark"} {step["key"]} {"as fine" if step.get("before") else ""}'.strip()
     if op == 'later': return f'{"Leave" if step.get("before") else "Take the later mark off"} {step["key"]}{" for later" if step.get("before") else ""}'

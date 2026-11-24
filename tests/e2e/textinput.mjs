@@ -59,14 +59,14 @@ const say = (s) => page.evaluate((s) => (window.__say = s), s);
 const micOf = (sel) => page.$eval(sel, (el) => { const m = el.nextElementSibling; if (!m?.classList.contains('ti-mic') || m.hidden) return null; const a = m.getBoundingClientRect(), r = el.getBoundingClientRect(); return { w: a.width, h: a.height, inside: a.left >= r.left - 1 && a.right <= r.right + 1 && a.top >= r.top - 1 && a.bottom <= r.bottom + 1, lang: m.dataset.lang }; });
 const tapMic = (sel) => page.$eval(sel, (el) => { const q = el.nextElementSibling.getBoundingClientRect(); return { x: q.x, y: q.y, width: q.width, height: q.height }; }).then((r) => page.mouse.click(r.x + r.width / 2, r.y + r.height / 2));
 
-if (process.env.BASE) { // real server: Manage library → Organize pages: the find box has a mic, and speaking fills it
-  console.log('Organize pages (real server)');
-  await page.goto(BASE + '#/manage', { waitUntil: 'networkidle0' }); await sleep(1500);
-  check('find box has a mic', !!(await micOf('#og-find')));
-  await page.click('#og-find');
+if (process.env.BASE) { // real server: Manage library → Fix pages: the find box has a mic, and speaking fills it
+  console.log('Fix pages (real server)');
+  await page.goto(BASE + '#/manage/pages', { waitUntil: 'networkidle0' }); await sleep(1500);
+  check('find box has a mic', !!(await micOf('#pk-find')));
+  await page.click('#pk-find');
   await say({ alts: [['moon river', 0.9]] });
-  await tapMic('#og-find'); await sleep(1200);
-  check('spoken words fill the find box', /moon river/i.test(await page.$eval('#og-find', (e) => e.value)), await page.$eval('#og-find', (e) => e.value));
+  await tapMic('#pk-find'); await sleep(1200);
+  check('spoken words fill the find box', /moon river/i.test(await page.$eval('#pk-find', (e) => e.value)), await page.$eval('#pk-find', (e) => e.value));
   await page.keyboard.press('Escape'); await sleep(200);
   check('no page errors', !errs.length, errs.join(' | '));
   console.log(`\n${pass} passed, ${fail} failed`);

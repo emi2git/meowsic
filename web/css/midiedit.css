@@ -1,0 +1,10 @@
+/* Edit notes + a MIDI keyboard (web/js/midiedit.js): the chip in the edit bar and its options sheet */
+.np-midi-slot:empty { display: none; }
+.np-midi { min-height: 30px; padding: 0 10px; border-radius: 999px; font-size: 13px; font-weight: 600; max-width: 220px; display: inline-flex; align-items: center; gap: 4px; }
+.np-midi span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.me-sheet .me-opts { display: flex; flex-direction: column; gap: 10px; margin: 8px 0 4px; }
+.me-sheet .me-tg { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.me-sheet .me-tg input[type=checkbox] { width: 18px; height: 18px; margin: 0; }
+.me-sheet .me-tg select { min-height: 32px; }
+.me-sheet .me-sub { margin-left: 26px; }
+.me-sheet p { margin: -4px 0 0 26px; }

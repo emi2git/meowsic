@@ -1,6 +1,6 @@
 // Quick feedback in a score, sheet or chord view: the speech-bubble button opens a small popover with a text
 // box whose mic starts listening at once (textinput.js), Send / Cancel. The note goes to the same pool as the
-// Developer page (feedbackapi.js) with what it is about: the song, and where in it (page, bar / time), zoom,
+// Feedback page (feedbackapi.js) with what it is about: the song, and where in it (page, bar / time), zoom,
 // version and device. A tap outside does not close it (the words stay); Cancel, Esc or the button again do. While it is open it counts as a tool (swipe.js: swipes don't close the view).
 import { $, esc, iconOn, toast } from './ui.js';
 import { startVoice, stopVoice, voiceSupported } from './textinput.js';

@@ -1,4 +1,4 @@
-// The one crop box (Organize pages → Crop, and Add music → From Photos before the pages become sheets).
+// The one crop box (Manage library → Fix pages → Crop, and Add music → From Photos before the pages become sheets).
 // Boxes are fractions of the ORIGINAL photo {top, bottom, left, right}; drag a red edge or corner, or draw a
 // new box anywhere on the photo; arrow keys nudge (nudge()). Frame 1 / Frame 2 are two saved boxes kept on
 // the Mac (/api/cleanup/frames), so every device has them.
@@ -66,6 +66,15 @@ const framesApi = async (method, body) => {
   if (!r.ok) throw new Error('Frames not saved — the Mac said no');
   return r.json();
 };
+// Saved boxes without a bar (Manage library → Crop: behind a "Saved boxes" menu; keys 1 / 2 / ⇧1 / ⇧2)
+export async function savedBoxes(stage) {
+  if (!FRAMES) FRAMES = await framesApi('GET').catch(() => ({ 1: null, 2: null }));
+  return {
+    get(n) { return FRAMES[n]; },
+    use(n) { if (!FRAMES[n]) return toast(`Box ${n} is not saved yet`); stage().set(FRAMES[n], `Saved box ${n}`); },
+    async save(n) { try { FRAMES = await framesApi('POST', { n, box: boxOf(stage().box) }); toast(`Saved as box ${n}: ${frameText(FRAMES[n])}`); } catch (e) { toast(e.message); } },
+  };
+}
 export async function framesBar(host, stage) {
   if (!FRAMES) FRAMES = await framesApi('GET').catch(() => ({ 1: null, 2: null }));
   const draw = () => {
