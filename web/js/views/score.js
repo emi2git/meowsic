@@ -111,9 +111,12 @@ export function scoreBody(root, it, { perform = false } = {}) {
     stopOff = bar.parentElement.getBoundingClientRect().top - sheet.getBoundingClientRect().top;
   };
 
+  // the play start you picked (tap / drag the line, or Edit notes' cue): Play starts there, Stop comes back to it
+  let cueQ = 0, cued = false, quiet = false;
   const place = (q, follow = true) => {
     if (!stops.length || !bar) return;
-    if (!player?.playing && q <= 0) { bar.style.display = 'none'; return; }
+    if (!player?.playing && q <= 0 && !cued) { bar.style.display = 'none'; return; }
+    if (quiet) follow = false;
     let i = stops.findIndex((s) => s.q > q) - 1;
     if (i < 0) i = q <= stops[0].q ? 0 : stops.length - 1;
     const a = stops[i], b = stops[i + 1];
@@ -256,8 +259,8 @@ export function scoreBody(root, it, { perform = false } = {}) {
     drawn = true;
     ink?.destroy();
     ink = new InkLayer(sheet, it.id, `score-${version}`);
-    afterLayout(true);
-    if (!player?.posQ) bar.style.display = 'none';
+    afterLayout(!cued);
+    if (!player?.posQ && !cued) bar.style.display = 'none';
   };
 
   // Voice (Make it sing): the sung audio plays in place of the piano; on by default once a score has one
@@ -280,6 +283,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     midi.shift = it.transpose || 0;
     if (!was && it.rate) midi.rate = it.rate;
     if (hasVoice() && voiceOn) { makeVoice(); voice.posQ = Math.min(player?.posQ || 0, midi.endQ); player = voice; } else player = midi;
+    if (cued) player.posQ = Math.min(cueQ, midi.endQ); // new notes (an edit, a save): Play still starts at the cue
   };
   // switch between the piano and the voice at the same spot; keeps playing if it was
   const setVoice = (on) => {
@@ -336,7 +340,43 @@ export function scoreBody(root, it, { perform = false } = {}) {
   // (not while editing notes or writing on the page)
   let drag = null, tap = null, dragEnd = 0;
   const busy = () => !!inkTool || paper.classList.contains('editing');
-  const seekTo = (q) => { if (q == null || !player) return; player.seek(Math.max(0, q)); if (bar && !player.playing) place(Math.max(q, 1e-3)); };
+  // bar starts in quarters: real scores from their MusicXML, sample tunes from their bars
+  const barStarts = () => {
+    if (real) return info?.barQ?.length ? info.barQ : [0];
+    const out = []; let a = 0;
+    for (const m of tune.measures) { out.push(a); a += barBeats(tune, m); }
+    return out.length ? out : [0];
+  };
+  const barOfQ = (q) => { const s = barStarts(); let i = 0; while (i + 1 < s.length && s[i + 1] <= q + 1e-6) i++; return i; };
+  // a tap snaps to the note under the finger (within 14 px of its onset on that line), else to the start of its bar
+  const snapAt = (cx, cy) => {
+    const q = qAt(cx, cy);
+    if (q == null) return null;
+    const host = bar?.parentElement?.getBoundingClientRect();
+    if (host) {
+      const x = cx - host.left, y = cy - host.top;
+      const on = pageStops().filter((st) => y >= st.top - 30 && y <= st.top + st.h + 30 && Math.abs(st.x - x) <= 14).sort((a, b) => Math.abs(a.x - x) - Math.abs(b.x - x));
+      if (on.length) return on[0].q;
+    }
+    return barStarts()[barOfQ(q)];
+  };
+  const nearestStop = (q) => (q == null || !stops.length ? q : stops.reduce((b, st) => (Math.abs(st.q - q) < Math.abs(b.q - q) ? st : b), stops[0]).q);
+  // move the start: Play starts here, Stop comes back here. follow = false: the page stays (Edit notes' cue)
+  const seekTo = (q, { follow = true, cue = true } = {}) => {
+    if (q == null || !player) return;
+    q = Math.max(0, q);
+    if (cue) { cueQ = q; cued = true; }
+    quiet = !follow;
+    try { player.seek(q); if (bar && !player.playing) place(q, follow); } finally { quiet = false; }
+  };
+  // saved as a new version in Edit notes: this score opens cued one bar before the first bar edited
+  ready.then(() => {
+    const c = window.__meowsicCue;
+    if (c?.id !== it.id) return;
+    delete window.__meowsicCue;
+    const s = barStarts();
+    seekTo(s[Math.max(0, Math.min(s.length - 1, c.bar - 1))] || 0, { follow: false });
+  });
   paper.addEventListener('pointerdown', (e) => {
     if (busy() || e.button > 0) return;
     if (bar && e.target === bar) {
@@ -357,13 +397,14 @@ export function scoreBody(root, it, { perform = false } = {}) {
     if (drag && e.pointerId === drag.id) {
       const was = drag.was; drag = null; dragEnd = Date.now();
       bar?.classList.remove('dragging');
+      seekTo(nearestStop(player?.now() ?? null)); // lands on a note
       if (was) player.play().catch(() => {});
       return;
     }
     const t = tap; tap = null;
     if (!t || e.type !== 'pointerup' || busy() || e.target.closest('a,button,input,textarea,.ink-text')) return;
     if (Math.abs(e.clientX - t.x) > 8 || Math.abs(e.clientY - t.y) > 8 || Date.now() - t.t > 500) return;
-    seekTo(qAt(e.clientX, e.clientY));
+    seekTo(snapAt(e.clientX, e.clientY));
   };
   paper.addEventListener('pointerup', endDrag);
   paper.addEventListener('pointercancel', endDrag);
@@ -436,8 +477,27 @@ export function scoreBody(root, it, { perform = false } = {}) {
     xml() { return real ? xmlText : musicXml({ ...tune, title: it.title }, version); },
     get real() { return real; },
     get totalQ() { return real ? Math.ceil(info.totalQ) : tune.measures.reduce((s, m) => s + barBeats(tune, m), 0); },
-    seekAt: qAt, seek: seekTo,
-    stop() { player?.stop(); place(0); }, // Stop: back to the beginning (the orange line goes)
+    seekAt: qAt, seek: seekTo, snapAt, barStarts, barOfQ,
+    get cueQ() { return cued ? cueQ : 0; },
+    // the start one bar before bar bi (0-based; bar 1 stays on bar 1), the page not turned; → the 1-based bar
+    cueBar(bi) { const s = barStarts(), k = Math.max(0, Math.min(s.length - 1, bi - 1)); player?.pause(); seekTo(s[k] || 0, { follow: false }); return k + 1; },
+    // Stop: back to the start you picked; Stop again there (or with no start picked) = back to the beginning
+    stop() {
+      const at = player?.now() || 0, was = !!player?.playing;
+      player?.stop();
+      if (cued && cueQ > 0 && (was || Math.abs(at - cueQ) > 1e-6)) { seekTo(cueQ); return 'cue'; }
+      cued = false; cueQ = 0; place(0);
+      return 'start';
+    },
+    // paged: the page holding this element (an Edit notes selection); Mac: scrolled into view
+    showEl(el) {
+      if (!el) return;
+      if (!paged || !pages.length) { el.scrollIntoView?.({ block: 'nearest' }); return; }
+      const r = el.getBoundingClientRect(), y = (r.top + r.bottom) / 2 - sheet.getBoundingClientRect().top;
+      const k = pageOfY(pages, y);
+      if (k !== page) goPage(k);
+    },
+    get paged() { return paged; },
     destroy() { player.pause(); voice?.destroy(); ro.disconnect(); offSwipe(); ink?.destroy(); },
   };
 }
@@ -490,7 +550,7 @@ export function scoreToolbar(bar, it, view) {
   window.__score = view; // for automated tests (the orange line shows where it is; there is no position bar)
   bar.innerHTML = `${view.pageLabel ? `<span class="pageno" id="pageno">${view.pageLabel}</span>` : ''}
     <div class="transport">
-      <button class="icon-btn stop" id="sc-stop" aria-label="Stop" title="Stop: back to the beginning">${iconOn('stop')}</button>
+      <button class="icon-btn stop" id="sc-stop" aria-label="Stop" title="Stop: back to where you put the line; again: back to the beginning">${iconOn('stop')}</button>
       <button class="play" id="sc-play" aria-label="Play" title="Play (space)">${iconOn('play')}</button>
     </div>
     <button class="check-badge" id="sc-check" hidden></button>
@@ -517,6 +577,7 @@ export function scoreToolbar(bar, it, view) {
   const host = bar.closest('.viewer') || document;
   const onEnd = () => setPlay();
   host.addEventListener('ended', onEnd);
+  host.addEventListener('playstate', onEnd); // Edit notes' ▶ From here played or paused
   // speed, 5% at a time; 100% = the score's own tempo (never shown)
   // Voice: the sung audio has its own tempo and key — a tempo or key change goes back to the piano
   const voiceBtn = $('#sc-voice', bar);
@@ -579,7 +640,7 @@ export function scoreToolbar(bar, it, view) {
   if (store.mode === 'server') store.refreshJobs().catch(() => {});  // a sing job still running (after a reload): ⋯ says so, and Voice appears when it is done
   return () => {
     offCheck(); offVoice();
-    host.removeEventListener('ended', onEnd); document.removeEventListener('keydown', onSpace); removeEventListener('meowsic-new-items', onSung);
+    host.removeEventListener('ended', onEnd); host.removeEventListener('playstate', onEnd); document.removeEventListener('keydown', onSpace); removeEventListener('meowsic-new-items', onSung);
     viewer?.removeEventListener('ukeclose', onUkeClose); viewer?.removeEventListener('uketoggle', onUkeToggle); uke?.destroy(); uke = null;
   };
 }

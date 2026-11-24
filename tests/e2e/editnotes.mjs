@@ -337,6 +337,173 @@ async function leftHand(name, vp) {
   await page.close();
 }
 
+// ---- the play start after an edit, ▶ From here, Stop, page turning while editing, ties and slurs ----
+// 48 bars, 4/4, quarters (bar k: its own four pitches); bar 2's last half note is tied into bar 3; bar 4 = G G F E
+// (a tie G→G can be made, F→E cannot); left hand a whole note per bar.
+const LS = { 48: ['C', 3], 53: ['F', 3], 55: ['G', 3], 60: ['C', 4], 62: ['D', 4], 64: ['E', 4], 65: ['F', 4], 67: ['G', 4], 69: ['A', 4], 71: ['B', 4], 72: ['C', 5] };
+const LN = (m, d, staff, ty, tie = '') => `<note><pitch><step>${LS[m][0]}</step><octave>${LS[m][1]}</octave></pitch><duration>${d}</duration>${tie ? `<tie type="${tie}"/>` : ''}<voice>${staff === 2 ? 5 : 1}</voice><type>${ty}</type><staff>${staff}</staff>${tie ? `<notations><tied type="${tie}"/></notations>` : ''}</note>`;
+const RH16 = (k) => k === 1 ? LN(64, 2, 1, 'quarter') + LN(65, 2, 1, 'quarter') + LN(67, 4, 1, 'half', 'start')
+  : k === 2 ? LN(67, 2, 1, 'quarter', 'stop') + LN(65, 2, 1, 'quarter') + LN(64, 2, 1, 'quarter') + LN(62, 2, 1, 'quarter')
+  : k === 3 ? LN(67, 2, 1, 'quarter') + LN(67, 2, 1, 'quarter') + LN(65, 2, 1, 'quarter') + LN(64, 2, 1, 'quarter')
+  : [60, 62, 64, 65, 67, 69, 71, 72].slice(k % 5, (k % 5) + 4).map((m) => LN(m, 2, 1, 'quarter')).join('');
+const longXml = (title) => '<?xml version="1.0" encoding="UTF-8"?>\n<score-partwise version="4.0"><work><work-title>' + title + '</work-title></work><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">'
+  + Array.from({ length: 48 }, (_, k) => `<measure number="${k + 1}">${k ? '' : '<attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes><direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>120</per-minute></metronome></direction-type><sound tempo="120"/></direction>'}`
+    + RH16(k) + '<backup><duration>8</duration></backup>' + LN([48, 53, 55][k % 3], 8, 2, 'whole') + '</measure>').join('') + '</part></score-partwise>';
+const arcs = (x) => ({ ties: (x.match(/<tied type="start"/g) || []).length, stops: (x.match(/<tied type="stop"/g) || []).length, slurs: (x.match(/<slur\b[^>]*type="start"/g) || []).length });
+
+async function cueAndArcs(name, vp) {
+  console.log(`\nPlay start, pages, ties / slurs — ${name}`);
+  const touch = !!vp.hasTouch, phone = vp.width < 500;
+  const title = `Cue ${name} ${stamp}`;
+  const sc = await send('POST', '/items', { kind: 'score', title, artist: 'Test', musicxmlText: longXml(title) });
+  const page = await b.newPage(); await page.setViewport(vp);
+  page.on('pageerror', (e) => errs.push(`cue ${name}: ${e.message}`));
+  page.on('console', (m) => m.type() === 'error' && !/400|404|409|favicon/.test(m.text()) && errs.push(`cue ${name}: ${m.text()}`)); // 400: the refused tie (F → E), on purpose
+  const tapXY = async (x, y) => { if (touch) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); await sleep(150); };
+  const tap = async (sel) => { if (touch) await page.tap(sel); else await page.click(sel); await sleep(150); };
+  const act = (a) => tap(`.notes-panel [data-a="${a}"]`);
+  const EN = (f, ...a) => page.evaluate(f, ...a);
+  const idle = async () => { for (let i = 0; i < 60; i++) { await sleep(150); if (!(await EN(() => window.__editNotes?.busy))) break; } await sleep(700); };
+  const notes = () => EN(() => window.__editNotes.notes);
+  const refOf = async (pred) => (await notes()).find(pred)?.ref;
+  const select = async (refs) => { await EN((r) => window.__editNotes.select(r), refs); await sleep(100); };
+  const lineOn = () => page.$eval('.playbar', (e) => getComputedStyle(e).display !== 'none');
+  const S = () => EN(() => ({ q: window.__score.player.now(), cue: window.__score.cueQ, bar: window.__editNotes?.cueBar, page: window.__score.page, pages: window.__score.pages, playing: window.__score.player.playing }));
+
+  await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' });
+  await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(800);
+  if (touch && !phone) { await EN(() => window.__score.setZoom(1.6)); await sleep(1200); } // iPad: big enough for pages
+  await tap('#sc-edit');
+  await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(800);
+  const starts = await EN(() => window.__score.barStarts());
+  check('bar starts read from the score (48 bars of 4)', starts.length === 48 && starts[4] === 16, JSON.stringify(starts));
+
+  // edit bar 5 (its 2nd note up a semitone) → the line goes to bar 4; Play plays the edited notes from there
+  const r5 = await refOf((n) => n.bar === 4 && n.staff === 1 && n.on === 1);
+  const m5 = (await notes()).find((n) => n.ref === r5).midi;
+  await select([r5]); await act('semi+'); await idle();
+  let s = await S();
+  check('edit bar 5 → the play start is bar 4', s.bar === 4 && s.cue === 12 && s.q === 12, JSON.stringify(s));
+  check('the orange line shows at the cue', await lineOn());
+  const heard = await EN((m) => window.__score.player.notes.filter((n) => n.q === 17).map((n) => n.n), m5);
+  check('the player has the edited (unsaved) note: bar 5 beat 2 is a semitone up', heard.includes(m5 + 1) && !heard.includes(m5), JSON.stringify(heard));
+  if (!phone) { // iPhone: the score bar is hidden while editing; ▶ From here plays
+    await tap('#sc-play'); await sleep(700);
+    s = await S();
+    check('Play starts at the cue (bar 4), not at the top', s.playing && s.q >= 12 && s.q < 14.5, JSON.stringify(s));
+    await tap('#sc-stop'); await sleep(250);
+    s = await S();
+    check('Stop: back to the cue, the line stays', !s.playing && s.q === 12 && (await lineOn()), JSON.stringify(s));
+    await tap('#sc-stop'); await sleep(250);
+    s = await S();
+    check('Stop again: back to the beginning, the line goes', s.q === 0 && s.cue === 0 && !(await lineOn()), JSON.stringify(s));
+  }
+  await select([r5]);
+  await act('playhere'); await sleep(700);
+  s = await S();
+  check('▶ From here: plays from the bar before the picked note', s.playing && s.q >= 12 && s.q < 14.5 && s.bar === 4, JSON.stringify(s));
+  check('…and turns into Pause', (await page.$eval('.notes-panel [data-a="playhere"]', (e) => e.getAttribute('aria-label'))) === 'Pause');
+  await act('playhere'); await sleep(200);
+  check('Pause stops it', !(await S()).playing);
+
+  // edit bar 1 → the play start is bar 1 (the line shows at the very start)
+  const r1 = await refOf((n) => n.bar === 0 && n.staff === 1 && n.on === 0);
+  await select([r1]); await act('semi-'); await idle();
+  s = await S();
+  check('edit bar 1 → the play start is bar 1', s.bar === 1 && s.cue === 0 && s.q === 0 && (await lineOn()), JSON.stringify(s));
+  await act('undo'); await idle();
+  check('undo: cue at the bar before the undone edit (bar 1)', (await S()).bar === 1);
+
+  // ties and slurs
+  let x = await EN(() => window.__editNotes.xml);
+  check('the score has its tie (bar 2 → 3)', arcs(x).ties === 1 && arcs(x).stops === 1, JSON.stringify(arcs(x)));
+  const tied = await EN(() => window.__score.player.notes.filter((n) => n.n === 67 && (n.q === 6 || n.q === 8)));
+  check('playback: the tie joins the sound (one G, 3 beats)', tied.length === 1 && tied[0].q === 6 && tied[0].d === 3, JSON.stringify(tied));
+  const paths0 = await page.$$eval('#osmd svg path', (e) => e.length);
+  const g1 = await refOf((n) => n.bar === 3 && n.staff === 1 && n.on === 0);
+  await select([g1]); await act('tie'); await idle();
+  x = await EN(() => window.__editNotes.xml);
+  check('⌒ Tie: G → G in bar 4', arcs(x).ties === 2 && (await notes()).find((n) => n.bar === 3 && n.on === 0 && n.staff === 1)?.tie, JSON.stringify(arcs(x)));
+  check('the tie is drawn at once', (await page.$$eval('#osmd svg path', (e) => e.length)) > paths0);
+  check('tie button shows on for a tied note', await EN((r) => { window.__editNotes.select([r]); return document.querySelector('.notes-panel [data-a="tie"]').classList.contains('on'); }, (await notes()).find((n) => n.bar === 3 && n.on === 0 && n.staff === 1).ref));
+  const f4 = await refOf((n) => n.bar === 3 && n.staff === 1 && n.on === 2);
+  await select([f4]); await act('tie'); await idle();
+  const tt = await page.$eval('#toast', (e) => ({ text: e.textContent, hidden: e.hidden }));
+  check('⌒ Tie F → E: refused, offers a slur', !tt.hidden && /another pitch/.test(tt.text) && /Make it a slur/.test(tt.text), JSON.stringify(tt));
+  await tap('#toast button'); await idle();
+  check('“Make it a slur”: F ⁀ E', arcs(await EN(() => window.__editNotes.xml)).slurs === 1 && (await notes()).find((n) => n.bar === 3 && n.on === 3 && n.staff === 1)?.slur);
+  // a slur over a range (bar 7, beats 1–4), then away again
+  const b7 = (await notes()).filter((n) => n.bar === 6 && n.staff === 1 && !n.rest).map((n) => n.ref);
+  await select(b7); await act('slur'); await idle();
+  check('⁀ Slur over bar 7', arcs(await EN(() => window.__editNotes.xml)).slurs === 2 && (await notes()).filter((n) => n.bar === 6 && n.staff === 1).every((n) => n.slur));
+  await select([b7[1]]); await act('slur'); await idle();
+  check('⁀ Slur on a slurred note takes it away', arcs(await EN(() => window.__editNotes.xml)).slurs === 1);
+  // edits keep them: pitch on the tied G (its partner goes too), a length inside the slur
+  const before = arcs(await EN(() => window.__editNotes.xml));
+  await select([await refOf((n) => n.bar === 2 && n.on === 0 && n.staff === 1)]); await act('semi+'); await idle();
+  const gs = (await notes()).filter((n) => n.staff === 1 && ((n.bar === 1 && n.on === 2) || (n.bar === 2 && n.on === 0))).map((n) => n.midi);
+  check('pitch on a tied note: both notes move, the tie stays', gs.join() === '68,68' && JSON.stringify(arcs(await EN(() => window.__editNotes.xml))) === JSON.stringify(before), JSON.stringify([gs, arcs(await EN(() => window.__editNotes.xml))]));
+  await select([await refOf((n) => n.bar === 3 && n.on === 3 && n.staff === 1)]); await tap('.notes-panel [data-len="0.5"]'); await idle();
+  check('a length change on a slurred note keeps the slur', arcs(await EN(() => window.__editNotes.xml)).slurs === 1 && barsFull(await EN(() => window.__editNotes.xml)));
+
+  // pages while editing (iPad / iPhone): ‹ › and the dots turn, ← → walk the notes and turn with them; all kept
+  s = await S();
+  if (touch && s.pages > 1) {
+    const keep = await EN(() => ({ sel: window.__editNotes.sel, step: window.__editNotes.step, cue: window.__score.cueQ }));
+    await act('none');
+    await EN(() => window.__score.goTo(1)); await sleep(200);
+    await select([await refOf((n) => n.bar === 0 && n.on === 0 && n.staff === 1)]);
+    const kept = await EN(() => window.__editNotes.sel);
+    await sleep(600); // the panel's height settles (a picked note changes it; the pages are cut again after 250 ms)
+    await act('next'); await sleep(300);
+    s = await S();
+    check('› turns to page 2 while editing', s.page === 2, JSON.stringify(s));
+    check('…the picked note, the edits and the play start stay', JSON.stringify(await EN(() => window.__editNotes.sel)) === JSON.stringify(kept) && (await EN(() => window.__editNotes.step)) === keep.step && s.cue === keep.cue);
+    check('the page number shows in the edit bar', (await page.$eval('#np-pageno', (e) => e.textContent)) === `2/${s.pages}`);
+    await act('prev'); await sleep(300);
+    check('‹ turns back', (await S()).page === 1);
+    const dot = await page.$eval('.score-dots i:nth-child(2)', (e) => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width }; });
+    await tapXY(dot.x, dot.y); await sleep(300);
+    check('tapping a page dot turns there (and picks nothing)', (await S()).page === 2 && JSON.stringify(await EN(() => window.__editNotes.sel)) === JSON.stringify(kept) && dot.w >= 20, JSON.stringify(dot));
+    await page.keyboard.down('Shift'); await page.keyboard.press('ArrowLeft'); await page.keyboard.up('Shift'); await sleep(300);
+    check('Shift ← turns back a page', (await S()).page === 1);
+    // the last right-hand note on page 1, then → : the next note, on page 2
+    const lastOn1 = await EN(() => {
+      const clip = document.querySelector('#clip').getBoundingClientRect();
+      const on = window.__editNotes.notes.filter((n) => n.staff === 1).filter((n) => { const g = document.querySelector(`#paper g[data-ref="${n.ref}"]`); if (!g) return false; const r = g.getBoundingClientRect(); return r.top >= clip.top - 1 && r.bottom <= clip.bottom + 1; });
+      on.sort((a, c) => a.bar * 1e4 + a.on - (c.bar * 1e4 + c.on));
+      return on.at(-1);
+    });
+    await select([lastOn1.ref]);
+    await page.keyboard.press('ArrowRight'); await sleep(400);
+    const nowSel = await EN(() => window.__editNotes.notes.find((n) => n.ref === window.__editNotes.sel[0]));
+    check('→ past the page\'s last bar: the next note is picked and the page turns', (await S()).page === 2 && nowSel && nowSel.bar * 1e4 + nowSel.on > lastOn1.bar * 1e4 + lastOn1.on, JSON.stringify([lastOn1, nowSel, await S()]));
+    await page.keyboard.press('ArrowLeft'); await sleep(400);
+    check('← back: page 1 again', (await S()).page === 1);
+  } else if (!touch) {
+    await select([r1]);
+    await page.keyboard.press('ArrowRight'); await sleep(200);
+    const n2 = await EN(() => window.__editNotes.notes.find((n) => n.ref === window.__editNotes.sel[0]));
+    check('→ picks the next note (Mac)', n2 && n2.bar === 0 && n2.on === 1, JSON.stringify(n2));
+  } else check(`${name}: the long score has pages while editing`, false, JSON.stringify(s));
+  await page.screenshot({ path: `${SHOTS}/cue-${name}.png` });
+
+  // save into this score: ties and slurs kept; the play start = a bar before the first bar edited
+  const want = arcs(await EN(() => window.__editNotes.xml));
+  await act('save'); await sleep(300);
+  await page.evaluate(() => document.querySelector('.np-save [data-mode="this"]').click()); await sleep(2500);
+  const saved = await xmlOf(sc.id);
+  check('saved: ties and slurs kept', JSON.stringify(arcs(saved)) === JSON.stringify(want) && barsFull(saved), JSON.stringify([arcs(saved), want]));
+  s = await EN(() => ({ q: window.__score.player.now(), cue: window.__score.cueQ }));
+  check('after the save the play start is a bar before the first bar edited (bar 3 → bar 2)', s.cue === 4 && s.q === 4 && (await lineOn()), JSON.stringify(s));
+  await send('POST', '/items/trash', { ids: [sc.id] }).catch(() => {});
+  await page.close();
+}
+
+await cueAndArcs('Mac', MAC);
+await cueAndArcs('iPad', IPAD);
+await cueAndArcs('iPhone', PHONE);
+if (process.env.ONLY === 'cue') { await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
 await run('Mac', MAC, 'this');
 await run('iPad', IPAD, 'new');
 await run('iPhone', PHONE, 'close');

@@ -77,6 +77,17 @@ def notes(root):
     k, part, _ = edit_part(root)
     if part is None: return []
     ref = {id(e): i for i, e in enumerate(part.iter('note'))}
+    tl = _timeline(part)
+    spans = [(a[1], a[3], b[3]) for _, a, b, _, _ in _slur_spans(tl)]
+    where = {id(x[0]): x for x in tl}
+
+    def marks(e):  # tie: tied to the next note; slur: under a slur
+        x = where.get(id(e))
+        if x is None or x[6]: return {}
+        o = {}
+        if _has_tie(e, 'start'): o['tie'] = True
+        if any(st == x[1] and a <= x[3] <= b for st, a, b in spans): o['slur'] = True
+        return o
     out, div = [], Fr(1)
     for bi, m in enumerate(part.findall('measure')):
         t, last = Fr(0), Fr(0)
@@ -91,7 +102,7 @@ def notes(root):
                 at = last if chord else t
                 if not chord: last, t = t, t + d
                 out.append({'ref': ref[id(e)], 'bar': bi, 'on': float(at), 'dur': float(d), 'staff': int(_st(e)), 'midi': _midi(e), 'voice': _vo(e),
-                            **({'rest': True} if e.find('rest') is not None or e.find('pitch') is None else {})})
+                            **({'rest': True} if e.find('rest') is not None or e.find('pitch') is None else {}), **marks(e)})
     return out
 
 
@@ -108,7 +119,7 @@ class Ev:
     def rest(self): return self.kind == 'rest'
     @property
     def plain_rest(self):  # a rest that can be joined / split (no tuplet, nothing on it)
-        return self.rest and (not self.notes or self.notes[0].find('time-modification') is None)
+        return self.rest and (not self.notes or (self.notes[0].find('time-modification') is None and self.notes[0].find('notations') is None))
 
 
 class Voice:
@@ -285,8 +296,9 @@ SHARP_ALT = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0]
 LENGTHS = {Fr(1, 4), Fr(3, 8), Fr(1, 2), Fr(3, 4), Fr(1), Fr(3, 2), Fr(2), Fr(3), Fr(4)}  # written lengths you can pick
 
 
-def _set_pitch(n, midi, flats):
-    """The note at this MIDI pitch (spelled with flats in a flat key, else sharps); its accidental and ties go."""
+def _set_pitch(n, midi, flats, ties=False):
+    """The note at this MIDI pitch (spelled with flats in a flat key, else sharps); its accidental goes, and its
+    ties unless ties=True (fix_ties checks them after the edit)."""
     midi = max(21, min(108, int(midi)))
     pc, octave = midi % 12, midi // 12 - 1
     step, alt = (FLATS[pc], FLAT_ALT[pc]) if flats else (SHARPS[pc], SHARP_ALT[pc])
@@ -298,8 +310,9 @@ def _set_pitch(n, midi, flats):
     ET.SubElement(p, 'step').text = step
     if alt: ET.SubElement(p, 'alter').text = str(alt)
     ET.SubElement(p, 'octave').text = str(octave)
-    for tag in ('accidental', 'tie'):
-        for e in n.findall(tag): n.remove(e)
+    for e in n.findall('accidental'): n.remove(e)
+    if ties: return
+    for e in n.findall('tie'): n.remove(e)
     nt = n.find('notations')
     if nt is not None:
         for e in nt.findall('tied'): nt.remove(e)
@@ -412,13 +425,7 @@ def _lengthen(voices, want, q, div, beat, bar_len):
                 if x.end > new_end: out.extend(_rests(new_end, x.end - new_end, div, beat, bar_len, vo.num, vo.staff))
             if new_end < end: out.extend(_rests(new_end, end - new_end, div, beat, bar_len, vo.num, vo.staff))
             ev.dur = d
-            for n in ev.notes:
-                _set_type(n, q, div)
-                for e in n.findall('tie'): n.remove(e)
-                nt = n.find('notations')
-                if nt is not None:
-                    for e in nt.findall('tied'): nt.remove(e)
-                    if not len(nt): n.remove(nt)
+            for n in ev.notes: _set_type(n, q, div)  # ties stay; fix_ties drops one whose notes no longer meet
             out.sort(key=lambda e: e.on)
             vo.evs = out
             vo.touched = True
@@ -478,6 +485,208 @@ def use_measure(text, bar, measure_xml):
     return apply_check(text, bar, 'use', str(measure_xml))
 
 
+# ---------- ties and slurs (kept through every edit) ----------
+# A tie joins a note to the next note of the same pitch that starts where it ends (same staff, else any staff);
+# after every edit the ties are checked again: one whose pitches or times no longer meet is dropped (the editor
+# says so). A slur hangs on its start and stop notes; when one of them goes (deleted, written over), it moves to
+# the nearest note left on that staff (start: the next one, stop: the one before).
+
+def _timeline(part):
+    """[(note, staff, voice, on, end, midi, rest)] for every non-grace <note> of the part, times in quarters
+    from the start of the part."""
+    out, div, off = [], Fr(1), Fr(0)
+    for m in part.findall('measure'):
+        t = last = longest = Fr(0)
+        for e in m:
+            if e.tag == 'attributes' and e.findtext('divisions'): div = Fr(int(float(e.findtext('divisions'))))
+            elif e.tag == 'backup': t -= _dur(e) / div
+            elif e.tag == 'forward': t += _dur(e) / div; longest = max(longest, t)
+            elif e.tag == 'note':
+                if e.find('grace') is not None: continue
+                d = _dur(e) / div
+                chord = e.find('chord') is not None
+                at = last if chord else t
+                if not chord: last, t = t, t + d
+                longest = max(longest, t)
+                rest = e.find('rest') is not None or e.find('pitch') is None
+                out.append((e, _st(e), _vo(e), off + at, off + at + d, None if rest else _midi(e), rest))
+        off += longest
+    return out
+
+
+def _has_tie(n, kind):
+    return any(x.get('type') == kind for x in n.findall('tie')) or any(x.get('type') == kind for x in n.findall('notations/tied'))
+
+
+def _drop_tie(n, kind):
+    for x in [x for x in n.findall('tie') if x.get('type') == kind]: n.remove(x)
+    nt = n.find('notations')
+    if nt is not None:
+        for x in [x for x in nt.findall('tied') if x.get('type') == kind]: nt.remove(x)
+        if not len(nt) and not nt.attrib: n.remove(nt)
+
+
+def _notations(n):
+    nt = n.find('notations')
+    return nt if nt is not None else _put(n, ET.Element('notations'))
+
+
+def _add_tie(n, kind):
+    if not any(x.get('type') == kind for x in n.findall('tie')): _put(n, ET.Element('tie', type=kind))
+    nt = _notations(n)
+    if not any(x.get('type') == kind for x in nt.findall('tied')): nt.append(ET.Element('tied', type=kind))
+
+
+def _partner_index(tl):
+    """A function: entry -> the next same-pitch note starting where it ends (same staff first), or None."""
+    by_staff, by_time = {}, {}
+    for x in tl:
+        if x[6] or x[5] is None: continue
+        by_staff.setdefault((x[1], x[3], x[5]), x); by_time.setdefault((x[3], x[5]), x)
+    def nxt(x):
+        if x[6] or x[5] is None: return None
+        return by_staff.get((x[1], x[4], x[5])) or by_time.get((x[4], x[5]))
+    return nxt
+
+
+def _tie_count(part): return sum(_has_tie(x[0], 'start') for x in _timeline(part))
+
+
+def fix_ties(part):
+    """Every tie start joined to its partner (a stop added there when missing); a start with no partner and a stop
+    with no start go. Returns how many tie starts went."""
+    tl = _timeline(part)
+    nxt = _partner_index(tl)
+    ok, gone = set(), 0
+    for x in tl:
+        if not _has_tie(x[0], 'start'): continue
+        p = nxt(x)
+        if p is None or p[0] is x[0]: _drop_tie(x[0], 'start'); gone += 1; continue
+        _add_tie(p[0], 'stop'); ok.add(id(p[0]))
+    for x in tl:
+        if _has_tie(x[0], 'stop') and id(x[0]) not in ok: _drop_tie(x[0], 'stop')
+    return gone
+
+
+def _tie_chain(part, want):
+    """want (ids) with every note tied to them (both ways), so a pitch change keeps the tie."""
+    tl = _timeline(part)
+    nxt = _partner_index(tl)
+    fwd, back = {}, {}
+    for x in tl:
+        if _has_tie(x[0], 'start'):
+            p = nxt(x)
+            if p is not None and _has_tie(p[0], 'stop'): fwd[id(x[0])] = p[0]; back[id(p[0])] = x[0]
+    out, todo = set(want), list(want)
+    while todo:
+        k = todo.pop()
+        for n in (fwd.get(k), back.get(k)):
+            if n is not None and id(n) not in out: out.add(id(n)); todo.append(id(n))
+    return out
+
+
+def _slur_mark(part):
+    """Each slur gets a temporary id: {id: (type, staff, on, copy)}."""
+    snap = {}
+    for x in _timeline(part):
+        for s in x[0].findall('notations/slur'):
+            k = str(len(snap)); s.set('msid', k)
+            c = copy.deepcopy(s); del c.attrib['msid']
+            snap[k] = (s.get('type'), x[1], x[3], c)
+    return snap
+
+
+def _slur_spans(tl):
+    """[(number, start entry, stop entry, start el, stop el)]: slurs matched by number in time order."""
+    ev = []
+    for x in tl:
+        for s in x[0].findall('notations/slur'):
+            if s.get('type') in ('start', 'stop'): ev.append((x[3], 0 if s.get('type') == 'stop' else 1, x, s))
+    ev.sort(key=lambda e: (e[0], e[1]))
+    open_, out = {}, []
+    for _, _, x, s in ev:
+        num = s.get('number') or '1'
+        if s.get('type') == 'start': open_[num] = (x, s)
+        elif num in open_:
+            a, sa = open_.pop(num)
+            out.append((num, a, x, sa, s))
+    return out
+
+
+def _unslur(pairs):
+    for n, s in pairs:
+        nt = n.find('notations')
+        if nt is None or s not in list(nt): continue
+        nt.remove(s)
+        if not len(nt) and not nt.attrib: n.remove(nt)
+
+
+def fix_slurs(part, snap):
+    """Slurs whose start / stop note went: put on the nearest note left on that staff; a slur left on one chord
+    goes; the temporary ids go."""
+    tl = _timeline(part)
+    have = {s.get('msid') for x in tl for s in x[0].findall('notations/slur')}
+    notes_ = [x for x in tl if not x[6]]
+    for k, (kind, staff, t, el) in snap.items():
+        if k in have: continue
+        same = [x for x in notes_ if x[1] == staff] or notes_
+        if not same: continue
+        if kind == 'start':
+            after = [x for x in same if x[3] >= t]
+            tgt = min(after, key=lambda x: x[3]) if after else max(same, key=lambda x: x[3])
+        else:
+            before = [x for x in same if x[3] <= t]
+            tgt = max(before, key=lambda x: x[3]) if before else min(same, key=lambda x: x[3])
+        _notations(tgt[0]).append(el)
+    for x in tl:
+        for s in x[0].findall('notations/slur'): s.attrib.pop('msid', None)
+    for num, a, b, sa, sb in _slur_spans(_timeline(part)):
+        if a[3] == b[3]: _unslur([(a[0], sa), (b[0], sb)])  # start and stop on one chord: no slur left
+
+
+def _slur_op(part, want, on, nxt_note=False):
+    """Add a slur over the picked notes (first to last; one note + nxt_note: to the next note on its staff), or
+    take away every slur over a picked note. Returns the notes it touched."""
+    tl = _timeline(part)
+    picked = [x for x in tl if id(x[0]) in want and not x[6]]
+    if not on:
+        hit = []
+        for num, a, b, sa, sb in _slur_spans(tl):
+            if any(p[1] in (a[1], b[1]) and a[3] <= p[3] <= b[3] for p in picked):
+                _unslur([(a[0], sa), (b[0], sb)]); hit += [a[0], b[0]]
+        if not hit: raise HTTPException(400, 'Those notes have no slur')
+        return hit
+    if nxt_note and len({p[3] for p in picked}) == 1:
+        p = picked[0]
+        after = [x for x in tl if not x[6] and x[1] == p[1] and x[3] >= p[4]]
+        if not after: raise HTTPException(400, 'No note after it to slur to')
+        picked.append(min(after, key=lambda x: x[3]))
+    if len({p[3] for p in picked}) < 2: raise HTTPException(400, 'Pick two or more notes for a slur (Shift-click or drag a box)')
+    a = min(picked, key=lambda x: (x[3], -(x[5] or 0)))
+    b = max(picked, key=lambda x: (x[3], x[5] or 0))
+    used = {num for num, s, e, _, _ in _slur_spans(tl) if s[3] <= b[3] and e[3] >= a[3]}
+    num = next(str(k) for k in range(1, 9) if str(k) not in used)
+    _notations(a[0]).append(ET.Element('slur', type='start', number=num, placement='above' if a[1] == '1' else 'below'))
+    _notations(b[0]).append(ET.Element('slur', type='stop', number=num))
+    return [a[0], b[0]]
+
+
+def _tie_op(part, want):
+    """Toggle a tie from each picked note to the next note of the same pitch."""
+    tl = _timeline(part)
+    nxt = _partner_index(tl)
+    done = []
+    for x in tl:
+        if id(x[0]) not in want or x[6]: continue
+        if _has_tie(x[0], 'start'):
+            _drop_tie(x[0], 'start'); done.append(x[0]); continue
+        p = nxt(x)
+        if p is None:
+            raise HTTPException(400, 'The next note is not the same pitch: a tie joins two notes of one pitch. Use Slur for different notes.')
+        _add_tie(x[0], 'start'); _add_tie(p[0], 'stop'); done += [x[0], p[0]]
+    return done
+
+
 def edit(text: str, op: dict) -> tuple[str, list]:
     """One editing step -> (new MusicXML, refs of the notes it touched, in the new score). op:
       {op:'move', refs, to: 1|2}      to the upper / lower staff of the piano part
@@ -488,11 +697,20 @@ def edit(text: str, op: dict) -> tuple[str, list]:
                                       picked rest becomes a note (`midi`, default the middle of its staff)
       {op:'unmark', bars}             bars looked at (no longer to check)
       {op:'alt', bar, measure}        that bar replaced by another reading (as barcheck.py does)
-    Every voice of every bar still fills it."""
+      {op:'tie', refs}                a tie from each picked note to the next one of its pitch (tied already: off)
+      {op:'slur', refs, next?}        a slur from the first picked note to the last (one note + next: to the next)
+      {op:'unslur', refs}             every slur over a picked note goes
+    Every voice of every bar still fills it. Ties and slurs stay (fix_ties / fix_slurs)."""
+    out, touched, _ = edit_ex(text, op)
+    return out, touched
+
+
+def edit_ex(text: str, op: dict):
+    """edit() -> (text, touched refs, how many ties went because their notes no longer meet)."""
     kind = op.get('op') or ('move' if 'to' in op else None)
-    if kind == 'unmark': return unmark(text, op.get('bars')), []
-    if kind == 'alt': return use_measure(text, op.get('bar'), op.get('measure')), []
-    if kind not in ('move', 'pitch', 'len', 'delete', 'add'): raise HTTPException(400, f'Unknown edit: {kind}')
+    if kind == 'unmark': return unmark(text, op.get('bars')), [], 0
+    if kind == 'alt': return use_measure(text, op.get('bar'), op.get('measure')), [], 0
+    if kind not in ('move', 'pitch', 'len', 'delete', 'add', 'tie', 'slur', 'unslur'): raise HTTPException(400, f'Unknown edit: {kind}')
     root = ET.fromstring(text.encode('utf-8'))
     pk, part, hands = edit_part(root)
     if part is None: raise HTTPException(400, 'This score has no notes')
@@ -510,6 +728,15 @@ def edit(text: str, op: dict) -> tuple[str, list]:
             raise HTTPException(400, f'Note {r} is a rest')
         want.add(id(n))
     if not want and not rests: raise HTTPException(400, 'Pick some notes first')
+    ties_before = _tie_count(part)
+    if kind in ('tie', 'slur', 'unslur'):
+        touched = _tie_op(part, want) if kind == 'tie' else _slur_op(part, want, kind == 'slur', bool(op.get('next')))
+        fix_ties(part)
+        ET.indent(root, space='  ')
+        ref = {id(e): i for i, e in enumerate(part.iter('note'))}
+        return _head(text) + ET.tostring(root, encoding='unicode') + '\n', sorted({ref[id(e)] for e in touched if id(e) in ref}), 0
+    if kind == 'pitch': want = _tie_chain(part, want)  # a tied note and its partners change together
+    snap = _slur_mark(part)
     touched = []
     flats = _key_flats(part)
     bars = part.findall('measure')
@@ -525,7 +752,7 @@ def edit(text: str, op: dict) -> tuple[str, list]:
                 if n.tag != 'note': continue
                 if (id(n) in want or id(n) in rests): tidy.add((bi, _st(n), _vo(n)))
                 if kind == 'pitch' and id(n) in want:
-                    _set_pitch(n, _midi(n) + by, flats[bi] if by >= 0 else True)
+                    _set_pitch(n, _midi(n) + by, flats[bi] if by >= 0 else True, ties=True)
                     touched.append(n)
                 elif kind == 'add' and id(n) in rests:
                     q = _dur(n) / div
@@ -591,10 +818,13 @@ def edit(text: str, op: dict) -> tuple[str, list]:
                 if b == bi: normalize_bar(m, st, v, tsig, div)
     from .barnorm import tidy_score
     tidy_score(root, {(pk, b) for b, _, _ in tidy})  # no repeated time / key / clef; edited bars full
+    fix_slurs(part, snap)
+    fix_ties(part)
+    gone = max(0, ties_before - _tie_count(part))
     ET.indent(root, space='  ')
     out = _head(text) + ET.tostring(root, encoding='unicode') + '\n'
     ref = {id(e): i for i, e in enumerate(part.iter('note'))}
-    return out, sorted(ref[id(e)] for e in touched if id(e) in ref)
+    return out, sorted(ref[id(e)] for e in touched if id(e) in ref), gone
 
 
 def move(text: str, refs, to) -> tuple[str, list]:
@@ -602,12 +832,15 @@ def move(text: str, refs, to) -> tuple[str, list]:
     return edit(text, {'op': 'move', 'refs': refs, 'to': to})
 
 
-def apply_ops(text, ops):
-    moved = []
+def apply_ops(text, ops, info=None):
+    """All the edits in order -> (text, refs the last one touched). info (a dict) gets tiesGone: ties the last
+    edit had to drop (their notes no longer meet)."""
+    moved, gone = [], 0
     if not isinstance(ops, list): raise HTTPException(400, 'ops: a list of edits')
     for op in ops:
         if not isinstance(op, dict): raise HTTPException(400, 'ops: a list of edits')
-        text, moved = edit(text, op)
+        text, moved, gone = edit_ex(text, op)
+    if info is not None: info['tiesGone'] = gone
     return text, moved
 
 
@@ -632,11 +865,12 @@ def preview(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cf
     root = ET.fromstring(text.encode('utf-8'))
     k, part, hands = edit_part(root)
     if part is None: raise HTTPException(400, 'This score has no notes')
-    out, moved = apply_ops(text, body.get('ops') or [])
+    info = {}
+    out, moved = apply_ops(text, body.get('ops') or [], info)
     from .barnorm import tidy_score
     over = [num for _, num in tidy_score(ET.fromstring(out.encode('utf-8')))['overfull']]
     return {'xml': out, 'notes': notes(ET.fromstring(out.encode('utf-8'))), 'moved': moved, 'part': k, 'hands': hands, 'overfull': over,
-            'check': check_bars(out), 'sha': _sha(text), 'changed': bool(body.get('ops'))}
+            'check': check_bars(out), 'sha': _sha(text), 'changed': bool(body.get('ops')), 'tiesGone': info['tiesGone']}
 
 
 def keep(d, name):
@@ -659,7 +893,9 @@ def _what(ops):
     words = {'move1': lambda n: f'{s(n)} to the right hand', 'move2': lambda n: f'{s(n)} to the left hand',
              'pitch': lambda n: f'{s(n)} higher / lower', 'len': lambda n: f'{s(n)} longer / shorter', 'delete': lambda n: f'{s(n)} deleted',
              'add': lambda n: f'{s(n)} added', 'unmark': lambda n: f'{n} bar{"s" if n != 1 else ""} checked',
-             'alt': lambda n: f'{n} bar{"s" if n != 1 else ""} from the other reading'}
+             'alt': lambda n: f'{n} bar{"s" if n != 1 else ""} from the other reading',
+             'tie': lambda n: f'{n} tie{"s" if n != 1 else ""} changed', 'slur': lambda n: f'{n} slur{"s" if n != 1 else ""} added',
+             'unslur': lambda n: f'{n} slur{"s" if n != 1 else ""} removed'}
     return ', '.join(words[k](n) for k, n in cnt.items() if k in words and n) or 'no notes'
 
 

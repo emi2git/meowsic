@@ -42,6 +42,23 @@ check('Play starts from the line, not from the top', q3 >= q2 && q3 < q2 + 4, `$
 await m.click('#sc-play'); await sleep(200);
 await m.mouse.click(line2.x + 20, sys[0].y + sys[0].h / 2); await sleep(300);
 check('click near the start of a line goes back', (await pos(m)) < q2, await pos(m));
+// the start snaps: to the start of the tapped bar, or to the note under the click; Stop comes back to it, Stop again = the top
+const onsets = () => m.evaluate(() => window.__score.player.notes.map((n) => n.q));
+const snap = await m.evaluate(() => ({ starts: window.__score.barStarts(), q: window.__score.player.now() }));
+const onNote = await m.evaluate(() => { const g = [...document.querySelectorAll('#osmd g.vf-stavenote')][9]; const r = g.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+check('a tap snaps to a bar start or a note (never between)', snap.starts.includes(snap.q) || (await onsets()).includes(snap.q), JSON.stringify(snap));
+await m.mouse.click(onNote.x, onNote.y); await sleep(300);
+const qn = await pos(m);
+check('a tap on a note starts at that note', qn > 0 && (await onsets()).includes(qn), qn);
+const barQ = snap.starts[Math.min(3, snap.starts.length - 1)];
+await m.evaluate((q) => window.__score.seek(q), barQ); await sleep(100);
+await m.click('#sc-play'); await sleep(700);
+const qp = await pos(m);
+check('Play starts at the picked bar', qp >= barQ && qp < barQ + 3, `${barQ} → ${qp}`);
+await m.click('#sc-stop'); await sleep(200);
+check('Stop: back to the picked start, the line stays', (await pos(m)) === barQ && await m.$eval('.playbar', (e) => getComputedStyle(e).display === 'block'), await pos(m));
+await m.click('#sc-stop'); await sleep(200);
+check('Stop again: back to the beginning, the line goes', (await pos(m)) === 0 && await m.$eval('.playbar', (e) => getComputedStyle(e).display === 'none'), await pos(m));
 
 // ---------- iPhone: swipes ----------
 const t = await b.newPage(); t.on('pageerror', (e) => errs.push(e.message)); await t.setViewport({ width: 390, height: 844, hasTouch: true, isMobile: true });
