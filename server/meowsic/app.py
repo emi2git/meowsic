@@ -10,6 +10,7 @@ from . import ai, backup, barcheck, booksplit, chords, cleanup, dailycleanup, it
 from .db import WEB_DIR, Config, connect, init_db, log_event
 from .items import conn
 from . import feedback  # Utilities → Feedback
+from . import completeinfo  # Manage library → Complete info
 
 
 def create_app(data=None, background=True) -> FastAPI:
@@ -17,6 +18,7 @@ def create_app(data=None, background=True) -> FastAPI:
     init_db(cfg)
     c0 = connect(cfg); photoimport.ensure_schema(c0); c0.close()  # sheet_page.photo_id + photo_import (From Photos)
     c0 = connect(cfg); feedback.ensure_schema(c0); c0.close()  # feedback + feedback_history tables
+    c0 = connect(cfg); completeinfo.ensure_schema(c0); c0.close()  # info_mark (Complete info: skip / don't know)
     jobs.recover(cfg)
     stop = threading.Event()
 
@@ -42,6 +44,7 @@ def create_app(data=None, background=True) -> FastAPI:
     for r in (items.router, jobs.router, backup.router, chords.router, ai.router, cleanup.router, pages.router, booksplit.router, titles.router, versions.router, photoimport.router, undo.router, voice.router, lyricsedit.router, barcheck.router, simplepiano.router, scorechords.router, dailycleanup.router, organize.router, staffmove.router):
         app.include_router(r)
     app.include_router(feedback.router)
+    app.include_router(completeinfo.router)
 
     @app.get('/api/health')
     def health():

@@ -41,7 +41,7 @@ function route() {
   // #/manage = Manage library → Organize pages; the old #/cleanup, #/organize and #/manage/<old tab> go there
   // Trash is a Manage library tab now: #/bin and #/trash go to #/manage/trash
   if (parts[0] === 'bin' || parts[0] === 'trash') { location.replace('#/manage/trash'); return; }
-  if (parts[0] === 'cleanup' || parts[0] === 'organize' || (parts[0] === 'manage' && parts.length > 1 && !(parts[1] === 'trash' && parts.length === 2))) { location.replace('#/manage' + (q.toString() ? '?' + q : '')); return; }
+  if (parts[0] === 'cleanup' || parts[0] === 'organize' || (parts[0] === 'manage' && parts.length > 1 && !(['trash', 'info'].includes(parts[1]) && parts.length === 2))) { location.replace('#/manage' + (q.toString() ? '?' + q : '')); return; }
   const name = parts[0] === 'manage' ? 'cleanup' : parts[0] || 'library';
   const view = ROUTES[name] || libraryView;
   if (typeof cleanup === 'function') cleanup();
