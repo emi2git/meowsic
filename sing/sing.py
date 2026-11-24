@@ -2,7 +2,7 @@
 """Make a lead sheet sing (beta), fully offline: MusicXML melody + English lyrics -> a sung vocal with a soft piano.
 
   sing.py --xml song.musicxml --out DIR --name "m-abc vocal" [--bpm 72] [--steps 32] [--device mps] [--check]
-          [--voice en_target] [--tune 0.85]
+          [--voice en_target] [--tune 0.85] [--octave N]
 
 Voice: SoulX-Singer (Soul-AILab, Apache-2.0) — zero-shot singing voice synthesis, score-controlled (MIDI notes +
 phonemes). Code in ~/ai/SoulX-Singer (its own .venv runs this script), weights in ~/ai/models/SoulX-Singer/model.pt.
@@ -122,7 +122,7 @@ def load_prompt(proc, voice):
         os.unlink(tmp)
 
 
-def sing(segs, bpm, device, steps, cfg_scale, on_seg, mode='syllable', voice=VOICE):
+def sing(segs, bpm, device, steps, cfg_scale, on_seg, mode='syllable', voice=VOICE, octave=None):
     import numpy as np
     import torch
     model, proc, cfg = load_voice(device)
@@ -136,6 +136,7 @@ def sing(segs, bpm, device, steps, cfg_scale, on_seg, mode='syllable', voice=VOI
         m['phoneme'] = ' '.join(p if p == '<SP>' or all(('en_' + x) in phones for x in p[3:].split('-')) else '<SP>' for p in m['phoneme'].split())
     gt = [int(x) for m in metas for x in m['note_pitch'].split() if int(x) > 0]
     shift = int(12 * round((pt_med - float(np.median(gt))) / 12)) if gt else 0  # whole octaves only: same notes, the singer's range
+    if octave is not None: shift = 12 * octave  # --octave: the caller picks the range (e.g. 0 for a female voice, -1 for a male one)
     total = int(round((metas[-1]['time'][1]) / 1000 * sr)) + sr
     out = np.zeros(total, dtype=np.float32)
     for i, m in enumerate(metas):
@@ -277,6 +278,7 @@ def main():
     ap.add_argument('--voice', choices=VOICES, default=VOICE, help='the singer: a SoulX-Singer example clip or an installed extra voice (sing/make_voices.py)')
     ap.add_argument('--tune', type=float, default=0.85,
                     help='pitch correction: how far each note\'s pitch is pulled to the score, 0 (off) .. 1 (vibrato kept)')
+    ap.add_argument('--octave', type=int, default=None, help='octaves to move the melody (default: nearest the singer\'s own range)')
     a = ap.parse_args()
     os.environ.setdefault('PYTORCH_ENABLE_MPS_FALLBACK', '1')
     import numpy as np
@@ -295,7 +297,7 @@ def main():
 
     def on_seg(i, n, ws):
         say(2, i / n, f'Phrase {i} of {n}: ' + ' '.join(dict.fromkeys(ws)))
-    dry, vsr, shift, _ = sing(segs, bpm, device, a.steps, a.cfg, on_seg, a.mode, a.voice)
+    dry, vsr, shift, _ = sing(segs, bpm, device, a.steps, a.cfg, on_seg, a.mode, a.voice, a.octave)
     tuned = None
     if a.tune > 0:
         say(2, 1, 'Tuning the voice to the score')
