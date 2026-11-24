@@ -1,16 +1,14 @@
-// Manage library → Check suspect songs (#/manage/review): the Mac's check (a job; "check again" runs it with a
-// progress bar) lists sheets that look wrong (books are never checked: read-only PDFs). One sheet at a time:
-// what looks wrong in plain words, its pages with the suspect ones marked, and
-//   the fix that fits      Split at page N · Merge with “X” · Delete page N · Fix order…
-//   Fix pages…             the page editor (a suspected new song already marked)
-//   It's fine              a complete song: checks leave it out from now on (undoable)
+// Manage library → Check suspect songs (#/manage/review): the Mac's check (a job; the header's check-again button
+// runs it with a progress bar) lists sheets that look wrong (books are never checked: read-only PDFs). One sheet at
+// a time: what looks wrong in plain words, its pages with the suspect ones marked, and
+//   the fix that fits      Split at page N (asks first, then splits) · Merge with “X” · Delete page N · Fix order…
+//   Fix pages…             the page editor (no song break placed: the user taps New song here)
+//   ✓ (round)              "This is a complete song": checks leave it out from now on (toast Undo; the hub's Undo)
 //   Skip                   to the end of the queue
-// "Up next" lists the next three; "Marked as fine" (at the end) lets one come up in checks again.
 import { store } from '../store.js';
 import { $, esc, iconOn, toast, ago, confirmSheet, sheet as modal } from '../ui.js';
 import { api, head, plural, sleep, thumb, listPages, range, taps, pushAct, pushUndo, undoLast } from './managekit.js';
 
-const KIND = { several: 'Two songs?', merge: 'Half a song?', order: 'Page order?', duplicate: 'Same page twice?', blank: 'Blank page?' };
 const FLAG = { several: 'New song?', order: 'Order?', duplicate: 'Same page?', blank: 'Blank?' };
 const STRIP_MAX = 12;
 const cap = (s) => String(s || '').replace(/^./, (c) => c.toUpperCase());
@@ -18,8 +16,8 @@ const sentence = (s) => { s = cap(s).trim(); return /[.!?”"]$/.test(s) ? s : s
 
 export function reviewView(main) {
   if (store.mode !== 'server') { main.innerHTML = head({ title: 'Check suspect songs', sub: null }) + '<p class="mg-pad muted">Checking needs the Mac.</p>'; return; }
-  const st = { items: null, scan: null, queue: [], i: 0, done: 0, job: null, alive: true, busy: false, hidden: false };
-  main.innerHTML = head({ title: 'Check suspect songs', sub: '', right: '<a class="btn ghost mg-done" href="#/manage">Done</a>' })
+  const st = { items: null, scan: null, queue: [], i: 0, done: 0, job: null, alive: true, busy: false };
+  main.innerHTML = head({ title: 'Check suspect songs', sub: null, right: `<button class="mg-ib" id="rv-scan" data-act="scan" title="Check again" aria-label="Check again">${iconOn('restore')}</button>` })
     + '<div class="mg-progress"><i id="mg-bar"></i></div><div class="mg-pad mg-wrap" id="rv"><p class="muted">Loading…</p></div>';
   const body = $('#rv', main);
   const itemOf = (id) => st.items?.find((x) => x.id === id);
@@ -42,9 +40,10 @@ export function reviewView(main) {
 
   // ---------- header line ----------
   const paintHead = () => {
-    const s = $('#mg-sub', main), bar = $('#mg-bar', main), n = st.queue.length, total = n + st.done;
-    if (st.job) { s.innerHTML = `Checking pages… ${Math.round((st.job.progress || 0) * 100)}%`; bar.style.width = `${Math.max(2, (st.job.progress || 0) * 100)}%`; return; }
-    s.innerHTML = `${n ? `${st.i + 1} of ${n} · ` : ''}${st.scan ? `checked ${esc(ago(st.scan.at).toLowerCase())} · ` : ''}<button class="link" data-act="scan">${st.scan ? 'check again' : 'check now'}</button>`;
+    const bar = $('#mg-bar', main), n = st.queue.length, total = n + st.done, sc = $('#rv-scan', main);
+    sc.disabled = !!st.job; sc.classList.toggle('spin', !!st.job);
+    sc.title = st.job ? `Checking… ${Math.round((st.job.progress || 0) * 100)}%` : st.scan ? `Check again (checked ${ago(st.scan.at).toLowerCase()})` : 'Check now';
+    if (st.job) { bar.style.width = `${Math.max(2, (st.job.progress || 0) * 100)}%`; return; }
     bar.style.width = `${total ? Math.max(2, (st.done / total) * 100) : 100}%`;
   };
 
@@ -85,36 +84,26 @@ export function reviewView(main) {
     paintHead();
     const g = st.queue[st.i];
     if (!st.scan && !st.job) {
-      body.innerHTML = `<div class="mg-emptybox"><h2>Not checked yet</h2><p class="muted">The Mac looks through every sheet for pages that hold two songs, half a song, pages out of order, twice or blank.</p><button class="primary" data-act="scan">Check now</button></div>`;
+      body.innerHTML = `<div class="mg-emptybox"><h2>Not checked yet</h2><button class="primary" data-act="scan">Check now</button></div>`;
       return;
     }
     if (!g) {
-      body.innerHTML = `<div class="mg-emptybox"><h2>${st.job ? 'Checking…' : 'Nothing to check'}</h2><p class="muted">${st.done ? `${plural(st.done, 'sheet')} checked just now. ` : ''}Every suspect song has been looked at.</p><a class="btn" href="#/manage">‹ Manage library</a></div>${hiddenHtml()}`;
+      body.innerHTML = `<div class="mg-emptybox"><h2>${st.job ? 'Checking…' : 'Nothing to check'}</h2></div>`;
       return;
     }
     const x = itemOf(g.id), c = g.cands[0], w = words(x, c), pr = primary(x, c);
     const other = c.kind === 'merge' && c.others?.[0] ? st.items.find((y) => y.id === c.others[0]) : null;
-    const more = g.cands.slice(1).map((y) => `<li><span class="rv-kind">${esc(KIND[y.kind] || y.kind)}</span>${esc(sentence(y.reason))}</li>`).join('');
     body.innerHTML = `<section class="rv-card" data-id="${esc(x.id)}">
-        <div class="rv-why"><span class="rv-ico">${iconOn('warn')}</span><div><h2 id="rv-h">${esc(w.h)}</h2><p>${esc(w.p)}</p>${more ? `<ul class="rv-more">${more}</ul>` : ''}</div></div>
+        <div class="rv-why"><span class="rv-ico">${iconOn('warn')}</span><div><h2 id="rv-h">${esc(w.h)}</h2><p>${esc(w.p)}</p></div></div>
         ${stripHtml(x, (c.pages || []).filter((p) => p <= x.pages), FLAG[c.kind])}
         ${other ? `<p class="rv-sub">“${esc(other.title)}” · ${plural(other.pages, 'page')}</p>${stripHtml(other, [], '')}` : ''}
         <div class="rv-act">
           ${pr ? `<button class="primary" data-act="primary" id="rv-primary">${esc(pr.label)}</button>` : ''}
           <button class="${pr ? '' : 'primary'}" data-act="fix" id="rv-fix">Fix pages…</button>
-          <button data-act="fine" id="rv-fine">It’s fine</button>
+          <span class="grow"></span>
           <button class="ghost" data-act="skip" id="rv-skip">Skip</button>
-        </div></section>
-      ${st.queue.length > 1 ? `<div class="rv-next"><h3>Up next</h3><ul class="mg-rows">${[1, 2, 3].map((d) => st.queue[(st.i + d) % st.queue.length]).filter((y, k, a) => y && y !== g && a.indexOf(y) === k).map((y) => {
-    const yi = itemOf(y.id), yc = y.cands[0];
-    return `<li><button class="mg-row" data-act="goto" data-id="${esc(y.id)}"><span class="mg-rt"><b>${esc(yi.title)}</b><small><span class="rv-kind">${esc(KIND[yc.kind] || yc.kind)}</span>${esc(yc.reason)}</small></span></button></li>`;
-  }).join('')}</ul></div>` : ''}${hiddenHtml()}`;
-  };
-  const hiddenHtml = () => {
-    const xs = (st.items || []).filter((x) => x.reviewed);
-    if (!xs.length) return '';
-    return `<details class="rv-hidden" ${st.hidden ? 'open' : ''}><summary>Marked as fine (${xs.length}) — checks leave these out</summary>
-      <ul class="mg-rows">${xs.map((x) => `<li class="mg-row"><span class="mg-rt"><b>${esc(x.title)}</b></span><button data-act="again" data-id="${esc(x.id)}">Check again</button></li>`).join('')}</ul></details>`;
+          <button class="mg-ib rv-fine" data-act="fine" id="rv-fine" title="This is a complete song" aria-label="This is a complete song">${iconOn('check')}</button>
+        </div></section>`;
   };
 
   // ---------- moving on ----------
@@ -129,15 +118,8 @@ export function reviewView(main) {
     const r = await api('POST', '/organize/reviewed', { id: x.id, on: true });
     x.reviewed = true;
     if (r.activity) pushUndo('it’s fine', async () => { await api('POST', `/activity/${encodeURIComponent(r.activity)}/undo`, {}); x.reviewed = false; });
-    toast(`“${x.title}” is fine — checks leave it out`, { label: 'Undo', run: async () => { if (await undoLast()) { st.done = Math.max(0, st.done - 1); await load(); } } });
+    toast('Marked as a complete song', { label: 'Undo', run: async () => { if (await undoLast()) { st.done = Math.max(0, st.done - 1); await load(); } } });
     doneWith(x.id);
-  });
-  const again = (id) => busy(async () => {
-    await api('POST', '/organize/reviewed', { id, on: false });
-    const x = itemOf(id); if (x) x.reviewed = false;
-    st.hidden = true;
-    toast(`“${x?.title || ''}” comes up in checks again`);
-    draw();
   });
   const split = async (x, ps) => {
     const sg = [1, ...ps].map((p, k, a) => ({ start: p, end: k + 1 < a.length ? a[k + 1] - 1 : x.pages }));
@@ -179,10 +161,7 @@ export function reviewView(main) {
       doneWith(x.id);
     });
   };
-  const fix = (x, c) => {
-    const mk = c.kind === 'several' ? (c.pages || []).filter((p) => p > 1 && p <= x.pages).slice(0, 3) : [];
-    location.hash = `#/manage/pages/${encodeURIComponent(x.id)}${mk.length ? `?mark=${mk.join(',')}` : ''}`;
-  };
+  const fix = (x) => { location.hash = `#/manage/pages/${encodeURIComponent(x.id)}`; };
   const skip = () => { if (st.queue.length > 1) { st.i = (st.i + 1) % st.queue.length; draw(); main.scrollTop = 0; } else toast('This is the last one'); };
   const page = (id, p) => {
     const x = itemOf(id); if (!x) return;
@@ -222,8 +201,6 @@ export function reviewView(main) {
       case 'fix': return x && fix(x, c);
       case 'fine': return x && fine(x);
       case 'skip': return skip();
-      case 'goto': { const k = st.queue.findIndex((y) => y.id === el.dataset.id); if (k >= 0) { st.i = k; draw(); main.scrollTop = 0; } return; }
-      case 'again': return again(el.dataset.id);
       case 'page': return page(el.dataset.id, +el.dataset.p);
     }
   });

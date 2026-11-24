@@ -2,6 +2,7 @@
 import html
 import json
 import socket
+from pathlib import Path
 
 import pytest
 
@@ -112,3 +113,61 @@ def test_live_hopamchuan():
     assert r['results'], r['errors']
     s = chords.fetch_song(r['results'][0]['url'])
     assert s['source'] == 'hopamchuan' and '[' in s['text'] and s['key']
+
+
+# ---------- a real tab page's layout (synthesised: same JSON store, made-up words) ----------
+
+FIX = Path(__file__).parent / 'fixtures'
+
+
+def test_ug_tab_page_fixture():
+    """Shape of tabs.ultimate-guitar.com/tab/962805: [tab]-wrapped chord-over-lyric pairs, \\r\\n, bar lines, no key."""
+    s = chords.parse_ug_song((FIX / 'ug_chords_page.html').read_text(), 'u')
+    text = chords.to_chordpro(s['lines'])
+    assert s['title'] == 'Synthetic Test Song' and s['artist'] == 'Misc Musicals'
+    assert s['key'] == 'A'  # no tonality in the page: the first chord
+    assert '[ch]' not in text and '[tab]' not in text and '\r' not in text
+    assert '{c: Intro}' in text and '{c: Chorus}' in text
+    assert '[A]' in text and '[F#m/E]' in text and '[Bm7]' in text
+    lyric = [l for l in text.split('\n') if l and not l.startswith('{') and not l.startswith('|')]
+    assert len(lyric) == 8 and all('[' in l for l in lyric[2:])  # 2 header lines, then every lyric line has its chords merged in
+
+
+def test_ug_layout_variants():
+    data = {'tab': {'id': 5, 'song_name': 'S', 'artist_name': 'A'}, 'tab_view': {'wiki_tab': {'content': '[ch]G[/ch]\nHi'}}}
+    attr_first = f'<div data-content="{html.escape(json.dumps({"store": {"page": {"data": data}}}))}" class="js-store x"></div>'
+    script = f'<script>window.UGAPP.store.page = {json.dumps({"data": data})};</script>'
+    for page in (attr_first, script):
+        assert chords.to_chordpro(chords.parse_ug_song(page, 'u')['lines']) == '[G]Hi'
+
+
+def test_ug_official_tab_says_so():
+    with pytest.raises(RuntimeError, match='Official.*no chord text'):
+        chords.parse_ug_song((FIX / 'ug_official_page.html').read_text(), 'u')
+
+
+def test_fetch_never_returns_empty_text(client, monkeypatch):
+    pages = {'962805': (FIX / 'ug_chords_page.html').read_text(), 'off': (FIX / 'ug_official_page.html').read_text(),
+             'empty': ug_page({'tab': {'id': 1, 'song_name': 'S'}, 'tab_view': {'wiki_tab': {'content': '[Intro]\n\n'}}})}
+    monkeypatch.setattr(chords, 'get', lambda url: pages[url.rsplit('/', 1)[1]])
+    f = client.get('/api/chords/fetch', params={'url': 'https://tabs.ultimate-guitar.com/tab/962805'}).json()
+    assert f['text'].strip() and f['chordCount'] >= 20 and f['lineCount'] >= 8 and 'lines' not in f
+    r = client.get('/api/chords/fetch', params={'url': 'https://tabs.ultimate-guitar.com/tab/off'})
+    assert r.status_code == 502 and 'Official' in r.json()['detail']
+    r = client.get('/api/chords/fetch', params={'url': 'https://tabs.ultimate-guitar.com/tab/empty'})
+    assert r.status_code == 502 and 'No chords' in r.json()['detail']
+
+
+def test_web_chord_chart_never_saved_empty(client):
+    url = 'https://tabs.ultimate-guitar.com/tab/1'
+    for text in ('', '   ', None):
+        r = client.post('/api/items', json={'kind': 'chords', 'title': 'X', 'source': 'ultimate-guitar', 'url': url, 'text': text})
+        assert r.status_code == 400 and 'no chords' in r.json()['detail']
+    it = client.post('/api/items', json={'kind': 'chords', 'title': 'X', 'source': 'hopamchuan', 'url': url, 'text': '[C]la'}).json()
+    assert client.patch(f'/api/items/{it["id"]}', json={'text': ''}).status_code == 400
+    # a chart refilled by PATCH gets an Activities row that rolls back (the detail never echoes the words)
+    assert client.patch(f'/api/items/{it["id"]}', json={'text': '[G]new words'}).json()['text'] == '[G]new words'
+    act = next(a for a in client.get('/api/activity').json() if 'chord chart text' in (a.get('detail') or ''))
+    assert 'new words' not in act['detail'] and act['title'] == 'X'
+    assert client.post(f'/api/activity/{act["id"]}/undo', json={}).status_code == 200
+    assert client.get(f'/api/items/{it["id"]}').json()['text'] == '[C]la'

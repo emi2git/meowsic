@@ -1,6 +1,9 @@
 // End-to-end: drive every feature of the UI preview and check the result.
 import puppeteer from 'puppeteer-core';
-const ORIGIN = process.env.PREVIEW || 'http://localhost:5181';
+// PREVIEW (or BASE, as the other e2e scripts take it) = the UI preview's origin. Without either it falls back to
+// :5181, which serves the main checkout, not this tree: a worktree's tests then run against other (older) files.
+const ORIGIN = (process.env.PREVIEW || process.env.BASE || 'http://localhost:5181').replace(/\/+$/, '');
+console.log('Preview:', ORIGIN);
 const BASE = ORIGIN + '/?preview=1';
 const browser = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', args: ['--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage();
@@ -354,6 +357,8 @@ await go('#/add-chords');
 await page.type('#cs-q', 'danny'); await sleep(400);
 await page.click('#cs-results .row'); await sleep(300);
 await page.click('#pv-save'); await sleep(300);
+check('save sheet: only the picked tags as chips + "+ Tag" (no full tag list)', !!(await page.$('.sv-sheet .tc-add')) && (await count('.sv-sheet .chip, .sv-sheet .tc-opt')) === 0);
+await page.click('#sv-save'); await sleep(300);
 d = await db();
 check('Danny Boy saved', d.items.some((x) => x.title === 'Danny Boy' && x.kind === 'chords'));
 await page.$eval('#cs-q', (e) => (e.value = ''));

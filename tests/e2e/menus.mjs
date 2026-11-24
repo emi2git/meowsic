@@ -181,9 +181,9 @@ check('old #/manage?id=…&crop=2 → the new crop route', (await mac.evaluate((
 await mac.goto(`${BASE}#/manage/pages/${book.id}`, { waitUntil: 'networkidle2' }); await sleep(1500);
 check('a book is not editable in Fix pages', !(await mac.$('#pe-grid .pe-tile')));
 await mac.goto(`${BASE}#/manage/pages`, { waitUntil: 'networkidle2' }); await sleep(800);
-await mac.evaluate(() => document.querySelector('[data-seg="all"]').click()); await sleep(300);
-const og = await mac.$$eval('#pk-list [data-id]', (e) => e.map((x) => x.dataset.id));
-check('the Fix pages list has the sheet, not the book', !og.includes(book.id) && og.includes(sheet.id), JSON.stringify(og));
+const findIds = async (t) => { await mac.$eval('#pk-find', (e) => { e.value = ''; }); await mac.type('#pk-find', t); await sleep(300); return mac.$$eval('#pk-list [data-id]', (e) => e.map((x) => x.dataset.id)); };
+const og = [...(await findIds(sheet.title)), ...(await findIds(book.title))];
+check('Find a sheet finds the sheet, not the book', !og.includes(book.id) && og.includes(sheet.id), JSON.stringify(og));
 await openItem(mac, sheet);
 const sm = await openMore(mac); await closeMenu(mac);
 check('Make a score is not beta', sm.includes('Make a score…') && !/beta/i.test(sm), sm);

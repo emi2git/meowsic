@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 from .autofill import fill_from_library, log_fill
 from .sheetversion import refresh_staves
 from .undolog import edit_detail, edit_title, fields_step, record_undo
-from .db import AI_SOURCE, NOT_ARTIST, OLD_CREDITS, credit_xml, score_byline, BOOKS, KIND_COLS, SCORE_VERSIONS, SHEET_VERSIONS, book_folder, ensure_tags, folder_base, folder_path, get_item, item_json, log_event, now_ms, folder_name, rebase, uid, write_item
+from .db import AI_SOURCE, NOT_ARTIST, OLD_CREDITS, credit_xml, score_byline, BOOKS, KIND_COLS, SCORE_VERSIONS, SHEET_VERSIONS, book_folder, ensure_tags, folder_base, folder_path, get_item, item_json, log_event, now_ms, folder_name, quiet_now, rebase, uid, write_item
 
 router = APIRouter(prefix='/api')
 
@@ -33,6 +33,14 @@ def conn(request: Request):
 
 def cfg(request: Request):
     return request.app.state.cfg
+
+
+WEB_CHORDS = ('ultimate-guitar', 'hopamchuan', 'ukulele-tabs')  # chord charts fetched from a site: always have their text
+
+
+def no_empty_chart(kind, source, text):
+    if kind == 'chords' and source in WEB_CHORDS and not str(text or '').strip():
+        raise HTTPException(400, 'This chord chart has no chords or words. Fetch the song again.')
 
 
 def item_dir(cf, it) -> Path:
@@ -83,6 +91,7 @@ def create_item(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
     kind = body.get('kind')
     if kind not in KIND_COLS or not str(body.get('title', '')).strip():
         raise HTTPException(400, 'kind (sheet|chords|score) and title are required')
+    no_empty_chart(kind, body.get('source'), body.get('text'))
     t, prefix = now_ms(), {'sheet': 's', 'chords': 'c', 'score': 'm'}[kind]
     # the UI may pick the id itself (so it can open the item at once); else make one
     want = str(body.get('id') or '')
@@ -143,6 +152,7 @@ def update_item(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depend
     patch = {k: v for k, v in body.items() if k not in ('id', 'kind', 'createdAt', 'deleted', 'deletedAt', 'folder', 'book', 'ai', 'staves', 'vocalAudio', 'vocalBpm')}
     if 'version' in patch:
         patch['version'] = check_version(it['kind'], patch['version'])
+    if 'text' in patch and not quiet_now(): no_empty_chart(it['kind'], patch.get('source', it.get('source')), patch['text'])  # (a rollback may put back what was there)
     if 'key' in patch: patch['key'] = str(patch['key'] or '').strip()
     for k in ('artist', 'album'):
         if k in patch: patch[k] = ' '.join(str(patch[k] or '').split())[:200]
