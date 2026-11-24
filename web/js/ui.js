@@ -181,7 +181,7 @@ export function menu(anchor, entries, { parent = null } = {}) {
   const m = document.createElement('div');
   m.className = 'menu' + (parent ? ' sub' : '');
   m.setAttribute('role', 'menu');
-  m.innerHTML = entries.map((e, i) => (e === '-' ? '<hr>' : `<button role="${'checked' in e ? 'menuitemcheckbox' : 'menuitem'}" data-i="${i}" class="${e.danger ? 'danger' : ''}${e.back ? ' mback' : ''}"${'checked' in e ? ` aria-checked="${!!e.checked}"` : ''}${e.sub ? ' aria-haspopup="menu"' : ''}${e.disabled ? ' disabled' : ''}>${e.back ? '<b class="msub">‹</b>' : e.icon ? icon(e.icon) : ''}<span>${esc(e.label)}</span>${'checked' in e ? `<b class="mcheck">${e.checked ? '✓' : ''}</b>` : e.sub ? '<b class="msub">›</b>' : ''}</button>`)).join('');
+  m.innerHTML = entries.map((e, i) => (e === '-' ? '<hr>' : e.head ? `<h4 class="mhead"><span>${esc(e.head)}</span></h4>` : `<button role="${'checked' in e ? 'menuitemcheckbox' : 'menuitem'}" data-i="${i}" class="${e.danger ? 'danger' : ''}${e.back ? ' mback' : ''}"${'checked' in e ? ` aria-checked="${!!e.checked}"` : ''}${e.sub ? ' aria-haspopup="menu"' : ''}${e.disabled ? ' disabled' : ''}>${e.back ? '<b class="msub">‹</b>' : e.icon ? icon(e.icon) : ''}<span>${esc(e.label)}</span>${'checked' in e ? `<b class="mcheck">${e.checked ? '✓' : ''}</b>` : e.sub ? '<b class="msub">›</b>' : ''}</button>`)).join('');
   document.body.append(m);
   const r = anchor.getBoundingClientRect();
   const mw = m.offsetWidth, mh = m.offsetHeight;

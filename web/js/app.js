@@ -49,7 +49,7 @@ function betaView(main, ctx) {
 }
 
 function route() {
-  if (/^#\/?feedback\b/.test(location.hash)) return void location.replace('#/developer'); // feedback lives on Developer
+  if (/^#\/?feedback\b/.test(location.hash)) return void location.replace('#/developer'); // #/feedback alias of the Feedback page (#/developer)
   const { parts, q } = parseHash();
   const to = manageRedirect(parts, q);
   if (to) { location.replace(to); return; }
@@ -96,14 +96,14 @@ export function renderSide() {
     <nav aria-label="Main">
       <a class="nav lib${on(kind === '')}" href="#/library">${icon('library')}<span>Library</span><i>${items.length}</i></a>
       ${['sheet', 'score', 'chords', 'book'].map((k) => `<a class="nav sub${on(kind === k)}" href="#/library?kind=${k}">${icon(KIND[k].icon)}<span>${KIND[k].plural}</span><i>${n(k)}</i></a>`).join('')}
-      <h3>App</h3>
+      <h3>Manage</h3>
+      <a class="nav${on(v === 'manage')}" href="#/manage"><span>Library</span></a>
+      <a class="nav${on(v === 'tags' || v === 'make-tags')}" href="#/tags"><span>Tags</span></a>
+      <a class="nav${on(v === 'settings' || v === 'help')}" href="#/settings">${icon('settings')}<span>App</span></a>
+      <h3>Developer</h3>
       <a class="nav${on(v === 'stats')}" href="#/stats">${icon('stats')}<span>Stats</span></a>
       <a class="nav${on(v === 'activity' || v === 'activities')}" href="#/activity"><span>Activities</span>${store.jobs().some((j) => j.status === 'running') ? '<i class="live">•</i>' : ''}</a>
-      <a class="nav${on(v === 'manage')}" href="#/manage"><span>Manage library</span></a>
-      <a class="nav${on(v === 'tags' || v === 'make-tags')}" href="#/tags"><span>Tags</span></a>
-      <a class="nav${on(v === 'settings' || v === 'help')}" href="#/settings">${icon('settings')}<span>Settings</span></a>
-      <a class="nav${on(v === 'developer')}" href="#/developer"><span>Developer</span></a>
-      <h3>Beta</h3>
+      <a class="nav${on(v === 'developer')}" href="#/developer"><span>Feedback</span></a>
       <a class="nav${on(v === 'beta' && (parts[1] || 'keyboard') === 'keyboard')}" href="#/beta/keyboard">${icon('piano')}<span>Keyboard</span></a>
     </nav>
     <div class="side-foot ${store.mode}">${icon('wifi')}<span>${store.mode === 'server' ? 'Connected to the Mac' : store.mode === 'offline' ? (store.items().length ? 'Offline — your last copy' : 'Can’t reach the Mac') : 'Preview'}</span></div>`;
@@ -117,11 +117,13 @@ export function renderSide() {
     `<button id="tab-more" class="${['bin', 'settings', 'print', 'activity', 'activities', 'developer', 'manage', 'help', 'tags', 'make-tags', 'beta'].includes(v) ? 'on' : ''}">${icon('more')}<span>More</span></button>`;
   $('#tab-add').onclick = (e) => addMenu(e.currentTarget);
   $('#tab-more').onclick = (e) => menu(e.currentTarget, [
-    { label: 'Activities', icon: 'wave', run: () => go('#/activity') },
-    { label: 'Manage library', icon: 'tools', run: () => go('#/manage') },
+    { head: 'Manage' },
+    { label: 'Library', icon: 'tools', run: () => go('#/manage') },
     { label: 'Tags', icon: 'tag', run: () => go('#/tags') },
-    { label: 'Settings', icon: 'settings', run: () => go('#/settings') },
-    { label: 'Developer', icon: 'tools', run: () => go('#/developer') },
+    { label: 'App', icon: 'settings', run: () => go('#/settings') },
+    { head: 'Developer' }, // Stats is a bottom tab on the iPhone, so not repeated here
+    { label: 'Activities', icon: 'wave', run: () => go('#/activity') },
+    { label: 'Feedback', icon: 'tools', run: () => go('#/developer') },
     { label: 'Keyboard', icon: 'piano', run: () => go('#/beta/keyboard') },
   ]);
 }

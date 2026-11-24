@@ -1,4 +1,4 @@
-// Feedback, on the Developer page (App → Developer; iPhone More → Developer, #/developer; old #/feedback lands there): write or speak a note about the app (the text box gets the
+// Feedback, on the Feedback page (left bar Developer → Feedback; iPhone More → Feedback, #/developer; #/feedback lands there): write or speak a note about the app (the text box gets the
 // mic from textinput.js), Submit saves it on the Mac (server/meowsic/feedback.py). Below: every note, newest
 // first, each one a collapsible row (time, status, first line); open: the full text, Edit / Remove.
 // Claude sets the status (New → In progress → Fixed / Won't fix); Fixed and Won't fix can't be edited or removed.
@@ -25,7 +25,7 @@ export function aboutHtml(f) {
 export function feedbackView(main) {
   let rows = ls.get(), editing = null, gone = false;
   const open = new Set();
-  main.innerHTML = `<header class="top"><h1>Developer</h1></header>
+  main.innerHTML = `<header class="top"><h1>Feedback</h1></header>
     <div class="pad narrow fb">
       <section class="card fb-new">
         <h2>Feedback</h2>
