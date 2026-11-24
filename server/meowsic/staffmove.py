@@ -29,7 +29,11 @@ POST /api/items/{id}/editnotes          {ops, mode: 'this'|'new', sha?} -> saved
      'new' makes a new score in the same group, tagged "Hands moved" / "Notes edited" (Undo moves it to the Trash).
 """
 import copy
+import hashlib
+import json
 import shutil
+import threading
+from collections import OrderedDict
 import xml.etree.ElementTree as ET
 from fractions import Fraction as Fr
 
@@ -762,7 +766,10 @@ def unmark(text, bars):
 
 def check_bars(text):
     """The bars still to check (1-based), from the MusicXML."""
-    root = ET.fromstring(text.encode('utf-8'))
+    return _check_of(ET.fromstring(text.encode('utf-8')))
+
+
+def _check_of(root):
     for f in root.iter('miscellaneous-field'):
         if f.get('name') == 'meowsic-check-bars': return sorted({int(b) for b in (f.text or '').split() if b.isdigit()})
     return []
@@ -792,6 +799,11 @@ def _timeline(part):
     from the start of the part."""
     out, div, off = [], Fr(1), Fr(0)
     for m in part.findall('measure'):
+        fast = _timeline_bar(m, div, off, out)  # whole numbers of divisions: no Fraction per note (the usual case)
+        if fast is not None:
+            div, longest = fast
+            off += longest
+            continue
         t = last = longest = Fr(0)
         for e in m:
             if e.tag == 'attributes' and e.findtext('divisions'): div = Fr(int(float(e.findtext('divisions'))))
@@ -808,6 +820,46 @@ def _timeline(part):
                 out.append((e, _st(e), _vo(e), off + at, off + at + d, None if rest else _midi(e), rest))
         off += longest
     return out
+
+
+def _timeline_bar(m, div, off, out):
+    """_timeline for one bar in whole divisions -> (divisions, bar length in quarters), the entries appended to out;
+    None (out untouched) when <divisions> changes after the bar's first note or a duration is not a whole number."""
+    rows, t = [], 0
+    last = longest = 0
+    seen = False
+    for e in m:
+        tag = e.tag
+        if tag == 'note':
+            if e.find('grace') is not None: continue
+            seen = True
+            dt = e.findtext('duration') or 0
+            try: d = int(dt)
+            except ValueError: return None
+            chord = e.find('chord') is not None
+            at = last if chord else t
+            if not chord: last, t = t, t + d
+            if t > longest: longest = t
+            rest = e.find('rest') is not None or e.find('pitch') is None
+            rows.append((e, at, d, rest))
+        elif tag == 'backup' or tag == 'forward':
+            try: d = int(e.findtext('duration') or 0)
+            except ValueError: return None
+            if tag == 'backup': t -= d
+            else:
+                t += d
+                if t > longest: longest = t
+        elif tag == 'attributes' and e.findtext('divisions'):
+            if seen or t: return None
+            div = Fr(int(float(e.findtext('divisions'))))
+    cache = {}
+    def q(x):
+        v = cache.get(x)
+        if v is None: v = cache[x] = off + Fr(x) / div
+        return v
+    for e, at, d, rest in rows:
+        out.append((e, _st(e), _vo(e), q(at), q(at + d), None if rest else _midi(e), rest))
+    return div, Fr(longest) / div
 
 
 def _has_tie(n, kind):
@@ -1213,15 +1265,41 @@ def move(text: str, refs, to) -> tuple[str, list]:
     return edit(text, {'op': 'move', 'refs': refs, 'to': to})
 
 
+# The editor sends every edit so far on each preview (its undo steps are prefixes of one list), so the score after
+# each prefix is kept here: a new edit replays only itself, not the whole list. Key: a hash chain over the file's
+# text and the ops (edit_ex is a pure function of text + op); value: (text, moved, tiesGone, info) after that op.
+_STEPS = OrderedDict()
+_STEPS_MAX = 48  # at most 48 copies of a score in memory (a long score: ~20 MB)
+_STEPS_LOCK = threading.Lock()
+
+
+def _chain(text, ops):
+    h, out = hashlib.sha1(text.encode('utf-8')).digest(), []
+    for op in ops:
+        h = hashlib.sha1(h + json.dumps(op, sort_keys=True, separators=(',', ':'), default=str).encode('utf-8')).digest()
+        out.append(h)
+    return out
+
+
 def apply_ops(text, ops, info=None):
     """All the edits in order -> (text, refs the last one touched). info (a dict) gets tiesGone: ties the last
-    edit had to drop (their notes no longer meet)."""
+    edit had to drop (their notes no longer meet). The longest prefix of ops worked out before (_STEPS) is reused."""
     moved, gone, last = [], 0, {}
-    if not isinstance(ops, list): raise HTTPException(400, 'ops: a list of edits')
-    for op in ops:
-        if not isinstance(op, dict): raise HTTPException(400, 'ops: a list of edits')
+    if not isinstance(ops, list) or not all(isinstance(op, dict) for op in ops): raise HTTPException(400, 'ops: a list of edits')
+    keys, start = _chain(text, ops), 0
+    with _STEPS_LOCK:
+        for k in range(len(ops), 0, -1):
+            hit = _STEPS.get(keys[k - 1])
+            if hit is not None:
+                _STEPS.move_to_end(keys[k - 1])
+                text, moved, gone, last, start = hit[0], list(hit[1]), hit[2], copy.deepcopy(hit[3]), k
+                break
+    for k in range(start, len(ops)):
         last = {}
-        text, moved, gone = edit_ex(text, op, last)
+        text, moved, gone = edit_ex(text, ops[k], last)
+        with _STEPS_LOCK:
+            _STEPS[keys[k]] = (text, tuple(moved), gone, copy.deepcopy(last))
+            while len(_STEPS) > _STEPS_MAX: _STEPS.popitem(last=False)
     if info is not None: info.update(last); info['tiesGone'] = gone
     return text, moved
 
@@ -1341,11 +1419,13 @@ def preview(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cf
     info = {}
     out, moved = apply_ops(text, body.get('ops') or [], info)
     from .barnorm import tidy_score
-    over = [num for _, num in tidy_score(ET.fromstring(out.encode('utf-8')))['overfull']]
-    return {'xml': out, 'notes': notes(ET.fromstring(out.encode('utf-8'))), 'moved': moved, 'part': k, 'hands': hands, 'overfull': over,
-            'check': check_bars(out), 'sha': _sha(text), 'changed': bool(body.get('ops')), 'tiesGone': info['tiesGone'],
+    ro = ET.fromstring(out.encode('utf-8'))  # one parse for every answer (tidy_score last: it may drop repeated attributes)
+    ns, inc, chk = notes(ro), incomplete_bars(ro), _check_of(ro)
+    over = [num for _, num in tidy_score(ro)['overfull']]
+    return {'xml': out, 'notes': ns, 'moved': moved, 'part': k, 'hands': hands, 'overfull': over,
+            'check': chk, 'sha': _sha(text), 'changed': bool(body.get('ops')), 'tiesGone': info['tiesGone'],
             'took': info.get('took', []), 'tookRefs': info.get('tookRefs', []), 'said': info.get('said', []),
-            'incomplete': incomplete_bars(ET.fromstring(out.encode('utf-8')))}
+            'incomplete': inc}
 
 
 @router.post('/items/{item_id}/editnotes/clip')

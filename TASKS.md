@@ -16,6 +16,7 @@ Updated: 2026-11-24
 | 3 | Edit notes: Bar ▾ (clear/add LH or RH bar, insert/delete bar), add/remove staff, vocal + piano (3 staves); remove "Make another version" | ✅ Live (584ef94) |
 | 12 | Edit notes (Mac mouse + keys): drag a note (pitch in key / ⌥ semitone, sideways onto rests or swap; ghost + name; Esc), click a tie / slur → ✕ or ⌫ removes it, A–G note entry (fill key E→L, whole bar B→W), help text gone → Help page lists the keys | ✅ Pushed, deploying |
 | 8 | Pro-editor top 8 (range select, copy/paste, repeat, octave, respell, bar options, repeats/endings, chord symbols + realize) | ✅ Live (54891c1) |
+| 12 | Edit notes speed: server keeps each step (no replay of all edits), score stops read without OSMD's cursor repaint, keys queue while an edit is on its way; 70-bar score 1.2–2.2 s → ~0.4 s, 44-bar 0.4–0.7 s → ~0.14 s per edit (e2e editperf) | ✅ Pushed, deploying |
 | 11 | Singing voice: default = zh_target (take C, low male) for English, Vietnamese and Mandarin; auto octave fits it; {voice, octave} still override | ✅ Pushed, deploying |
 | 10 | Maintainability: project CLAUDE.md, scripts (test-all/smoke/deploy/dev-server), docs tidy, dead-code sweep, /api/health | ✅ Pushed, deploying |
 | 4 | Add music → Chords: fit iPad Pro/iPhone, auto-tags + "+ Tag", never save empty chords, refill One Day More | ✅ Live (a6de135) |

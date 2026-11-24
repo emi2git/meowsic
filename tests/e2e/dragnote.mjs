@@ -180,6 +180,13 @@ console.log('\nMac');
   await page.keyboard.press('a'); await idle();
   ns = await notes();
   check('nothing picked: A goes into the next rest', ns.filter((x) => x.staff === 1 && x.rest).length === 0 && ns.some((x) => x.bar === 2 && x.on === 2 && x.midi % 12 === 9) && full(ns), JSON.stringify(ns.filter((x) => x.staff === 1 && x.bar === 2)));
+  // typed fast (each key waits its turn): a run lands on three notes in a row
+  const first = await find((x) => x.bar === 0 && x.on === 0 && x.staff === 1);
+  await EN((r) => window.__editNotes.select([r]), first.ref); await sleep(150);
+  await page.keyboard.type('gab'); await idle(); await idle();
+  ns = await notes();
+  const row = [0, 1, 2].map((o) => ns.find((x) => x.bar === 0 && x.on === o && x.staff === 1)?.midi % 12);
+  check('"gab" typed fast: G A B on three notes in a row', JSON.stringify(row) === '[7,9,11]', JSON.stringify(row));
   check('bars full after all of it', full(await notes()));
   await EN(() => window.__editNotes.close(true)); await sleep(400);
   await page.goto(`${BASE}#/help`, { waitUntil: 'networkidle0' }); await sleep(400);
