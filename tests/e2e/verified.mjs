@@ -1,12 +1,13 @@
 // Verified badge against a test server (BASE, default :5347, a temp data folder). Never the real library.
-// Score view: an outline "Verified" badge beside the title; tap → filled green "✓ Verified" and the item has the
+// Score view: an icon-only round toggle beside the title (seal outline, grey; aria-label/title "Not verified"); tap → filled green seal
+// with a check ("Verified") and the item has the
 // tag "Verified" (made if missing); an Activities row whose Undo takes it back; the library row shows a small ✓.
 // Tags moved under Utilities (left bar after Manage library; iPhone: the Utilities menu, not the tab bar).
 // Mac, iPad Pro 13 and iPhone Air; screenshots in SHOTS.
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 const BASE = process.env.BASE || 'http://localhost:5347/';
-const SHOTS = process.env.SHOTS || '/private/tmp/claude-501/-Users-emi2mac/4133b106-9ccb-4a6c-97de-aed86ecf9500/scratchpad/verified';
+const SHOTS = process.env.SHOTS || '/private/tmp/claude-501/-Users-emi2mac/4133b106-9ccb-4a6c-97de-aed86ecf9500/scratchpad/verified2';
 fs.mkdirSync(SHOTS, { recursive: true });
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -21,7 +22,7 @@ const stamp = Date.now().toString(36);
 const xml = (title) => '<?xml version="1.0" encoding="UTF-8"?>\n<score-partwise version="4.0"><work><work-title>' + title + '</work-title></work><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">'
   + [1, 2].map((n) => `<measure number="${n}">${n === 1 ? '<attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>' : ''}<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><type>whole</type></note></measure>`).join('') + '</part></score-partwise>';
 
-const badge = (page) => page.$eval('#it-verified', (e) => ({ on: e.classList.contains('on'), pressed: e.getAttribute('aria-pressed'), text: e.textContent.trim(), bg: getComputedStyle(e).backgroundColor, w: e.offsetWidth, top: e.getBoundingClientRect().top })).catch(() => null);
+const badge = (page) => page.$eval('#it-verified', (e) => { const seal = e.querySelector('svg .seal'); return { on: e.classList.contains('on'), pressed: e.getAttribute('aria-pressed'), text: e.textContent.trim(), label: e.getAttribute('aria-label'), title: e.title, w: e.offsetWidth, h: e.offsetHeight, round: getComputedStyle(e).borderRadius === '50%', tgBtn: e.classList.contains('tg-btn'), seal: !!seal, fill: seal ? getComputedStyle(seal).fill : '', tick: !!e.querySelector('svg .tick'), color: getComputedStyle(e).color, top: e.getBoundingClientRect().top }; }).catch(() => null);
 const waitTags = async (id, cond, ms = 4000) => { const end = Date.now() + ms; let t; while (Date.now() < end) { t = (await api('/items/' + id)).tags; if (cond(t)) return t; await sleep(150); } return t; };
 
 for (const [name, vp, dev] of [['Mac', MAC, 'mac'], ['iPad Pro 13', IPAD, 'ipad'], ['iPhone Air', PHONE, 'iphone']]) {
@@ -34,13 +35,18 @@ for (const [name, vp, dev] of [['Mac', MAC, 'mac'], ['iPad Pro 13', IPAD, 'ipad'
 
   await page.goto(BASE + '#/item/' + sc.id, { waitUntil: 'networkidle0' }); await sleep(1200);
   let bd = await badge(page);
-  check('score view shows the Verified badge, off (outline)', bd && !bd.on && bd.pressed === 'false' && bd.text === 'Verified' && bd.w > 40, JSON.stringify(bd));
+  check('score view shows the Verified toggle, off: icon-only round, seal outline, no tick', bd && !bd.on && bd.pressed === 'false' && bd.text === '' && bd.tgBtn && bd.round && bd.w === bd.h && bd.w <= 40 && bd.seal && bd.fill === 'none' && !bd.tick, JSON.stringify(bd));
+  check('off: aria-label and title "Not verified"; quiet grey', bd && bd.label === 'Not verified' && bd.title === 'Not verified' && !/rgb\(15, 122, 61\)/.test(bd.color), JSON.stringify(bd));
+  const sc2 = await page.$eval('#it-verified', (e) => { const o = document.createElement('button'); o.className = 'tg-btn'; e.parentNode.appendChild(o); const r = [e.offsetWidth, o.offsetWidth]; o.remove(); return r; });
+  check('same size as the score toggle buttons', sc2[0] === sc2[1], JSON.stringify(sc2));
   check('badge is in the title bar, on screen', bd && bd.top >= 0 && bd.top < 120 && (await page.$eval('#it-verified', (e) => !!e.closest('.item-top'))), JSON.stringify(bd));
   await page.screenshot({ path: `${SHOTS}/${dev}-score-off.png` });
 
   await tap('#it-verified');
   bd = await badge(page);
-  check('tap → filled green ✓ Verified', bd?.on && bd.pressed === 'true' && bd.text.startsWith('✓') && /rgb\(15, 122, 61\)/.test(bd.bg), JSON.stringify(bd));
+  check('tap → filled green seal with a check, icon only', bd?.on && bd.pressed === 'true' && bd.text === '' && /rgb\(15, 122, 61\)/.test(bd.fill) && bd.tick, JSON.stringify(bd));
+  check('on: aria-label and title "Verified"', bd?.label === 'Verified' && bd.title === 'Verified', JSON.stringify(bd));
+  check('toast "Marked verified"', await page.evaluate(() => document.body.innerText.includes('Marked verified')));
   let t = await waitTags(sc.id, (x) => x.includes('Verified'));
   check('item has the tag Verified (and keeps Kids)', t.includes('Verified') && t.includes('Kids'), JSON.stringify(t));
   check('tag Verified exists', (await api('/tags')).some((x) => x.name === 'Verified'));
