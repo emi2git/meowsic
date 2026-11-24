@@ -63,7 +63,7 @@ for (const [name, vp] of [['mac', { width: 1440, height: 900 }], ['ipad', { widt
   await p.goto(BASE + `#/manage?id=${book.id}`, { waitUntil: 'networkidle0' }); await p.reload({ waitUntil: 'networkidle0' }); await sleep(900);
   check(`${name}: the book does not open in Fix pages`, (await p.evaluate(() => location.hash)) === `#/manage/pages/${book.id}` && !(await p.$('#pe-grid .pe-tile')));
   await p.goto(BASE + '#/manage/pages', { waitUntil: 'networkidle0' }); await sleep(900);
-  await p.evaluate(() => document.querySelector('[data-seg="all"]').click()); await sleep(300);
+  await p.type('#pk-find', TITLE); await sleep(300);
   check(`${name}: the book is not in the Fix pages list`, !(await p.$(`#pk-list [data-id="${book.id}"]`)) && !(await api('/organize')).items.some((x) => x.id === book.id));
   await p.goto(BASE + `#/item/${book.id}`, { waitUntil: 'networkidle0' }); await sleep(700);
   await p.$eval('#it-more', (e) => e.click()); await sleep(300);
@@ -138,7 +138,7 @@ check('the book keeps its pages', (await api('/items/' + book.id)).pages === N);
   check('the sheet is listed', !!(await page.$(`#pk-list [data-id="${sh.id}"]`)));
   await page.click(`#pk-list [data-id="${sh.id}"]`); await sleep(1500);
   check('its 6 pages shown', (await page.$$('#pe-grid .pe-tile')).length === 6);
-  check('one song: no song lines, Done just goes back', !(await page.$('#pe-grid .pe-break')) && (await page.$eval('#pe-banner', (e) => e.hidden)));
+  check('one song: no song lines, no banner, Done just goes back', !(await page.$('#pe-grid .pe-break')) && !(await page.$('#pe-banner')) && (await page.$eval('#pe-done', (e) => e.textContent)) === 'Done');
   check('page 1 cannot start a new song', await (async () => { await page.click('#pe-grid .pe-tile[data-p="1"]'); await sleep(200); return page.$eval('#pe-dock [data-act="mark"]', (e) => e.disabled); })());
   const mark = async (n, title) => {
     await page.click(`#pe-grid .pe-tile[data-p="${n}"]`); await sleep(200);
@@ -147,7 +147,7 @@ check('the book keeps its pages', (await api('/items/' + book.id)).pages === N);
   };
   await mark(3, 'Second'); await mark(5, 'Third'); await sleep(600);
   check('marks saved', JSON.stringify((await api(`/sheets/${sh.id}/split`)).starts) === JSON.stringify({ 3: 'Second', 5: 'Third' }), JSON.stringify((await api(`/sheets/${sh.id}/split`)).starts));
-  check('two "starts here" lines, the banner says what Done does', (await page.$$('#pe-grid .pe-break')).length === 2 && /pages 3 and 5.*Done/.test(await page.$eval('#pe-banner', (e) => e.textContent)));
+  check('two song lines, Done says Make sheets', (await page.$$('#pe-grid .pe-break')).length === 2 && (await page.$eval('#pe-done', (e) => e.textContent)) === 'Make sheets');
   await page.click('#pe-done'); await sleep(400);
   check('Done says Split into 3 sheets', (await page.$eval('.modal [data-ok]', (e) => e.textContent)) === 'Split into 3 sheets');
   const c3 = await page.$$eval('.pe-confirm li', (e) => e.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
