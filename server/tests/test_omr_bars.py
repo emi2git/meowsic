@@ -236,7 +236,48 @@ def test_words_are_checked_vietnamese_and_english():
     assert L.split_viet('Hômchia') == ['Hôm', 'chia'] and L.split_viet('người') is None
     toks = [[w, 10 * k, False, 1.0, 10 * k, 10 * k + 8, 0, 10] for k, w in enumerate(['Nàu', 'nưiời', 'vêu', 'V3n', 'em'])]
     sc, drop = omr.judge_line(toks)
-    assert sc < omr.GOOD_LINE  # a line like this is left off the score, its bars flagged "lyrics unsure"
+    assert sc < omr.GOOD_LINE  # a line like this gets its bars flagged "lyrics unsure" (its words are still written)
+
+
+def tok(words, hy=None, conf=1.0):
+    return [[w, 10 * k, bool(hy and hy[k]), conf, 10 * k, 10 * k + 8, 0, 10] for k, w in enumerate(words)]
+
+
+def test_a_word_split_over_notes_is_a_real_word():
+    import sys
+    sys.path.insert(0, str(Path(omr.__file__).parent))
+    import lyriccheck as L
+    # hyphens read: syllables joined by them
+    assert L.line_score(['so', 'beau-', 'ti-', 'ful', 'to', 'day']) == 1.0
+    # hyphens not read: the pieces still join into the word
+    sc, doubt = omr.judge_line(tok(['so', 'beau', 'ti', 'ful', 'won', 'der', 'ful']))
+    assert sc >= omr.GOOD_LINE and not doubt
+    sc, doubt = omr.judge_line(tok(['beau', 'ti', 'ful'], hy=[True, True, False]))
+    assert sc == 1.0 and not doubt
+    # a word cut at the line end goes on to the next line; one ending there began on the line before
+    assert omr.judge_line(tok(['the', 'sun', 'is', 'beau', 'ti'], hy=[False, False, False, True, True]))[0] == 1.0
+    assert omr.judge_line(tok(['ful', 'is', 'the', 'day']))[0] == 1.0
+    # hyphenated Vietnamese syllables / compounds: each piece is real
+    assert L.line_score(['Sài-', 'Gòn', 'đẹp', 'lắm']) == 1.0 and L.line_score(['sun-', 'shine', 'and', 'rain']) == 1.0
+    # a run-together word split into real syllables counts as a real word, once
+    t = tok(['Hôm', 'chia', 'tay', 'em'])
+    t[0].append((0, 'Hômchia')); t[1].append((0, 'Hômchia'))
+    assert omr.judge_line(t)[0] == 1.0
+
+
+def test_lyrics_never_dropped_only_flagged():
+    order = [(b, 0.0, '1', 100 * b, 0) for b in range(5)]
+    toks = tok(['Nàu', 'nưiời', 'vêu', 'V3n', 'em'])
+    sc, doubt = omr.judge_line(toks)
+    pairs = [(i, i) for i in range(5)]
+    unsure = []
+    got = omr.line_on_notes(toks, pairs, order, sc, doubt, 1, 0, unsure)
+    assert len(got) == 5  # every syllable read is written
+    assert unsure and unsure[0]['bars'] == [0, 1, 2, 3, 4]  # the line is flagged as a hint only
+    good = tok(['beau', 'ti', 'ful', 'day', 'now'], hy=[True, True, False, False, False])
+    sc, doubt = omr.judge_line(good)
+    unsure = []
+    assert len(omr.line_on_notes(good, pairs, order, sc, doubt, 1, 0, unsure)) == 5 and unsure == []
 
 
 def test_syllables_go_to_notes_in_order():

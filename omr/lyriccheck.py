@@ -1,7 +1,7 @@
 """Is a word read off a sheet a real word? Vietnamese: a well-formed syllable (initial + rhyme + at most one tone,
 and the tone fits the ending) that the Mac's Vietnamese spelling dictionary knows; English: the Mac's English
 spelling dictionary (else /usr/share/dict/words with plain endings taken off). All on this Mac, nothing sent out.
-Used by omr.py to keep wrongly read lyric lines off the score."""
+Used by omr.py to flag poorly read lyric lines ("lyrics unsure"); the words read are always kept."""
 import re
 import unicodedata
 from pathlib import Path
@@ -100,10 +100,50 @@ def bad_shape(word):
     return any(c.isupper() for c in w[1:]) and not w.isupper()
 
 
+PUNCT = ".,;:!?\"'“”‘’()…"
+
+
+def join_pieces(pieces):
+    """Syllables [(text, hyphen after)] joined back into words by their hyphens: [(word, [piece indices])]."""
+    out, cur, idx = [], '', []
+    for k, (t, hy) in enumerate(pieces):
+        cur += t; idx.append(k)
+        if not hy: out.append((cur, idx)); cur, idx = '', []
+    if cur: out.append((cur, idx))
+    return out
+
+
+def credits(pieces):
+    """[(word, piece indices, real word?)] for a line of syllables [(text, hyphen after)]. A word is sung one
+    syllable per note ("beau-ti-ful"), so the syllables are judged as the word they make: joined by their hyphens;
+    hyphenated syllables that are each real count ("sun-shine"); pieces whose hyphen wasn't read ("beau ti ful")
+    count when they join into a real word; a word cut at the line end ("won-") goes on to the next line."""
+    words = join_pieces(pieces)
+    ok = [word_ok(w.strip(PUNCT)) for w, _ in words]
+    for k, (w, idx) in enumerate(words):
+        if not ok[k] and len(idx) > 1 and all(word_ok(pieces[i][0].strip(PUNCT)) for i in idx):
+            ok[k] = True
+    for k in range(len(words)):
+        if ok[k]: continue
+        for a in range(max(0, k - 3), k + 1):  # a run of pieces around it that makes a real word
+            hit = next((b for b in range(max(k + 1, a + 2), min(len(words), a + 4) + 1)
+                        if not any(w[-1:] in PUNCT for w, _ in words[a:b - 1])
+                        and not any(bad_shape(w) for w, _ in words[a:b])
+                        and word_ok(''.join(w for w, _ in words[a:b]).strip(PUNCT))), None)
+            if hit:
+                for q in range(a, hit): ok[q] = True
+                break
+    if words and not ok[-1] and pieces[words[-1][1][-1]][1] and not bad_shape(words[-1][0]):
+        ok[-1] = True
+    return [(w, idx, o) for (w, idx), o in zip(words, ok)]
+
+
 def line_score(words):
-    """Share of the words of a line (hyphenated syllables joined into their word) that are real words."""
-    if not words: return 0.0
-    return sum(map(word_ok, words)) / len(words)
+    """Share of the words of a line that are real words, the syllables sung on separate notes ("beau-", "ti-",
+    "ful", or "beau", "ti", "ful") judged as the word they make."""
+    pieces = [(w.rstrip('-–'), w.endswith(('-', '–'))) for w in words if w.strip('-–')]
+    cr = credits(pieces)
+    return sum(o for *_, o in cr) / len(cr) if cr else 0.0
 
 
 def split_viet(word):

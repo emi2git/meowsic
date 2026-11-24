@@ -738,16 +738,6 @@ def _dashes(toks, strip, h):
             t[2] = True
 
 
-def _joined(toks):
-    """Syllables joined back into words (by their hyphens), for the language check: [(word, [token indices])]."""
-    out, cur, idx = [], '', []
-    for k, (t, _, hy, *_) in enumerate(toks):
-        cur += t; idx.append(k)
-        if not hy: out.append((cur, idx)); cur, idx = '', []
-    if cur: out.append((cur, idx))
-    return out
-
-
 def vote(base, others):
     """Syllables of one line read several times (sizes, sharpening): each of base's syllables becomes the text most
     readings agree on (a tie: the one that is a real word, else base's own)."""
@@ -768,30 +758,30 @@ def vote(base, others):
 
 
 def judge_line(toks):
-    """(share of real words, tokens to leave out): a word is left out when it isn't a real word and was read with
-    low confidence or is clearly not a word (digits, a capital inside it)."""
+    """(share of real words, doubtful tokens). Only a hint for "lyrics unsure": every syllable read is written.
+    Syllables sung on separate notes are judged as the word they make ("beau-ti-ful", "beau ti ful", see
+    lyriccheck.credits). A doubtful token: in a word that isn't real, read with low confidence or clearly not
+    a word (digits, a capital inside it)."""
     import lyriccheck as L
-    words = _joined(toks)
-    if not words: return 0.0, set()
-    good = [L.word_ok(w.strip('.,;:!?"“”‘’')) for w, _ in words]
-    # syllables split out of one run-together word ("Hômchia") count as half a real word, once for the run
-    seen = {}
-    for k, (w, idx) in enumerate(words):
-        g = toks[idx[0]][8] if len(toks[idx[0]]) > 8 else None
-        if g is None: continue
-        if g in seen: good[k] = None; continue
-        seen[g] = k; good[k] = 0.5 if good[k] else 0
-    words = [w for w, ok in zip(words, good) if ok is not None]
-    good = [ok for ok in good if ok is not None]
-    drop = set()
-    if words and not good[0] and words[0][0][:1].islower() and toks[0][3] >= 0.5 and not L.bad_shape(words[0][0]):
+    cr = L.credits([(t[0], t[2]) for t in toks])
+    if not cr: return 0.0, set()
+    grp = lambda idx: next((toks[i][8] for i in idx if len(toks[i]) > 8 and toks[i][8] is not None), None)
+    # a run-together word split into its real syllables ("Hômchia" → Hôm, chia) counts once, as one real word
+    seen, words, good = {}, [], []
+    for w, idx, ok in cr:
+        g = grp(idx)
+        if g is not None:
+            if g in seen: good[seen[g]] = good[seen[g]] and ok; continue
+            seen[g] = len(words)
+        words.append((w, idx)); good.append(ok)
+    if not good[0] and words[0][0][:1].islower() and toks[0][3] >= 0.5 and not L.bad_shape(words[0][0]):
         good[0] = True  # the end of a word that started on the line before ("un-ex-pect-ed- / ly")
+    doubt = set()
     for (w, idx), ok in zip(words, good):
-        if ok: continue
-        if len(toks[idx[0]]) > 8 and toks[idx[0]][8] is not None: continue
+        if ok or grp(idx) is not None: continue
         if L.bad_shape(w) or min(toks[k][3] for k in idx) < 0.5 or len(idx) == 1:
-            drop.update(idx)
-    return sum(good) / len(words), drop
+            doubt.update(idx)
+    return sum(good) / len(words), doubt
 
 
 def place_syllables(toks, notes, gap, off=0.4):
@@ -818,7 +808,7 @@ def place_syllables(toks, notes, gap, off=0.4):
     return out
 
 
-GOOD_LINE = 0.8  # share of real words a line needs to be written on the score
+GOOD_LINE = 0.8  # under this share of real words a line's bars get "lyrics unsure" (its words are still written)
 DIRECTION = __import__('re').compile(r"^(d\.?\s?c\.?|d\.?\s?s\.?|coda|fine|segno|rit\.?|rall\.?|ritard\.?|cresc\.?|dim\.?|tempo|al|to|a|e|fade|out|repeat|and|play|times?|only|[0-9]+x)$", __import__('re').I)
 
 
@@ -832,8 +822,10 @@ def lyric_words(png, xml_path, first_verse=False, unsure=None):
     """[(measure index, offset, text, syllabic, verse)] read under each top staff with Apple Vision.
     Each line of words under a staff is a verse (lyric number 1, 2, ...); with first_verse only the top line
     under each staff (the words of the main tune, for "Add lyrics from a sheet").
-    Every line is checked (real Vietnamese / English words): a poorly read line is left off and listed in
-    `unsure` ({'verse', 'bars': [measure indices], 'staff'}) so the bars get "lyrics unsure — use Fit lyrics"."""
+    Every syllable read is written on its note: a word sung across notes ("beau-ti-ful") is no misreading.
+    Every line is checked (real Vietnamese / English words, syllables joined into their words): a poorly read
+    line, or doubtful words in it, is listed in `unsure` ({'verse', 'bars': [measure indices], 'staff'}) so
+    the bars get "lyrics unsure — use Fit lyrics" — a hint only, the words stay."""
     import re
     from PIL import Image, ImageOps
     import lyriccheck as L
@@ -903,14 +895,7 @@ def lyric_words(png, xml_path, first_verse=False, unsure=None):
         for verse, (sc, toks, aside, drop, _) in enumerate(best, 1):
             if first_verse and verse > 1: break
             pairs = place_syllables(toks, order, gap)
-            if sc < GOOD_LINE:  # read too poorly: no words rather than wrong words
-                if unsure is not None and len(pairs) >= 3:
-                    unsure.append({'verse': verse, 'staff': k, 'bars': sorted({order[j][0] for _, j in pairs}), 'score': round(sc, 2)})
-                continue
-            got = [[order[j][0], order[j][1], toks[i][0], toks[i][2]] for i, j in pairs if i not in drop]
-            if drop and unsure is not None:
-                bars = sorted({order[j][0] for i, j in pairs if i in drop})
-                if bars: unsure.append({'verse': verse, 'staff': k, 'bars': bars, 'score': round(sc, 2)})
+            got = line_on_notes(toks, pairs, order, sc, drop, verse, k, unsure)
             # words Vision skipped (often short ones at a line end): read under each bare note alone (one verse only)
             if len(best) == 1:
                 have = {(f[0], f[1]) for f in got}
@@ -922,7 +907,7 @@ def lyric_words(png, xml_path, first_verse=False, unsure=None):
                     alone = [w for w in read_words(box, max(3, s)) if any(ch.isalpha() for ch in w[0]) and not w[0].startswith('(')]
                     if len(alone) == 1 and alone[0][5] >= 0.5:
                         t = alone[0][0].strip('_—')
-                        if L.word_ok(t.strip('-–.,;:!?')) and not L.bad_shape(t):
+                        if t.strip('-–.,;:!?') and not L.bad_shape(t):  # a syllable ("ful") is a word's piece
                             got.append([q[0], q[1], t.strip('-–'), t.endswith(('-', '–'))])
             found += [[*f, verse] for f in got]
     out, open_ = [], {}
@@ -931,6 +916,17 @@ def lyric_words(png, xml_path, first_verse=False, unsure=None):
         syl = ('middle' if hy else 'end') if o else ('begin' if hy else 'single')
         out.append((mi, off, t, syl, verse)); open_[verse] = hy
     return out
+
+
+def line_on_notes(toks, pairs, order, sc, doubt, verse, staff, unsure=None):
+    """A line's syllables on their notes: [[measure, offset, text, hyphen after]] — every syllable read, none left
+    out. A line under GOOD_LINE (all its bars) or doubtful syllables (their bars) go into `unsure` as a hint."""
+    got = [[order[j][0], order[j][1], toks[i][0], toks[i][2]] for i, j in pairs]
+    if unsure is not None:
+        if sc < GOOD_LINE: bars = sorted({order[j][0] for _, j in pairs}) if len(pairs) >= 3 else []
+        else: bars = sorted({order[j][0] for i, j in pairs if i in doubt})
+        if bars: unsure.append({'verse': verse, 'staff': staff, 'bars': bars, 'score': round(sc, 2)})
+    return got
 
 
 def note_positions_notes(xml_path):
@@ -1102,8 +1098,6 @@ def take_bar(dst, src):
 def merge_page(h, a, page_no, report, chords=None, words=None, empty=None, png=None, carry=None, lyr_unsure=None):
     """Copy lyrics + chord names from Audiveris (a) onto homr (h); mark bars that disagree. Ties and slurs: homr's,
     Audiveris', and the arcs seen on the page image (png). carry['tie_out']: a note tied over to the next page."""
-    import lyriccheck as L
-    unsure_bars_lyr = {b for u in lyr_unsure or [] for b in u['bars']}
     hp = top_part(h)
     hm = list(hp.getElementsByClass(m21.stream.Measure)) if hp else []
     if isinstance(hp, m21.stream.PartStaff) or not hm:
@@ -1189,8 +1183,7 @@ def merge_page(h, a, page_no, report, chords=None, words=None, empty=None, png=N
                 if off in lyr and n.lyrics and lyr[off][0].syllabic in ('begin', 'middle') and n.lyrics[0].syllabic in ('single', 'end', None) and (n.lyrics[0].text or '')[-1:] not in '.,;:!?' \
                         and (lyr[off][0].text or '').strip('.,;:!?').lower() == (n.lyrics[0].text or '').strip('.,;:!?').lower():
                     n.lyrics[0].syllabic = 'begin' if n.lyrics[0].syllabic in ('single', None) else 'middle'  # "loy al" → "loy-al"
-                if off in lyr and not n.lyrics and i not in (unsure_bars_lyr or ()) \
-                        and all(L.word_ok((l.text or '').strip('.,;:!?')) and not L.bad_shape(l.text or '') for l in lyr[off]):
+                if off in lyr and not n.lyrics:  # every syllable read is kept (a word's piece isn't a word)
                     n.lyrics = [m21.note.Lyric(text=l.text, number=l.number, syllabic=l.syllabic) for l in lyr.pop(off)]
         meas.meowsicFlags = flags
         if flags:
