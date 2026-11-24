@@ -992,7 +992,7 @@ def fix_slurs(part, snap):
         if a[3] == b[3]: _unslur([(a[0], sa), (b[0], sb)])  # start and stop on one chord: no slur left
 
 
-def _slur_op(part, want, on, nxt_note=False):
+def _slur_op(part, want, on, nxt_note=False, start_only=False):
     """Add a slur over the picked notes (first to last; one note + nxt_note: to the next note on its staff), or
     take away every slur over a picked note. Returns the notes it touched."""
     tl = _timeline(part)
@@ -1000,7 +1000,7 @@ def _slur_op(part, want, on, nxt_note=False):
     if not on:
         hit = []
         for num, a, b, sa, sb in _slur_spans(tl):
-            if any(p[1] in (a[1], b[1]) and a[3] <= p[3] <= b[3] for p in picked):
+            if any(p[0] is a[0] for p in picked) if start_only else any(p[1] in (a[1], b[1]) and a[3] <= p[3] <= b[3] for p in picked):
                 _unslur([(a[0], sa), (b[0], sb)]); hit += [a[0], b[0]]
         if not hit: raise HTTPException(400, 'Those notes have no slur')
         return hit
@@ -1058,8 +1058,11 @@ def edit(text: str, op: dict) -> tuple[str, list]:
       {op:'alt', bar, measure}        that bar replaced by another reading (as barcheck.py does)
       {op:'tie', refs}                a tie from each picked note to the next one of its pitch (tied already: off)
       {op:'slur', refs, next?}        a slur from the first picked note to the last (one note + next: to the next)
-      {op:'unslur', refs}             every slur over a picked note goes
+      {op:'unslur', refs, at?}        every slur over a picked note goes (at 'start': only the slurs starting on it —
+                                      a slur clicked on the score)
       {op:'set', refs, midis}         the picked note / chord / rest takes exactly these pitches (noteset.py)
+      {op:'shift', refs, bar, on, by?} the picked notes dragged to another beat (onto rests; swap with a chord of
+                                      the same length) and `by` semitones (dragops.py)
     Every voice of every bar still fills it. Ties and slurs stay (fix_ties / fix_slurs)."""
     out, touched, _ = edit_ex(text, op)
     return out, touched
@@ -1084,6 +1087,9 @@ def edit_ex(text: str, op: dict, info=None):
     if kind in STRUCT_OPS: return struct_op(text, op, info)  # pickup, key / time from here, repeats, endings
     from .chordops import OPS as CHORD_OPS, chord_op
     if kind in CHORD_OPS: return chord_op(text, op, info)  # chord names, Realize to left hand
+    if kind == 'shift':  # a note dragged to another beat (dragops.py)
+        from .dragops import shift_op
+        return shift_op(text, op, info)
     if kind in ('fillbar', 'bartime'): return _bar_op(text, kind, op, info), [], 0
     if kind not in ('move', 'pitch', 'len', 'fill', 'restdel', 'delete', 'add', 'tie', 'slur', 'unslur', 'set'): raise HTTPException(400, f'Unknown edit: {kind}')
     root = ET.fromstring(text.encode('utf-8'))
@@ -1108,7 +1114,7 @@ def edit_ex(text: str, op: dict, info=None):
     if kind == 'restdel' and how not in ('close', 'fill', 'ripple'): raise HTTPException(400, 'how: close, fill or ripple')
     ties_before = _tie_count(part)
     if kind in ('tie', 'slur', 'unslur'):
-        touched = _tie_op(part, want) if kind == 'tie' else _slur_op(part, want, kind == 'slur', bool(op.get('next')))
+        touched = _tie_op(part, want) if kind == 'tie' else _slur_op(part, want, kind == 'slur', bool(op.get('next')), op.get('at') == 'start')
         fix_ties(part)
         ET.indent(root, space='  ')
         ref = {id(e): i for i, e in enumerate(part.iter('note'))}

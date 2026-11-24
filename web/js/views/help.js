@@ -35,6 +35,15 @@ export function helpView(main) {
         'Runs on the Mac: about 3–6 minutes for a 4-minute song.',
         'Progress shows on the Add score page and in <b>Activities</b>; keep using Meowsic meanwhile.',
       ])}
+      ${sec('editnotes', 'Edit notes', [
+        'The score’s ✎ opens <b>Edit notes</b>. Tap / click a note or rest to pick it; drag a box around notes; tap a bar’s empty space for <b>Bar ▾</b>; tap above the top staff for a chord name.',
+        'iPad / iPhone: hold a note, then tap or drag to another for a range; <b>Several</b> adds each tap.',
+        'Mac mouse: ⌘-click adds one, Shift-click picks a range. <b>Drag a note</b> up / down to change its pitch (in the key; ⌥ a semitone) or sideways to another beat (onto rests; onto a note of the same length they swap); Esc cancels.',
+        'Click a <b>tie or slur</b> to pick it, then its ✕ or ⌫ takes it away.',
+        '<b>Type notes</b>: A–G sets the picked note (or rest) to that letter in the key, nearest octave, then moves on — type a run like CDEFG. Shift+letter an octave higher. A length key first (2–6) sets the rest’s length.',
+        'Keys: ← → next note · Shift ← → range · ⌘A all · Esc let go · ↑ ↓ (or # + / -) semitone · ⌘↑ ⌘↓ octave · Shift ↑ ↓ other hand · J respell · 2–6 length (1/16 … whole) · . dotted · L fill next rest · T tie · S slur · N add a note · ⌫ delete (a rest stays; on a rest: remove it) · ⌘C ⌘X ⌘V · R repeat · W whole bar · K chord name · ⌘Z / ⇧⌘Z undo / redo · space play · Page ↑ ↓ page.',
+        'A bar left short shows a badge: tap it to fix.',
+      ])}
       ${store.mode === 'mock' ? '<p class="muted small">Preview: sheets can be tried with <b>Samples</b>.</p>' : ''}
     </div>`;
 }
