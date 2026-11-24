@@ -25,6 +25,7 @@ Updated: 2026-11-24
 | 5 | Manage library on iPad: fix layout, no suggested starts, no hint text, Help button, search-only picker, no "Show hidden", ✓ icon, small Undo, declutter | ✅ Pushed 290e665, deploying |
 | 6 | flows.mjs 1 failing check after the Manage library merge | ✅ Test-setup bug, fixed (0b3f98b) |
 | 7 | Sidebar: Developer → Feedback; sections Manage (Library, Tags, App) + Developer (Stats, Activities, Feedback, Keyboard); no Beta | ✅ Live (e1ca1d3) |
+| 13 | Old UI in Meowsic.app (stale shell): page updates itself (health vs built-in shell+sha on start / back in view → SW update → one reload, loop guard, pill while Edit notes is open); sw.js deletes old caches, page loads network-first (4 s) then saved shell; App + Help show running sha + shell (e2e swupdate, shell v43) | ✅ Pushed, deploying |
 
 ## Next (queued)
 | # | Task |

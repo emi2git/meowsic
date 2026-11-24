@@ -6,6 +6,7 @@ One app for the family's sheet music, chord charts, books and scores, used on Ma
 - **omr/**: sheet photo → score (homr + Audiveris + Apple Vision), with its own `omr/.venv`.
 - **sing/**: "Make it sing (beta)", run in SoulX-Singer's venv at `~/ai/SoulX-Singer/.venv`. Default singer for every song (English, Vietnamese, Mandarin): `zh_target`, a low male voice (the user's pick, "take C"); the auto octave (`octave_for`) fits the melody to its range. `{voice, octave}` on the sing job still picks another.
 - **migrate/**: one-off importers from the three old apps (done; the old data stays read-only).
+- **Making scores for the user** (from a sheet, video or lyrics) → read `docs/score-playbook.md` first.
 - More detail: `docs/architecture.md`. History: `WORKLOG.md`, `docs/history/`. Task list: `TASKS.md`.
 
 ## Where things live
@@ -110,3 +111,4 @@ Views (`web/js/views/`):
 - **Worktree agents can't write the live folder** (`~/git/apps/meowsic`) and must not restart the live server. Ask the deploy agent.
 - The server's tests make their own temp data (`server/tests/conftest.py`). An e2e suite that needs particular songs must make them itself, or say it needs a library copy.
 - Health: `GET /api/health` → `{ok, data, sha, serverSha, shell}`. `sha` is the checkout now and `serverSha` the code the process started with.
+- **Self-update** (`web/js/update.js`): the Mac stamps `index.html` with `<meta name="meowsic-build" content="<shell> <sha>">` (app.py). On start and back in view the page compares it with health; on a difference it updates the SW and reloads once (sessionStorage `meowsic-reloaded-for` stops loops; Edit notes open → "New version — Reload" pill, reload after close). `sw.js` activate deletes every cache but SHELL / DATA; navigations are network-first (4 s), then the saved shell. App and Help show the running sha + shell. `MEOWSIC_WEB` serves another web/ folder (e2e `swupdate`).

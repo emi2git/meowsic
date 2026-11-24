@@ -3,6 +3,7 @@ import { store } from '../store.js';
 import { $, esc, icon, badge, ago, mins, toast, confirmSheet, CAT } from '../ui.js';
 import { applyTheme } from '../app.js';
 import * as saved from '../saved.js';
+import { versionLine } from '../update.js';
 
 const DAY = 86400000, WEEK = 7 * DAY;
 
@@ -147,7 +148,7 @@ export function settingsView(main) {
         <p class="muted small">The Mac also keeps a daily copy of the database (last 30 days).</p>
         <div class="row-ctl"><button id="st-export">${icon('download')}Export backup</button>
         <label class="btn">${icon('upload')}Import backup<input type="file" id="st-import" accept="application/json,.json" hidden></label></div></section>
-<p class="center muted">Meowsic 2.0 · UI preview</p>
+<p class="center muted small" id="st-version">${versionLine(store.mode === 'mock')}</p>
     </div>`;
   storageCard(main);
   $('#st-theme', main).onclick = (e) => {

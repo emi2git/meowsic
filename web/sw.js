@@ -3,12 +3,17 @@
 // Saved copies are kept tidy: one copy per URL path (the newest ?v=), an index in IndexedDB with the
 // size and last use of each, a size cap (least recently used go first), and a clean-up the app asks
 // for after each sync with the Mac (items the Mac no longer has). The app shell is never touched.
-const SHELL = 'meowsic-shell-v43', DATA = 'meowsic-data-v1';
+const SHELL = 'meowsic-shell-v44', DATA = 'meowsic-data-v1';
 const SHELL_FILES = ['./', 'index.html', 'css/app.css', 'css/photoimport.css', 'css/completeinfo.css', 'css/manage.css', 'css/beta.css', 'css/midiedit.css', 'css/lyricmode.css', 'manifest.webmanifest', 'icon.svg', 'icon-180.png', 'icon-512.png', 'vendor/osmd.min.js'];
 const MB = 1024 * 1024, DEFAULT_CAP = 1024 * MB;
 
-self.addEventListener('install', (e) => e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES)).then(() => self.skipWaiting())));
-self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+// install: the shell straight from the Mac (never the browser's HTTP cache), then take over at once
+self.addEventListener('install', (e) => e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting())));
+// activate: every other cache goes (older shells, anything unknown), so an old shell can never be served again
+self.addEventListener('activate', (e) => e.waitUntil(caches.keys()
+  .then((keys) => Promise.all(keys.filter((k) => k !== SHELL && k !== DATA).map((k) => caches.delete(k))))
+  .then(() => self.clients.claim())));
+const NAV_TIMEOUT = 4000; // a page load waits this long for the Mac before the saved shell is used
 
 // no network and nothing saved: say so (the app tells this apart from a real server error)
 const away = () => new Response(JSON.stringify({ offline: true }), { status: 503, headers: { 'Content-Type': 'application/json', 'X-Meowsic-Offline': '1' } });
@@ -121,6 +126,7 @@ async function clearAll() {
 // the app asks: { op: 'stats' | 'clean' | 'clear' | 'cap', ... } — the answer goes back on the port
 self.addEventListener('message', (e) => {
   const m = e.data || {}, port = e.ports[0];
+  if (m.op === 'skipWaiting') return void self.skipWaiting(); // js/update.js: a new worker waiting → run it now
   if (!m.op || !port) return;
   const run = { stats: () => stats(m.urls), clean: () => clean(m.items || []), clear: clearAll, cap: async () => { await tx('meta', 'readwrite', (s) => s.put(m.bytes, 'cap')); return { evicted: await enforceCap(m.bytes) }; } }[m.op];
   if (!run) return port.postMessage({ error: 'unknown op' });
@@ -147,7 +153,32 @@ self.addEventListener('fetch', (e) => {
       }));
     return;
   }
-  // app files: network first so updates arrive at once, cache as fallback
+  // the page itself: network first, so a running Mac always wins; the saved shell (this version's only) after
+  // NAV_TIMEOUT or when the Mac is away. Saved under './' (one copy, whatever ?query / path it was opened with).
+  if (e.request.mode === 'navigate') {
+    const root = new URL('./', self.registration.scope).href;
+    const net = fetch(e.request); // the Mac answers app files with no-store
+    e.respondWith((async () => {
+      const shell = await caches.open(SHELL);
+      const saved = () => shell.match(root).then((r) => r || shell.match('index.html'));
+      let timer;
+      const late = new Promise((res) => { timer = setTimeout(() => res(null), NAV_TIMEOUT); });
+      try {
+        const r = await Promise.race([net, late]);
+        if (r && r.ok) { clearTimeout(timer); e.waitUntil(shell.put(root, r.clone()).catch(() => {})); return r; }
+        if (r) { clearTimeout(timer); return (await saved()) || r; } // the Mac answered with an error: the saved app, else its answer
+        // slow Mac: the saved shell now, if there is one (the page then checks /api/health and updates itself)
+        const s = await saved();
+        if (s) { e.waitUntil(net.then((x) => x.ok && shell.put(root, x)).catch(() => {})); return s; }
+        return await net;
+      } catch {
+        clearTimeout(timer);
+        return (await saved()) || away();
+      }
+    })());
+    return;
+  }
+  // app files: network first so updates arrive at once; only this shell's cache as fallback (never an older one)
   e.respondWith(fetch(e.request).then((r) => { if (r.ok) { const copy = r.clone(); caches.open(SHELL).then((c) => c.put(e.request, copy)); } return r; })
-    .catch(() => caches.match(e.request).then((r) => r || caches.match('index.html'))));
+    .catch(() => caches.open(SHELL).then((c) => c.match(e.request).then((r) => r || (e.request.destination === 'document' ? c.match('index.html') : undefined))).then((r) => r || away())));
 });

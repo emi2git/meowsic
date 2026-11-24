@@ -4,6 +4,7 @@ import threading
 from contextlib import asynccontextmanager
 
 from fastapi import Body, Depends, FastAPI
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import ai, backup, editsafe, barcheck, booksplit, chords, cleanup, dailycleanup, items, jobs, lyricsedit, organize, pages, photoimport, runners, scorechords, simplepiano, staffmove, titles, undo, versions, voice
@@ -74,5 +75,14 @@ def create_app(data=None, background=True) -> FastAPI:
         return {'ok': True}
 
     if WEB_DIR.is_dir():
+        # the page carries the version it was built with (<meta name="meowsic-build">): web/js/update.js compares it
+        # with /api/health and updates itself when the Mac has newer code, so a cached old shell never lingers
+        @app.get('/', include_in_schema=False)
+        @app.get('/index.html', include_in_schema=False)
+        def index_page():
+            v = version()
+            html = (WEB_DIR / 'index.html').read_text()
+            return HTMLResponse(html.replace('<meta name="meowsic-build" content="">', f'<meta name="meowsic-build" content="{v["shell"]} {v["sha"]}">', 1))
+
         app.mount('/', StaticFiles(directory=WEB_DIR, html=True), name='web')
     return app

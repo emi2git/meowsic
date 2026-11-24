@@ -15,7 +15,8 @@ from pathlib import Path
 
 SERVER_DIR = Path(__file__).resolve().parent.parent
 SCHEMA = SERVER_DIR / 'schema.sql'
-WEB_DIR = SERVER_DIR.parent / 'web'
+# MEOWSIC_WEB: another web/ folder (tests/e2e/swupdate.mjs serves a copy whose shell it bumps)
+WEB_DIR = Path(os.environ['MEOWSIC_WEB']).resolve() if os.environ.get('MEOWSIC_WEB') else SERVER_DIR.parent / 'web'
 
 
 @dataclass

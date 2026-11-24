@@ -1,6 +1,7 @@
 // Help (App section; iPhone: More): where music can come from and how each Add path works. Add music itself stays short.
 import { store } from '../store.js';
 import { noteIcon, EVEN_IC } from '../notevalue.js';
+import { versionLine } from '../update.js';
 
 // Edit notes' length keys: [key, quarters, name]
 const LEN_KEYS = [['1', 0.125, '32nd note'], ['2', 0.25, '16th note'], ['3', 0.5, 'eighth note'], ['4', 1, 'quarter note'], ['5', 2, 'half note'], ['6', 4, 'whole note']];
@@ -52,5 +53,6 @@ export function helpView(main) {
         'A bar left short shows a badge: tap it to fix.',
       ])}
       ${store.mode === 'mock' ? '<p class="muted small">Preview: sheets can be tried with <b>Samples</b>.</p>' : ''}
+      <p class="center muted small" id="help-version">${versionLine(store.mode === 'mock')}</p>
     </div>`;
 }

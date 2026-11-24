@@ -1362,3 +1362,7 @@ body:has(.viewer.noting) .toast { bottom: auto; top: calc(64px + env(safe-area-i
 .save-note b { color: var(--ok); }
 .save-note.err { border-color: var(--danger); }
 .save-note .sn-x { flex: none; min-width: 36px; min-height: 36px; }
+
+/* ---------- "New version — Reload" (js/update.js): the Mac has newer code but Edit notes is open ---------- */
+.update-pill { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 125; padding: 8px 14px; border-radius: 99px; border: 0; background: var(--acc); color: var(--acc-ink); font-weight: 700; font-size: 13px; box-shadow: 0 6px 20px rgba(0, 0, 0, .2); cursor: pointer; }
+[data-device="phone"] .update-pill { bottom: calc(72px + env(safe-area-inset-bottom)); }
