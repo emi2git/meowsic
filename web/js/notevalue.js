@@ -59,3 +59,6 @@ export function noteIcon(q, { rest = false, cls = '' } = {}) {
 }
 // the dot on its own (the Dotted button)
 export const DOT_IC = '<svg class="nv" viewBox="0 0 20 24" aria-hidden="true" focusable="false"><circle cx="10" cy="16" r="2.6" fill="currentColor"/></svg>';
+// Even out (Edit notes): two equal eighth notes with "=" between them, in the glyphs' own head / stem / flag
+const EIGHTH = (x) => `<g transform="translate(${x} 0)">${noteBody(0.5)}</g>`;
+export const EVEN_IC = `<svg class="nv nv-even" viewBox="0 0 40 24" aria-hidden="true" focusable="false">${EIGHTH(0)}<path d="M18.2 12.6h4.6M18.2 16.4h4.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>${EIGHTH(23)}</svg>`;

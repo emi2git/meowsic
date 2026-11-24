@@ -1,6 +1,6 @@
 // Help (App section; iPhone: More): where music can come from and how each Add path works. Add music itself stays short.
 import { store } from '../store.js';
-import { noteIcon } from '../notevalue.js';
+import { noteIcon, EVEN_IC } from '../notevalue.js';
 
 // Edit notes' length keys: [key, quarters, name]
 const LEN_KEYS = [['1', 0.125, '32nd note'], ['2', 0.25, '16th note'], ['3', 0.5, 'eighth note'], ['4', 1, 'quarter note'], ['5', 2, 'half note'], ['6', 4, 'whole note']];
@@ -47,7 +47,8 @@ export function helpView(main) {
         'Click a <b>tie or slur</b> to pick it, then its ✕ or ⌫ takes it away.',
         '<b>Type notes</b>: A–G sets the picked note (or rest) to that letter in the key, nearest octave, then moves on — type a run like CDEFG. Shift+letter an octave higher. A length key first (1–6) sets the rest’s length.',
         `<b>Lengths</b> (keys 1–6, or the buttons): ${LEN_KEYS.map(([k, q, w]) => `<span class="help-len" title="${w}"><kbd>${k}</kbd> ${noteIcon(q)}<span class="sr">${w}</span></span>`).join(' ')} · <kbd>.</kbd> dotted. A picked rest shows rests: ${LEN_KEYS.map(([, q, w]) => `${noteIcon(q, { rest: true })}<span class="sr">${w.replace('note', 'rest')}</span>`).join(' ')}. MIDI keyboard: the low length keys C D E F G B = ${[4, 2, 1, 0.5, 0.25, 0.125].map((q) => noteIcon(q)).join(' ')}.`,
-        'Keys: ← → next note · Shift ← → range · ⌘A all · Esc let go · ↑ ↓ (or # + / -) semitone · ⌘↑ ⌘↓ octave · Shift ↑ ↓ other hand · J respell · 1–6 length · . dotted · L fill next rest · T tie · S slur · N add a note · ⌫ delete (a rest stays; on a rest: remove it) · ⌘C ⌘X ⌘V · R repeat · W whole bar · K chord name · ⌘Z / ⇧⌘Z undo / redo · space play · Page ↑ ↓ page.',
+        `<b>Even out</b> (<kbd>Q</kbd>, or ${EVEN_IC}<span class="sr">Even out</span>): pick 2 or more notes one after the other in one hand and bar — they get one length each, the same total: ${noteIcon(0.75)}${noteIcon(0.25)} → ${noteIcon(0.5)}${noteIcon(0.5)}, ${noteIcon(1.5)}${noteIcon(0.5)} → ${noteIcon(1)}${noteIcon(1)}. Pitches, ties, slurs and lyrics stay; a split that needs a triplet is refused.`,
+        'Keys: ← → next note · Shift ← → range · ⌘A all · Esc let go · ↑ ↓ (or # + / -) semitone · ⌘↑ ⌘↓ octave · Shift ↑ ↓ other hand · J respell · 1–6 length · . dotted · Q even out · L fill next rest · T tie · S slur · N add a note · ⌫ delete (a rest stays; on a rest: remove it) · ⌘C ⌘X ⌘V · R repeat · W whole bar · K chord name · ⌘Z / ⇧⌘Z undo / redo · space play · Page ↑ ↓ page.',
         'A bar left short shows a badge: tap it to fix.',
       ])}
       ${store.mode === 'mock' ? '<p class="muted small">Preview: sheets can be tried with <b>Samples</b>.</p>' : ''}

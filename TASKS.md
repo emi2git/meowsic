@@ -63,3 +63,4 @@ Updated: 2026-11-24
 - Left menu regrouped; Help moved to Settings
 - Score ⋯: Edit notes removed (it is the toolbar ✎, on screen at every width); menus/editnotes tests updated
 - Score tempo control (− BPM +, steps of 5, hold repeats, tap to type / Tap / ↺ score tempo; 30–240; per score on the entry's rate; live change without restart; Edit notes and Voice follow it, the voice time-stretched with pitch kept); tests/e2e/tempo.mjs
+- Edit notes: Even out (= button / key Q): 2+ notes or rests one after the other in one voice and bar get one length each, same total (dotted 8th + 16th or Scotch snap → two 8ths; quarter + 8th → two dotted 8ths); pitches, ties, slurs, lyrics kept; triplet-only splits refused (pytest test_evenout, e2e evenout)

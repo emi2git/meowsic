@@ -1069,6 +1069,8 @@ def edit(text: str, op: dict) -> tuple[str, list]:
       {op:'set', refs, midis}         the picked note / chord / rest takes exactly these pitches (noteset.py)
       {op:'shift', refs, bar, on, by?} the picked notes dragged to another beat (onto rests; swap with a chord of
                                       the same length) and `by` semitones (dragops.py)
+      {op:'even', refs}               2+ notes / rests one after the other in one voice: one length each, the same
+                                      total (dotted 8th + 16th → two 8ths); no plain / dotted value: refused (evenops.py)
     Every voice of every bar still fills it. Ties and slurs stay (fix_ties / fix_slurs)."""
     out, touched, _ = edit_ex(text, op)
     return out, touched
@@ -1096,6 +1098,9 @@ def edit_ex(text: str, op: dict, info=None):
     if kind == 'shift':  # a note dragged to another beat (dragops.py)
         from .dragops import shift_op
         return shift_op(text, op, info)
+    if kind == 'even':  # picked notes made one length each, the same total (evenops.py)
+        from .evenops import even_op
+        return even_op(text, op, info)
     if kind in ('fillbar', 'bartime'): return _bar_op(text, kind, op, info), [], 0
     if kind not in ('move', 'pitch', 'len', 'fill', 'restdel', 'delete', 'add', 'tie', 'slur', 'unslur', 'set'): raise HTTPException(400, f'Unknown edit: {kind}')
     root = ET.fromstring(text.encode('utf-8'))
@@ -1490,6 +1495,7 @@ def _what(ops):
              'insbar': lambda n: f'{n} empty bar{"s" if n != 1 else ""} added',
              'addstaff': lambda n: f'{n} staff added' if n == 1 else f'{n} staves added', 'delstaff': lambda n: f'{n} staff removed' if n == 1 else f'{n} staves removed',
              'set': lambda n: f'{s(n)} played in',
+             'even': lambda n: f'{s(n)} evened out',
              'clear': lambda n: f'{n} stretch{"es" if n != 1 else ""} cut', 'paste': lambda n: f'{n} paste{"s" if n != 1 else ""}',
              'respell': lambda n: f'{s(n)} spelled another way', 'accidental': lambda n: f'{s(n)} given an accidental',
              'courtesy': lambda n: f'{n} courtesy accidental{"s" if n != 1 else ""} changed',
