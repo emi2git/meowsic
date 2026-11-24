@@ -36,6 +36,7 @@ export function helpView(main) {
         '<b>YouTube</b> — paste a YouTube (or Facebook) link.',
         '<b>Audio file</b> — MP3, M4A, WAV or a video.',
         'It makes the <b>Original</b> score; change it with the ✎ <b>Edit notes</b> button above the score.',
+        '<b>Tempo</b> (− 96 +, beats per minute): steps of 5, hold to keep going; tap the number to type it, tap the beat, or ↺ back to the score’s own tempo. Kept for each score; Edit notes and the voice play at it too.',
         'Runs on the Mac: about 3–6 minutes for a 4-minute song.',
         'Progress shows on the Add score page and in <b>Activities</b>; keep using Meowsic meanwhile.',
       ])}

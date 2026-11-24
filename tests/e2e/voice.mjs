@@ -2,7 +2,7 @@
 // MEOWSIC_SING_PYTHON = a stand-in that "sings" a 12 s test tone, so no model is needed):
 // ⋯ → Request singing voice → job → Voice button appears (on); Play plays the audio with the playhead in sync; tap on
 // the music and dragging the line move the audio; Voice off/on swaps piano ↔ voice at the same spot; Stop goes back to the start; a tempo change
-// goes back to the piano; it ends; the choice is remembered; iPhone: a tap on Play starts the audio.
+// keeps the voice (time-stretched to the new tempo); it ends; the choice is remembered; iPhone: a tap on Play starts the audio.
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5244/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', args: ['--autoplay-policy=no-user-gesture-required'] });
@@ -56,7 +56,7 @@ let a = await audio(), q = await pos();
 check('Play plays the sung audio', a && !a.paused && /\/api\/items\/.+\/vocal/.test(a.src) && a.t > 1, JSON.stringify(a));
 check('button says Pause', (await page.$eval('#sc-play', (e) => e.getAttribute('aria-label'))) === 'Pause');
 check('playhead follows the audio (q = t × bpm / 60)', Math.abs(q - a.t * qps) < 0.35, `${q} vs ${a.t * qps}`);
-check('speed shows 100% with the voice (no bpm)', (await page.$eval('#sc-rate', (e) => e.textContent)) === '100%');
+check('tempo shows the score\'s 72 with the voice', (await page.$eval('#sc-rate', (e) => e.textContent)) === '72');
 
 await page.evaluate(() => window.__score.seek(6)); await sleep(400);
 a = await audio();
@@ -93,13 +93,13 @@ check('Stop: voice stops, back to the beginning', a.paused && a.t < 0.05 && (awa
 await page.click('#sc-play'); await sleep(900);
 a = await audio();
 check('Play after Stop: the voice from the start', !a.paused && a.t > 0.3 && a.t < 2, JSON.stringify(a));
-// a tempo change goes back to the piano
+// a tempo change: the voice follows (time-stretched, pitch kept), Voice stays on
 await page.click('#sc-fast'); await sleep(300);
 a = await audio();
-check('tempo + turns Voice off (piano at the new tempo)', a.paused && !(await page.$eval('#sc-voice', (e) => e.classList.contains('on'))) && (await page.$eval('#sc-rate', (e) => e.textContent)) === '105%', await page.$eval('#sc-rate', (e) => e.textContent));
-check('…and says why', /back to the piano/.test(await page.$eval('#toast', (e) => e.textContent)));
+check('tempo + keeps Voice on, the audio sped up (75 / 72)', !a.paused && (await page.$eval('#sc-voice', (e) => e.classList.contains('on'))) && (await page.$eval('#sc-rate', (e) => e.textContent)) === '75' && Math.abs((await page.evaluate(() => window.__audios.at(-1).playbackRate)) - 75 / 72) < 1e-6, await page.$eval('#sc-rate', (e) => e.textContent));
 await page.click('#sc-play'); await sleep(200);
 await page.click('#sc-slow'); await sleep(100);
+await page.click('#sc-voice'); await sleep(200); // off, as the old steps left it
 
 // remembered per score: reload → off; turn on, play to the end
 await page.reload({ waitUntil: 'networkidle0' }); await sleep(1500);
