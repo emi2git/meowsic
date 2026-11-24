@@ -127,3 +127,58 @@ def test_sing_job_takes_a_voice(client, data, tmp_path, monkeypatch):
     assert j['status'] == 'done', j['log']
     args = json.loads(next(data.rglob('args.json')).read_text())
     assert args[args.index('--voice') + 1] == 'zh_target' and args[args.index('--octave') + 1] == '-1'
+
+
+# ---------- Vietnamese: every Unicode letter is kept (NFC), each syllable mapped to ARPAbet for the voice ----------
+VI = _score(_n('C', 4, 2, 'Trăng') + _n('D', 4, 2, 'người,') + _n('E', 4, 2, 'đi') + _n('F', 4, 2, 'đâu?'),
+            _n('G', 4, 2, 'ánh') + _n('A', 4, 2, 'em') + _n('G', 4, 2, 'thương', 'begin') + _n('E', 4, 2, 'nhớ', 'end'))
+
+
+def test_vietnamese_words_keep_every_letter():
+    assert singscore.clean_word('trăng,') == 'trăng' and singscore.clean_word('người!') == 'người'
+    assert singscore.clean_word('đi') == 'đi' and singscore.clean_word('“Ước') == 'Ước'
+    assert singscore.clean_word('ăn') == 'ăn'  # decomposed -> NFC
+    assert singscore.clean_word('虎，') == '虎' and singscore.clean_word("you’re") == "you're"
+    s = singscore.read(VI)
+    texts = [n['text'] for n in s['notes'] if n['midi']]
+    assert texts[4] == 'ánh' and all(n['sung'] for n in s['notes'] if n['midi'])
+    ws = [w['word'] for w in singscore.words(s['notes']) if w['word']]
+    assert ws == ['Trăng', 'người', 'đi', 'đâu', 'ánh', 'em', 'thươngnhớ']
+
+
+def test_vietnamese_language():
+    assert singscore.language(singscore.read(VI)['notes']) == 'Vietnamese'
+    assert singscore.language(singscore.read(XML)['notes']) == 'English'
+    assert singscore.language(singscore.read(TIGERS)['notes']) == 'Chinese'
+    assert singscore.is_vietnamese('đi') and singscore.is_vietnamese('người') and singscore.is_vietnamese('trăng')
+    assert not singscore.is_vietnamese('café') and not singscore.is_vietnamese('em')
+
+
+@pytest.mark.parametrize('syl,phones', [
+    ('trăng', ['CH', 'AA1', 'NG']), ('người', ['NG', 'UH1', 'AH0', 'Y']), ('đi', ['D', 'IY1']),
+    ('Ánh', ['AY1', 'NG']), ('gì', ['Z', 'IY1']), ('gia', ['Z', 'AA1']), ('quê', ['K', 'W', 'EY1']),
+    ('hương', ['HH', 'UH1', 'AH0', 'NG']), ('tôi', ['T', 'OY1']), ('chuyện', ['CH', 'W', 'IY1', 'AH0', 'N']),
+    ('nhớ', ['N', 'Y', 'AH1']), ('khóc', ['HH', 'AO1', 'K']), ('xuân', ['S', 'W', 'AH1', 'N'])])
+def test_vietnamese_phonemes(syl, phones):
+    assert singscore.vietnamese(syl) == phones
+
+
+def test_vietnamese_every_syllable_has_one_vowel_and_known_phones():
+    import json
+    known = set(json.loads((Path.home() / 'ai/SoulX-Singer/soulxsinger/utils/phoneme/phone_set.json').read_text())) \
+        if (Path.home() / 'ai/SoulX-Singer/soulxsinger/utils/phoneme/phone_set.json').exists() else None
+    for syl in ('trăng', 'người', 'đi', 'đâu', 'ánh', 'em', 'thương', 'nhớ', 'yêu', 'ngoài', 'khuya', 'giữa', 'ước',
+                'rượu', 'quýt', 'oẳn', 'ngủ', 'phố', 'xưa', 'mộng', 'ghế', 'nghĩ', 'Ầu', 'z'):
+        ph = singscore.vietnamese(syl)
+        assert sum(p.endswith('1') for p in ph) == (0 if syl == 'z' else 1), syl
+        if known: assert all('en_' + p in known for p in ph), (syl, ph)
+
+
+def test_vietnamese_meta_sings_every_syllable():
+    s = singscore.read(VI)
+    segs = singscore.segments(singscore.words(s['notes']), 60, min_s=100, max_s=100)
+    m = singscore.soulx_meta(segs[0], 60, None, lang='Vietnamese')
+    ph, typ = m['phoneme'].split(), m['note_type'].split()
+    assert m['language'] == 'English' and len(ph) == 8 and '<SP>' not in ph
+    assert ph[0] == 'en_CH-AA1-NG' and ph[2] == 'en_D-IY1' and ph[6] == 'en_T-UH1-AH0-NG' and ph[7] == 'en_N-Y-AH1'
+    assert typ == ['2'] * 8  # each syllable starts its own note (thương-nhớ: a new syllable on note 2)
