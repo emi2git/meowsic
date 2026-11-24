@@ -1,10 +1,12 @@
 // Manage library (#/manage…) against a test server only (BASE: a temp data dir; refuses ~/Documents/Meowsic):
 //   · old links redirect: #/cleanup, #/organize, #/bin, #/trash, #/manage?id=X(&crop=P)(&back=item), #/manage/<old tab>
-//   · the hub: 4 cards with live counts (suspects, Complete info, Trash), "Last change · Undo" rolls back the newest change
+//   · the hub: 4 cards (icon, title, live count; no captions), "Last change · Undo" rolls back the newest change; the
+//     Check suspect songs card has a round Undo for the last "complete song" mark (no list of them anywhere)
 //   · Check suspect songs (iPad touch, real taps): the reason in plain words, the flagged page marked, the fix that fits
-//     ("Split at page 3", "Merge with “…”"), It's fine (+ Undo), Skip, Up next, Fix pages… (the new song pre-marked),
-//     books never listed, check again (a job with progress)
-//   · Fix pages picker: Recently opened / All sheets, search, no books
+//     ("Split at page 3" asks first, then splits; "Merge with “…”"), ✓ This is a complete song (round icon; toast
+//     "Marked as a complete song · Undo"), Skip, Fix pages… (no song break placed), books never listed, check again
+//     (the header's round button: a job with progress); no Up next, no Marked as fine / Show hidden, no sub-line
+//   · Fix pages picker: only "Find a sheet": nothing listed until you type, no Recently opened / All sheets, no books
 //   · Complete info: the page strip shows another page whole
 //   · Trash: Restore, Delete (asks first), Empty Trash (asks first)
 //   · every screen on iPad (1032×1376 touch), iPhone (390×844 touch) and Mac (1440×900): no sideways scroll; screenshots in SHOTS
@@ -98,22 +100,31 @@ await tapOn(ipad, '#mg-c-review'); await sleep(1500);
 check('tap the card → Check suspect songs', (await hash(ipad)) === '#/manage/review');
 
 // ---- Check suspect songs ----
-const rv = () => ipad.evaluate(() => ({ h: document.querySelector('#rv-h')?.textContent || '', sub: document.querySelector('#mg-sub')?.textContent || '', primary: document.querySelector('#rv-primary')?.textContent || '',
-  flags: [...document.querySelectorAll('.rv-pg.flag')].map((e) => [e.dataset.p, e.querySelector('.rv-lbl')?.textContent]), next: [...document.querySelectorAll('.rv-next .mg-row b')].map((e) => e.textContent) }));
+const rv = () => ipad.evaluate(() => ({ h: document.querySelector('#rv-h')?.textContent || '', sub: !!document.querySelector('#mg-sub'), primary: document.querySelector('#rv-primary')?.textContent || '',
+  flags: [...document.querySelectorAll('.rv-pg.flag')].map((e) => [e.dataset.p, e.querySelector('.rv-lbl')?.textContent]), clutter: /up next|marked as fine|show hidden|recommended/i.test(document.querySelector('#main').innerText) || !!document.querySelector('.rv-next, .rv-hidden, .rv-more') }));
 let r = await rv();
-check('review: the reason in plain words', r.h === '“River Lullaby” might be two songs' && /^1 of 2 · checked/.test(r.sub), JSON.stringify(r));
+check('review: the reason in plain words, no sub-line, no Up next / Marked as fine / Show hidden', r.h === '“River Lullaby” might be two songs' && !r.sub && !r.clutter, JSON.stringify(r));
 check('review: page 3 marked "New song?"', JSON.stringify(r.flags) === '[["3","New song?"]]', JSON.stringify(r.flags));
-check('review: the fix that fits = Split at page 3; Up next = the Prelude', r.primary === 'Split at page 3' && JSON.stringify(r.next) === '["Little Prelude"]', JSON.stringify(r));
+check('review: the fix that fits = Split at page 3', r.primary === 'Split at page 3', JSON.stringify(r));
+check('review: complete song = a round icon button, no text', await ipad.$eval('#rv-fine', (e) => e.classList.contains('mg-ib') && !e.textContent.trim() && e.getAttribute('aria-label') === 'This is a complete song' && e.title === 'This is a complete song'));
 await shot(ipad, 'ipad', 'review');
 await tapOn(ipad, '#rv-skip');
 r = await rv();
 check('Skip → the next one: might be half a song, Merge with its part 2', r.h === '“Little Prelude” might be half a song' && r.primary === 'Merge with “Little Prelude (part 2)”', JSON.stringify(r));
 await tapOn(ipad, '#rv-fine'); await sleep(800);
-check('It’s fine: saved on the Mac', (await api('/organize')).items.find((x) => x.id === part1.id)?.reviewed === true);
+check('complete song: saved on the Mac, toast "Marked as a complete song · Undo"', (await api('/organize')).items.find((x) => x.id === part1.id)?.reviewed === true && /Marked as a complete song\s*Undo/.test(await ipad.$eval('#toast', (e) => e.innerText).catch(() => '')));
 r = await rv();
 check('…on to the next (River Lullaby again)', r.h.includes('River Lullaby'), JSON.stringify(r));
 await tapOn(ipad, '#toast button'); await sleep(1500);
-check('Undo (toast): it can come up again', !(await api('/organize')).items.find((x) => x.id === part1.id)?.reviewed && (await rv()).sub.startsWith('1 of 2'));
+check('Undo (toast): it can come up again', !(await api('/organize')).items.find((x) => x.id === part1.id)?.reviewed);
+// the hub's Undo for the last complete-song mark (next to Check suspect songs; no list)
+await ipad.goto(BASE + '#/manage/review', { waitUntil: 'networkidle2' }); await sleep(1200);
+await tapOn(ipad, '#rv-skip'); await tapOn(ipad, '#rv-fine'); await sleep(800);
+await ipad.goto(BASE + '#/manage', { waitUntil: 'networkidle2' }); await sleep(1200);
+check('hub: a round Undo on Check suspect songs for the complete-song mark', !!(await ipad.$('#mg-c-review #mg-unfine.mg-ib')));
+await tapOn(ipad, '#mg-unfine'); await sleep(1500);
+check('hub: that Undo takes the mark back, stays on the hub', !(await api('/organize')).items.find((x) => x.id === part1.id)?.reviewed && (await hash(ipad)) === '#/manage' && !(await ipad.$('#mg-unfine')), await hash(ipad));
+await ipad.goto(BASE + '#/manage/review', { waitUntil: 'networkidle2' }); await sleep(1200);
 // the split, from the review
 await tapOn(ipad, '#rv-primary'); await sleep(400);
 check('Split at page 3 asks first', /Split “River Lullaby” into 2 sheets/.test(await ipad.$eval('.modal h2', (e) => e.textContent).catch(() => '')));
@@ -123,21 +134,20 @@ await tapOn(ipad, '#toast button'); await sleep(2000);
 check('Undo puts River Lullaby back together', (await api('/items/' + two.id)).pages === 4);
 // merge, from the review
 await ipad.goto(BASE + '#/manage', { waitUntil: 'networkidle2' }); await ipad.goto(BASE + '#/manage/review', { waitUntil: 'networkidle2' }); await sleep(1200);
-await tapOn(ipad, '[data-act="goto"]'); await sleep(300);
+await tapOn(ipad, '#rv-skip'); await sleep(300);
 await tapOn(ipad, '#rv-primary'); await sleep(400);
 await tapOn(ipad, '.modal [data-ok]'); await sleep(2500);
 check('Merge with “Little Prelude (part 2)”: 4 pages, part 2 in the Trash', (await api('/items/' + part1.id)).pages === 4 && (await api('/items/' + part2.id)).deleted, JSON.stringify([await rv(), (await api('/items/' + part1.id)).pages, await ipad.$eval('#toast', (e) => e.textContent).catch(() => '')]));
 await tapOn(ipad, '#toast button'); await sleep(2000);
 check('Undo the merge', (await api('/items/' + part1.id)).pages === 2 && !(await api('/items/' + part2.id)).deleted);
-// Fix pages… opens the editor with the suggested start marked
+// Fix pages… opens the editor with no song break (no suggested start)
 await ipad.goto(BASE + '#/manage/review', { waitUntil: 'networkidle2' }); await sleep(1200);
 await tapOn(ipad, '#rv-fix'); await sleep(2000);
-check('Fix pages… → the editor, page 3 marked as a new song', (await hash(ipad)) === `#/manage/pages/${two.id}` && !!(await ipad.$('#pe-grid .pe-break[data-start="3"]')) && '3' in (await api(`/sheets/${two.id}/split`)).starts, JSON.stringify([await hash(ipad), (await api(`/sheets/${two.id}/split`)).starts, await ipad.$eval('#pe-grid', (e) => e.textContent.slice(0, 200)).catch(() => '')]));
-await tapOn(ipad, '.pe-break [data-act="unmark"]'); await sleep(800);
+check('Fix pages… → the editor, no song break placed', (await hash(ipad)) === `#/manage/pages/${two.id}` && !(await ipad.$('#pe-grid .pe-break')) && !Object.keys((await api(`/sheets/${two.id}/split`)).starts).length, JSON.stringify([await hash(ipad), (await api(`/sheets/${two.id}/split`)).starts, await ipad.$eval('#pe-grid', (e) => e.textContent.slice(0, 200)).catch(() => '')]));
 // check again: a job with progress
 await ipad.goto(BASE + '#/manage/review', { waitUntil: 'networkidle2' }); await sleep(1000);
 const at0 = (await api('/organize')).scan.at;
-await tapOn(ipad, '#mg-sub [data-act="scan"]'); await sleep(200);
+await tapOn(ipad, '#rv-scan'); await sleep(200);
 for (let i = 0; i < 120 && (await api('/organize')).scan.at === at0; i++) await sleep(500);
 await sleep(1500);
 check('check again runs a new scan', (await api('/organize')).scan.at > at0 && (await api('/jobs')).some((j) => j.kind === 'organize' && j.status === 'done'));
@@ -145,11 +155,10 @@ check('check again runs a new scan', (await api('/organize')).scan.at > at0 && (
 // ---- the Fix pages picker ----
 await ipad.goto(BASE + '#/manage/pages', { waitUntil: 'networkidle2' }); await sleep(1200);
 const rows = () => ipad.$$eval('#pk-list .mg-row', (e) => e.map((x) => x.dataset.id));
-check('picker: Recently opened lists River Lullaby', (await rows())[0] === two.id && (await ipad.$eval('[data-seg="recent"]', (e) => e.classList.contains('on'))));
-await tapOn(ipad, '[data-seg="all"]');
-const all = await rows();
-check('picker: All sheets, no book, no Books segment', all.includes(plain.id) && !all.includes(book.id) && !(await ipad.$('[data-seg="books"]')), JSON.stringify(all));
-await ipad.type('#pk-find', 'autumn'); await sleep(300);
+check('picker: only Find a sheet — nothing listed before typing, no Recently opened / All sheets', !(await rows()).length && !(await ipad.$('[data-seg], .mg-seg')) && !/recently opened|all sheets/i.test(await ipad.$eval('#main', (e) => e.innerText)));
+await ipad.type('#pk-find', 'piano'); await sleep(300);
+check('picker: no books', !(await rows()).includes(book.id) && /No sheet with that name/.test(await ipad.$eval('#pk-list', (e) => e.innerText)), JSON.stringify(await rows()));
+await ipad.$eval('#pk-find', (e) => { e.value = ''; }); await ipad.type('#pk-find', 'autumn'); await sleep(300);
 check('picker: search', JSON.stringify(await rows()) === JSON.stringify([plain.id]), JSON.stringify(await rows()));
 await tapOn(ipad, `#pk-list [data-id="${plain.id}"]`); await sleep(1500);
 check('picker: a row opens the editor', (await hash(ipad)) === `#/manage/pages/${plain.id}`);
@@ -199,6 +208,24 @@ for (const name of ['ipad', 'iphone', 'mac']) {
   if (name !== 'ipad') await p.close();
 }
 await post(`/sheets/${two.id}/split`, { page: 3, on: false });
+
+// ---- iPad Pro 13 and iPad 11, portrait + landscape (touch, safe-area insets): hub, review, picker fit ----
+for (const [nm, w, h] of [['iPad Pro 13 portrait', 1032, 1376], ['iPad Pro 13 landscape', 1376, 1032], ['iPad 11 portrait', 820, 1180], ['iPad 11 landscape', 1180, 820]]) {
+  const p = await b.newPage(); await p.setUserAgent(IPAD_UA); await p.setViewport({ width: w, height: h, hasTouch: true, isMobile: true }); await p.setBypassServiceWorker(true);
+  p.on('pageerror', (e) => errs.push(`${nm}: ${e.message}`));
+  await (await p.createCDPSession()).send('Emulation.setSafeAreaInsetsOverride', { insets: { top: 24, bottom: 20, left: 0, right: 0 } }).catch(() => {});
+  for (const [s, hh] of [['hub', '#/manage'], ['review', '#/manage/review'], ['pick', '#/manage/pages']]) {
+    await p.goto(BASE + hh, { waitUntil: 'networkidle2' }); await sleep(1000);
+    const m = await p.evaluate(() => {
+      const main = document.querySelector('#main'), top = document.querySelector('.mg-top'), kids = [...top.children].filter((e) => e.offsetParent).map((e) => e.getBoundingClientRect());
+      return { fit: document.scrollingElement.scrollWidth <= innerWidth + 1 && main.scrollWidth <= main.clientWidth + 1, oneLine: kids.every((k) => k.top < kids[0].bottom && k.bottom > kids[0].top), sub: !!document.querySelector('#mg-sub'),
+        caption: !!document.querySelector('.mg-lede, .mg-card p, .mg-go, .mg-seg, .rv-next, .rv-hidden') };
+    });
+    check(`${nm} ${s}: no sideways scroll, header one line, no captions`, m.fit && m.oneLine && !m.sub && !m.caption, JSON.stringify(m));
+    await p.screenshot({ path: `${SHOTS}/${nm.replace(/ /g, '-').toLowerCase()}-${s}.png` });
+  }
+  await p.close();
+}
 
 check('no page errors', !errs.length, errs.join(' | '));
 console.log(`\n${pass} passed, ${fail} failed`);

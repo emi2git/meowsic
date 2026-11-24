@@ -40,13 +40,8 @@ export async function undoLast() {
 export const canUndo = () => !!UNDO.length && !undoing;
 export const undoLabel = () => UNDO.at(-1)?.label || '';
 
-// the last sheets opened in Fix pages (the picker's "Recently opened")
-export function recent(add) {
-  let xs = [];
-  try { xs = JSON.parse(localStorage.getItem('meowsic-org-recent') || '[]'); } catch {}
-  if (add) { xs = [add, ...xs.filter((x) => x !== add)].slice(0, 30); try { localStorage.setItem('meowsic-org-recent', JSON.stringify(xs)); } catch {} }
-  return xs;
-}
+// the Help icon (a ? in a circle), for the Help buttons
+export const HELP_IC = '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.3a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2.2-2.4 3.6M12 17v.2"/></svg>';
 
 // ---------- the header of a flow: ‹ Back, title (+ a small line), right side ----------
 export const head = ({ back = '#/manage', backLabel = 'Manage', title, sub = '', right = '', h = 'h2' }) => `<header class="top mg-top">
