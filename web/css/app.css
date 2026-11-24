@@ -1524,11 +1524,13 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 :root[data-device="phone"] .cb-acts button { flex: 1 1 40%; min-height: 46px; }
 :root[data-device="phone"] .cb-acts .grow { display: none; }
 
-/* ===== Verified (js/views/verified.js): toggle badge beside a score's title; a small mark in library rows ===== */
-.verified-badge { display: inline-flex; align-items: center; gap: 5px; flex: none; min-height: 32px; padding: 0 12px 0 9px; border-radius: 16px; border: 1.5px solid var(--line2); background: var(--card); color: var(--mute); font-size: 14px; font-weight: 650; white-space: nowrap; cursor: pointer; }
-.verified-badge .ic { width: 17px; height: 17px; }
-.verified-badge:hover { border-color: var(--ok); color: var(--ok); }
-.verified-badge.on { background: var(--ok); border-color: var(--ok); color: #fff; }
-.verified-badge.on b { font-size: 15px; line-height: 1; }
-body[data-view="item"] .item-top .verified-badge { min-height: 32px; }
+/* ===== Verified (js/views/verified.js): icon-only round toggle beside a score's title; a small mark in library rows ===== */
+.verified-badge .ic { opacity: .55; }
+@media (hover: hover) { .verified-badge:hover { border-color: var(--ok); color: var(--ok); } }
+.verified-badge.on { background: var(--card); border-color: var(--ok); color: var(--ok); }
+.verified-badge.on .ic { opacity: 1; }
+.verified-badge.on .seal { fill: var(--ok); stroke: var(--ok); }
+.verified-badge.on .tick { stroke: #fff; stroke-width: 2.4; }
+body[data-view="item"] .item-top .verified-badge { min-height: 40px; }
+:root[data-device="phone"] body[data-view="item"] .item-top .verified-badge { min-height: 38px; }
 .verified-mark { display: inline-grid; place-items: center; width: 17px; height: 17px; margin-left: 6px; border-radius: 50%; background: var(--ok); color: #fff; font-size: 11px; font-weight: 800; vertical-align: 1px; }
