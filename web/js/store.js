@@ -30,9 +30,13 @@ function setMode(m) { if (m === mode) return; mode = m; connSubs.forEach((f) => 
 
 // one call to the Mac; when it fails (offline) the call waits in the outbox and is sent later.
 // One failed request alone doesn't mean the Mac is away: only when /api/health doesn't answer either.
+// the open Edit notes' session (editnotes.js): the page's own writes to that score (tempo, transpose …) pass the
+// Mac's lock (server editsafe.py), which refuses other writers with 423 while it is open
+let editSession = null;
+export const setEditSession = (s) => { editSession = s; };
 async function api(method, path, body, { queue = true } = {}) {
   if (mode === 'mock') return null;
-  const opts = { method, headers: {} };
+  const opts = { method, headers: editSession ? { 'X-Edit-Session': editSession } : {} };
   if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
   try {
     const r = await fetch('/api' + path, opts);

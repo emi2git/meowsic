@@ -37,7 +37,7 @@
 // the score against other API writes (423). Previews replay on the score as it opened (sha); a Save after another
 // client changed the score merges onto it (or keeps the full edit as "<title> (my edits)"), never a dead end.
 import { iconOn, toast, sheet as modal, confirmSheet, menu } from '../ui.js';
-import { store } from '../store.js';
+import { store, setEditSession } from '../store.js';
 import { go } from '../app.js';
 import { isTouch } from '../device.js';
 import { barFixSheet, fixBarOp } from '../incomplete.js';
@@ -100,7 +100,7 @@ export async function editNotes(view, it, host, opts = {}) {
     } else await dropDrafts(it.id);
   }
   if (host.querySelector('.notes-panel')) return;
-  EDIT_SESSION = session;
+  EDIT_SESSION = session; setEditSession(session);
   const paper = host.querySelector('#paper');
   const panel = document.createElement('div');
   panel.className = 'notes-panel';
@@ -1230,7 +1230,7 @@ export async function editNotes(view, it, host, opts = {}) {
     if (saved !== true && at > 0 && !(await confirmSheet({ title: 'Close without saving?', body: 'The notes you changed here are not saved yet.', ok: 'Close', danger: true }))) return;
     closed = true;
     guard.stop();
-    if (EDIT_SESSION === session) EDIT_SESSION = null;
+    if (EDIT_SESSION === session) { EDIT_SESSION = null; setEditSession(null); }
     if (saved !== true) dropDrafts(it.id); // closed without saving, on purpose: no draft to offer back
     midiCtl?.destroy();
     host.removeEventListener('scoredrawn', tag);

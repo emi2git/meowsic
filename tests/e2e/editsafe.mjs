@@ -96,6 +96,9 @@ try {
   check('an agent write while the editor is open: 423 Locked, with words', r.status === 423 && /Edit notes is open/.test((await r.json()).detail), String(r.status));
   r = await send('POST', `/items/${A.id}/editnotes`, { ops: [{ op: 'pitch', refs: [0], by: 1 }], mode: 'this' });
   check('an agent Edit notes save: 423 too', r.status === 423);
+  await EN(page, async (id) => (await import('/js/store.js')).store.update(id, { transpose: 2 }), A.id); await sleep(800);
+  check('the page\'s own writes to the score (transpose) pass the lock', (await (await api(`/items/${A.id}`)).json()).transpose === 2);
+  await EN(page, async (id) => (await import('/js/store.js')).store.update(id, { transpose: 0 }), A.id); await sleep(500);
   await edit(page, pitchUp(1, 67, 2)); // bar 2: G4 -> A4
   r = await agentSave(A.id, (ns) => [{ op: 'pitch', refs: [refOf(ns, 0, 65)], by: 1 }]); // meanwhile: bar 1 F4 -> F#4
   check('another client saved the score meanwhile', r.ok, String(r.status));

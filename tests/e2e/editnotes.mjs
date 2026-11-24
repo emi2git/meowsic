@@ -1281,7 +1281,8 @@ async function rests(name, vp) {
   await act('del'); await idle();
   await act('save'); await sleep(300);
   await page.evaluate(() => document.querySelector('.np-save [data-mode="this"]').click()); await sleep(2500);
-  check('saved with a warning: 1 bar not complete', /1 bar not complete/.test(await toastText()), await toastText());
+  const noteText = () => EN(() => document.querySelector('.save-note')?.textContent || '');
+  check('saved with a warning: "Saved ✓ hh:mm" · 1 bar not complete', /Saved ✓ \d\d:\d\d/.test(await noteText()) && /1 bar not complete/.test(await noteText()), await noteText());
   await page.reload({ waitUntil: 'networkidle0' }); await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(1000);
   check('after a reload the short bar still shows', (await badge(1))?.text === '3 of 4 beats');
   // not editing: the badge fixes it at once (saved; Activities can undo)
