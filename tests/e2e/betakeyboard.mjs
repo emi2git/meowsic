@@ -1,4 +1,4 @@
-// End-to-end: Keyboard (beta) — the MIDI keyboard tutorial (web/js/views/beta-keyboard.js).
+// End-to-end: Keyboard (beta) — Connect + Fix notes by playing (web/js/views/beta-keyboard.js).
 // Serve web/ first:  python3 -m http.server 5317 -d web   (then: PORT=5317 node betakeyboard.mjs)
 // navigator.requestMIDIAccess is replaced by a fake MIDIAccess whose input the test drives with midimessage
 // events; the song (GET /api/items/m-b6xs990/musicxml) is a small fixture served by request interception;
@@ -7,7 +7,7 @@ import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
 const PORT = process.env.PORT || 5317;
 const ORIGIN = `http://localhost:${PORT}`;
-const SHOTS = process.env.SHOTS || '/private/tmp/claude-501/-Users-emi2mac/4133b106-9ccb-4a6c-97de-aed86ecf9500/scratchpad/beta';
+const SHOTS = process.env.SHOTS || '/private/tmp/claude-501/-Users-emi2mac/4133b106-9ccb-4a6c-97de-aed86ecf9500/scratchpad/beta2';
 fs.mkdirSync(SHOTS, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0;
@@ -34,8 +34,6 @@ const bars = [
 ];
 const FIXTURE = `<?xml version="1.0" encoding="UTF-8"?><score-partwise version="3.1"><work><work-title>Home NDP</work-title></work>
 <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">${bars.map((b, i) => `<measure number="${i + 1}">${i ? '' : '<attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes><direction><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>114</per-minute></metronome></direction-type><sound tempo="114"/></direction>'}${b}</measure>`).join('')}</part></score-partwise>`;
-const MELODY = [76, 74, 72, 74, 72, 72, 74, 76, 79, 76, 72, 74, 76, 77, 79, 81, 79, 77, 76, 74, 72, 74, 76, 76, 74, 74, 72];
-
 const HARNESS = `<!doctype html><html lang="en" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Keyboard (beta)</title><link rel="stylesheet" href="css/app.css"></head><body style="overflow:auto">
 <main id="main" tabindex="-1" style="height:auto;min-height:100vh;overflow:visible"></main><div id="toast" class="toast" hidden></div>
@@ -85,165 +83,170 @@ async function open({ mode = 'ok', viewport = { width: 1366, height: 900 }, clea
   await page.waitForFunction(() => window.__ready);
   return { page, errors };
 }
-const txt = (page, sel) => page.$eval(sel, (e) => e.textContent.replace(/\s*\n\s*/g, '').trim()).catch(() => '');
+const txt = (page, sel) => page.$eval(sel, (e) => e.textContent.replace(/\s*\n\s*/g, ' ').trim()).catch(() => '');
 const has = (page, sel) => page.$(sel).then(Boolean);
-const PCS = { C: 0, 'C#': 1, D: 2, Eb: 3, E: 4, F: 5, 'F#': 6, G: 7, Ab: 8, A: 9, Bb: 10, B: 11 };
-const midiOfName = (s) => 72 + PCS[s];
-const tap = async (page, m) => { await page.evaluate((m) => window.__tap(m), m); await sleep(160); };
-const next = async (page) => { await page.$eval('#bk-next', (b) => b.click()); await sleep(250); };
+const tap = async (page, m, ms = 120) => { await page.evaluate((m, ms) => window.__tap(m, ms), m, ms); await sleep(ms + 80); };
+// a bar of the strip as "m/t" items, e.g. "74/24 R/12"
+const bar = (page, b) => page.$$eval(`.bk-bar2[data-bar="${b}"] .bk-it`, (xs) => xs.map((x) => `${x.dataset.m || 'R'}/${x.dataset.t}`).join(' '));
+const selK = (page) => page.$eval('.bk-it.sel', (x) => x.dataset.k).catch(() => '');
+// click below the sticky on-screen piano: bring the element to the middle first
+const clk = async (page, sel) => { await page.$eval(sel, (e) => e.scrollIntoView({ block: 'center' })); await page.click(sel); };
+const pick = async (page, k) => { await clk(page, `.bk-it[data-k="${k}"]`); await sleep(60); };
+const msg = (page) => txt(page, '#bk-msg');
+const sums = (page) => page.$$eval('.bk-bar2', (bs) => bs.map((b) => [...b.querySelectorAll('.bk-it')].reduce((a, x) => a + +x.dataset.t, 0)));
+const scoreDrawn = (page) => page.waitForFunction(() => document.querySelector('#bk-osmd svg') && document.querySelector('#bk-osmd .bk-on'), { timeout: 8000 }).then(() => true).catch(() => false);
 
 // =============== Mac, Chrome, a keyboard plugged in ===============
 const { page, errors } = await open();
 console.log('Page');
 check('title is Keyboard (beta)', (await txt(page, '.top h1')) === 'Keyboard (beta)');
-check('7 progress dots, step 1 is Connect', (await page.$$eval('.bk-dot', (d) => d.length)) === 7 && (await txt(page, '#bk-title')) === '1 · Connect');
-check('every step has a Try it area and a tip', (await has(page, '.bk-try #bk-live')) && (await txt(page, '#bk-tip')).startsWith('Tip'));
+check('two steps: Connect, Fix notes by playing', (await page.$$eval('.bk-dot', (d) => d.map((x) => x.textContent.trim()).join('|'))) === '1 Connect|2 Fix notes by playing');
+const body0 = await page.evaluate(() => document.body.innerText);
+check('the removed steps are gone', !/Find the notes|Play along|Play in time|Echo|Record/.test(body0));
 
-console.log('0 Connect');
+console.log('1 Connect');
 if (await has(page, '#bk-connect')) await page.click('#bk-connect');
 await page.waitForSelector('#bk-dev', { timeout: 3000 }).catch(() => {});
 check('shows "Connected: Digital Keyboard"', (await txt(page, '#bk-dev')) === 'Connected: Digital Keyboard', await txt(page, '#bk-conn'));
 await page.evaluate(() => window.__note(64, 90)); await sleep(80);
-check('a key press lights the on-screen key', await has(page, '.bk-key.down[data-m="64"]'));
-check('…and shows the note name', (await txt(page, '#bk-last b')) === 'E4' && (await txt(page, '#bk-last')).includes('velocity 90'));
+check('a key press lights the on-screen key and names it', (await has(page, '.bk-key.down[data-m="64"]')) && (await txt(page, '#bk-last b')) === 'E4');
 await page.evaluate(() => window.__note(64, 0)); await sleep(80);
 check('note off clears the key', !(await has(page, '.bk-key.down')));
-await page.evaluate(() => { window.__note(60); window.__note(64); window.__note(67); }); await sleep(80);
-check('a held chord is named', (await txt(page, '#bk-chord')).includes('C chord'), await txt(page, '#bk-chord'));
-await page.evaluate(() => { window.__note(60, 0); window.__note(64, 0); window.__note(67, 0); });
-check('the Connect dot is done', await has(page, '.bk-dot.done[data-i="0"]'));
-check('App sound toggle is there (on)', await page.$eval('#bk-sound', (e) => e.checked));
-await page.screenshot({ path: `${SHOTS}/mac-0-connect.png` });
+await page.screenshot({ path: `${SHOTS}/mac-1-connect.png` });
 
-console.log('1 Find the notes');
-await next(page);
-await page.waitForSelector('#bk-want');
-check('teaches the key: C major', (await txt(page, '#bk-live')).includes('C major'));
-check('asks "Play C" first', (await txt(page, '#bk-ask')) === 'Play C');
-await tap(page, 65);
-check('a wrong key goes red and says where C is', (await txt(page, '#bk-msg')).includes('C is the white key just left of the two black keys'));
-const asked = [];
-for (let i = 0; i < 8 && (await has(page, '#bk-want')); i++) {
-  const w = await txt(page, '#bk-want'); asked.push(w);
-  await page.evaluate((m) => window.__note(m), midiOfName(w)); await sleep(60);
-  if (i === 0) check('the right key goes green', await has(page, `.bk-key.ok[data-m="${midiOfName(w)}"]`));
-  await page.evaluate((m) => window.__note(m, 0), midiOfName(w)); await sleep(420);
-}
-check('asks C, E, G then the song’s other notes', asked.join(' ') === 'C E G D F A', asked.join(' '));
-check('all found; the song’s notes are marked on the keys', (await txt(page, '#bk-ask')).includes('All 6 found') && (await page.$$eval('.bk-key.map', (k) => k.length)) > 0);
+console.log('2 Fix notes by playing');
+await page.click('#bk-go');
+await page.waitForSelector('.bk-it');
+check('8 bars of the melody in the strip', (await page.$$eval('.bk-bar2', (b) => b.length)) === 8);
+check('bar 1: pickup rests drawn naturally (1/2 + 1/8), then E D C', (await bar(page, 0)) === 'R/48 R/12 76/12 74/12 72/12', await bar(page, 0));
+check('a tie across bars 2–3 kept', (await bar(page, 1)) === '74/24 72/24 72/24 74/12 76/12' && (await has(page, '.bk-it.tie[data-k="1:4"]')) && (await bar(page, 2)) === '76/48 79/24 76/24');
+check('first note picked', (await selK(page)) === '0:2');
+check('the score is drawn with the picked note lit', await scoreDrawn(page));
+check('4 tip cards', (await page.$$eval('.bk-tipc', (c) => c.length)) === 4 && (await has(page, '.bk-tipc.cur[data-k="select"]')));
+check('length legend: C3 = 1 … G3 = 1/16, A3 = rest', /C3.*1.*D3.*1\/2.*E3.*1\/4.*F3.*1\/8.*G3.*1\/16.*A3.*Rest/.test(await txt(page, '#bk-legend')), await txt(page, '#bk-legend'));
+check('length keys marked on the on-screen piano', (await page.$eval('.bk-key[data-m="50"] .bk-fn', (e) => e.textContent)) === '1/2');
 
-console.log('2 Play along (wait mode)');
-await next(page);
-await page.waitForSelector('#bk-stripbox .bk-note');
-check('strip shows bars 1–8 only', (await page.$$eval('.bk-bar', (b) => b.length)) === 8 && (await page.$$eval('.bk-note', (b) => b.length)) === MELODY.length, await page.$$eval('.bk-note', (b) => b.length));
-check('the tie across bars 2–3 is one note', (await page.$$eval('.bk-bar[data-bar="2"] .bk-note', (b) => b.length)) === 2);
-check('waits on the first note (E)', (await txt(page, '#bk-want')) === 'E' && (await has(page, '.bk-note.cur[data-i="0"]')));
-await tap(page, 76);
-check('right note: it turns green and moves on', (await has(page, '.bk-note.ok[data-i="0"]')) && (await has(page, '.bk-note.cur[data-i="1"]')) && (await txt(page, '#bk-want')) === 'D');
-await tap(page, 65);
-check('wrong note flashes red and names the expected note', (await txt(page, '#bk-msg')).includes('That was F') && (await txt(page, '#bk-msg')).includes('Expected D') && (await has(page, '.bk-note.cur[data-i="1"]')));
-await page.click('#bk-hint'); await sleep(60);
-check('Hint lights the target key', await has(page, '.bk-key.hint[data-m="74"]'));
-await tap(page, 62); // D in another octave: any octave counts (on by default)
-check('any octave counts', await has(page, '.bk-note.cur[data-i="2"]') && await has(page, '.bk-note.fixed[data-i="1"]'));
-for (const m of MELODY.slice(2)) { await page.evaluate((m) => window.__tap(m, 40), m); await sleep(70); }
-await page.waitForSelector('#bk-score', { timeout: 3000 }).catch(() => {});
-const score = await txt(page, '#bk-score');
-check('score at the end: notes, mistakes, time', score.includes(`${MELODY.length}notes`) && score.includes('1mistakes') && /\d:\d\dtime/.test(score), score);
-await page.click('#bk-lh'); await sleep(150);
-check('Left hand chords: off by default, adds chord chips', (await page.$$eval('.bk-lh', (c) => c.length)) === 7);
-for (const m of [76, 74, 72]) await tap(page, m);
-check('with the left hand the step asks melody + chord', (await txt(page, '#bk-want')) === 'D + C + E', await txt(page, '#bk-want'));
-await tap(page, 74);
-check('…and waits until the chord is played too', await has(page, '.bk-note.cur[data-i="3"]'));
-await page.evaluate(() => { window.__tap(60); window.__tap(64); }); await sleep(200);
-check('…then moves on', await has(page, '.bk-note.cur[data-i="4"]'));
-await page.click('#bk-lh'); await sleep(100);
-await page.screenshot({ path: `${SHOTS}/mac-2-wait.png` });
-
-console.log('3 Play in time');
-await next(page);
-await page.waitForSelector('#bk-go');
-await page.$eval('#bk-tempo', (e) => { e.value = 100; e.dispatchEvent(new Event('input')); });
-check('tempo slider shows the BPM', (await txt(page, '#bk-bpm')) === '100 BPM');
-await page.click('#bk-go'); await sleep(100);
-check('count-in shows', /^[1-4]$/.test(await txt(page, '#bk-countin')), await txt(page, '#bk-countin'));
-// first three notes at beats 2.5, 3, 3.5: on time, late by 0.35 beat, early by 0.3 beat
-await page.evaluate(() => new Promise((ok) => {
-  const s = document.querySelector('.bk-strip'), t0 = +s.dataset.t0, spb = +s.dataset.spb * 1000;
-  const at = (beat, m) => setTimeout(() => window.__tap(m, 60), t0 + beat * spb - performance.now());
-  at(2.5, 76); at(3.35, 74); at(3.25, 30); // 30: a stray wrong note
-  at(3.5 - 0.3, 72);
-  setTimeout(ok, t0 + 4 * spb - performance.now());
-}));
-await page.click('#bk-go'); await sleep(150);
-const ts = await txt(page, '#bk-score');
-check('scores timing: on time / late / early', ts.startsWith('1on time1early1late') && ts.includes('1wrong notes'), ts);
-check('the notes are marked', (await has(page, '.bk-note.ok[data-i="0"]')) && (await has(page, '.bk-note.late[data-i="1"]')) && (await has(page, '.bk-note.early[data-i="2"]')));
-
-console.log('4 Echo');
-await next(page);
-await page.waitForSelector('#bk-listen');
-check('one bar, notes hidden', (await txt(page, '#bk-barname')) === 'Bar 1' && (await page.$$eval('.bk-note.hidden', (c) => c.length)) === 3);
-await page.click('#bk-listen');
-await page.waitForFunction(() => /Your turn/.test(document.querySelector('#bk-msg')?.textContent || ''), { timeout: 8000 }).catch(() => {});
-check('Listen plays the bar, then "Your turn"', (await txt(page, '#bk-msg')).includes('Your turn'), await txt(page, '#bk-msg'));
-for (const m of [76, 77, 72]) await tap(page, m);
-await page.waitForSelector('#bk-cmp', { timeout: 3000 }).catch(() => {});
-check('compares note by note (✓ ✗ ✓)', (await page.$$eval('#bk-cmp tr:last-child td', (t) => t.map((x) => x.className).join(' '))) === 'ok mark wrong mark ok mark');
-check('says 2 of 3 matched and reveals the notes', (await txt(page, '#bk-matched')) === '2 of 3 notes matched.' && !(await has(page, '.bk-note.hidden')));
-await page.screenshot({ path: `${SHOTS}/mac-4-echo.png` });
-await page.click('#bk-retry'); await sleep(100);
-for (const m of [76, 74]) await tap(page, m);
-await page.click('#bk-check'); await sleep(100);
-check('Check with a missed note', (await page.$$eval('#bk-cmp tr:last-child td', (t) => t.map((x) => x.className).join(' '))) === 'ok mark ok mark missed mark');
-
-console.log('5 Record');
-await next(page);
-await page.waitForSelector('#bk-rec');
-check('quantize 1/8 by default; save is "coming later"', (await page.$eval('#bk-quant', (s) => s.value)) === '0.5' && (await page.$eval('#bk-save', (b) => b.disabled)) && (await txt(page, '#bk-live')).includes('Coming later'));
-await page.$eval('#bk-rtempo', (e) => { e.value = 120; e.dispatchEvent(new Event('input')); });
-await page.click('#bk-rec'); await sleep(50);
-await page.evaluate(() => new Promise((ok) => {
-  const s = (ms, f) => setTimeout(f, ms);
-  s(0, () => window.__note(60)); s(200, () => window.__note(60, 0));
-  s(300, () => window.__note(62)); s(500, () => window.__note(62, 0));
-  s(1000, () => window.__note(64)); s(1500, () => window.__note(64, 0));
-  s(1600, ok);
-}));
-await page.click('#bk-rec');
-await page.waitForSelector('#bk-osmd svg', { timeout: 8000 }).catch(() => {});
-const evs = () => page.$$eval('#bk-notes .bk-chip', (c) => c.map((x) => `${x.dataset.n}@${x.dataset.q}:${x.dataset.d}`).join(' '));
-check('captured notes on a 1/8 grid', (await evs()) === '60@0:0.5 62@0.5:0.5 64@2:1', await evs());
-check('shown as a little score (OSMD)', await has(page, '#bk-osmd svg'));
-check('Play back is ready', !(await page.$eval('#bk-play', (b) => b.disabled)));
-await page.screenshot({ path: `${SHOTS}/mac-5-record.png` });
-await page.select('#bk-quant', '1'); await sleep(400);
-check('quantize 1/4 re-snaps', (await evs()) === '60@0:1 62@1:1 64@2:1', await evs());
-await page.select('#bk-quant', '0.5'); await sleep(300);
-await page.click('#bk-play'); await sleep(300);
-check('playback runs', (await txt(page, '#bk-play')).includes('Stop'));
-await page.click('#bk-play');
-
-console.log('6 Fix a note by playing');
-await next(page);
-await page.waitForSelector('#bk-stripbox .bk-note');
-check('a copy of bar 1; note 1 picked', (await page.$$eval('.bk-note', (c) => c.length)) === 3 && (await has(page, '.bk-note.sel[data-i="0"]')) && (await txt(page, '#bk-live')).includes('Edit notes'));
+console.log('Pitch');
 await tap(page, 79);
-check('a key changes the note’s pitch', (await txt(page, '#bk-changed')) === 'G5' && (await txt(page, '.bk-note[data-i="0"]')) === 'G' && (await has(page, '.bk-note.changed[data-i="0"]')));
-await page.click('.bk-note[data-i="2"]'); await sleep(80);
-await tap(page, 71);
-check('tap another note, play: it changes too', (await txt(page, '.bk-note[data-i="2"]')) === 'B');
-await page.click('#bk-undo'); await sleep(80);
-check('Undo all goes back', (await txt(page, '.bk-note[data-i="0"]')) === 'E' && !(await has(page, '.bk-note.changed')));
-await page.waitForSelector('#bk-osmd svg', { timeout: 5000 }).catch(() => {});
-check('bar drawn as a score', await has(page, '#bk-osmd svg'));
+check('a key changes the picked note (E5 → G5)', (await txt(page, '#bk-changed')) === 'G5' && (await page.$eval('.bk-it[data-k="0:2"]', (x) => x.dataset.m)) === '79');
+check('…the next note is marked as next', await has(page, '.bk-it.next[data-k="0:3"]'));
+await tap(page, 77);
+check('the next key goes to the next note', (await page.$eval('.bk-it[data-k="0:3"]', (x) => x.dataset.m)) === '77' && (await selK(page)) === '0:3');
+await page.keyboard.press('ArrowRight'); await sleep(60);
+check('→ moves the selection', (await selK(page)) === '0:4');
+await page.keyboard.press('ArrowLeft'); await sleep(60);
+check('← moves it back', (await selK(page)) === '0:3');
+await clk(page, '#bk-auto'); await sleep(40);
+await tap(page, 76); await tap(page, 74);
+check('auto-advance off: both keys go to the same note', (await page.$eval('.bk-it[data-k="0:3"]', (x) => x.dataset.m)) === '74' && (await selK(page)) === '0:3');
+await clk(page, '#bk-auto'); await sleep(40);
 
-console.log('Progress');
-const doneDots = await page.$$eval('.bk-dot.done', (d) => d.length);
-check('every step done', doneDots === 7, doneDots);
-await page.reload({ waitUntil: 'networkidle0' }); await page.waitForFunction(() => window.__ready); await sleep(200);
-check('progress is remembered on this device', (await txt(page, '#bk-title')) === '7 · Fix a note by playing' && (await page.$$eval('.bk-dot.done', (d) => d.length)) === 7);
+console.log('Length: buttons, number keys');
+await pick(page, '1:0');
+await clk(page, '.bk-len[data-t="12"]'); await sleep(80);
+check('1/8 button shortens; a rest fills the gap', (await bar(page, 1)) === '74/12 R/12 72/24 72/24 74/12 76/12' && /rest fills the gap/.test(await msg(page)), await bar(page, 1));
+check('…the 1/8 button shows as on', await has(page, '.bk-len.on[data-t="12"]'));
+await page.keyboard.press('2'); await sleep(80);
+check('key 2 = half: lengthening borrows from the rest and the next note', (await bar(page, 1)) === '74/48 72/24 74/12 76/12' && /took the time from/.test(await msg(page)), (await bar(page, 1)) + ' · ' + (await msg(page)));
+await pick(page, '1:3');
+await page.keyboard.press('4'); await sleep(80);
+check('overflow refused with a clear message', (await bar(page, 1)) === '74/48 72/24 74/12 76/12' && /doesn’t fit/.test(await msg(page)), await msg(page));
+await page.screenshot({ path: `${SHOTS}/mac-2-refused.png` });
+await pick(page, '1:1');
+await page.keyboard.press('.'); await sleep(80);
+check('. = dot: 1/4 → dotted 1/4 (borrows the 1/8 after it)', (await bar(page, 1)) === '74/48 72/36 76/12' && (await has(page, '#bk-dot.on')), await bar(page, 1));
+await page.keyboard.press('.'); await sleep(80);
+check('. again takes the dot off; a 1/8 rest fills', (await bar(page, 1)) === '74/48 72/24 R/12 76/12', await bar(page, 1));
+await pick(page, '4:0');
+await page.keyboard.press('1'); await sleep(80);
+check('key 1 = whole: takes the whole bar', (await bar(page, 4)) === '79/96');
+await page.keyboard.press('6'); await sleep(80);
+check('key 6 = 1/16, rest split naturally (1/16 1/8 1/4 1/2)', (await bar(page, 4)) === '79/6 R/6 R/12 R/24 R/48', await bar(page, 4));
+await pick(page, '3:0');
+await page.keyboard.press('8'); await sleep(80);
+check('shorten 1/4 → 1/8: rest after it', (await bar(page, 3)) === '72/12 R/12 74/24 76/24 77/24');
+await clk(page, '#bk-pullnow'); await sleep(80);
+check('"pull the next notes earlier" moves them; rests at the end of the bar', (await bar(page, 3)) === '72/12 74/24 76/24 77/24 R/12', await bar(page, 3));
+await clk(page, '#bk-pull'); await sleep(40);
+await pick(page, '3:2');
+await clk(page, '.bk-len[data-t="12"]'); await sleep(80);
+check('pull mode setting: shorter pulls the rest of the bar in', (await bar(page, 3)) === '72/12 74/24 76/12 77/24 R/24', await bar(page, 3));
+await clk(page, '#bk-pull'); await sleep(40);
+
+console.log('Rest');
+await pick(page, '3:1');
+await clk(page, '#bk-rest'); await sleep(80);
+check('Rest button: the note becomes a rest (split on the beat)', (await bar(page, 3)) === '72/12 R/12 R/12 76/12 77/24 R/24', await bar(page, 3));
+await pick(page, '3:3');
+await page.keyboard.press('r'); await sleep(80);
+check('R key: rest; neighbouring rests joined and re-split', (await bar(page, 3)) === '72/12 R/12 R/24 77/24 R/24', await bar(page, 3));
+
+console.log('MIDI length keys');
+await pick(page, '5:0');
+await tap(page, 50);
+check('D3 key = 1/2: length changes, pitch stays', (await bar(page, 5)) === '76/48 72/24 74/24' && (await selK(page)) === '5:0', await bar(page, 5));
+await tap(page, 55);
+check('G3 key = 1/16', (await bar(page, 5)).startsWith('76/6 R/6 R/12 R/24'), await bar(page, 5));
+await tap(page, 49);
+check('C#3 key = dot (1/16 → dotted 1/16)', (await bar(page, 5)).startsWith('76/9 '), await bar(page, 5));
+await tap(page, 57);
+check('A3 key = rest', (await page.$eval('.bk-it[data-k="5:0"]', (x) => x.dataset.m)) === '');
+await page.select('#bk-fnbase', '36'); await sleep(60);
+check('length keys can start elsewhere (C2)', /C2.*1/.test(await txt(page, '#bk-legend')) && (await page.$eval('.bk-key[data-m="50"] .bk-fn', (e) => e.textContent)) === '');
+await page.select('#bk-fnbase', '48'); await sleep(60);
+await clk(page, '#bk-fnon'); await sleep(40);
+await pick(page, '6:0');
+await tap(page, 50);
+check('length keys off: low keys set the pitch', (await page.$eval('.bk-it[data-k="6:0"]', (x) => x.dataset.m)) === '50');
+await clk(page, '#bk-fnon'); await sleep(40);
+
+console.log('Hold to set length');
+await clk(page, '#bk-hold'); await sleep(40);
+await page.$eval('#bk-tempo', (r) => { r.value = '120'; r.dispatchEvent(new Event('input')); });
+await pick(page, '7:0'); // C5 whole
+await tap(page, 74, 1000); // 1 s at 120 BPM = 2 beats
+check('held 1 s at 120 BPM → half note D5', (await bar(page, 7)) === '74/48 R/48', await bar(page, 7));
+await tap(page, 76, 260); // next note (the rest) ≈ 1/8
+check('next key held ≈ 0.25 s → eighth on the next note', (await bar(page, 7)) === '74/48 76/12 R/12 R/24', await bar(page, 7));
+await clk(page, '#bk-hold'); await sleep(40);
+
+console.log('Every bar still adds up');
+const s = await sums(page);
+check('all 8 bars = 4/4', s.every((x) => x === 96), s.join(','));
+
+console.log('Undo / redo / reset');
+const before = await bar(page, 7);
+await page.keyboard.down('Meta'); await page.keyboard.press('z'); await page.keyboard.up('Meta'); await sleep(80);
+check('⌘Z undoes the last change', (await bar(page, 7)) === '74/48 76/48', await bar(page, 7));
+await clk(page, '#bk-undo'); await sleep(80);
+check('Undo button undoes again', (await bar(page, 7)) === '74/48 R/48', await bar(page, 7));
+await page.keyboard.down('Meta'); await page.keyboard.down('Shift'); await page.keyboard.press('z'); await page.keyboard.up('Shift'); await page.keyboard.up('Meta'); await sleep(80);
+await clk(page, '#bk-redo'); await sleep(80);
+check('⇧⌘Z and Redo bring both back', (await bar(page, 7)) === before, await bar(page, 7));
+await page.screenshot({ path: `${SHOTS}/mac-2-edited.png` });
+await clk(page, '#bk-reset'); await sleep(120);
+check('Reset restores the original', (await bar(page, 0)) === 'R/48 R/12 76/12 74/12 72/12' && (await bar(page, 1)) === '74/24 72/24 72/24 74/12 76/12' && !(await has(page, '.bk-it.changed')) && (await page.$eval('#bk-reset', (b) => b.disabled)));
+await clk(page, '#bk-undo'); await sleep(80);
+check('…and Undo after Reset brings the changes back', (await bar(page, 7)) === before);
+
+console.log('Play back');
+await clk(page, '#bk-play'); await sleep(400);
+check('Play these bars plays the in-memory copy', (await txt(page, '#bk-play')).includes('Stop') && +(await page.$eval('#bk-live', (e) => e.dataset.played)) > 10);
+await clk(page, '#bk-play'); await sleep(60);
+check('…and stops', (await txt(page, '#bk-play')).includes('Play these bars'));
+check('all 4 tips done', (await page.$$eval('.bk-tipc.done', (c) => c.length)) === 4 && (await has(page, '.bk-dot.done[data-i="1"]')));
+
+console.log('Score');
+await pick(page, '2:1');
+check('picking a note re-lights it in the score', await scoreDrawn(page));
+const scoreK = await page.$$eval('#bk-osmd .bk-hit', (g) => g.map((x) => x.dataset.k));
+const hitBox = await page.$eval('#bk-osmd .bk-hit[data-k="2:2"]', (g) => { const r = g.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; }).catch(() => null);
+if (hitBox) { await page.mouse.click(hitBox.x, hitBox.y); await sleep(80); }
+check('clicking a note in the score selects it', hitBox && (await selK(page)) === '2:2', scoreK.slice(0, 12).join(' '));
+await page.$eval(".bk-toolbar", (e) => e.scrollIntoView()); await page.screenshot({ path: `${SHOTS}/mac-2-fix.png` });
+
+await page.reload({ waitUntil: 'networkidle0' }); await page.waitForFunction(() => window.__ready); await page.waitForSelector('.bk-it');
+check('reload: step remembered, the copy starts from the original (nothing saved)', (await txt(page, '#bk-title')) === '2 · Fix notes by playing' && (await bar(page, 0)) === 'R/48 R/12 76/12 74/12 72/12');
 check('no lyric text on the page', !(await page.evaluate(() => document.body.innerText)).includes('FIXTURELYRIC'));
 check('no writes to the server', writes.length === 0, writes.join(', '));
 check('no page errors', errors.length === 0, errors.join('\n'));
@@ -264,43 +267,40 @@ console.log('No keyboard / blocked');
   await page.close();
 }
 
-// =============== no Web MIDI (iPad Safari): computer keys + on-screen keys ===============
+// =============== no Web MIDI: computer keys ===============
 console.log('Fallback (no Web MIDI)');
 {
   const { page, errors } = await open({ mode: 'unsupported' });
   check('says this browser has no USB keyboard support', (await txt(page, '#bk-conn')).includes('can’t use a USB keyboard'));
   await page.keyboard.down('a'); await sleep(60);
   check('computer key A = C4', (await has(page, '.bk-key.down[data-m="60"]')) && (await txt(page, '#bk-last b')) === 'C4');
-  await page.keyboard.up('a'); await page.keyboard.down('w'); await sleep(60);
-  check('W = C#4 (black key)', (await has(page, '.bk-key.down[data-m="61"]')) && (await txt(page, '#bk-last b')) === 'C#4');
-  await page.keyboard.up('w');
-  await page.keyboard.press('x'); await page.keyboard.press('k'); await sleep(60);
-  check('X = octave up (K = C6)', (await txt(page, '#bk-last b')) === 'C6' && (await txt(page, '#bk-oct')).includes('A = C5'));
-  const box = await page.$eval('.bk-key[data-m="62"]', (k) => { const r = k.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height - 20 }; });
-  await page.mouse.move(box.x, box.y); await page.mouse.down(); await sleep(60);
-  check('on-screen key: press lights it', (await has(page, '.bk-key.down[data-m="62"]')) && (await txt(page, '#bk-last b')) === 'D4');
-  await page.mouse.up(); await sleep(60);
-  check('on-screen key: release clears it', !(await has(page, '.bk-key.down')));
-  await page.click('#bk-next'); await page.waitForSelector('#bk-want');
-  await page.keyboard.press('x'); // A = C6 now
-  await page.keyboard.press('z');
-  await page.keyboard.press('k'); await sleep(600); // C6 → C (any octave)
-  check('the tutorial works with computer keys', (await txt(page, '#bk-ask')) === 'Play E', await txt(page, '#bk-ask'));
+  await page.keyboard.up('a');
+  await page.click('#bk-go'); await page.waitForSelector('.bk-it');
+  await page.keyboard.press('x'); await page.keyboard.press('h'); await sleep(100); // A5
+  check('computer keys set the pitch', (await page.$eval('.bk-it[data-k="0:2"]', (x) => x.dataset.m)) === '81');
   check('no page errors', errors.length === 0, errors.join('\n'));
   await page.close();
 }
 
-// =============== screenshots: iPad (touch, Safari: no Web MIDI) ===============
+// =============== iPad (touch, Safari: no Web MIDI): on-screen keys ===============
+console.log('iPad');
 {
-  const { page } = await open({ mode: 'unsupported', viewport: { width: 820, height: 1180, isMobile: true, hasTouch: true, deviceScaleFactor: 2 },
+  const { page, errors } = await open({ mode: 'unsupported', viewport: { width: 820, height: 1180, isMobile: true, hasTouch: true, deviceScaleFactor: 2 },
     ua: 'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1' });
-  check('iPad: device is tablet, bigger keys', (await page.evaluate(() => document.documentElement.dataset.device)) === 'tablet' && (await page.$eval('.bk-keys', (k) => k.offsetHeight)) >= 170);
-  await page.screenshot({ path: `${SHOTS}/ipad-0-connect.png` });
-  await page.click('#bk-next'); await sleep(200); await page.click('#bk-next'); await page.waitForSelector('.bk-note');
-  await page.touchscreen.tap(...(await page.$eval('.bk-key[data-m="76"]', (k) => { const r = k.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height - 20]; })));
-  await sleep(150);
-  check('iPad: tapping the on-screen key plays along', await has(page, '.bk-note.ok[data-i="0"]'));
-  await page.screenshot({ path: `${SHOTS}/ipad-2-wait.png` });
+  check('iPad: says use the on-screen keys', (await txt(page, '#bk-conn')).includes('use the on-screen keys'));
+  await page.touchscreen.tap(...(await page.$eval('.bk-dot[data-i="1"]', (k) => { const r = k.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })));
+  await page.waitForSelector('.bk-it');
+  const keyAt = (m) => page.$eval(`.bk-key[data-m="${m}"]`, (k) => { const r = k.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height - 20]; });
+  await page.touchscreen.tap(...(await keyAt(77))); await sleep(150);
+  check('iPad: tapping an on-screen key sets the pitch', (await page.$eval('.bk-it[data-k="0:2"]', (x) => x.dataset.m)) === '77');
+  await page.touchscreen.tap(...(await keyAt(50))); await sleep(150);
+  check('iPad: on-screen length key (D3 = 1/2) works', (await page.$eval('.bk-it[data-k="0:2"]', (x) => x.dataset.t)) === '12' && /doesn’t fit/.test(await msg(page)), await msg(page));
+  await page.touchscreen.tap(...(await page.$eval('.bk-len[data-t="6"]', (k) => { k.scrollIntoView({ block: 'center' }); const r = k.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; }))); await sleep(150);
+  check('iPad: length buttons by touch', (await bar(page, 0)) === 'R/48 R/12 77/6 R/6 74/12 72/12', await bar(page, 0));
+  check('iPad: no horizontal scroll', await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+  await scoreDrawn(page);
+  await page.$eval(".bk-tips", (e) => e.scrollIntoView()); await page.screenshot({ path: `${SHOTS}/ipad-fix.png` });
+  check('no page errors', errors.length === 0, errors.join('\n'));
   await page.close();
 }
 
