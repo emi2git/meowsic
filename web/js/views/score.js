@@ -7,6 +7,7 @@ import { TUNES } from '../mock.js';
 import { musicXml, tuneNotes, VERSIONS, barBeats, xmlInfo } from '../musicxml.js';
 import { ScorePlayer, VoicePlayer } from '../audio.js';
 import { chordEvents } from '../chordplay.js';
+import { savedMuted, saveMuted, effectiveMuted, lhMuted, handsHtml, handsClick } from '../hands.js';
 import { scoreEditor } from './scoreeditor.js';
 import { checkBadge } from './checkbars.js';
 import { incompleteBars, barFixSheet, fixBarOp } from '../incomplete.js';
@@ -352,11 +353,17 @@ export function scoreBody(root, it, { perform = false } = {}) {
       return chordEvents(chordList, ci.barQ, end);
     } catch { chordList = []; return []; }
   };
+  // Hands (hands.js): the staves to leave out; Play chords follows the left hand
+  let mutedPick = savedMuted();
+  const staves = () => (real ? info?.staves || [] : ['R', 'L']);
+  const muted = () => effectiveMuted(staves(), mutedPick);
+  const chordsWanted = () => chordPlay && !lhMuted(muted());
+  const applyHands = () => { if (!midi) return; const st = staves(), m = muted(); midi.setMute(st.map((l, i) => (m.includes(l) ? i : -1)).filter((i) => i >= 0)); midi.setChords(chordsWanted()); };
   const makePlayer = () => {
     const was = midi;
     player?.pause();
     midi = new ScorePlayer({ notes: real ? info.notes : tuneNotes(tune, version), bpm: tune.bpm, beats: tune.beats, onTick: place, onEnd: onEnded, segments: real ? info.segments : null, chords: chordNotes() });
-    midi.chordsOn = chordPlay;
+    applyHands();
     root.dispatchEvent(new CustomEvent('chordlistchange', { bubbles: true }));
     if (was) { midi.rate = was.rate; midi.loop = was.loop; }
     midi.shift = it.transpose || 0;
@@ -564,7 +571,11 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get hasVoice() { return hasVoice(); },
     // Chords: play the chord names too (piano only; hidden when the score has none)
     get hasChords() { return chordList.length > 0; }, get chordPlay() { return chordPlay; },
-    setChordPlay(on) { chordPlay = !!on; try { localStorage.setItem(cpKey, chordPlay ? '1' : '0'); } catch {} midi?.setChords(chordPlay); }, get voice() { return player === voice && !!voice; }, setVoice,
+    setChordPlay(on) { chordPlay = !!on; try { localStorage.setItem(cpKey, chordPlay ? '1' : '0'); } catch {} midi?.setChords(chordsWanted()); },
+    // Hands: the staves' names ([] / one staff: no picker), the muted ones; setMuted takes effect at once (while playing too)
+    get staves() { return staves(); }, get muted() { return muted(); },
+    setMuted(labels) { mutedPick = [...labels]; saveMuted(mutedPick); applyHands(); root.dispatchEvent(new CustomEvent('handschange', { bubbles: true })); },
+    get voice() { return player === voice && !!voice; }, setVoice,
     voiceReady(v) { Object.assign(it, v); voice?.destroy(); voice = null; if (voiceOn) setVoice(true); },
     zoomReset() { this.setZoom(zDef()); },
     setZoom(z) { zoom = zClamp(z); if (zLocal) { try { localStorage.setItem(zKey, zoom); } catch {} } else store.update(it.id, { zoom: String(zoom) }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zoom * zBase(); relayout(); },
@@ -655,6 +666,7 @@ export function scoreToolbar(bar, it, view) {
       <button class="icon-btn stop" id="sc-stop" aria-label="Stop" title="Stop: back to where you put the line; again: back to the beginning">${iconOn('stop')}</button>
       <button class="play" id="sc-play" aria-label="Play" title="Play (space)">${iconOn('play')}</button>
     </div>
+    <span class="hands-slot" id="sc-hands"></span>
     <button class="check-badge" id="sc-check" hidden></button>
     <div class="stepper" aria-label="Speed" title="Speed"><button id="sc-slow" aria-label="Slower">−</button><span id="sc-rate">${speedNow()}</span><button id="sc-fast" aria-label="Faster">+</button></div>
     <div class="stepper" aria-label="Transpose"><button id="sc-tdown" aria-label="Transpose down">♭</button><span id="sc-tval">${it.transpose ? (it.transpose > 0 ? '+' : '') + it.transpose : '0'}</span><button id="sc-tup" aria-label="Transpose up">♯</button></div>
@@ -688,7 +700,13 @@ export function scoreToolbar(bar, it, view) {
   const cpl = () => { cpBtn.hidden = !view.hasChords || view.voice; cpBtn.classList.toggle('on', view.chordPlay); cpBtn.setAttribute('aria-pressed', String(view.chordPlay)); };
   cpBtn.onclick = () => { view.setChordPlay(!view.chordPlay); cpl(); };
   host.addEventListener('chordlistchange', cpl); // an edit added / took away chord names
-  const vl = () => { cpl(); voiceBtn.hidden = !view.hasVoice; voiceBtn.classList.toggle('on', view.voice); voiceBtn.setAttribute('aria-pressed', String(view.voice)); $('#sc-rate', bar).textContent = speedNow(); setPlay(); };
+  // Hands: L · Both · R (or a toggle per staff); not for the singing voice
+  const handsSlot = $('#sc-hands', bar);
+  const hl = () => { handsSlot.innerHTML = view.voice ? '' : handsHtml(view.staves, view.muted); };
+  handsSlot.onclick = (e) => { const m = handsClick(e, view.staves, view.muted); if (m) view.setMuted(m); };
+  host.addEventListener('handschange', hl); host.addEventListener('chordlistchange', hl); // chordlistchange: new notes (an edit may add a staff)
+  hl();
+  const vl = () => { cpl(); hl(); voiceBtn.hidden = !view.hasVoice; voiceBtn.classList.toggle('on', view.voice); voiceBtn.setAttribute('aria-pressed', String(view.voice)); $('#sc-rate', bar).textContent = speedNow(); setPlay(); };
   voiceBtn.onclick = async () => { const pr = view.setVoice(!view.voice); vl(); await pr; vl(); };
   const toPiano = (why) => { if (!view.voice) return; view.setVoice(false); vl(); toast(`${why} — back to the piano (the voice sings at its own tempo and key)`); };
   const onSung = (e) => { // "Make it sing" finished for this score: Voice turns on
@@ -747,7 +765,7 @@ export function scoreToolbar(bar, it, view) {
   if (store.mode === 'server') store.refreshJobs().catch(() => {});  // a sing job still running (after a reload): ⋯ says so, and Voice appears when it is done
   return () => {
     offCheck(); offVoice();
-    host.removeEventListener('ended', onEnd); host.removeEventListener('playstate', onEnd); host.removeEventListener('chordlistchange', cpl); document.removeEventListener('keydown', onSpace); removeEventListener('meowsic-new-items', onSung);
+    host.removeEventListener('ended', onEnd); host.removeEventListener('playstate', onEnd); host.removeEventListener('chordlistchange', cpl); host.removeEventListener('handschange', hl); host.removeEventListener('chordlistchange', hl); document.removeEventListener('keydown', onSpace); removeEventListener('meowsic-new-items', onSung);
     viewer?.removeEventListener('ukeclose', onUkeClose); viewer?.removeEventListener('uketoggle', onUkeToggle); uke?.destroy(); uke = null;
   };
 }
