@@ -1154,8 +1154,8 @@ async function rests(name, vp) {
   const lr = await pick((n) => n.bar === 0 && n.staff === 2 && n.rest);
   check('tap picks the left-hand whole-bar rest', JSON.stringify(await sel()) === `[${lr}]`, JSON.stringify(await sel()));
   check('the picked rest is coloured', await page.$eval(`#paper g[data-ref="${lr}"]`, (g) => g.classList.contains('nh-on')));
-  check('rest picked: length buttons on, “+ Note here” shown, a hint', await page.$eval('.notes-panel [data-len="1"]', (e) => !e.disabled)
-    && (await page.$eval('.notes-panel [data-a="add"]', (e) => e.textContent.trim())) === '+ Note here' && !!(await page.$('.np-rest-help')));
+  check('rest picked: length buttons on, “+ Note here” shown, no help text', await page.$eval('.notes-panel [data-len="1"]', (e) => !e.disabled)
+    && (await page.$eval('.notes-panel [data-a="add"]', (e) => e.textContent.trim())) === '+ Note here' && !(await page.$('.np-help')));
   if (name === 'iPhone') await page.screenshot({ path: `${SHOTS}/Rests-${name}-picked.png` });
   await len(1); await idle();
   check('left-hand rest → a quarter rest, then quarter + half', (await voice(0, 2)) === 'R@0:1 R@1:1 R@2:2', await voice(0, 2));
@@ -1192,10 +1192,10 @@ async function rests(name, vp) {
   await act('undo'); await idle();
   check('Undo after pull: back as it was (one step)', (await voice(0, 1)) === '72@0:1 R@1:1 74@2:1 76@3:1', await voice(0, 1));
 
-  // 5. Fill next rest (Mac: E) on bar 2's C5: one rest per press, the C5 stays picked; then nothing more to fill
+  // 5. Fill next rest (Mac: L) on bar 2's C5: one rest per press, the C5 stays picked; then nothing more to fill
   const c5 = await pick((n) => n.bar === 1 && n.staff === 1 && n.midi === 72);
   check('Fill next rest is on for a note with a rest after it', await page.$eval('.notes-panel [data-a="fill"]', (e) => !e.disabled));
-  const fill = async () => { if (touch) await act('fill'); else { await page.keyboard.press('e'); await sleep(150); } await idle(); };
+  const fill = async () => { if (touch) await act('fill'); else { await page.keyboard.press('l'); await sleep(150); } await idle(); };
   await fill();
   check('fill 1: C5 a half note, the half rest after it stays', (await voice(1, 1)) === '72@0:2 R@2:2' && (await sel()).length === 1, await voice(1, 1));
   check('the play start is a bar before the edit (bar 1)', (await EN(() => window.__editNotes.cueBar)) === 1, String(await EN(() => window.__editNotes.cueBar)));
@@ -1204,10 +1204,10 @@ async function rests(name, vp) {
   check('then Fill next rest is off (last in its bar)', await page.$eval('.notes-panel [data-a="fill"]', (e) => e.disabled));
   await act('undo'); await idle(); await act('undo'); await idle();
   check('Undo twice: C5 · rests again', (await voice(1, 1)) === '72@0:1 R@1:1 R@2:2', await voice(1, 1));
-  // a note right before a note: Mac E says so
+  // a note right before a note: Mac L says so
   if (!touch) {
     await pick((n) => n.bar === 0 && n.staff === 1 && n.midi === 74);
-    await page.keyboard.press('e'); await sleep(300);
+    await page.keyboard.press('l'); await sleep(300);
     check('no rest after the note: says so', /No rest after this note/.test(await toastText()), await toastText());
   }
   // 6. + Note here on the left-hand rest → a note

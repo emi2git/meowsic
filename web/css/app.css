@@ -1158,6 +1158,16 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 :root[data-device="phone"] .np-acts .np-clip .np-icon { flex: 1; min-width: 0; }
 .np-addstaff { display: grid; gap: 10px; margin: 10px 0; }
 .np-addstaff label { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+/* drag a note (Mac): a ghost where it goes + its name; ties / slurs: click to pick, ✕ or ⌫ takes it away */
+.viewer.noting.np-dragging, .viewer.noting.np-dragging * { cursor: grabbing !important; }
+.np-ghost { pointer-events: none; opacity: .55; }
+.np-ghost path, .np-ghost ellipse { fill: var(--acc) !important; stroke: var(--acc) !important; }
+.np-draglabel { position: fixed; z-index: 61; pointer-events: none; background: var(--acc); color: #fff; font-weight: 700; font-size: 13px; padding: 3px 8px; border-radius: 8px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, .2); }
+.np-arc-hit { cursor: pointer; }
+.np-arc-hit path { stroke: transparent; stroke-width: 7px; pointer-events: all; }
+.np-arc-hit:hover path { fill: var(--acc-text); }
+.viewer .np-arc-on path { fill: var(--acc) !important; stroke: color-mix(in srgb, var(--acc) 30%, transparent); }
+.np-arc-x { position: fixed; z-index: 61; width: 26px; height: 26px; min-height: 0; padding: 0; border-radius: 50%; background: var(--acc); color: #fff; border: 2px solid var(--card); font-size: 13px; font-weight: 700; line-height: 1; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0, 0, 0, .25); cursor: pointer; }
 .np-box { position: fixed; z-index: 60; border: 1.5px dashed var(--acc); background: color-mix(in srgb, var(--acc) 12%, transparent); border-radius: 4px; pointer-events: none; }
 .notes-panel { position: absolute; left: 12px; right: 12px; bottom: 12px; z-index: 45; background: var(--card); border: 1px solid var(--line2); border-radius: 16px; box-shadow: 0 10px 34px rgba(0, 0, 0, .22); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
 .notes-panel .flip { display: inline-flex; transform: scaleX(-1); }
@@ -1165,7 +1175,6 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .np-row .grow, .np-acts .grow { flex: 1; }
 .np-title { font-size: 16px; }
 .np-count { font-weight: 700; color: var(--ink2); }
-.np-help { margin: 0; font-size: 13px; }
 .np-acts button { min-height: 42px; padding: 0 14px; }
 .np-acts button.on { background: var(--acc-soft); border-color: var(--acc); }
 .np-acts .np-move { font-weight: 600; }
@@ -1178,7 +1187,6 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 :root[data-device="tablet"] .np-tools > .np-arc, :root[data-device="tablet"] .np-tools > .np-icon { min-width: 40px; padding: 0 8px; }
 :root[data-device="tablet"] .notes-panel, :root[data-device="phone"] .notes-panel { left: 0; right: 0; bottom: 0; border-radius: 16px 16px 0 0; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
 :root[data-device="phone"] .viewer.noting #it-bar { display: none; }
-:root[data-device="phone"] .np-help { display: none; }
 :root[data-device="phone"] .np-acts button { flex: 1 1 28%; min-height: 46px; padding: 0 8px; }
 :root[data-device="phone"] .np-acts .np-move, :root[data-device="phone"] .np-acts .primary { flex-basis: 40%; }
 :root[data-device="phone"] .np-acts .grow { display: none; }

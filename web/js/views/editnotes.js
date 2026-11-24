@@ -22,6 +22,10 @@
 // orange line) goes to one bar before the first bar edited, so Play — or "▶ From here", which starts a bar before the picked
 // notes — plays the change as it is drawn (not saved yet). Tapping the score here picks notes; it never moves
 // the line.
+// Mac, mouse: press a notehead and drag it — up / down a line or space at a time in the key (⌥: a semitone), sideways
+// to another beat of this bar or another (onto rests; onto a note of the same length: the two swap; else refused) —
+// a ghost note and its name show where it goes, Esc cancels, letting go is one edit (op shift / pitch). Click a tie
+// or a slur to pick it; its ✕ or ⌫ / Delete takes it away. (Touch keeps tap to pick; the keys are in Help.)
 // A bar left short / over-full is never filled on its own: it is tinted with a badge ("3 of 4 beats", score.js +
 // incomplete.js); tapping the badge here offers Fill with rest / Change time for this bar / Keep editing (one undo
 // step); saving with such bars is allowed and says how many.
@@ -108,6 +112,7 @@ export async function editNotes(view, it, host, opts = {}) {
       (groups.get(k) || groups.set(k, []).get(k)).push(n);
     }
     groups.forEach((g) => g.sort((a, b) => (a.midi ?? 0) - (b.midi ?? 0)));
+    const srcRef = new Map(), vfIdx = new Map(); // OSMD note → ref; VexFlow note → (key index → ref), for the arcs
     osmd.GraphicSheet.MeasureList.forEach((gms, bi) => {
       for (const gm of gms || []) {
         const si = gm ? inst.Staves.indexOf(gm.ParentStaff) : -1;
@@ -132,6 +137,9 @@ export async function editNotes(view, it, host, opts = {}) {
           d.sort((a, b) => a.ht - b.ht);
           d.slice(0, g.length).forEach((x, i) => {
             const el = x.rest ? x.gn.getSVGGElement?.() : headEl(x.gn);
+            srcRef.set(x.gn.sourceNote, g[i].ref);
+            const vn = x.gn.vfnote?.[0];
+            if (!x.rest && vn) (vfIdx.get(vn) || vfIdx.set(vn, new Map()).get(vn)).set(x.gn.vfnoteIndex ?? x.gn.vfnote?.[1] ?? 0, g[i].ref);
             if (!el) return;
             el.dataset.ref = g[i].ref;
             el.classList.add('nh-hit');
@@ -142,11 +150,70 @@ export async function editNotes(view, it, host, opts = {}) {
         });
       }
     });
+    tagArcs(srcRef, vfIdx);
   };
+  // ---- ties and slurs on the score: click one to pick it, then ⌫ / Delete or its ✕ takes it away ----
+  let arcSel = null; // { kind: 'tie' | 'slur', ref: the note it starts on }
+  const tagArcs = (srcRef, vfIdx) => {
+    const osmd = view.osmd, s = starts(), notes = cur().notes, m = byRef();
+    const put = (el, kind, ref) => {
+      if (!el || ref == null || !el.classList) return;
+      el.classList.add('np-arc-hit');
+      el.dataset.arc = kind; el.dataset.arcRef = ref;
+    };
+    // a tie drawn from the start of a line: its start note is the same pitch ending where this one starts
+    const tieInto = (stop) => {
+      const z = m.get(stop);
+      return z && notes.find((n) => n.tie && n.staff === z.staff && n.midi === z.midi && Math.abs(absOf(n, s) + n.dur - absOf(z, s)) < 1e-6)?.ref;
+    };
+    for (const gms of osmd.GraphicSheet.MeasureList || []) for (const gm of gms || []) for (const t of gm?.vfTies || []) {
+      const tn = t.notes || t, el = t.getAttribute?.('el');
+      if (tn.first_note) put(el, 'tie', vfIdx.get(tn.first_note)?.get(tn.first_indices?.[0] ?? 0));
+      else if (tn.last_note) put(el, 'tie', tieInto(vfIdx.get(tn.last_note)?.get(tn.last_indices?.[0] ?? 0)));
+    }
+    for (const pg of osmd.GraphicSheet.MusicPages || []) for (const sys of pg.MusicSystems || []) for (const sl of sys.StaffLines || [])
+      for (const gs of sl.GraphicalSlurs || []) put(gs.SVGElement, 'slur', srcRef.get(gs.slur?.StartNote));
+    markArc();
+  };
+  const arcEl = () => arcSel && paper.querySelector(`.np-arc-hit[data-arc="${arcSel.kind}"][data-arc-ref="${arcSel.ref}"]`);
+  let arcX = null;
+  const markArc = () => {
+    paper.querySelectorAll('.np-arc-on').forEach((g) => g.classList.remove('np-arc-on'));
+    const el = !closed && arcEl();
+    if (!el) { arcX?.remove(); arcX = null; return; }
+    el.classList.add('np-arc-on');
+    if (!arcX) {
+      arcX = document.createElement('button');
+      arcX.className = 'np-arc-x';
+      arcX.textContent = '✕';
+      arcX.addEventListener('pointerdown', (e) => e.stopPropagation(), true);
+      arcX.addEventListener('click', (e) => { e.stopPropagation(); removeArc(); });
+      document.body.append(arcX);
+    }
+    const word = arcSel.kind === 'tie' ? 'tie' : 'slur';
+    arcX.title = `Remove this ${word} (⌫)`; arcX.setAttribute('aria-label', `Remove ${word}`);
+    const r = el.getBoundingClientRect();
+    Object.assign(arcX.style, { left: `${r.right - 4}px`, top: `${r.top - 26}px` });
+  };
+  const pickArc = (el) => {
+    arcSel = { kind: el.dataset.arc, ref: +el.dataset.arcRef };
+    sel = new Set(); rng = null; rangeArm = false; barPick = null;
+    paint();
+  };
+  const removeArc = () => {
+    const a = arcSel;
+    if (!a) return;
+    arcSel = null; markArc();
+    run(a.kind === 'tie' ? { op: 'tie', refs: [a.ref] } : { op: 'unslur', refs: [a.ref], at: 'start' });
+  };
+  const onScroll = () => arcX && markArc();
+  document.addEventListener('scroll', onScroll, true);
   const paint = () => {
     paper.querySelectorAll('g[data-ref]').forEach((g) => g.classList.toggle('nh-on', sel.has(+g.dataset.ref)));
+    if (sel.size || rng || barPick) arcSel = null;
     markBar();
     markRange();
+    markArc();
     draw();
   };
   // ---- a range: times from the start of the score (each bar as long as its longest voice) ----
@@ -259,21 +326,19 @@ export async function editNotes(view, it, host, opts = {}) {
     const pages = view.pages > 1;
     const off = (c) => (c ? '' : 'disabled');
     npBody.innerHTML = `<div class="np-row"><b class="np-title">${opts.title || 'Edit notes'}</b>
-      <span class="np-count" id="np-count">${p.length ? `${plural(ns.length, 'note')}${rs.length ? ` · ${plural(rs.length, 'rest')}` : ''} ${rng ? 'in the range' : 'picked'}` : barPick ? `Bar ${barPick.bar + 1} picked (${staffName(barPick.staff, nst)})` : 'Pick notes on the score'}</span>
+      <span class="np-count" id="np-count">${arcSel ? `${arcSel.kind === 'tie' ? 'Tie' : 'Slur'} picked · ⌫ or ✕ takes it away` : p.length ? `${plural(ns.length, 'note')}${rs.length ? ` · ${plural(rs.length, 'rest')}` : ''} ${rng ? 'in the range' : 'picked'}` : barPick ? `Bar ${barPick.bar + 1} picked (${staffName(barPick.staff, nst)})` : 'Pick notes on the score'}</span>
       ${midiCtl ? '<span class="np-midi-slot"></span>' : ''}<span class="grow"></span>
       <button data-a="playhere" class="np-play ${view.player?.playing ? 'on' : ''}" title="${view.player?.playing ? 'Pause (space)' : 'Play from the bar before the picked notes, as edited (space)'}" aria-label="${view.player?.playing ? 'Pause' : 'Play from here'}">${view.player?.playing ? '❚❚ Pause' : '▶ From here'}</button>
       ${pages ? `<span class="np-pages"><button class="icon-btn" data-a="prev" title="Page before (Shift ←)" aria-label="Page before" ${off(view.page > 1)}>${iconOn('left')}</button><span class="np-pageno" id="np-pageno">${view.page}/${view.pages}</span><button class="icon-btn" data-a="next" title="Next page (Shift →)" aria-label="Next page" ${off(view.page < view.pages)}>${iconOn('right')}</button></span>` : ''}
       <button class="icon-btn" data-a="undo" ${off(at > 0)} title="Undo (⌘Z)" aria-label="Undo">${iconOn('undo')}</button>
       <button class="icon-btn" data-a="redo" ${off(at < steps.length - 1)} title="Redo (⇧⌘Z)" aria-label="Redo"><span class="flip">${iconOn('undo')}</span></button>
       <button class="icon-btn" data-a="close" title="Close (Esc)" aria-label="Close">${iconOn('close')}</button></div>
-      ${onlyRests ? `<p class="muted np-help np-rest-help">${plural(rs.length, 'rest')} picked: a length button makes ${rs.length === 1 ? 'it' : 'them'} longer or shorter; “+ Note here” turns ${rs.length === 1 ? 'it' : 'them'} into a note.</p>` : ''}
-      <p class="muted np-help">${isTouch() ? 'Tap notes or rests to pick them, or drag a box around them; hold a note, then tap or drag to another for a range; tap above the top staff for a chord name; tap a bar’s empty space for Bar ▾. “Several” adds each tap.' : 'Click a note or rest to pick it · click a bar’s empty space for Bar ▾ · ⌘-click adds one · Shift-click picks a range · drag a box around notes. Keys: ← → next note, Shift ← → range, ⌘A all, ↑ ↓ semitone, ⌘↑ ⌘↓ octave, J respell, 2–6 length, . dotted, E fill next rest, T tie, S slur, N add, ⌘C ⌘X ⌘V, R repeat, K chord name (or click above the staff), Delete, space play, Page ↑ ↓ page.'} A bar left short shows a badge: tap it to fix.</p>
       <div class="np-acts np-tools">
         ${isTouch() ? `<button data-a="several" class="${several ? 'on' : ''}" aria-pressed="${several}" title="Pick several: each tap adds a note">Several</button>` : ''}
         <button data-a="barmenu" class="np-barmenu" aria-haspopup="menu" title="Bar and staff tools: clear or add a hand, insert or delete a bar, add or remove a staff">${tgt ? `Bar ${tgt.bar + 1}` : 'Bar'} ▾</button>
         <span class="stepper np-pitch" aria-label="Pitch"><button data-a="oct-" ${off(ns.length)} title="Octave down (⌘↓)" aria-label="Octave down">8↓</button><button data-a="semi-" ${off(ns.length)} title="Semitone down (↓)" aria-label="Semitone down">♭</button><button data-a="semi+" ${off(ns.length)} title="Semitone up (↑)" aria-label="Semitone up">♯</button><button data-a="oct+" ${off(ns.length)} title="Octave up (⌘↑)" aria-label="Octave up">8↑</button><button data-a="respell" class="np-respell" ${off(ns.length)} title="Spell another way (J): C♯ ⇄ D♭ — hold (right-click) for ♯ ♭ ♮ and a courtesy accidental" aria-label="Respell" aria-haspopup="menu">♯/♭</button></span>
         <span class="stepper np-len" aria-label="Length">${LENS.map(([q, g, l, k]) => `<button data-len="${q}" class="${baseLen === q ? 'on' : ''}" ${off(p.length)} title="${lname(l)} (${k})" aria-label="${lname(l)}">${g}</button>`).join('')}<button data-a="dot" class="${len != null && DOTTED.has(len) ? 'on' : ''}" ${off(len != null)} title="Dotted (.)" aria-label="Dotted">•</button></span>
-        <button data-a="fill" class="np-fill np-icon" ${off(ns.some((n) => n.fill))} title="Fill next rest (E): the note takes in the rest right after it — press again for the next one" aria-label="Fill next rest">→|</button>
+        <button data-a="fill" class="np-fill np-icon" ${off(ns.some((n) => n.fill))} title="Fill next rest (L): the note takes in the rest right after it — press again for the next one" aria-label="Fill next rest">→|</button>
         ${onlyRests ? '' : `<button data-a="tie" class="np-arc ${ns.length && ns.every((n) => n.tie) ? 'on' : ''}" ${off(ns.length)} title="Tie (T): to the next note of the same pitch (tied: takes it away)" aria-label="Tie">${TIE_IC}</button>
         <button data-a="slur" class="np-arc ${ns.length && ns.every((n) => n.slur) ? 'on' : ''}" ${off(ns.length)} title="Slur (S): over the picked notes; one note: to the next one (slurred: takes it away)" aria-label="Slur">${SLUR_IC}</button>`}
         <button data-a="add" ${off(p.length)} title="${onlyRests ? 'Turn the rest into a note (N), then move it with ↑ ↓' : 'Add a note (N): a third above, or on a rest'}" aria-label="${onlyRests ? 'Note here' : 'Add a note'}">${onlyRests ? '+ Note here' : '+♪'}</button>
@@ -316,13 +381,16 @@ export async function editNotes(view, it, host, opts = {}) {
 
   // pointer on the score: tap a note, or drag a box (the score's own tap-to-seek / swipes wait while editing)
   let press = null, box = null;
-  const inPaper = (e) => !!e.target.closest?.('#paper') && !e.target.closest('.notes-panel') && !e.target.closest('.ib-badge');
+  // the orange play line (and its grip) is the score's own: its drag wins over picking
+  const inPaper = (e) => !!e.target.closest?.('#paper') && !e.target.closest('.notes-panel') && !e.target.closest('.ib-badge') && !e.target.closest('.playbar');
   const onDown = (e) => {
     if (!inPaper(e) || e.button > 0) return;
     e.stopPropagation();
     const dot = e.target.closest('.score-dots i');
     if (dot) { e.preventDefault(); press = null; view.goTo([...dot.parentElement.children].indexOf(dot) + 1); return draw(); }
-    press = { x: e.clientX, y: e.clientY, id: e.pointerId, ref: e.target.closest('g[data-ref]')?.dataset.ref, near: nearRef(e.clientX, e.clientY) };
+    press = { x: e.clientX, y: e.clientY, id: e.pointerId, ref: e.target.closest('g[data-ref]')?.dataset.ref, near: nearRef(e.clientX, e.clientY), arc: e.target.closest('.np-arc-hit') };
+    // Mac: a press on a notehead can drag the note (up / down: pitch, sideways: another beat)
+    if (e.pointerType === 'mouse' && press.ref != null && !e.shiftKey && !e.metaKey && !e.ctrlKey && !byRef().get(+press.ref)?.rest) press.canDrag = true;
     // touch: a long press on a note starts a range — then tap another note, or drag to it
     if (e.pointerType !== 'mouse' && (press.ref ?? press.near) != null) {
       const p = press;
@@ -347,6 +415,116 @@ export async function editNotes(view, it, host, opts = {}) {
     }
     return ref;
   };
+  // ---- drag a note (Mac): up / down a staff line or space at a time (in the key; ⌥: a semitone), sideways to
+  // another beat of this bar or another one; a ghost note + its name show where it goes; Esc cancels ----
+  let drag = null;
+  const clientOf = (svg, x, y) => new DOMPoint(x, y).matrixTransform(svg.getScreenCTM());
+  const boxOf = (bar, staff) => { for (const b of barBoxes()) if (b.bar === bar && b.staff === staff) return b; return null; };
+  // bar bi on screen: [{ on, x }] (x in px) from its drawn notes and rests, then its end
+  const timeMap = (bi) => {
+    const xs = new Map();
+    for (const n of cur().notes) {
+      if (n.bar !== bi) continue;
+      const g = paper.querySelector(`g[data-ref="${n.ref}"]`);
+      if (!g) continue;
+      const r = g.getBoundingClientRect(), k = r3(n.on);
+      (xs.get(k) || xs.set(k, []).get(k)).push(r.left + r.width / 2);
+    }
+    const pts = [...xs].map(([on, v]) => ({ on, x: Math.min(...v) })).sort((a, b) => a.on - b.on);
+    const len = Math.max(0, ...cur().notes.filter((n) => n.bar === bi).map((n) => n.on + n.dur)) || 4;
+    const bx = boxOf(bi, 1);
+    if (bx) pts.push({ on: len, x: clientOf(bx.svg, (bx.x + bx.w) * 10, 0).x });
+    return { pts, len };
+  };
+  const xToOn = (pts, x) => {
+    if (!pts.length) return 0;
+    if (x <= pts[0].x) return pts[0].on;
+    for (let i = 1; i < pts.length; i++) if (x <= pts[i].x) { const a = pts[i - 1], b = pts[i]; return a.on + ((b.on - a.on) * (x - a.x)) / Math.max(1, b.x - a.x); }
+    return pts.at(-1).on;
+  };
+  const onToX = (pts, on) => {
+    if (!pts.length) return null;
+    for (let i = 1; i < pts.length; i++) if (on <= pts[i].on + 1e-6) { const a = pts[i - 1], b = pts[i]; return a.x + ((b.x - a.x) * (on - a.on)) / Math.max(1e-6, b.on - a.on); }
+    return pts[0].x;
+  };
+  const NAME_S = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'], NAME_F = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'G♭', 'G', 'A♭', 'A', 'B♭', 'B'];
+  const LET_S = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6], LET_F = [0, 1, 1, 2, 2, 3, 4, 4, 5, 5, 6, 6];
+  const pc = (m) => ((m % 12) + 12) % 12;
+  const nameOf = (m, flats) => `${(flats ? NAME_F : NAME_S)[pc(m)]}${Math.floor(m / 12) - 1}`;
+  const diaOf = (m, flats) => (Math.floor(m / 12) - 1) * 7 + (flats ? LET_F : LET_S)[pc(m)]; // its line / space
+  // k staff steps from midi m: each one the next note of the key (C major: C D E F …); ⌥: k semitones
+  const stepPitch = (m, k, fifths, chromatic) => {
+    if (chromatic) return m + k;
+    const tonic = pc(7 * fifths), inKey = (x) => [0, 2, 4, 5, 7, 9, 11].includes(pc(x - tonic));
+    let x = m;
+    for (let i = 0; i < Math.abs(k); i++) do x += Math.sign(k); while (!inKey(x));
+    return x;
+  };
+  const startDrag = (p) => {
+    const ref = +p.ref, n = byRef().get(ref), g = paper.querySelector(`g[data-ref="${ref}"]`), svg = g?.ownerSVGElement;
+    if (!n || !g || !svg || busy) { p.canDrag = false; return false; }
+    if (!sel.has(ref)) { anchor = ref; setSel([ref]); }
+    const r = g.getBoundingClientRect(), fifths = barState(n.bar).fifths;
+    const ghost = g.cloneNode(true);
+    ghost.removeAttribute('data-ref'); ghost.removeAttribute('id');
+    ghost.setAttribute('class', 'np-ghost');
+    svg.append(ghost);
+    const label = document.createElement('div');
+    label.className = 'np-draglabel';
+    document.body.append(label);
+    drag = { ref, n, g, svg, ghost, label, x0: p.x, y0: p.y, cx: r.left + r.width / 2, cy: r.top + r.height / 2, fifths, flats: fifths < 0, by: 0, bar: n.bar, on: n.on, maps: new Map() };
+    host.classList.add('np-dragging');
+    try { host.setPointerCapture(p.id); } catch {}
+    return true;
+  };
+  const dragTo = (e) => {
+    const d = drag, n = d.n, m = d.svg.getScreenCTM();
+    if (!m) return;
+    // pitch: half a staff space (5 units) a step
+    const steps = Math.round(-(e.clientY - d.y0) / (5 * m.d));
+    const midi = Math.max(21, Math.min(108, stepPitch(n.midi, steps, d.fifths, e.altKey)));
+    d.by = midi - n.midi;
+    // time: the bar under the pointer (on this note's row first), a grid of the note's length (at most a beat)
+    const b = barAt(e.clientX, d.cy) || barAt(e.clientX, e.clientY);
+    let bar = b ? b.bar : d.bar, tm = d.maps.get(bar);
+    if (!tm) { tm = timeMap(bar); d.maps.set(bar, tm); }
+    const grid = n.dur < 1 ? n.dur : n.dur % 1 ? 0.5 : 1;
+    let on = Math.round(xToOn(tm.pts, e.clientX - (d.x0 - d.cx)) / grid) * grid;
+    on = r3(Math.max(0, Math.min(tm.len - n.dur, on)));
+    if (on < 0 || n.dur > tm.len + 1e-6) { bar = n.bar; on = n.on; }
+    d.bar = bar; d.on = on;
+    // the ghost: on the target line / space, at the target beat (same page: drawn there; else it stays here)
+    const moved = bar !== n.bar || Math.abs(on - n.on) > 1e-6;
+    const tx = moved ? onToX(tm.pts, on) : d.cx;
+    const b0 = boxOf(n.bar, n.staff), b1 = boxOf(bar, n.staff);
+    const row = b0 && b1 && b1.svg === b0.svg ? (b1.y - b0.y) * 10 : 0;
+    const dx = tx == null || (b1 && b1.svg !== d.svg) ? 0 : (tx - d.cx) / m.a;
+    const dy = -(diaOf(midi, d.flats || d.by < 0) - diaOf(n.midi, d.flats || d.by < 0)) * 5 + row;
+    d.ghost.setAttribute('transform', `translate(${dx} ${dy})`);
+    d.ghost.style.display = d.by || moved ? '' : 'none';
+    const beat = on + 1;
+    d.label.textContent = `${nameOf(midi, d.flats || d.by < 0)}${moved ? ` · bar ${bar + 1}, beat ${Number.isInteger(beat) ? beat : beat.toFixed(2).replace(/0$/, '')}` : ''}`;
+    Object.assign(d.label.style, { left: `${e.clientX + 14}px`, top: `${e.clientY - 30}px` });
+  };
+  const endDrag = () => {
+    if (!drag) return;
+    drag.ghost.remove(); drag.label.remove();
+    host.classList.remove('np-dragging');
+    drag = null;
+  };
+  const dropDrag = () => {
+    const d = drag;
+    endDrag();
+    const n = d.n, moved = d.bar !== n.bar || Math.abs(d.on - n.on) > 1e-6;
+    if (moved) {
+      // the chord's picked notes go together (the note pressed, at least)
+      const refs = picked().filter((x) => !x.rest && x.bar === n.bar && x.staff === n.staff && x.voice === n.voice && Math.abs(x.on - n.on) < 1e-6).map((x) => x.ref);
+      run({ op: 'shift', refs: refs.length ? refs : [n.ref], bar: d.bar, on: d.on, by: d.by }, null, { bar: Math.min(d.bar, n.bar) });
+    } else if (d.by) {
+      const refs = noteRefs();
+      run({ op: 'pitch', refs: refs.includes(n.ref) ? refs : [n.ref], by: d.by });
+    }
+  };
   const onMove = (e) => {
     if (!press || e.pointerId !== press.id) return;
     e.stopPropagation();
@@ -356,6 +534,8 @@ export async function editNotes(view, it, host, opts = {}) {
       if (ref != null && +ref !== press.last) { press.last = +ref; rangeTo(+ref); rangeArm = true; press.dragged = true; }
       return;
     }
+    if (drag) { e.preventDefault(); return dragTo(e); }
+    if (press.canDrag && !box && Math.hypot(e.clientX - press.x, e.clientY - press.y) >= 4) { e.preventDefault(); if (startDrag(press)) return dragTo(e); }
     if (!box && Math.hypot(e.clientX - press.x, e.clientY - press.y) < 8) return;
     clearTimeout(press.timer);
     e.preventDefault();
@@ -368,6 +548,7 @@ export async function editNotes(view, it, host, opts = {}) {
     e.stopPropagation();
     const p = press; press = null;
     clearTimeout(p.timer);
+    if (drag) { if (e.type === 'pointerup') dropDrag(); else endDrag(); return; }
     if (p.long) { if (p.dragged) rangeArm = false; return; } // a long press (and drag) made the range; a tap ends it
     if (box) {
       const r = box.getBoundingClientRect();
@@ -378,6 +559,8 @@ export async function editNotes(view, it, host, opts = {}) {
       return setSel(hit, e.shiftKey || e.metaKey || e.ctrlKey || several);
     }
     if (e.type !== 'pointerup') return;
+    if (p.arc && p.ref == null) return pickArc(p.arc); // a tie / slur: picked, ⌫ or its ✕ takes it away
+    arcSel = null;
     // not right on a notehead: the nearest one within a finger's width
     // right on a notehead: that note; above the top staff: its chord name; else the nearest note within a finger
     const ch = p.ref == null && !e.shiftKey && !e.metaKey && !e.ctrlKey && chordAt(e.clientX, e.clientY);
@@ -419,6 +602,7 @@ export async function editNotes(view, it, host, opts = {}) {
   const run = async (op, onErr, { replace = false, after, bar: atBar, range: newRange } = {}) => {
     if (busy || (replace && at === 0)) return;
     busy = true;
+    arcSel = null;
     try {
       const from = replace ? at - 1 : at;
       const ops = [...steps[from].ops, op];
@@ -654,7 +838,7 @@ export async function editNotes(view, it, host, opts = {}) {
   };
   const barMenu = (anchor) => {
     const t = target(), n = nStaves(), entries = [];
-    if (sel.size) entries.push({ label: 'Whole bar: pick every note of these bars (B)', run: wholeBar }, '-');
+    if (sel.size) entries.push({ label: 'Whole bar: pick every note of these bars (W)', run: wholeBar }, '-');
     const the = (s) => `the ${staffName(s, n)}`;
     if (t) {
       const b = t.bar, label = `bar ${b + 1}`;
@@ -794,6 +978,42 @@ export async function editNotes(view, it, host, opts = {}) {
   const onEnded = () => !closed && draw();
   host.addEventListener('ended', onEnded);
   const add = () => need([...sel], (refs) => run({ op: 'add', refs, by: 4 }));
+  // ---- A–G typed: the picked note takes that letter (the octave nearest it), a picked rest becomes that note (the
+  // octave nearest the note before it); the key's sharps / flats apply (then ↑ ↓, # + / - a semitone); nothing picked:
+  // the next rest from the play start. Then the next note / rest of that staff and voice is picked, so "CDEFG" is a run.
+  const LETTER_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  const letter = async (L, up) => {
+    if (busy) return;
+    const key = (n) => n.bar * 1e4 + n.on;
+    let a = byRef().get(anchor);
+    if (!a || !sel.has(a.ref)) a = picked().sort((x, y) => key(x) - key(y) || x.staff - y.staff)[0];
+    if (!a) {
+      const from = Math.max(0, (cueAt ?? 1) - 1);
+      const rests = cur().notes.filter((n) => n.rest).sort((x, y) => x.staff - y.staff || key(x) - key(y));
+      a = rests.find((n) => n.staff === 1 && n.bar >= from) || rests.find((n) => n.bar >= from) || rests[0];
+      if (!a) return toast('No rest to write into: pick a note first');
+    }
+    const fifths = barState(a.bar).fifths;
+    const alter = fifths > 0 ? ('FCGDAEB'.indexOf(L) < fifths ? 1 : 0) : fifths < 0 ? ('BEADGCF'.indexOf(L) < -fifths ? -1 : 0) : 0;
+    const before = cur().notes.filter((n) => !n.rest && n.staff === a.staff && key(n) < key(a)).sort((x, y) => key(y) - key(x))[0];
+    const near = a.rest ? before?.midi ?? (a.staff === nStaves() && nStaves() > 1 ? 50 : 71) : a.midi;
+    const p = LETTER_PC[L] + alter;
+    let m = p + 12 * Math.round((near - p) / 12);
+    if (up) m += 12;
+    m = Math.max(21, Math.min(108, m));
+    const was = at, place = { bar: a.bar, on: a.on, staff: a.staff, voice: a.voice };
+    await run({ op: 'set', refs: [a.ref], midis: [m] });
+    if (at === was) return; // refused (it said why)
+    // the next onset of that staff and voice (another voice of the staff when that one ends)
+    const later = (same) => cur().notes.filter((n) => n.staff === place.staff && (!same || n.voice === place.voice) && key(n) > key(place) + 1e-6);
+    let row = later(true);
+    if (!row.length) row = later(false);
+    if (!row.length) return;
+    const k = Math.min(...row.map(key)), next = row.filter((n) => Math.abs(key(n) - k) < 1e-6).sort((x, y) => (x.voice === place.voice ? 0 : 1) - (y.voice === place.voice ? 0 : 1) || (y.midi ?? 0) - (x.midi ?? 0))[0];
+    anchor = next.ref;
+    setSel([next.ref]);
+    keepInView();
+  };
   // ---- copy / cut / paste / repeat (rangeops.py) ----
   const takeClip = async (w) => {
     const j = await post(`${url}/clip`, { ops: cur().ops, start: w.start, end: w.end, staves: [w.s0, w.s1] });
@@ -889,6 +1109,7 @@ export async function editNotes(view, it, host, opts = {}) {
     barPick = k < at ? steps[at].barPick || null : null;
     rng = k < at ? steps[at].rng || null : null;
     rangeArm = false;
+    arcSel = null;
     took = new Set();
     const bar = steps[Math.max(at, k)].bar;
     at = k;
@@ -947,7 +1168,7 @@ export async function editNotes(view, it, host, opts = {}) {
     document.removeEventListener('keydown', onKey, true);
     host.removeEventListener('ended', onEnded);
     lyr?.destroy(); // [lyrics]
-    box?.remove(); untag(); panel.remove();
+    box?.remove(); endDrag(); arcSel = null; markArc(); document.removeEventListener('scroll', onScroll, true); untag(); panel.remove();
     host.classList.remove('noting'); host.style.removeProperty('--np-h');
     if (window.__editNotes === api) delete window.__editNotes;
     if (shown && saved !== true) await view.reload();
@@ -983,6 +1204,9 @@ export async function editNotes(view, it, host, opts = {}) {
   const onKey = (e) => {
     if (closed || document.querySelector('.modal-wrap') || e.target.closest?.('input,textarea,select')) return;
     if (lyr?.key(e)) return; // [lyrics] in Lyrics mode the note keys rest
+    if (drag && e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); press = null; return endDrag(); } // a drag let go: nothing changes
+    if (drag) return;
+    if (arcSel && (e.key === 'Delete' || e.key === 'Backspace' || e.key === 'Escape')) { e.preventDefault(); e.stopPropagation(); if (e.key === 'Escape') { arcSel = null; return paint(); } return removeArc(); }
     const mod = e.metaKey || e.ctrlKey;
     let f = null;
     if (mod && e.key.toLowerCase() === 'z') f = () => goStep(e.shiftKey ? at + 1 : at - 1);
@@ -994,11 +1218,12 @@ export async function editNotes(view, it, host, opts = {}) {
     else if (e.shiftKey && !mod && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) f = () => extendRange(e.key === 'ArrowRight' ? 1 : -1); // nothing picked: the page
     else if (!mod && (e.key === 'PageDown' || e.key === 'PageUp')) f = () => turn(e.key === 'PageDown' ? 1 : -1);
     else if (mod && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) f = () => pitch(e.key === 'ArrowUp' ? 12 : -12);
+    else if (!mod && !e.altKey && /^[a-g]$/i.test(e.key)) f = () => letter(e.key.toUpperCase(), e.shiftKey); // A–G: that note (Shift: an octave up)
     else if (!mod) {
       const len = LENS.find((x) => x[3] === e.key);
       f = len ? () => setLen(len[0]) : { ArrowUp: () => pitch(1), ArrowDown: () => pitch(-1), ArrowLeft: () => stepNote(-1), ArrowRight: () => stepNote(1),
-        '.': dot, e: fill, E: fill, n: add, N: add, t: tie, T: tie, s: slur, S: slur, ...(e.target.closest?.('button') ? {} : { ' ': playHere }), Delete: del, Backspace: del,
-        b: wholeBar, B: wholeBar, r: repeat, R: repeat, j: respell, J: respell, k: chordHere, K: chordHere, Escape: () => (sel.size || rng ? setSel([]) : close()) }[e.key];
+        '.': dot, l: fill, L: fill, n: add, N: add, '#': () => pitch(1), '+': () => pitch(1), '=': () => pitch(1), '-': () => pitch(-1), t: tie, T: tie, s: slur, S: slur, ...(e.target.closest?.('button') ? {} : { ' ': playHere }), Delete: del, Backspace: del,
+        w: wholeBar, W: wholeBar, r: repeat, R: repeat, j: respell, J: respell, k: chordHere, K: chordHere, Escape: () => (sel.size || rng ? setSel([]) : close()) }[e.key];
     }
     if (!f) return;
     e.preventDefault(); e.stopPropagation();
@@ -1011,7 +1236,7 @@ export async function editNotes(view, it, host, opts = {}) {
     get ops() { return cur().ops; }, get xml() { return cur().xml; }, select: (refs) => setSel(refs), get busy() { return busy; }, close,
     get cueBar() { return cueAt; }, run: (op) => run(op), get barPick() { return barPick; }, pickBar: (bar, staff = 1) => { barPick = { bar, staff }; setSel([]); },
     get staves() { return nStaves(); }, get took() { return [...took]; }, get lyrics() { return lyr; },
-    get range() { return rng && { ...rng }; }, get chords() { return chordsOf(); }, chordAt: (x, y) => chordAt(x, y), setRange: (r) => setRange(r), get clip() { return clip; }, get rangeArm() { return rangeArm; } };
+    get range() { return rng && { ...rng }; }, get chords() { return chordsOf(); }, chordAt: (x, y) => chordAt(x, y), setRange: (r) => setRange(r), get clip() { return clip; }, get rangeArm() { return rangeArm; }, get arc() { return arcSel && { ...arcSel }; }, get dragging() { return !!drag; } };
   window.__editNotes = api; // for automated tests
   // a MIDI keyboard plays into the picked notes: midiedit.js, through these edits
   midiCtl = attachMidi({ get notes() { return cur().notes; }, get sel() { return picked(); }, get busy() { return busy; }, get step() { return at; },
