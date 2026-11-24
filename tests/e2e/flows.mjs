@@ -239,10 +239,14 @@ const pos = (await page.evaluate(() => window.__score.player.now()));
 check('playback moves the position', pos > 0.5, pos);
 check('play bar visible', await page.$eval('.playbar', (e) => e.style.display === 'block'));
 await page.click('#sc-play');
+const bpm0 = +(await text('#sc-rate'));
+check('tempo shows the score\'s own bpm (a number)', bpm0 >= 30 && bpm0 <= 240 && bpm0 === (await page.evaluate(() => window.__score.scoreTempo)), await text('#sc-rate'));
 await page.click('#sc-slow'); await sleep(100);
-check('speed shows a % (no bpm) and − slows it', (await text('#sc-rate')) === '95%', await text('#sc-rate'));
+const bpmDown = +(await text('#sc-rate'));
+check('tempo − slows it (to the step of 5 below)', bpmDown < bpm0 && bpmDown % 5 === 0 && bpm0 - bpmDown <= 5, `${bpm0} → ${bpmDown}`);
 await page.click('#sc-fast'); await page.click('#sc-fast'); await sleep(100);
-check('speed + speeds it up', (await text('#sc-rate')) === '105%', await text('#sc-rate'));
+const bpmUp = +(await text('#sc-rate'));
+check('tempo + speeds it up', bpmUp === bpmDown + 10, `${bpmDown} → ${bpmUp}`);
 check('no Version dropdown', !(await page.$('#sc-ver')));
 // "Make another version…" is gone from the score ⋯; other versions still come from a job (as Add → Score makes them)
 await page.click('#it-more'); await sleep(150);
@@ -277,7 +281,7 @@ await page.click('#sc-tup'); await sleep(1200);
 check('transpose +1', (await text('#sc-tval')) === '+1');
 await page.click('#sc-zin'); await sleep(300);
 await go('#/library'); await go('#/item/m-02i'); await sleep(1500);
-check('score reopens with the key, tempo and zoom you left', (await text('#sc-tval')) === '+1' && (await text('#sc-rate')) === '105%' && (await db()).items.find((x) => x.id === 'm-02i').zoom > 1, `${await text('#sc-tval')} ${await text('#sc-rate')}`);
+check('score reopens with the key, tempo and zoom you left', (await text('#sc-tval')) === '+1' && +(await text('#sc-rate')) === bpmUp && (await db()).items.find((x) => x.id === 'm-02i').zoom > 1, `${await text('#sc-tval')} ${await text('#sc-rate')}`);
 
 console.log('Score editor');
 await go('#/item/m-02f'); await sleep(1500);

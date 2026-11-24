@@ -18,6 +18,7 @@ import { chordsMode, setChordsMode, nextMode, MODE_LABEL, ukePanel } from '../uk
 const CHORD_ICON = { piano: 'piano', uke: 'ukulele', off: 'chordgrid' }; // the chords button shows its state
 import { simplePiano } from './simplepiano.js';
 import { paginate, pageOfY, showPage, pagerInput } from '../pager.js';
+export const TEMPO_MIN = 30, TEMPO_MAX = 240; // the toolbar's tempo range (beats per minute)
 
 let osmdReady;
 export function loadOsmd() {
@@ -339,6 +340,20 @@ export function scoreBody(root, it, { perform = false } = {}) {
     voice?.destroy();
     voice = new VoicePlayer({ url: `/api/items/${encodeURIComponent(it.id)}/vocal?v=${encodeURIComponent(it.vocalAudio)}-${it.updatedAt || 0}`,
       bpm: it.vocalBpm || tune.bpm, beats: tune.beats, endQ: midi.endQ, onTick: place, onEnd: onEnded, segments: midi.segments });
+    voice.setRate(tempoExact() / voice.bpm);
+  };
+  // Tempo (the toolbar's − 96 + stepper): one setting for Play, Edit notes' ▶ / ▶ From here / cue, and the voice.
+  // Kept on the entry as `rate` (× the score's own tempo, so 1 = the score's tempo and follows it). Never drawn.
+  const scoreTempo = () => Math.round(tune.bpm || 100);
+  const tempoExact = () => (tune.bpm || 100) * (midi?.rate || +it.rate || 1);
+  const setTempo = (bpm) => {
+    bpm = Math.round(bpm);
+    if (!(bpm > 0)) return;
+    bpm = Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, bpm));
+    const r = bpm === scoreTempo() ? 1 : bpm / (tune.bpm || 100);
+    midi?.setRate(r);
+    voice?.setRate(bpm / voice.bpm);
+    it.rate = r;
   };
   // Chords (toolbar toggle, this device): the chord names above the bars played as piano chords with the score
   const cpKey = 'meowsic-chordplay';
@@ -360,7 +375,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     root.dispatchEvent(new CustomEvent('chordlistchange', { bubbles: true }));
     if (was) { midi.rate = was.rate; midi.loop = was.loop; }
     midi.shift = it.transpose || 0;
-    if (!was && it.rate) midi.rate = it.rate;
+    if (!was && it.rate) midi.rate = Math.max(TEMPO_MIN, Math.min(TEMPO_MAX, (tune.bpm || 100) * it.rate)) / (tune.bpm || 100);
     if (hasVoice() && voiceOn) { makeVoice(); voice.posQ = Math.min(player?.posQ || 0, midi.endQ); player = voice; } else player = midi;
     if (cued) player.posQ = Math.min(cueQ, midi.endQ); // new notes (an edit, a save): Play still starts at the cue
   };
@@ -562,6 +577,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     async setTranspose(n) { store.update(it.id, { transpose: n }); it.transpose = n; midi.shift = n; await render(); },
     // Voice: the sung audio (Make it sing) in place of the piano
     get hasVoice() { return hasVoice(); },
+    get tempo() { return Math.round(tempoExact()); }, get scoreTempo() { return scoreTempo(); }, setTempo,
     // Chords: play the chord names too (piano only; hidden when the score has none)
     get hasChords() { return chordList.length > 0; }, get chordPlay() { return chordPlay; },
     setChordPlay(on) { chordPlay = !!on; try { localStorage.setItem(cpKey, chordPlay ? '1' : '0'); } catch {} midi?.setChords(chordPlay); }, get voice() { return player === voice && !!voice; }, setVoice,
@@ -646,9 +662,44 @@ export function midiFile(notes, bpm = 100, shift = 0) {
   return new Blob([new Uint8Array([0x4d, 0x54, 0x68, 0x64, ...u32(6), 0, 0, 0, 1, TPQ >> 8, TPQ & 255, 0x4d, 0x54, 0x72, 0x6b, ...u32(trk.length), ...trk])], { type: 'audio/midi' });
 }
 
+// the tempo pop-up (tap the number): type a tempo, back to the score's tempo, or tap the beat (4 taps or more)
+function tempoPop(anchor, view, setT) {
+  const old = document.querySelector('.tempo-pop');
+  old?.remove();
+  if (old?.dataset.for === 'sc') return; // a second tap on the number closes it
+  const m = document.createElement('div');
+  m.className = 'menu tempo-pop'; m.dataset.for = 'sc';
+  m.setAttribute('role', 'dialog'); m.setAttribute('aria-label', 'Tempo');
+  m.innerHTML = `<form><label><span>Tempo</span><input type="number" inputmode="numeric" min="${TEMPO_MIN}" max="${TEMPO_MAX}" step="1" value="${view.tempo}" aria-label="Tempo in beats per minute"><span class="muted">bpm</span></label></form>
+    <div class="tp-row"><button type="button" data-reset title="Back to the score's own tempo">↺ ${view.scoreTempo}</button><button type="button" data-tap title="Tap the beat, 4 times or more">Tap</button></div>
+    <p class="muted small">${TEMPO_MIN}–${TEMPO_MAX}. Applies to Play, Edit notes and the voice.</p>`;
+  document.body.append(m);
+  const r = anchor.getBoundingClientRect(), mw = m.offsetWidth, mh = m.offsetHeight;
+  m.style.left = Math.max(8, Math.min(innerWidth - mw - 8, r.left + r.width / 2 - mw / 2)) + 'px';
+  m.style.top = (r.bottom + mh + 8 > innerHeight ? Math.max(8, r.top - mh - 6) : r.bottom + 6) + 'px';
+  const input = m.querySelector('input'), reset = m.querySelector('[data-reset]');
+  const sync = () => { input.value = view.tempo; reset.disabled = view.tempo === view.scoreTempo; };
+  const put = (v) => { if (+v > 0) setT(+v); sync(); };
+  const close = () => { m.remove(); document.removeEventListener('pointerdown', off, true); document.removeEventListener('keydown', key, true); };
+  const off = (e) => { if (!m.contains(e.target) && e.target !== anchor) { put(input.value); close(); } };
+  const key = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  setTimeout(() => document.addEventListener('pointerdown', off, true));
+  document.addEventListener('keydown', key, true);
+  m.querySelector('form').onsubmit = (e) => { e.preventDefault(); put(input.value); close(); };
+  input.onchange = () => put(input.value);
+  reset.onclick = () => put(view.scoreTempo);
+  let taps = [];
+  m.querySelector('[data-tap]').onclick = () => {
+    const t = performance.now();
+    taps = [...taps.filter((x) => t - x < 2500), t].slice(-8);
+    if (taps.length >= 4) put(Math.round(60000 / ((taps.at(-1) - taps[0]) / (taps.length - 1))));
+  };
+  sync();
+  if (!isTouch()) setTimeout(() => input.select(), 30);
+}
+
 export function scoreToolbar(bar, it, view) {
-  // speed as a percentage of the score's own tempo: no tempo (bpm) is shown anywhere on the score
-  const speedNow = () => `${Math.round((view.voice ? 1 : view.player.rate || 1) * 100)}%`;
+  // tempo in beats per minute, here only (no tempo mark is drawn on the score); the same for the voice
   window.__score = view; // for automated tests (the orange line shows where it is; there is no position bar)
   bar.innerHTML = `${view.pageLabel ? `<span class="pageno" id="pageno">${view.pageLabel}</span>` : ''}
     <div class="transport">
@@ -656,7 +707,7 @@ export function scoreToolbar(bar, it, view) {
       <button class="play" id="sc-play" aria-label="Play" title="Play (space)">${iconOn('play')}</button>
     </div>
     <button class="check-badge" id="sc-check" hidden></button>
-    <div class="stepper" aria-label="Speed" title="Speed"><button id="sc-slow" aria-label="Slower">−</button><span id="sc-rate">${speedNow()}</span><button id="sc-fast" aria-label="Faster">+</button></div>
+    <div class="stepper tempo" id="sc-tempo" role="group" aria-label="Tempo"><button id="sc-slow" aria-label="Slower" title="Slower (hold to keep going)">−</button><button id="sc-rate" class="bpm" aria-haspopup="dialog">${view.tempo}</button><button id="sc-fast" aria-label="Faster" title="Faster (hold to keep going)">+</button></div>
     <div class="stepper" aria-label="Transpose"><button id="sc-tdown" aria-label="Transpose down">♭</button><span id="sc-tval">${it.transpose ? (it.transpose > 0 ? '+' : '') + it.transpose : '0'}</span><button id="sc-tup" aria-label="Transpose up">♯</button></div>
     <div class="stepper zoom" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out" title="Zoom out (−)">${iconOn('zoomout')}</button><button id="sc-zreset" class="zreset" title="Reset zoom (0)">${Math.round(view.zoom * 100)}%</button><button id="sc-zin" aria-label="Zoom in" title="Zoom in (+)">${iconOn('zoomin')}</button></div>
     <button class="icon-btn" id="sc-edit" title="Edit notes" aria-label="Edit notes">${iconOn('edit')}</button>
@@ -665,7 +716,7 @@ export function scoreToolbar(bar, it, view) {
     <button class="tg-btn ${chordsMode() !== 'off' ? 'on' : ''}" id="sc-chords" data-mode="${chordsMode()}" title="${MODE_LABEL[chordsMode()]}" aria-label="${MODE_LABEL[chordsMode()]}">${iconOn(CHORD_ICON[chordsMode()])}</button>
     <button class="tg-btn ${view.easy ? 'on' : ''}" id="sc-names" aria-pressed="${view.easy}" title="Kids note names: big noteheads with the note's letter" aria-label="Kids note names">${iconOn('baby')}</button>
     <button class="tg-btn ${view.chordPlay ? 'on' : ''}" id="sc-chordplay" aria-pressed="${view.chordPlay}" title="Play the chords too: the chord names above the bars on the piano" aria-label="Play chords"${view.hasChords && !view.voice ? '' : ' hidden'}>${iconOn('chordplay')}</button>
-    <button class="tg-btn ${view.voice ? 'on' : ''}" id="sc-voice" aria-pressed="${view.voice}" title="Voice: hear it sung (off = piano only)" aria-label="Voice"${view.hasVoice ? '' : ' hidden'}>${iconOn('voice')}</button>
+    <button class="tg-btn ${view.voice ? 'on' : ''}" id="sc-voice" aria-pressed="${view.voice}" title="Voice: hear it sung, at the tempo you set (off = piano only)" aria-label="Voice"${view.hasVoice ? '' : ' hidden'}>${iconOn('voice')}</button>
     </span>`;
 
   const p = () => view.player;
@@ -681,30 +732,49 @@ export function scoreToolbar(bar, it, view) {
   const onEnd = () => setPlay();
   host.addEventListener('ended', onEnd);
   host.addEventListener('playstate', onEnd); // Edit notes' ▶ From here played or paused
-  // speed, 5% at a time; 100% = the score's own tempo (never shown)
-  // Voice: the sung audio has its own tempo and key — a tempo or key change goes back to the piano
+  // Voice: the sung audio follows the tempo (time-stretched, same pitch); it has its own key — a key change goes back to the piano
   const voiceBtn = $('#sc-voice', bar);
   const cpBtn = $('#sc-chordplay', bar);
   const cpl = () => { cpBtn.hidden = !view.hasChords || view.voice; cpBtn.classList.toggle('on', view.chordPlay); cpBtn.setAttribute('aria-pressed', String(view.chordPlay)); };
   cpBtn.onclick = () => { view.setChordPlay(!view.chordPlay); cpl(); };
   host.addEventListener('chordlistchange', cpl); // an edit added / took away chord names
-  const vl = () => { cpl(); voiceBtn.hidden = !view.hasVoice; voiceBtn.classList.toggle('on', view.voice); voiceBtn.setAttribute('aria-pressed', String(view.voice)); $('#sc-rate', bar).textContent = speedNow(); setPlay(); };
+  const vl = () => { cpl(); voiceBtn.hidden = !view.hasVoice; voiceBtn.classList.toggle('on', view.voice); voiceBtn.setAttribute('aria-pressed', String(view.voice)); tl(); setPlay(); };
   voiceBtn.onclick = async () => { const pr = view.setVoice(!view.voice); vl(); await pr; vl(); };
-  const toPiano = (why) => { if (!view.voice) return; view.setVoice(false); vl(); toast(`${why} — back to the piano (the voice sings at its own tempo and key)`); };
+  const toPiano = (why) => { if (!view.voice) return; view.setVoice(false); vl(); toast(`${why} — back to the piano (the voice sings in its own key)`); };
   const onSung = (e) => { // "Make it sing" finished for this score: Voice turns on
     if (!(e.detail || []).includes(it.id)) return;
     setTimeout(() => { const f = store.get(it.id); if (!f?.vocalAudio) return; view.voiceReady({ vocalAudio: f.vocalAudio, vocalBpm: f.vocalBpm, updatedAt: f.updatedAt }); vl(); toast('It sings now — Voice is on'); }, 800);
   };
   addEventListener('meowsic-new-items', onSung);
-  const rate = (d) => {
-    toPiano('Tempo changed');
-    const r = Math.max(0.25, Math.min(2, (Math.round((p().rate || 1) * 20) + d) / 20)); // 5% at a time
-    p().setRate(r);
-    store.update(it.id, { rate: r });
-    $('#sc-rate', bar).textContent = speedNow();
+  // tempo: − / + in steps of 5 (hold to repeat); tap the number to type it, go back to the score's tempo or tap the beat
+  const tBox = $('#sc-tempo', bar), tNum = $('#sc-rate', bar);
+  const tl = () => {
+    const t = view.tempo, s0 = view.scoreTempo;
+    tNum.textContent = t;
+    tBox.classList.toggle('changed', t !== s0);
+    tNum.setAttribute('aria-label', `Tempo ${t} beats per minute${t !== s0 ? ` (the score's is ${s0})` : ''}: tap to type`);
+    tNum.title = `Tempo: ${t} beats per minute${t !== s0 ? ` (score: ${s0})` : ''} — tap to type, reset or tap the beat`;
+    $('#sc-slow', bar).disabled = t <= TEMPO_MIN; $('#sc-fast', bar).disabled = t >= TEMPO_MAX;
   };
-  $('#sc-slow', bar).onclick = () => rate(-1);
-  $('#sc-fast', bar).onclick = () => rate(1);
+  let saveT = 0;
+  const save = () => { clearTimeout(saveT); saveT = 0; store.update(it.id, { rate: it.rate }); };
+  const setT = (bpm) => { view.setTempo(bpm); tl(); clearTimeout(saveT); saveT = setTimeout(save, 500); };
+  const step = (d) => { const t = view.tempo; setT(d > 0 ? Math.floor(t / 5) * 5 + 5 : Math.ceil(t / 5) * 5 - 5); };
+  for (const [id, d] of [['#sc-slow', -1], ['#sc-fast', 1]]) {
+    const b = $(id, bar);
+    let hold = 0;
+    const end = () => { clearTimeout(hold); clearInterval(hold); hold = 0; };
+    b.addEventListener('pointerdown', (e) => {
+      if (e.button > 0 || b.disabled) return;
+      e.preventDefault(); step(d); end();
+      hold = setTimeout(() => { hold = setInterval(() => (b.disabled ? end() : step(d)), 90); }, 420);
+    });
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, end);
+    b.addEventListener('contextmenu', (e) => e.preventDefault());
+    b.onclick = (e) => { if (!e.detail) step(d); }; // the keyboard (Enter / Space); a pointer already stepped
+  }
+  tNum.onclick = () => tempoPop(tNum, view, setT);
+  tl();
   const tr = async (d) => { toPiano('Key changed'); const n = Math.max(-6, Math.min(6, (it.transpose || 0) + d)); await view.setTranspose(n); $('#sc-tval', bar).textContent = n ? (n > 0 ? '+' : '') + n : '0'; };
   $('#sc-tdown', bar).onclick = () => tr(-1);
   $('#sc-tup', bar).onclick = () => tr(1);
@@ -746,6 +816,8 @@ export function scoreToolbar(bar, it, view) {
   const offVoice = store.on(() => { if (voiceBtn.hidden === view.hasVoice) vl(); });  // a voice made elsewhere (another device): Voice shows on the next item refresh
   if (store.mode === 'server') store.refreshJobs().catch(() => {});  // a sing job still running (after a reload): ⋯ says so, and Voice appears when it is done
   return () => {
+    if (saveT) save();
+    document.querySelector('.tempo-pop')?.remove();
     offCheck(); offVoice();
     host.removeEventListener('ended', onEnd); host.removeEventListener('playstate', onEnd); host.removeEventListener('chordlistchange', cpl); document.removeEventListener('keydown', onSpace); removeEventListener('meowsic-new-items', onSung);
     viewer?.removeEventListener('ukeclose', onUkeClose); viewer?.removeEventListener('uketoggle', onUkeToggle); uke?.destroy(); uke = null;
