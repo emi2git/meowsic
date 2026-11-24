@@ -59,8 +59,7 @@ const EN = (f, ...a) => page.evaluate(f, ...a);
 const idle = async () => { for (let i = 0; i < 200; i++) { if (!(await EN(() => window.__editNotes?.busy))) return; await sleep(25); } };
 await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' });
 await page.waitForSelector('#osmd svg', { timeout: 30000 }); await sleep(500);
-await page.click('#it-more'); await sleep(200);
-await EN(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+await page.click('#sc-edit'); // the toolbar ✎
 await page.waitForSelector('.notes-panel', { timeout: 20000 }); await idle(); await sleep(300);
 const n0 = await EN(() => window.__editNotes.notes.filter((n) => !n.rest).length);
 check('every note is there (864)', n0 === 864, String(n0));
