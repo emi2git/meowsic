@@ -5,6 +5,7 @@
 // what changed is highlighted (soft yellow behind the notes: some with the slider up, none at 0 with nothing on,
 // gone once saved / closed; screenshots simplepiano-hl-<device>.png); Play works on the preview; Mac saves into this score (history + Activities undo puts it back), iPad saves as a new
 // "Simple piano" version (then trashed), iPhone closes with × (score unchanged).
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5361/';
 const SHOTS = process.env.SHOTS || '/private/tmp/claude-501/-Users-emi2mac/4133b106-9ccb-4a6c-97de-aed86ecf9500/scratchpad/smooth';

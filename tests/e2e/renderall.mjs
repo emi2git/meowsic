@@ -1,5 +1,6 @@
 // Every score renders (server on $BASE): opens each listed score (or IDS=a,b) in the viewer and fails on
 // page errors / OSMD console errors (e.g. "reading 'parentVoiceEntry'", "Before render, please load").
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5190/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });

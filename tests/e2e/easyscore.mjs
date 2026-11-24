@@ -3,6 +3,7 @@
 // (title, the real composer + "… by Meowsic", tempo as OSMD draws them); the kids button (baby icon) / ⋯ toggle draws big
 // noteheads with the note's letter inside — no chord diagrams (those are the chords button's); the text
 // stays the same; transpose updates the letters; remembered on this device; playback still works.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5215/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', args: ['--autoplay-policy=no-user-gesture-required'] });

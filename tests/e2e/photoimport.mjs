@@ -4,6 +4,7 @@
 // Covers: album listing, reading + proposed songs, break toggles, reorder (‹ ›, ⇧→), exclude, title edit,
 // crop (box carry-over, whole page, later), add, undo (photos new again, same arrangement back), album name,
 // and the layout on Mac, iPad Pro and iPhone Air sizes.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5234/';
 const SHOTS = process.env.SHOTS || '.';

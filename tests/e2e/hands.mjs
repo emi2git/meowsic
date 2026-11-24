@@ -7,6 +7,7 @@
 // staves: per-staff toggles, the last one on stays on; in Edit notes the toolbar's picker stays on show (iPhone, where the
 // toolbar is hidden: the edit bar has one, without adding a row), in step, and
 // ▶ From here plays only the chosen hand.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5371/';
 const SHOTS = process.env.SHOTS || '';

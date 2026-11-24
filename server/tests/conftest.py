@@ -1,7 +1,13 @@
+import os
+import tempfile
+
 import pytest
 from fastapi.testclient import TestClient
 
-from meowsic.app import create_app
+# Hard guard: anything that falls back to the default data folder gets a throwaway one, never ~/Documents/Meowsic.
+os.environ['MEOWSIC_DATA'] = tempfile.mkdtemp(prefix='meowsic-pytest-default-')
+
+from meowsic.app import create_app  # noqa: E402
 
 
 @pytest.fixture

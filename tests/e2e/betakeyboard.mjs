@@ -3,6 +3,7 @@
 // navigator.requestMIDIAccess is replaced by a fake MIDIAccess whose input the test drives with midimessage
 // events; the song (GET /api/items/m-b6xs990/musicxml) is a small fixture served by request interception;
 // the page is opened through a tiny harness page (also intercepted), so the live DB is never touched.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
 const PORT = process.env.PORT || 5317;

@@ -7,6 +7,7 @@
 //   and English, Movie, … (see the commit's test notes). Search "one day more" must give, in order:
 //   0 One Day More (fixture tab), 1 a long-title tab, 2 an Official tab (no chord text), 3 a hopamchuan song.
 //   BASE=http://127.0.0.1:5341/  SHOTS=<dir>
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://127.0.0.1:5341/';
 const SHOTS = process.env.SHOTS || '';

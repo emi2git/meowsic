@@ -1,7 +1,8 @@
 // iPad / iPhone item views: no sidebar; on a sheet swipe up or down goes back to the library.
-// TOUCH_BASE=http://localhost:5190/ for a test server (default: the real one, :5180; opening items logs plays there)
+// TOUCH_BASE=http://localhost:5190/ (a test server on a library copy; never :5180)
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
-const BASE = process.env.TOUCH_BASE || 'https://localhost:5180/';
+const BASE = process.env.TOUCH_BASE || process.env.BASE || 'http://localhost:5190/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new', args: ['--ignore-certificate-errors'] });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0; const check = (n, c, x = '') => { c ? pass++ : fail++; console.log(c ? '  ok  ' : '  FAIL', n, c ? '' : x); };

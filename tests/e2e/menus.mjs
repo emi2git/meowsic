@@ -10,6 +10,7 @@
 //   chords         Info · Export ▸ (Print / PDF…, Text file) · Move to Trash
 //   Info popup     fields + Save, no Actions section; no "(beta)" anywhere; Crop page… opens the crop in Fix pages
 import { execFileSync } from 'node:child_process';
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5190/';
 const DB = process.env.DB || '';

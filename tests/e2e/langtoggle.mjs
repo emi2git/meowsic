@@ -1,4 +1,5 @@
 // Library: round World ⇄ Vietnamese toggle (two states, icon only), remembered on the device; old 'all' / 'world' values = World
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5190/';
 const OUT = process.env.OUT || '.';

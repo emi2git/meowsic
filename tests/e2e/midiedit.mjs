@@ -6,6 +6,7 @@
 //   hold to set length → the options sheet (remembered per keyboard);
 //   iPad (touch, paged, fake MIDI): "Next note" from the last note of page 1 turns the page;
 //   no Web MIDI (iPad / iPhone Safari): no chip, nothing attached.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'node:fs';
 const BASE = process.env.BASE || 'http://localhost:5391/';

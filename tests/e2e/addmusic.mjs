@@ -2,6 +2,7 @@
 // buttons (one or two words); the long "from where" text lives in Help (App section; iPhone: More).
 // Mac, iPad (1032x1376 touch) and iPhone (420x912 touch).
 //   BASE=http://localhost:5190/ (server) or BASE='http://localhost:5181/?preview=1' (preview)   SHOTS=<dir>
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5190/';
 const SHOTS = process.env.SHOTS || '.';

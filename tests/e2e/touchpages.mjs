@@ -3,6 +3,7 @@
 // Note-names toggle (A B C) is off by default and remembered; default zoom 100%. Mac still scrolls.
 // Needs a server with a long score ("One Day More"), a Meowsic score and a chord chart long
 // enough for several pages: BASE=http://localhost:5224/ OUT=<dir for screenshots>
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5224/';
 const OUT = process.env.OUT || '.';

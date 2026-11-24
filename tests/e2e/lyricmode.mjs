@@ -9,6 +9,7 @@
 // iPhone: close without saving. The Lyrics text panel: the chart of the same title, toggled and remembered,
 // chords hidden, A− / A+, "Use from selected note"; a score with no chart of its name: "No chord chart" + search.
 // Screenshots go to $SHOTS.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5391/';
 const SHOTS = process.env.SHOTS || '/private/tmp/claude-501/-Users-emi2mac/4133b106-9ccb-4a6c-97de-aed86ecf9500/scratchpad/lyricmode';

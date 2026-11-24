@@ -16,6 +16,7 @@
 // Against a test server only: BASE (a temp data dir; refuses ~/Documents/Meowsic), DATA (to see .history), SHOTS.
 import fs from 'node:fs';
 import path from 'node:path';
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5190/';
 const DATA = process.env.DATA || '';

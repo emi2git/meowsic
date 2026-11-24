@@ -1,6 +1,7 @@
 // No white veil over the top of the app: whatever sits at the top of the screen (under the status bar on
 // iPad / iPhone) is opaque, with no blur and no see-through white. Light + Dark, iPad, iPhone and Mac.
 // The installed app runs under the status bar (black-translucent), so the top bars pad by the inset.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const ORIGIN = process.env.PREVIEW || 'http://localhost:5181';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });

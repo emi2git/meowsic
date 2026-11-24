@@ -4,6 +4,7 @@
 // (within ~10 s) and the pages load.
 // BASE = the server's URL; SERVER = the shell command that starts it (this test stops and restarts it).
 //   BASE=http://localhost:5225/ SERVER='cd server && MEOWSIC_DATA=… .venv/bin/python -m meowsic --port 5225' node offline.mjs
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 import { spawn } from 'child_process';

@@ -1,6 +1,7 @@
 // Score: drag / tap the orange line, Play starts there. iPad / iPhone: chords and scores are pages
 // (no scrolling), swipe left / right turns, swipe up = back; dragging the line does not turn; sheets:
 // swipe up or down = back. Runs on the preview (mock data): PREVIEW=http://localhost:5181
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const ORIGIN = process.env.PREVIEW || 'http://localhost:5181';
 const BASE = ORIGIN + '/?preview=1';

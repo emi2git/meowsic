@@ -2,6 +2,7 @@
 // right after Title on every list (Sheets, Scores, Chords, All music), sortable, shown on Mac, iPad and iPhone;
 // on an iPhone Pages gives way before Key. Runs on the UI preview: PREVIEW=http://127.0.0.1:5301 node keycolumn.mjs
 // (SHOTS=<dir> also saves iPad / iPhone screenshots)
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const ORIGIN = process.env.PREVIEW || 'http://localhost:5181';
 const BASE = ORIGIN + '/?preview=1';

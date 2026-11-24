@@ -5,6 +5,7 @@
 // a length key then A–G writes a 32nd note into a rest; iPad / iPhone: the buttons. Each time the bar stays full,
 // the score's <divisions> are raised (8 / 16 per quarter) and the player's notes (musicxml.js xmlInfo) land on
 // the right 32nd. Help lists keys 1–6 with glyphs. Screenshots of the panel go to $SHOTS.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 
 const BASE = process.env.BASE || 'http://localhost:5371/';
