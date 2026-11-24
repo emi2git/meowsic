@@ -1316,18 +1316,15 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .nn-toggle.ic-toggle { padding: 0 9px; letter-spacing: 0; }
 .nn-toggle.ic-toggle .ic { width: 24px; height: 24px; stroke-width: 1.6; }
 
-/* ===== Ukulele chords (js/ukepanel.js): Mac / iPad a card at the right of the score, iPhone a bottom sheet ===== */
-.viewer.uke-on .viewer-body { padding-right: 262px; }
-.uke-panel { position: absolute; right: 12px; top: 64px; bottom: 12px; width: 238px; z-index: 44; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line2); border-radius: 16px; box-shadow: 0 10px 34px rgba(0, 0, 0, .18); overflow: hidden; overscroll-behavior: contain; }
-.uk-head { display: flex; align-items: center; gap: 8px; padding: 8px 6px 8px 12px; border-bottom: 1px solid var(--line); flex: none; flex-wrap: wrap; }
-.uk-head b { font-size: 15px; }
-.uk-head .muted { font-size: 12px; flex: 1; min-width: 0; }
-.uk-head .uk-close { margin-left: auto; min-height: 34px; padding: 0 9px; }
-.uk-grid { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 6px; padding: 8px; align-content: start; }
-.uk-chord { padding: 2px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); min-height: 0; display: flex; justify-content: center; }
-.uk-chord.on { border: 2px solid var(--acc); padding: 1px; background: var(--acc-soft); }
-.uk-none { grid-column: 1 / -1; text-align: center; padding: 18px 6px; }
-.uk-box { width: 72px; height: auto; display: block; }
+/* ===== Chords strip (js/ukepanel.js): piano keyboards or ukulele boxes in one row at the top of the score, under the toolbar;
+   scrolls sideways; the score below takes the rest of the height. Off = no strip. ===== */
+.chord-strip { --cs-h: 76px; flex: none; height: calc(var(--cs-h) + 12px); display: flex; align-items: center; gap: 4px; padding: 6px 4px 6px max(10px, env(safe-area-inset-left)); background: var(--bg); border-bottom: 1px solid var(--line); position: relative; z-index: 5; }
+.uk-row { flex: 1; min-width: 0; height: 100%; display: flex; align-items: center; gap: 6px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; scrollbar-width: thin; touch-action: pan-x; }
+.uk-chord { flex: none; height: 100%; padding: 2px 4px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); min-height: 0; display: flex; align-items: center; justify-content: center; }
+.uk-chord.on { border: 2px solid var(--acc); padding: 1px 3px; background: var(--acc-soft); }
+.uk-none { margin: 0; padding: 0 6px; white-space: nowrap; }
+.chord-strip .uk-close { flex: none; align-self: center; min-height: 34px; width: 34px; padding: 0; border-radius: 50%; }
+.uk-box { height: 100%; width: auto; display: block; }
 .uk-box .uk-name { font: 700 14px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: var(--ink); }
 .uk-box .uk-l { stroke: var(--ink2); stroke-width: 1; }
 .uk-box .uk-nut { stroke: var(--ink); stroke-width: 3.2; }
@@ -1337,14 +1334,14 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .uk-box .uk-fr { font: 600 9px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: var(--mute); }
 .uk-box .uk-str { font: 600 8px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: var(--mute); }
 .uk-box .uk-q { font: 700 24px sans-serif; fill: var(--mute); }
+/* piano keyboards are drawn black on white (like the score paper) in both themes */
+.chord-strip[data-mode="piano"] .uk-chord { background: var(--paper); }
+.chord-strip[data-mode="piano"] .uk-chord.on { background: var(--paper); box-shadow: inset 0 0 0 3px var(--acc-soft); }
+.uk-chord svg.pn-box { height: 100%; width: auto; display: block; }
 /* tapped chord: where it is played lights up in the score */
 #osmd .uke-hit, #osmd .uke-hit * { fill: var(--acc) !important; }
-:root[data-device="tablet"] .uke-panel { bottom: 12px; width: 216px; }
-:root[data-device="tablet"] .viewer.uke-on .viewer-body { padding-right: 232px; }
-:root[data-device="phone"] .viewer.uke-on .viewer-body { padding-right: 0; padding-bottom: min(34dvh, 260px); }
-:root[data-device="phone"] .uke-panel { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: min(34dvh, 260px); border-radius: 14px 14px 0 0; padding-bottom: env(safe-area-inset-bottom); }
-:root[data-device="phone"] .uke-panel::before { content: ''; display: block; width: 38px; height: 4px; border-radius: 2px; background: var(--line2); margin: 6px auto 0; flex: none; }
-:root[data-device="phone"] .uk-grid { grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); }
+:root[data-device="phone"] .chord-strip { --cs-h: 60px; padding-top: 4px; padding-bottom: 4px; height: calc(var(--cs-h) + 8px); }
+:root[data-device="phone"] .uk-row { gap: 4px; }
 
 /* ===== Simple piano (js/views/simplepiano.js): a panel over the score while previewing; iPad / iPhone: a bottom sheet ===== */
 .viewer.simplifying .viewer-body { padding-bottom: 230px; }
@@ -1382,15 +1379,6 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .tg-btn.on .ic { opacity: 1; }
 .tg-btn[hidden] { display: none; }
 :root[data-device="phone"] .tg-btn { width: 38px; height: 38px; min-height: 38px; }
-.uke-panel[data-mode="piano"] .uk-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
-.uk-chord svg.pn-box { width: 104px; height: auto; display: block; }
-:root[data-device="phone"] .uke-panel[data-mode="piano"] .uk-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
-.uk-head { position: relative; padding-right: 44px; }
-.uk-head .muted { flex-basis: 100%; }
-.uk-head .uk-close { position: absolute; right: 4px; top: 6px; }
-.uke-panel[data-mode="piano"] .uk-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
-.uk-chord svg.pn-box { width: 100%; max-width: 210px; height: auto; }
-:root[data-device="phone"] .uke-panel[data-mode="piano"] .uk-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 /* ===== Manage library → Organize pages (views/cleanup.js): split, merge, reorder, delete + Recommended to check ===== */
 .cu.organize { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .og-side { overflow-y: auto; -webkit-overflow-scrolling: touch; }

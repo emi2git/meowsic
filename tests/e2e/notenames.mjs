@@ -5,7 +5,9 @@
 //        no keyboard chord diagrams; playback cursor moves; on iPad / iPhone the pages + dots are recomputed;
 //        remembered on this device (all scores), off again = classic.
 //  toolbar: exactly three round buttons, one icon each (no text); the chords icon shows its state.
-//  chords: off by default; piano = keyboards with the chord's keys shaded; ukulele = a panel (Mac/iPad beside the score, iPhone a bottom sheet) with one GCEA box per
+//  chords: off by default; piano = keyboards with the chord's keys shaded; ukulele = GCEA boxes; both as one compact row at the top of the
+//        score (under the toolbar, above the music, full width, scrolls sideways; no panel on the right); off = no strip, the score gets the
+//        full height back; the score below fits (pages + dots recomputed on iPad / iPhone). One box per
 //        chord in order of first use (symbols as drawn: follow transpose), slash chords as their base chord; a tap
 //        lights its chord symbols in the score; a score without symbols gets chords from the notes; remembered.
 // Screenshots go to $SHOTS.
@@ -48,20 +50,37 @@ const state = (page) => page.evaluate(() => {
     headH: hs.length ? hs.sort((a, b) => a - b)[Math.floor(hs.length / 2)] : 0, plainH: plainH.length ? plainH.sort((a, b) => a - b)[Math.floor(plainH.length / 2)] : 0,
     kbds: document.querySelectorAll('#osmd g.kbd, #osmd .easy-kbd-row').length,
     btn: document.querySelector('#sc-names')?.classList.contains('on'), kitten: !!document.querySelector('#sc-names svg.ic'),
-    uke: !!document.querySelector('.uke-panel'), ukeBtn: document.querySelector('#sc-chords')?.classList.contains('on'),
-    mode: document.querySelector('#sc-chords')?.dataset.mode, panelMode: document.querySelector('.uke-panel')?.dataset.mode || '',
+    uke: !!document.querySelector('.chord-strip'), ukeBtn: document.querySelector('#sc-chords')?.classList.contains('on'),
+    mode: document.querySelector('#sc-chords')?.dataset.mode, panelMode: document.querySelector('.chord-strip')?.dataset.mode || '',
     toggles: [...document.querySelectorAll('.tg-row .tg-btn')].map((x) => ({ id: x.id, text: x.textContent.trim(), icons: x.querySelectorAll('svg.ic').length, hidden: x.hidden })),
     abc: [...document.querySelectorAll('button')].some((x) => /^(A B C|Voice)$/.test(x.textContent.trim())),
-    piano: [...document.querySelectorAll('.uke-panel .uk-chord svg.pn-box')].map((k) => ({ c: k.dataset.chord, notes: k.dataset.notes })),
-    boxes: [...document.querySelectorAll('.uke-panel .uk-chord')].map((x) => ({ c: x.dataset.chord, frets: x.querySelector('svg')?.dataset.frets, fingers: x.querySelector('svg')?.dataset.fingers, barre: x.querySelector('svg')?.dataset.barre })),
-    none: document.querySelector('.uke-panel .uk-none')?.textContent || '',
+    piano: [...document.querySelectorAll('.chord-strip .uk-chord svg.pn-box')].map((k) => ({ c: k.dataset.chord, notes: k.dataset.notes })),
+    boxes: [...document.querySelectorAll('.chord-strip .uk-chord')].map((x) => ({ c: x.dataset.chord, frets: x.querySelector('svg')?.dataset.frets, fingers: x.querySelector('svg')?.dataset.fingers, barre: x.querySelector('svg')?.dataset.barre })),
+    none: document.querySelector('.chord-strip .uk-none')?.textContent || '',
     hits: document.querySelectorAll('#osmd .uke-hit').length,
     page: document.querySelector('#pageno')?.textContent || '', dots: document.querySelectorAll('.score-dots i').length,
-    panelBox: (() => { const p = document.querySelector('.uke-panel'); if (!p) return null; const r = p.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, vw: innerWidth, vh: innerHeight }; })(),
+    panelBox: (() => { const p = document.querySelector('.chord-strip'); if (!p) return null; const r = p.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, vw: innerWidth, vh: innerHeight }; })(),
+    stripCheck: (() => {
+      const p = document.querySelector('.chord-strip'), top = document.querySelector('.item-top'), body = document.querySelector('.viewer-body'), row = p?.querySelector('.uk-row');
+      if (!p) return null;
+      const r = p.getBoundingClientRect(), t = top.getBoundingClientRect(), bd = body.getBoundingClientRect();
+      const kids = [...p.querySelectorAll('.uk-chord')].map((x) => x.getBoundingClientRect());
+      return { underBar: Math.abs(r.top - t.bottom) < 2, aboveMusic: bd.top >= r.bottom - 1, oneRow: kids.every((k) => Math.abs(k.top - (kids[0]?.top ?? k.top)) < 2), inside: kids.every((k) => k.top >= r.top - 1 && k.bottom <= r.bottom + 1),
+        scrolls: getComputedStyle(row).overflowX, fullW: r.width >= document.querySelector('.viewer').getBoundingClientRect().width - 2, h: r.height, bodyH: bd.height, bodyBottom: Math.round(bd.bottom), vh: innerHeight, svgH: p.querySelector('.uk-chord svg')?.getBoundingClientRect().height || 0 };
+    })(),
+    bodyH: document.querySelector('.viewer-body')?.getBoundingClientRect().height || 0,
+    paperH: document.querySelector('#paper')?.clientHeight || 0,
   };
 });
 // the pitch letter of every sounding note on every staff, in document order of the MusicXML
 const steps = (xml) => [...xml.matchAll(/<note>(?:(?!<\/note>)[\s\S])*?<step>([A-G])<\/step>/g)].length;
+
+// the strip: right under the toolbar, above the music, full width, one row of diagrams inside it, scrolls sideways
+const stripOk = (what, s) => {
+  const c = s.stripCheck;
+  check(`${what}: one compact row at the top (under the toolbar, above the music, full width, scrolls sideways)`,
+    c && c.underBar && c.aboveMusic && c.oneRow && c.inside && c.fullW && c.scrolls === 'auto' && c.h <= 92 && c.svgH >= 40, JSON.stringify(c));
+};
 
 async function run(name, vp) {
   console.log(`\n${name}`);
@@ -100,20 +119,24 @@ async function run(name, vp) {
   s = await state(page);
   check('kids: remembered on this device (another score opens with it)', s.btn === true && s.letters === 16, `${s.btn} ${s.letters}`);
   // ukulele: chords from the notes on a score without symbols
+  const off = await state(page); // chords off: no strip, the full height
+  check('chords off: no strip, the score has the full height', !off.uke && off.stripCheck === null && off.bodyH > 0, String(off.bodyH));
   await page.click('#sc-chords'); await sleep(1500);
   s = await state(page);
-  check('chords 1st tap: piano chords panel, piano icon', s.uke && s.ukeBtn === true && s.mode === 'piano' && s.panelMode === 'piano', JSON.stringify([s.mode, s.panelMode]));
+  check('chords 1st tap: piano chords strip, piano icon', s.uke && s.ukeBtn === true && s.mode === 'piano' && s.panelMode === 'piano', JSON.stringify([s.mode, s.panelMode]));
   check('piano: C = C E G, G = D G B, F = C F A (keys shaded)', s.piano.map((x) => `${x.c}:${x.notes}`).join(',') === 'C:C E G,G:D G B,F:C F A', JSON.stringify(s.piano));
+  stripOk('piano', s);
+  check('piano: the score below is shorter by the strip (it reflows to fit)', s.bodyH < off.bodyH - 40 && Math.abs(off.bodyH - s.bodyH - s.stripCheck.h) < 3, `${off.bodyH} → ${s.bodyH}, strip ${s.stripCheck?.h}`);
+  if (touch) check('piano: the pages fit the smaller frame (paper = body height)', s.paperH > 0 && s.paperH <= s.bodyH + 1, `${s.paperH} vs ${s.bodyH}`);
   await page.screenshot({ path: `${SHOTS}/piano-${name}.png` });
   await page.click('#sc-chords'); await sleep(1500);
   s = await state(page);
-  check('chords 2nd tap: ukulele panel, ukulele icon', s.uke && s.mode === 'uke' && s.panelMode === 'uke', JSON.stringify([s.mode, s.panelMode]));
+  check('chords 2nd tap: ukulele chords strip, ukulele icon', s.uke && s.mode === 'uke' && s.panelMode === 'uke', JSON.stringify([s.mode, s.panelMode]));
   check('ukulele: no symbols → chords from the notes (C, G, F)', s.boxes.map((x) => x.c).join(',') === 'C,G,F', JSON.stringify(s.boxes));
   const sh = Object.fromEntries(s.boxes.map((x) => [x.c, x.frets]));
   check('ukulele: GCEA shapes C 0003, G 0232, F 2010', sh.C === '0003' && sh.G === '0232' && sh.F === '2010', JSON.stringify(sh));
   check('ukulele: finger numbers (G = 0 1 3 2)', s.boxes.find((x) => x.c === 'G')?.fingers === '0132', JSON.stringify(s.boxes));
-  if (name === 'iphone') check('ukulele: iPhone bottom sheet (full width, at the bottom)', s.panelBox && s.panelBox.w >= s.panelBox.vw - 2 && Math.abs(s.panelBox.y + s.panelBox.h - s.panelBox.vh) < 4, JSON.stringify(s.panelBox));
-  else check('ukulele: Mac / iPad card on the right', s.panelBox && s.panelBox.x + s.panelBox.w > s.panelBox.vw - 30 && s.panelBox.w < 300, JSON.stringify(s.panelBox));
+  stripOk('ukulele', s);
   await page.click('#sc-names'); await sleep(2500); // kids off
   s = await state(page);
   check('kids off again: classic look', s.letters === 0 && s.btn === false);
@@ -125,7 +148,7 @@ async function run(name, vp) {
   check('ukulele: every box has a shape', s.boxes.every((x) => /^\d{4}$/.test(x.frets || '')), JSON.stringify(s.boxes.filter((x) => !x.frets)));
   const bm = s.boxes.find((x) => x.c === 'Bm');
   if (bm) check('ukulele: Bm = 4222 with a barre on fret 2', bm.frets === '4222' && bm.barre === '2', JSON.stringify(bm));
-  await page.evaluate(() => document.querySelector('.uke-panel .uk-chord')?.click()); await sleep(400);
+  await page.evaluate(() => document.querySelector('.chord-strip .uk-chord')?.click()); await sleep(400);
   s = await state(page);
   check('ukulele: tapping a box lights its chord symbols in the score', s.hits > 0, String(s.hits));
   await page.screenshot({ path: `${SHOTS}/uke-${name}.png` });
@@ -136,10 +159,12 @@ async function run(name, vp) {
   const r0 = norm(s.boxes[0]?.c || '').match(/^[A-G][#b]?/)?.[0];
   check('ukulele: transpose +1 → chords follow', r0 && norm(want[0]).match(/^[A-G]/)[0] !== r0, `${want[0]} → ${s.boxes[0]?.c}`);
   await page.click('#sc-tdown'); await sleep(2000);
-  // close from the panel
-  await page.click('.uke-panel .uk-close'); await sleep(800);
+  // close from the strip
+  const s0 = await state(page);
+  await page.click('.chord-strip .uk-close'); await sleep(1200);
   s = await state(page);
   check('ukulele: ✕ closes it and the button goes off (dim chord icon)', !s.uke && s.ukeBtn === false && s.mode === 'off');
+  check('off: the score gets the full height back', s.bodyH > s0.bodyH + 40, `${s0.bodyH} → ${s.bodyH}`);
   await page.reload({ waitUntil: 'networkidle0' }); await sleep(2500);
   s = await state(page);
   check('ukulele: off is remembered', !s.uke);
