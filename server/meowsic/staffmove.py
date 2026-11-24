@@ -310,7 +310,7 @@ FLATS = ['C', 'D', 'D', 'E', 'E', 'F', 'G', 'G', 'A', 'A', 'B', 'B']
 FLAT_ALT = [0, -1, 0, -1, 0, 0, -1, 0, -1, 0, -1, 0]
 SHARPS = ['C', 'C', 'D', 'D', 'E', 'F', 'F', 'G', 'G', 'A', 'A', 'B']
 SHARP_ALT = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0]
-LENGTHS = {Fr(1, 4), Fr(3, 8), Fr(1, 2), Fr(3, 4), Fr(1), Fr(3, 2), Fr(2), Fr(3), Fr(4)}  # written lengths you can pick
+LENGTHS = {Fr(1, 8), Fr(3, 16), Fr(1, 4), Fr(3, 8), Fr(1, 2), Fr(3, 4), Fr(1), Fr(3, 2), Fr(2), Fr(3), Fr(4)}  # written lengths you can pick
 
 
 def _set_pitch(n, midi, flats, ties=False):
@@ -456,7 +456,7 @@ def _lengthen(voices, want, q, div, beat, bar_len):
 
 
 VALUE_NAME = {Fr(4): 'whole', Fr(3): 'dotted half', Fr(2): 'half', Fr(3, 2): 'dotted quarter', Fr(1): 'quarter',
-              Fr(3, 4): 'dotted 8th', Fr(1, 2): '8th', Fr(3, 8): 'dotted 16th', Fr(1, 4): '16th', Fr(1, 8): '32nd'}
+              Fr(3, 4): 'dotted 8th', Fr(1, 2): '8th', Fr(3, 8): 'dotted 16th', Fr(1, 4): '16th', Fr(3, 16): 'dotted 32nd', Fr(1, 8): '32nd'}
 
 
 def value_name(q):
@@ -1039,7 +1039,7 @@ def edit(text: str, op: dict) -> tuple[str, list]:
     """One editing step -> (new MusicXML, refs of the notes it touched, in the new score). op:
       {op:'move', refs, to: 1|2}      to the upper / lower staff of the piano part
       {op:'pitch', refs, by}          semitones up (+) / down (-)
-      {op:'len', refs, q, pull?}      a written length in quarters (1/16 … whole, dotted too), notes or rests;
+      {op:'len', refs, q, pull?}      a written length in quarters (1/32 … whole, dotted too), notes or rests;
                                       a rest made shorter leaves a rest after it (pull: the notes after it come
                                       earlier instead); made longer it takes the time of what follows (rests,
                                       notes: shortened or gone — preview's `took`); too long for the bar: refused
@@ -1174,7 +1174,9 @@ def edit_ex(text: str, op: dict, info=None):
         if kind == 'len':
             try: q = Fr(str(op.get('q')))
             except (TypeError, ValueError, ZeroDivisionError): raise HTTPException(400, 'q: a length in quarters')
-            if q not in LENGTHS: raise HTTPException(400, 'Pick a written length (1/16 to a whole note)')
+            if q not in LENGTHS: raise HTTPException(400, 'Pick a written length (32nd to a whole note)')
+            from .divisions import fit_divisions
+            fit_divisions(root, [q])  # a 32nd in a score counted in 16ths: finer <divisions> first (divisions.py)
         div, tsig = Fr(1), (4, 4)
         for m in bars:
             for a in m.findall('attributes'):
@@ -1336,7 +1338,8 @@ def _time_for(q):
     q = Fr(q)
     if q.denominator == 1: return int(q), 4
     if (q * 2).denominator == 1: return int(q * 2), 8
-    return int(q * 4), 16
+    if (q * 4).denominator == 1: return int(q * 4), 16
+    return int(q * 8), 32
 
 
 def _bar_op(text, kind, op, info):

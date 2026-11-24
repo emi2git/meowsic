@@ -55,6 +55,10 @@ small, .muted { color: var(--mute); }
 .err { color: var(--danger); padding: 20px; }
 .warn { color: var(--warn); font-size: 14px; margin: 4px 0 8px; display: flex; gap: 6px; align-items: center; }
 .ic { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* note / rest value glyphs (notevalue.js): one size and baseline, in text or on a button */
+.nv { width: 1.1em; height: 1.32em; flex: none; vertical-align: -.3em; }
+.help-len { white-space: nowrap; margin-right: 4px; }
+.np-len button { display: inline-flex; align-items: center; justify-content: center; font-size: 17px; }
 
 button, .btn, select, input, textarea { font: inherit; color: inherit; }
 button, .btn {
@@ -1200,6 +1204,7 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .np-tools .np-icon .ic { width: 20px; height: 20px; }
 :root[data-device="tablet"] .np-tools { gap: 6px; }
 :root[data-device="tablet"] .np-tools .stepper button { min-width: 34px; padding: 0 6px; }
+:root[data-device="tablet"] .np-tools .np-len button { min-width: 30px; padding: 0 4px; } /* 7 glyph buttons (32nd … whole, dot): one row on an 11" iPad */
 :root[data-device="tablet"] .np-tools > button { padding: 0 10px; }
 :root[data-device="tablet"] .np-tools > .np-arc, :root[data-device="tablet"] .np-tools > .np-icon { min-width: 40px; padding: 0 8px; }
 :root[data-device="tablet"] .notes-panel, :root[data-device="phone"] .notes-panel { left: 0; right: 0; bottom: 0; border-radius: 16px 16px 0 0; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }

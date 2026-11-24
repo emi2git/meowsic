@@ -516,6 +516,10 @@ def range_op(text, op, info=None):
             if not isinstance(clip, dict) or not clip.get('len'): raise HTTPException(400, 'Nothing copied yet: copy some notes first')
             A = pos(bars, op.get('at'))
             Lc = q_of(clip['len'])
+            # notes finer than this score's <divisions> (32nds into a score of 16ths): a finer unit first
+            from .divisions import fit_divisions
+            qs = [A, Lc] + [q_of(r[k]) for cv in clip.get('voices') or [] for r in cv.get('evs') or [] for k in ('on', 'dur') if r.get(k) is not None]
+            if fit_divisions(root, qs) != 1: bars = geometry(part)
             try: s = int(op.get('staff') or 1)
             except (TypeError, ValueError): raise HTTPException(400, 'staff: a staff number')
             n = n_staves(part)

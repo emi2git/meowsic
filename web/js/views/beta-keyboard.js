@@ -3,12 +3,13 @@
 // first 8 bars of Home NDP's melody (m-b6xs990). It edits an in-memory copy only: nothing is ever written to the score.
 //   Select   tap a note (score or strip), ← / →
 //   Pitch    press a key: the selected note takes it (it sounds); the next key goes to the next note (toggle)
-//   Length   buttons 1 · 1/2 · 1/4 · 1/8 · 1/16 · dot · tie; number keys 1 2 4 8 6 and . ;
-//            the lowest keyboard keys (C D E F G = 1 … 1/16, A = rest, C# = dot, D# = tie; start note configurable);
+//   Length   buttons whole … 32nd (note glyphs, notevalue.js) · dot · tie; number keys 1 2 4 8 6 3 (3 = 32nd) and . ;
+//            the lowest keyboard keys (C D E F G B = whole … 32nd, A = rest, C# = dot, D# = tie; start note configurable);
+//            no dotted 32nd here (4.5 ticks: finer than TPQ; Edit notes has it);
 //            "Hold to set length": how long a key is held at the hold tempo (60 BPM by default) picks the length:
 //            switch points at the geometric midpoints between neighbours (dotted ones only with "Dotted lengths"),
 //            minus a calibrated release latency, times a calibrated stretch (Calibrate: 4 quarter notes with clicks);
-//            a live bar with 1/16 … 1 ticks, the note it would pick and the beats so far; optional quiet clicks
+//            a live bar with 16th … whole ticks, the note it would pick and the beats so far; optional quiet clicks
 //   Bars always add up: shorter → a rest fills the gap (or the next notes move earlier); longer → borrows from the
 //   notes / rests after it in the bar, refused when it would cross the bar line.
 //   Rest (button, R / Delete, MIDI key) · Undo / Redo · Reset · Play these bars.
@@ -18,7 +19,8 @@ import { pianoKey, audioCtx, loadPiano, ScorePlayer } from '../audio.js';
 // Timing for "Hold to set length": every press / release time is the event's own timeStamp (MIDIMessageEvent,
 // PointerEvent, KeyboardEvent: all on the performance.now() clock), never Date.now() or a timer callback.
 import { esc } from '../ui.js';
-import { pcName, noteName, now, evT, midi, askMidi, inputsOf, readMidi, TPQ, FN_KEYS, FN_BASES, HOLD_PLAIN, HOLD_DOTS,
+import { noteIcon } from '../notevalue.js';
+import { pcName, noteName, now, evT, midi, askMidi, inputsOf, readMidi, TPQ, FN_KEYS, FN_BASES, fnLabel, HOLD_PLAIN, HOLD_DOTS,
   holdThresholds, pickLen, CAL_DEFAULT, loadCal, saveCal, holdBeats, calibrate } from '../midi.js';
 export { TPQ, holdThresholds, pickLen, CAL_DEFAULT, loadCal, holdBeats, calibrate };
 
@@ -112,12 +114,12 @@ async function fetchSong() {
 
 // ---------- the in-memory melody: bars of items { m: midi | null (rest), t: ticks, tie } ----------
 // TPQ (midi.js) = 24 ticks per quarter: 1/16 = 6, dotted 1/16 = 9, triplet 1/8 = 8
-const LEN = { 1: 96, 2: 48, 4: 24, 8: 12, 6: 6 }; // number key → ticks (6 = sixteenth)
-const PLAIN = [96, 48, 24, 12, 6], DOTTED = [144, 72, 36, 18, 9];
-const LEN_NAME = { 144: 'dotted whole', 96: 'whole (1)', 72: 'dotted half', 48: 'half (1/2)', 36: 'dotted quarter', 24: 'quarter (1/4)', 18: 'dotted 1/8', 12: 'eighth (1/8)', 9: 'dotted 1/16', 6: 'sixteenth (1/16)', 3: '1/32' };
-const LEN_SHORT = { 144: '1.', 96: '1', 72: '1/2.', 48: '1/2', 36: '1/4.', 24: '1/4', 18: '1/8.', 12: '1/8', 9: '1/16.', 6: '1/16', 3: '1/32' };
+const LEN = { 1: 96, 2: 48, 4: 24, 8: 12, 6: 6, 3: 3 }; // number key → ticks (6 = sixteenth, 3 = thirty-second)
+const PLAIN = [96, 48, 24, 12, 6, 3], DOTTED = [144, 72, 36, 18, 9]; // (no dotted 32nd: 4.5 ticks)
+const LEN_NAME = { 144: 'dotted whole', 96: 'whole (1)', 72: 'dotted half', 48: 'half (1/2)', 36: 'dotted quarter', 24: 'quarter (1/4)', 18: 'dotted 1/8', 12: 'eighth (1/8)', 9: 'dotted 1/16', 6: 'sixteenth (1/16)', 3: 'thirty-second (1/32)' };
 export const lenName = (t) => LEN_NAME[t] || `${+(t / TPQ).toFixed(2)} beats`;
-const lenShort = (t) => LEN_SHORT[t] || `${+(t / TPQ).toFixed(2)}`;
+// a length's glyph (note or rest; dotted too), else its number of beats as text
+const lenGlyph = (t, rest = false) => noteIcon(t / TPQ, { rest, cls: 'bk-ic' });
 const clone = (bars) => bars.map((b) => ({ len: b.len, items: b.items.map((x) => ({ ...x })) }));
 const starts = (bar) => { let p = 0; return bar.items.map((x) => { const s = p; p += x.t; return s; }); };
 
@@ -271,16 +273,9 @@ function loadOsmd() {
   }));
 }
 
-// note-value icons (drawn, so they look the same on every device)
-const ICON = (t) => {
-  const kind = { 96: 0, 48: 1, 24: 2, 12: 3, 6: 4 }[t];
-  const head = kind <= 1 ? '<ellipse cx="7" cy="17" rx="4.6" ry="3.2" transform="rotate(-20 7 17)" fill="none" stroke="currentColor" stroke-width="1.8"/>' : '<ellipse cx="7" cy="17" rx="4.6" ry="3.2" transform="rotate(-20 7 17)" fill="currentColor"/>';
-  const stem = kind >= 1 ? '<path d="M11.2 16V3" stroke="currentColor" stroke-width="1.6"/>' : '';
-  const flags = kind >= 3 ? '<path d="M11.2 3c1 3 5 4 4.4 8.5M11.2 3c0 0 0 0 0 0" stroke="currentColor" stroke-width="1.6" fill="none"/>' + (kind === 4 ? '<path d="M11.2 7c1 3 5 4 4.4 8" stroke="currentColor" stroke-width="1.6" fill="none"/>' : '') : '';
-  return `<svg class="bk-ic" viewBox="0 0 18 22" aria-hidden="true">${head}${stem}${flags}</svg>`;
-};
-
-const REST_IC = '<svg class="bk-ic" viewBox="0 0 18 22" aria-hidden="true"><path d="M6 1l5.5 6.5c-2 1.8-2.4 3.6-.6 5.8l1.6 2c-2.6-.9-5 .2-3.4 4.7-3.6-2.6-3.2-6.6.3-5.6L5 8.6C7 6.8 7.6 4.6 6 1z" fill="currentColor"/></svg>';
+// note-value icons (notevalue.js: drawn, so they look the same on every device)
+const ICON = (t) => lenGlyph(t);
+const REST_IC = lenGlyph(24, true);
 
 // ---------- the on-screen piano ----------
 function makePiano(host, emit) {
@@ -310,7 +305,7 @@ function makePiano(host, emit) {
   const clear = (cls) => { for (const m of lit.get(cls) || []) keyEl(m)?.classList.remove(cls); lit.delete(cls); };
   const labels = (map) => { host.querySelectorAll('.bk-key kbd').forEach((k) => { k.textContent = map.get(+k.parentElement.dataset.m) || ''; }); };
   // function keys (the length keys): marked and labelled only where they really are (no octave folding)
-  const paintFn = () => host.querySelectorAll('.bk-key').forEach((k) => { const t = fn.get(+k.dataset.m); k.classList.toggle('fn', !!t); k.querySelector('.bk-fn').textContent = t || ''; });
+  const paintFn = () => host.querySelectorAll('.bk-key').forEach((k) => { const t = fn.get(+k.dataset.m); k.classList.toggle('fn', !!t); k.querySelector('.bk-fn').innerHTML = t || ''; });
   const setFn = (map) => { fn = map; paintFn(); };
   const setRange = (a, b) => { if (a === lo && b === hi) return; lo = a; hi = b; build(); };
   // touch / mouse: a press sounds until the finger lifts. The pressed key captures the pointer, so sliding off it
@@ -497,7 +492,7 @@ export function render(el, _ctx = {}) {
 export default render;
 
 // ---------- the steps (each returns its clean-up) ----------
-// the lowest keys as length keys, from a C: C D E F G = 1 1/2 1/4 1/8 1/16, A = rest, C# = dot, D# = tie
+// the lowest keys as length keys, from a C: C D E F G B = whole … 32nd, A = rest, C# = dot, D# = tie
 // FN_KEYS / FN_BASES: midi.js
 // ---------- hold to set length (thresholds, calibration: midi.js) ----------
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -523,8 +518,8 @@ function clicksFrom(t0, beatMs, count, { from = 1, gain, accentEvery = 0 } = {})
 // the progress bar's scale: log time from 1/32 to past a whole note, so every tick has room
 const BAR_LO = 0.125, BAR_HI = 5.2;
 const barPos = (beats) => clamp(Math.log(Math.max(beats, 1e-3) / BAR_LO) / Math.log(BAR_HI / BAR_LO), 0, 1) * 100;
-const TICKS = [[6, '1/16'], [12, '1/8'], [24, '1/4'], [48, '1/2'], [96, '1']];
-const ICON_ANY = (t) => { const p = HOLD_PLAIN.includes(t) ? t : t / 1.5; const ic = ICON(p); return p === t ? ic : ic.replace('</svg>', '<circle cx="16" cy="17" r="1.8" fill="currentColor"/></svg>'); };
+const TICKS = [6, 12, 24, 48, 96];
+const ICON_ANY = (t) => lenGlyph(t);
 
 const MOUNT = {
   connect(live, { on, markDone }, show) {
@@ -561,7 +556,7 @@ function fixEditor(live, song, { on, piano, st, persist, markDone, setSilent }) 
     <div class="bk-tips" id="bk-tips">
       <div class="bk-tipc" data-k="select"><b>1</b><span><b>Select</b> a note: tap it, or <kbd>←</kbd> <kbd>→</kbd>.</span></div>
       <div class="bk-tipc" data-k="pitch"><b>2</b><span><b>Play</b> the right key. The note takes it; the next key goes to the next note.</span></div>
-      <div class="bk-tipc" data-k="length"><b>3</b><span><b>Length</b>: a button, keys <kbd>1</kbd> <kbd>2</kbd> <kbd>4</kbd> <kbd>8</kbd> <kbd>6</kbd> <kbd>.</kbd>, or the low length keys.</span></div>
+      <div class="bk-tipc" data-k="length"><b>3</b><span><b>Length</b>: a button, keys <kbd>1</kbd> <kbd>2</kbd> <kbd>4</kbd> <kbd>8</kbd> <kbd>6</kbd> <kbd>3</kbd> <kbd>.</kbd>, or the low length keys.</span></div>
       <div class="bk-tipc" data-k="play"><b>4</b><span><b>Play these bars</b> to hear it. <b>Reset</b> brings the original back.</span></div>
     </div>
     <div class="bk-row bk-toolbar"><b>${esc(title)} · bars 1–${bars.length} · melody</b><span class="bk-chip bk-copy">Practice copy · not saved</span><span class="bk-grow"></span>
@@ -570,8 +565,8 @@ function fixEditor(live, song, { on, piano, st, persist, markDone, setSilent }) 
     <div class="bk-osmd" id="bk-osmd"></div>
     <div class="bk-strip2" id="bk-strip"></div>
     <div class="bk-lens" id="bk-lens" role="toolbar" aria-label="Note length">
-      ${PLAIN.map((t) => `<button type="button" class="bk-len" data-t="${t}" title="${lenName(t)} · key ${Object.keys(LEN).find((k) => LEN[k] === t)}">${ICON(t)}<span>${lenShort(t)}</span><kbd>${Object.keys(LEN).find((k) => LEN[k] === t)}</kbd></button>`).join('')}
-      <button type="button" class="bk-len" id="bk-dot" title="Dot: half as long again · key .">${ICON(24).replace('</svg>', '<circle cx="16" cy="17" r="1.8" fill="currentColor"/></svg>')}<span>Dot</span><kbd>.</kbd></button>
+      ${PLAIN.map((t) => `<button type="button" class="bk-len" data-t="${t}" title="${lenName(t)} · key ${Object.keys(LEN).find((k) => LEN[k] === t)}" aria-label="${lenName(t)}">${ICON(t)}<kbd>${Object.keys(LEN).find((k) => LEN[k] === t)}</kbd></button>`).join('')}
+      <button type="button" class="bk-len" id="bk-dot" title="Dot: half as long again · key .">${lenGlyph(36)}<span>Dot</span><kbd>.</kbd></button>
       <button type="button" class="bk-len" id="bk-tie" title="Tie to the next note"><svg class="bk-ic" viewBox="0 0 22 22" aria-hidden="true"><path d="M2 12c4 6 14 6 18 0" stroke="currentColor" stroke-width="1.8" fill="none"/></svg><span>Tie</span></button>
       <button type="button" class="bk-len" id="bk-rest" title="Make it a rest · key R or Delete">${REST_IC}<span>Rest</span><kbd>R</kbd></button>
     </div>
@@ -614,10 +609,10 @@ function fixEditor(live, song, { on, piano, st, persist, markDone, setSilent }) 
   let fns = fnMap();
   const paintFn = () => {
     fns = fnMap();
-    piano.setFn(new Map([...fns].map(([m, f]) => [m, f.label])));
+    piano.setFn(new Map([...fns].map(([m, f]) => [m, fnLabel(f)])));
     setSilent((m) => fns.has(m));
     q('#bk-legend').innerHTML = st.fnOn
-      ? `<span class="muted small">Length keys:</span> ${[...fns].sort((a, b) => a[0] - b[0]).map(([m, f]) => `<span class="bk-chip" data-m="${m}"><b>${noteName(m)}</b> ${f.kind === 'len' ? ICON(f.t) : ''}${f.label}</span>`).join(' ')}`
+      ? `<span class="muted small">Length keys:</span> ${[...fns].sort((a, b) => a[0] - b[0]).map(([m, f]) => `<span class="bk-chip" data-m="${m}"><b>${noteName(m)}</b> ${fnLabel(f)}</span>`).join(' ')}`
       : '<span class="muted small">Length keys are off: every key sets the pitch.</span>';
     q('#bk-fnbase').disabled = !st.fnOn;
   };
@@ -661,7 +656,7 @@ function fixEditor(live, song, { on, piano, st, persist, markDone, setSilent }) 
   const toggleDot = () => {
     const x = cur(); if (!x) return;
     const k = DOTTED.indexOf(x.t), j = PLAIN.indexOf(x.t);
-    if (k >= 0) setLen(PLAIN[k]); else if (j >= 0) setLen(DOTTED[j]); else { msg(`A ${lenName(x.t)} can’t take a dot. Pick a plain length first.`, 'bad'); }
+    if (k >= 0) setLen(PLAIN[k]); else if (j >= 0 && DOTTED[j]) setLen(DOTTED[j]); else if (j >= 0) { msg('No dotted 32nd in this practice copy (Edit notes has it).', 'bad'); } else { msg(`A ${lenName(x.t)} can’t take a dot. Pick a plain length first.`, 'bad'); }
   };
   const toggleTie = () => {
     const x = cur(); if (!x) return;
@@ -692,7 +687,7 @@ function fixEditor(live, song, { on, piano, st, persist, markDone, setSilent }) 
   // ----- drawing: the strip (clickable, always there) and the score (OSMD) -----
   const draw = () => {
     const box = q('#bk-strip');
-    box.innerHTML = bars.map((bar, b) => `<div class="bk-bar2" data-bar="${b}"><i class="bk-barno">${b + 1}</i>${bar.items.map((x, i) => `<button type="button" class="bk-it${x.m == null ? ' rest' : ''}${b === sel.b && i === sel.i ? ' sel' : ''}${changed(b, i) ? ' changed' : ''}${x.tie ? ' tie' : ''}" data-k="${b}:${i}" data-m="${x.m ?? ''}" data-t="${x.t}" style="flex-grow:${x.t}" title="${x.m == null ? 'rest' : noteName(x.m)} · ${lenName(x.t)}"><b>${x.m == null ? 'rest' : pcName(x.m)}</b><small>${lenShort(x.t)}</small></button>`).join('')}</div>`).join('');
+    box.innerHTML = bars.map((bar, b) => `<div class="bk-bar2" data-bar="${b}"><i class="bk-barno">${b + 1}</i>${bar.items.map((x, i) => `<button type="button" class="bk-it${x.m == null ? ' rest' : ''}${b === sel.b && i === sel.i ? ' sel' : ''}${changed(b, i) ? ' changed' : ''}${x.tie ? ' tie' : ''}" data-k="${b}:${i}" data-m="${x.m ?? ''}" data-t="${x.t}" style="flex-grow:${x.t}" title="${x.m == null ? 'rest' : noteName(x.m)} · ${lenName(x.t)}"><b>${x.m == null ? 'rest' : pcName(x.m)}</b><small>${lenGlyph(x.t, x.m == null)}</small></button>`).join('')}</div>`).join('');
     const nextK = armed && st.auto ? fromFlat(flatIdx() + 1) : null;
     if (nextK) q(`.bk-it[data-k="${nextK.b}:${nextK.i}"]`)?.classList.add('next');
     const x = cur();
@@ -774,9 +769,9 @@ function fixEditor(live, song, { on, piano, st, persist, markDone, setSilent }) 
     q('#bk-holdbox').hidden = !st.hold;
     if (!st.hold) return;
     const L = st.holdDot ? HOLD_DOTS : HOLD_PLAIN, th = holdThresholds(st.holdDot);
-    q('#bk-holdhelp').innerHTML = `1 beat = ${(beatMs() / 1000).toFixed(2)} s. Switch points: ${L.map((t, i) => `<b>${lenShort(t)}</b>${th[i] != null ? ` <span data-th="${i}">${(switchMs(th[i]) / 1000).toFixed(2)} s</span>` : ''}`).join(' · ')}. `
+    q('#bk-holdhelp').innerHTML = `1 beat = ${(beatMs() / 1000).toFixed(2)} s. Switch points: ${L.map((t, i) => `<b title="${lenName(t)}">${lenGlyph(t)}</b>${th[i] != null ? ` <span data-th="${i}">${(switchMs(th[i]) / 1000).toFixed(2)} s</span>` : ''}`).join(' · ')}. `
       + `Calibration: ${cal.latency >= 0 ? '−' : '+'}${Math.abs(cal.latency)} ms, ×${cal.stretch.toFixed(2)}${cal.at ? '' : ' (default)'}.`;
-    q('#bk-hticks').innerHTML = TICKS.map(([t, l]) => `<i data-t="${t}" style="left:${barPos(t / TPQ)}%" title="${l} · ${((t / TPQ) * beatMs() / 1000).toFixed(2)} s"><span>${l}</span></i>`).join('')
+    q('#bk-hticks').innerHTML = TICKS.map((t) => `<i data-t="${t}" style="left:${barPos(t / TPQ)}%" title="${lenName(t)} · ${((t / TPQ) * beatMs() / 1000).toFixed(2)} s"><span>${lenGlyph(t)}</span></i>`).join('')
       + th.map((b) => `<u style="left:${barPos(b)}%"></u>`).join('');
   };
   // the live read-out: bar, the note it would pick right now, the length in beats
@@ -888,7 +883,7 @@ function fixEditor(live, song, { on, piano, st, persist, markDone, setSilent }) 
     if (mod && e.code === 'KeyZ') { e.preventDefault(); e.stopImmediatePropagation(); return e.shiftKey ? redo() : undo(); }
     if (mod && e.code === 'KeyY') { e.preventDefault(); return redo(); }
     if (mod || e.altKey) return;
-    const d = /^(Digit|Numpad)([12468])$/.exec(e.code);
+    const d = /^(Digit|Numpad)([123468])$/.exec(e.code);
     if (d) { e.preventDefault(); return setLen(LEN[d[2]], `key ${d[2]}`); }
     if (e.code === 'Period' || e.code === 'NumpadDecimal') { e.preventDefault(); return toggleDot(); }
     if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { e.preventDefault(); move(e.code === 'ArrowLeft' ? -1 : 1); step('select'); const x = cur(); msg(`Bar ${sel.b + 1}, note ${sel.i + 1}: <b>${x.m == null ? 'rest' : noteName(x.m)}</b>, ${lenName(x.t)}.`); return draw(); }

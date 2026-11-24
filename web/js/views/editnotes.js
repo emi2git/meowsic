@@ -7,7 +7,7 @@
 // at the picked note, written over what follows, bars added at the end when needed) / ⟳ Repeat (R: the selection
 // again right after itself) — ties, slurs, lyrics and chord names come along (rangeops.py). ♯/♭ (J) spells the
 // picked notes another way (C♯ → D♭ …); held down (right-click): ♯ ♭ ♮ and a courtesy accidental. Then:
-//   ♭ / ♯ a semitone down / up (↓ / ↑), 8↓ / 8↑ an octave (⌘↓ / ⌘↑), a length (2–6 = 1/16 … whole, . = dotted) —
+//   ♭ / ♯ a semitone down / up (↓ / ↑), 8↓ / 8↑ an octave (⌘↓ / ⌘↑), a length (1–6 = 32nd … whole, . = dotted) —
 //   of a note or a rest (a rest made shorter leaves a rest after it, or "Pull the next notes earlier"; made longer it
 //   takes the time of what follows in the bar — the notes it shortened or took are named and shown, Undo brings them
 //   back; too long for the bar: refused) —, →| Fill next rest (E: the note takes in the one rest after it, each press
@@ -40,12 +40,14 @@ import { barFixSheet, fixBarOp } from '../incomplete.js';
 import { lyricMode } from './lyricmode.js'; // [lyrics]
 import { attachMidi } from '../midiedit.js';
 import { barMarks } from '../musicxml.js';
+import { noteIcon, DOT_IC } from '../notevalue.js';
 
 export const post = (path, body) => fetch('/api' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : j.detail?.message || `Failed (${r.status})`); return j; });
 
 export const hasPiano = (xml) => /<staves>\s*[2-9]\s*<\/staves>/.test(xml || '');
-const r3 = (x) => Math.round(x * 1000) / 1000;
+// times in quarters, rounded (float sums) to 1/10000: a dotted 32nd (0.1875) and its places stay exact
+const r3 = (x) => Math.round(x * 10000) / 10000;
 // a note's own notehead (the notes of a chord share one VexFlow note; its heads are drawn in order, one group each)
 const headEl = (gn) => {
   const g = gn.getSVGGElement?.();
@@ -53,8 +55,10 @@ const headEl = (gn) => {
   return heads?.[gn.vfnoteIndex ?? gn.vfnote?.[1] ?? 0] || g;
 };
 const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
-const LENS = [[0.25, '1/16', '16th note', '2'], [0.5, '⅛', 'Eighth note', '3'], [1, '¼', 'Quarter note', '4'], [2, '½', 'Half note', '5'], [4, '1', 'Whole note', '6']];
-const DOTTED = new Set([0.375, 0.75, 1.5, 3]);
+// the length buttons and number keys: [quarters, name, key] — 1 = 32nd … 6 = whole (MuseScore's 2–7 one lower:
+// the keys 2–6 were here first and stay); drawn as note / rest glyphs (notevalue.js)
+const LENS = [[0.125, '32nd note', '1'], [0.25, '16th note', '2'], [0.5, 'Eighth note', '3'], [1, 'Quarter note', '4'], [2, 'Half note', '5'], [4, 'Whole note', '6']];
+const DOTTED = new Set([0.1875, 0.375, 0.75, 1.5, 3]);
 const LONG_MS = 450; // a long press
 const fq = (x) => { const [a, b] = String(x).split('/'); return +a / (+b || 1); }; // "3/2" → 1.5
 // what a staff is called (1-based, of n): a melody; right / left hand; voice + both hands; else its number
@@ -338,7 +342,7 @@ export async function editNotes(view, it, host, opts = {}) {
         ${isTouch() ? `<button data-a="several" class="${several ? 'on' : ''}" aria-pressed="${several}" title="Pick several: each tap adds a note">Several</button>` : ''}
         <button data-a="barmenu" class="np-barmenu" aria-haspopup="menu" title="Bar and staff tools: clear or add a hand, insert or delete a bar, add or remove a staff">${tgt ? `Bar ${tgt.bar + 1}` : 'Bar'} ▾</button>
         <span class="stepper np-pitch" aria-label="Pitch"><button data-a="oct-" ${off(ns.length)} title="Octave down (⌘↓)" aria-label="Octave down">8↓</button><button data-a="semi-" ${off(ns.length)} title="Semitone down (↓)" aria-label="Semitone down">♭</button><button data-a="semi+" ${off(ns.length)} title="Semitone up (↑)" aria-label="Semitone up">♯</button><button data-a="oct+" ${off(ns.length)} title="Octave up (⌘↑)" aria-label="Octave up">8↑</button><button data-a="respell" class="np-respell" ${off(ns.length)} title="Spell another way (J): C♯ ⇄ D♭ — hold (right-click) for ♯ ♭ ♮ and a courtesy accidental" aria-label="Respell" aria-haspopup="menu">♯/♭</button></span>
-        <span class="stepper np-len" aria-label="Length">${LENS.map(([q, g, l, k]) => `<button data-len="${q}" class="${baseLen === q ? 'on' : ''}" ${off(p.length)} title="${lname(l)} (${k})" aria-label="${lname(l)}">${g}</button>`).join('')}<button data-a="dot" class="${len != null && DOTTED.has(len) ? 'on' : ''}" ${off(len != null)} title="Dotted (.)" aria-label="Dotted">•</button></span>
+        <span class="stepper np-len" aria-label="Length">${LENS.map(([q, l, k]) => `<button data-len="${q}" class="${baseLen === q ? 'on' : ''}" ${off(p.length)} title="${lname(l)} (${k})" aria-label="${lname(l)}">${noteIcon(q, { rest: !!onlyRests })}</button>`).join('')}<button data-a="dot" class="${len != null && DOTTED.has(len) ? 'on' : ''}" ${off(len != null)} title="Dotted (.)" aria-label="Dotted">${DOT_IC}</button></span>
         <button data-a="fill" class="np-fill np-icon" ${off(ns.some((n) => n.fill))} title="Fill next rest (L): the note takes in the rest right after it — press again for the next one" aria-label="Fill next rest">→|</button>
         ${onlyRests ? '' : `<button data-a="tie" class="np-arc ${ns.length && ns.every((n) => n.tie) ? 'on' : ''}" ${off(ns.length)} title="Tie (T): to the next note of the same pitch (tied: takes it away)" aria-label="Tie">${TIE_IC}</button>
         <button data-a="slur" class="np-arc ${ns.length && ns.every((n) => n.slur) ? 'on' : ''}" ${off(ns.length)} title="Slur (S): over the picked notes; one note: to the next one (slurred: takes it away)" aria-label="Slur">${SLUR_IC}</button>`}
@@ -660,7 +664,7 @@ export async function editNotes(view, it, host, opts = {}) {
       if (!onErr?.(e)) toast(e.message);
     } finally { busy = false; drain(); }
   };
-  const LEN_NAME = { 4: 'whole', 3: 'dotted half', 2: 'half', 1.5: 'dotted quarter', 1: 'quarter', 0.75: 'dotted 8th', 0.5: '8th', 0.375: 'dotted 16th', 0.25: '16th' };
+  const LEN_NAME = { 4: 'whole', 3: 'dotted half', 2: 'half', 1.5: 'dotted quarter', 1: 'quarter', 0.75: 'dotted 8th', 0.5: '8th', 0.375: 'dotted 16th', 0.25: '16th', 0.1875: 'dotted 32nd', 0.125: '32nd' };
   const lenName = (q) => LEN_NAME[q] || `${q}-beat`;
   // "The rest took time from D5 on beat 2 (gone), F5 on beat 4 (now a 8th) · 1 lyric syllable went with it — Undo brings them back"
   const tookWords = (t) => {
@@ -740,7 +744,7 @@ export async function editNotes(view, it, host, opts = {}) {
     const common = ['2/4', '3/4', '4/4', '2/2', '3/8', '6/8', '9/8', '12/8', '5/4'];
     const s = modal(`<h2>Time from bar ${b + 1}</h2><p class="muted">Now ${now}. The music from here to the next time change is barred again (notes over a new bar line are tied).</p>
       <div class="np-choices">${common.map((t) => `<button data-t="${t}" class="${t === now ? 'on' : ''}">${t}</button>`).join('')}</div>
-      <div class="np-addstaff"><label>Other <input id="np-tb" type="number" min="1" max="32" value="${st.time[0]}" inputmode="numeric"> / <select id="np-tt">${[2, 4, 8, 16].map((x) => `<option ${x === st.time[1] ? 'selected' : ''}>${x}</option>`).join('')}</select></label></div>
+      <div class="np-addstaff"><label>Other <input id="np-tb" type="number" min="1" max="32" value="${st.time[0]}" inputmode="numeric"> / <select id="np-tt">${[2, 4, 8, 16, 32].map((x) => `<option ${x === st.time[1] ? 'selected' : ''}>${x}</option>`).join('')}</select></label></div>
       <div class="modal-actions"><button data-close>Cancel</button><button class="primary" data-ok>Use</button></div>`);
     const use = (t) => { const [n, d] = t.split('/').map(Number); s.close(); run({ op: 'timesig', bar: b, beats: n, beatType: d }, null, { bar: b }); };
     s.el.querySelectorAll('[data-t]').forEach((x) => (x.onclick = () => use(x.dataset.t)));
@@ -1254,7 +1258,7 @@ export async function editNotes(view, it, host, opts = {}) {
     else if (mod && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) f = () => pitch(e.key === 'ArrowUp' ? 12 : -12);
     else if (!mod && !e.altKey && /^[a-g]$/i.test(e.key)) f = () => letter(e.key.toUpperCase(), e.shiftKey); // A–G: that note (Shift: an octave up)
     else if (!mod) {
-      const len = LENS.find((x) => x[3] === e.key);
+      const len = LENS.find((x) => x[2] === e.key);
       f = len ? () => setLen(len[0]) : { ArrowUp: () => pitch(1), ArrowDown: () => pitch(-1), ArrowLeft: () => stepNote(-1), ArrowRight: () => stepNote(1),
         '.': dot, l: fill, L: fill, n: add, N: add, '#': () => pitch(1), '+': () => pitch(1), '=': () => pitch(1), '-': () => pitch(-1), t: tie, T: tie, s: slur, S: slur, ...(e.target.closest?.('button') ? {} : { ' ': playHere }), Delete: del, Backspace: del,
         w: wholeBar, W: wholeBar, r: repeat, R: repeat, j: respell, J: respell, k: chordHere, K: chordHere, Escape: () => (sel.size || rng ? setSel([]) : close()) }[e.key];

@@ -466,6 +466,8 @@ def struct_op(text, op, info=None):
         bi = _bar(root, op)
         beats, bt = _int(op.get('beats'), 'beats'), _int(op.get('beatType', 4), 'beatType')
         if not 1 <= beats <= 32 or bt not in (1, 2, 4, 8, 16, 32): raise HTTPException(400, 'A time signature like 3/4 or 6/8')
+        from .divisions import fit_divisions
+        fit_divisions(root, [Fr(4 * beats, bt)])  # bars of 3/32 in a score counted in 16ths: a finer unit first
         added = 0
         for pi, p in enumerate(parts):
             a = _rebar_part(p, bi, (beats, bt), tidy, pi, pk)

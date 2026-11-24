@@ -25,7 +25,7 @@ Server (`server/meowsic/`; each file's docstring explains it, and most list thei
 - `items.py`: items, Trash, tags, plays, ink, files, sheet upload, MusicXML get/put/revert.
 - `jobs.py` + `runners.py`: background jobs (transcribe, omr, lyrics, sing, version) and their runners.
 - `undo.py` + `undolog.py`: Activities rows and their 24 h Undo. `dailycleanup.py`: the daily Final + clean-up.
-- `staffmove.py`: the Edit notes API (`POST /api/items/{id}/editnotes`). It uses `barops`, `rangeops`, `structops`, `noteset`, `barnorm`, `easerests`.
+- `staffmove.py`: the Edit notes API (`POST /api/items/{id}/editnotes`). It uses `barops`, `rangeops`, `structops`, `noteset`, `barnorm`, `easerests`, `divisions` (finer `<divisions>` when a 32nd needs them).
 - `lyricsedit.py`: lyrics by hand and Edit notes → Lyrics. `lyricsfit.py`: a sheet's words placed on a score.
 - `simplepiano.py` + `smoothrhythm.py` + `arrange.py`: the Simple piano versions. `chordfind.py`: chords from notes.
 - `organize.py`, `pages.py`, `booksplit.py`, `cleanup.py` + `cleanstate.py` + `trim.py`: Manage library (Fix pages, split / join, books, crops).
@@ -33,7 +33,7 @@ Server (`server/meowsic/`; each file's docstring explains it, and most list thei
 - `barcheck.py`: Check bars on OMR scores. `voice.py` + `singscore.py`: singing. `feedback.py`: the Feedback queue. `ai.py`: offline tag AI.
 - `backup.py`: JSON export / import and daily DB copies. `version.py`: git sha and shell version for health.
 
-Web (`web/js/`): `app.js` is the shell and hash router, `store.js` the library store (server / offline / mock modes), `ui.js` the shared helpers, `audio.js` playback (`chordplay.js`: Play chords), `device.js` the device class, `easyscore.js` kids note names and no tempo marks.
+Web (`web/js/`): `app.js` is the shell and hash router, `store.js` the library store (server / offline / mock modes), `ui.js` the shared helpers, `audio.js` playback (`chordplay.js`: Play chords), `device.js` the device class, `easyscore.js` kids note names and no tempo marks, `notevalue.js` the note / rest glyphs (SVG) for length buttons and Help.
 Views (`web/js/views/`):
 - `library.js`: lists. `item.js`: the viewer frame. `sheet.js`, `chordsview.js`, `score.js`: the three viewers. `info.js`: the one edit popup.
 - `scoreeditor.js` is the ✎ entry: real scores open `editnotes.js` (+ `lyricmode.js`, `lyricspanel.js`, `../midiedit.js`), and preview samples open the old one-line bar (`../scoremodel.js`). `checkbars.js`: Check bars.
