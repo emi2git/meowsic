@@ -64,8 +64,9 @@ async function run(name, vp, how) {
   await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(800);
   await tap('#it-more'); await sleep(200);
   const entries = await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
-  check('score ⋯: Edit notes…, no Fit lyrics / Add lyrics from a sheet / Edit lyrics', entries.includes('Edit notes…') && !entries.some((t) => /Fit lyrics|lyrics from a sheet|Edit lyrics/.test(t)), entries.join('|'));
-  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+  check('score ⋯: no Edit notes (toolbar ✎), no Fit lyrics / Add lyrics from a sheet / Edit lyrics', entries.length > 0 && !entries.some((t) => /Edit notes|Fit lyrics|lyrics from a sheet|Edit lyrics/.test(t)), entries.join('|'));
+  await page.evaluate(() => document.querySelector('.menu')?.remove()); await sleep(150);
+  await page.evaluate(() => document.querySelector('#sc-edit').click());
   await page.waitForSelector('.notes-panel .np-mode', { timeout: 8000 }); await sleep(500);
   check('the edit bar has Notes | Lyrics, Notes on', (await page.$$eval('.np-mode button', (e) => e.map((x) => x.textContent + (x.classList.contains('on') ? '*' : '')).join('|'))) === 'Notes*|Lyrics');
   await tap('.np-mode [data-m="lyrics"]'); await sleep(400);
@@ -237,8 +238,7 @@ async function run(name, vp, how) {
   await page.reload({ waitUntil: 'networkidle0' });
   await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(600);
   await page.evaluate(() => window.__score && 0);
-  await tap('#it-more'); await sleep(200);
-  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+  await page.evaluate(() => document.querySelector('#sc-edit').click());
   await page.waitForSelector('.notes-panel .np-lt', { timeout: 8000 }); await sleep(700);
   check('Lyrics text stays open next time (this device)', !!(await page.$('.lt-panel')) && (await page.$eval('.notes-panel .np-lt', (e) => e.getAttribute('aria-pressed'))) === 'true');
   check('no chart of that name: “No chord chart for this song” and a search', /No chord chart for this song/.test(await page.$eval('.lt-panel', (e) => e.textContent)) && !!(await page.$('.lt-q')));
@@ -262,8 +262,7 @@ async function sideways() {
   await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(600);
   await page.evaluate(() => localStorage.setItem('meowsic-lyricstext', JSON.stringify({ open: true, chords: true, size: 16 })));
-  await page.tap('#it-more'); await sleep(200);
-  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+  await page.evaluate(() => document.querySelector('#sc-edit').click());
   await page.waitForSelector('.lt-panel', { timeout: 8000 }); await sleep(900);
   check('iPad sideways: Lyrics text on the right', await page.evaluate(() => document.querySelector('.viewer').classList.contains('lt-side')));
   await page.screenshot({ path: `${SHOTS}/iPad-sideways.png` });

@@ -51,3 +51,4 @@ Updated: 2026-11-24
 - Keyboard beta (Connect + Fix notes by playing, length keys, accurate hold-to-length)
 - 22 voices × 4 songs on the takes page
 - Left menu regrouped; Help moved to Settings
+- Score ⋯: Edit notes removed (it is the toolbar ✎, on screen at every width); menus/editnotes tests updated

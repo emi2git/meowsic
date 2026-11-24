@@ -7,7 +7,6 @@ import { TUNES } from '../mock.js';
 import { musicXml, tuneNotes, VERSIONS, barBeats, xmlInfo } from '../musicxml.js';
 import { ScorePlayer, VoicePlayer } from '../audio.js';
 import { scoreEditor } from './scoreeditor.js';
-import { editNotes } from './editnotes.js';
 import { checkBadge } from './checkbars.js';
 import { incompleteBars, barFixSheet, fixBarOp } from '../incomplete.js';
 import { InkLayer } from './annotate.js';
@@ -561,12 +560,10 @@ export function scoreBody(root, it, { perform = false } = {}) {
 
 // a sing job for this score that has not finished yet (the Mac's jobs carry the score as fromItemId)
 const singing = (it) => store.jobs().some((j) => j.kind === 'sing' && j.fromItemId === it.id && ['queued', 'running'].includes(j.status));
-// the score's ⋯ tools (actions.viewerMenu), built each time ⋯ is tapped. Kids note names, Chords and Voice are
-// toolbar toggles, so they are not here too. The singing voice needs lyrics; while its job runs it shows, greyed.
+// the score's ⋯ tools (actions.viewerMenu), built each time ⋯ is tapped. Edit notes (✎), Kids note names, Chords and
+// Voice are toolbar buttons (shown on every width), so they are not here too. The singing voice needs lyrics; while its job runs it shows, greyed.
 export function scoreTools(it, view) {
-  const srv = store.mode === 'server', viewer = () => document.querySelector('.viewer');
-  const notes = [...(srv && view.real ? [{ label: 'Edit notes…', icon: 'edit', run: () => editNotes(view, it, viewer()) }] : []),
-    ...(it.measures ? [{ label: 'Revert note edits', icon: 'restore', run: async () => { await view.revert(); document.querySelector('.editbar')?.dispatchEvent(new Event('close')); toast('Back to the original notes'); } }] : [])];
+  const notes = [...(it.measures ? [{ label: 'Revert note edits', icon: 'restore', run: async () => { await view.revert(); document.querySelector('.editbar')?.dispatchEvent(new Event('close')); toast('Back to the original notes'); } }] : [])];
   const words = [...(view.real && /<lyric[\s>]/.test(view.xml()) ? [singing(it) ? { label: 'Singing voice in progress…', icon: 'voice', disabled: true, run: () => {} }
       : { label: it.vocalAudio ? 'Redo singing voice' : 'Request singing voice', icon: 'voice', run: () => makeItSing(it) }] : [])];
   return notes.length && words.length ? [...notes, '-', ...words] : [...notes, ...words];

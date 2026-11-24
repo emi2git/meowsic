@@ -1130,7 +1130,7 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
   .bs-grid figcaption { gap: 4px; }
 }
 
-/* ===== Edit notes (score ⋯ → Edit notes…, js/views/editnotes.js): pick notes, move them to the other hand ===== */
+/* ===== Edit notes (the score toolbar ✎, js/views/editnotes.js): pick notes, move them to the other hand ===== */
 .viewer.noting .viewer-body { padding-bottom: var(--np-h, 150px); }
 .viewer.noting .score-paper { touch-action: none; user-select: none; -webkit-user-select: none; }
 .viewer.noting .playbar { pointer-events: none; }
