@@ -1323,6 +1323,11 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .np-acts button { min-height: 42px; padding: 0 14px; }
 .np-acts button.on { background: var(--acc-soft); border-color: var(--acc); }
 .np-acts .np-move { font-weight: 600; }
+.np-tools .np-arc { min-width: 42px; padding: 0 10px; font-size: 18px; }
+.np-tools .np-icon { min-width: 42px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; }
+.np-tools .np-icon .ic { width: 20px; height: 20px; }
+:root[data-device="tablet"] .np-tools { gap: 6px; }
+:root[data-device="tablet"] .np-tools .stepper button { min-width: 36px; padding: 0 6px; }
 :root[data-device="tablet"] .notes-panel, :root[data-device="phone"] .notes-panel { left: 0; right: 0; bottom: 0; border-radius: 16px 16px 0 0; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
 :root[data-device="phone"] .viewer.noting #it-bar { display: none; }
 :root[data-device="phone"] .np-help { display: none; }

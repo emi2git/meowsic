@@ -37,6 +37,9 @@ const DOTTED = new Set([0.375, 0.75, 1.5, 3]);
 // what a staff is called (1-based, of n): a melody; right / left hand; voice + both hands; else its number
 export const staffName = (s, n) => (n === 1 ? 'melody' : n === 2 ? (s === 1 ? 'right hand' : 'left hand') : n === 3 ? ['voice', 'right hand', 'left hand'][s - 1] : `staff ${s}`);
 const SVGNS = 'http://www.w3.org/2000/svg';
+// the tie and slur buttons: two noteheads with a short flat arc / three rising noteheads under a long arc
+const TIE_IC = '<svg class="ic np-arcic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12c3 -4 11 -4 14 0"/><ellipse cx="5" cy="16" rx="2.4" ry="1.7" fill="currentColor"/><ellipse cx="19" cy="16" rx="2.4" ry="1.7" fill="currentColor"/></svg>';
+const SLUR_IC = '<svg class="ic np-arcic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13c3 -10 15 -10 18 -6"/><ellipse cx="4" cy="18" rx="2.2" ry="1.6" fill="currentColor"/><ellipse cx="12" cy="14" rx="2.2" ry="1.6" fill="currentColor"/><ellipse cx="20" cy="11" rx="2.2" ry="1.6" fill="currentColor"/></svg>';
 
 // opts: { bar: 1-based bar to start on (its notes picked), extraOps: () => [ops added on Save], title, onDone(result | null) }
 export async function editNotes(view, it, host, opts = {}) {
@@ -173,17 +176,16 @@ export async function editNotes(view, it, host, opts = {}) {
       <button class="icon-btn" data-a="undo" ${off(at > 0)} title="Undo (⌘Z)" aria-label="Undo">${iconOn('undo')}</button>
       <button class="icon-btn" data-a="redo" ${off(at < steps.length - 1)} title="Redo (⇧⌘Z)" aria-label="Redo"><span class="flip">${iconOn('undo')}</span></button>
       <button class="icon-btn" data-a="close" title="Close (Esc)" aria-label="Close">${iconOn('close')}</button></div>
-      <p class="muted np-help">${isTouch() ? 'Tap notes or rests to pick them, or drag a box around them; tap a bar’s empty space for Bar ▾. “Pick several” adds each tap.' : 'Click a note or rest to pick it · click a bar’s empty space for Bar ▾ · ⌘-click adds one · Shift-click picks a range · drag a box around notes. Keys: ← → next note, ↑ ↓ semitone, ⌘↑ ⌘↓ octave, 2–6 length, . dotted, T tie, S slur, N add, Delete, space play, Shift ← → page.'} Every bar stays full.</p>
+      <p class="muted np-help">${isTouch() ? 'Tap notes or rests to pick them, or drag a box around them; tap a bar’s empty space for Bar ▾. “Several” adds each tap.' : 'Click a note or rest to pick it · click a bar’s empty space for Bar ▾ · ⌘-click adds one · Shift-click picks a range · drag a box around notes. Keys: ← → next note, ↑ ↓ semitone, ⌘↑ ⌘↓ octave, 2–6 length, . dotted, T tie, S slur, N add, Delete, space play, Shift ← → page.'} Every bar stays full.</p>
       <div class="np-acts np-tools">
-        ${isTouch() ? `<button data-a="several" class="${several ? 'on' : ''}" aria-pressed="${several}">Pick several</button>` : ''}
-        <button data-a="bar" ${off(p.length)} title="Every note of these bars on these staves (B)">Whole bar</button>
+        ${isTouch() ? `<button data-a="several" class="${several ? 'on' : ''}" aria-pressed="${several}" title="Pick several: each tap adds a note">Several</button>` : ''}
         <button data-a="barmenu" class="np-barmenu" aria-haspopup="menu" title="Bar and staff tools: clear or add a hand, insert or delete a bar, add or remove a staff">${tgt ? `Bar ${tgt.bar + 1}` : 'Bar'} ▾</button>
         <span class="stepper np-pitch" aria-label="Pitch"><button data-a="oct-" ${off(ns.length)} title="Octave down (⌘↓)" aria-label="Octave down">8↓</button><button data-a="semi-" ${off(ns.length)} title="Semitone down (↓)" aria-label="Semitone down">♭</button><button data-a="semi+" ${off(ns.length)} title="Semitone up (↑)" aria-label="Semitone up">♯</button><button data-a="oct+" ${off(ns.length)} title="Octave up (⌘↑)" aria-label="Octave up">8↑</button></span>
         <span class="stepper np-len" aria-label="Length">${LENS.map(([q, g, l, k]) => `<button data-len="${q}" class="${baseLen === q ? 'on' : ''}" ${off(ns.length)} title="${l} (${k})" aria-label="${l}">${g}</button>`).join('')}<button data-a="dot" class="${len != null && DOTTED.has(len) ? 'on' : ''}" ${off(len != null)} title="Dotted (.)" aria-label="Dotted">•</button></span>
-        <button data-a="tie" class="np-arc ${ns.length && ns.every((n) => n.tie) ? 'on' : ''}" ${off(ns.length)} title="Tie (T): to the next note of the same pitch (tied: takes it away)" aria-label="Tie">⌒ Tie</button>
-        <button data-a="slur" class="np-arc ${ns.length && ns.every((n) => n.slur) ? 'on' : ''}" ${off(ns.length)} title="Slur (S): over the picked notes; one note: to the next one (slurred: takes it away)" aria-label="Slur">⁀ Slur</button>
-        <button data-a="add" ${off(p.length)} title="Add a note (N): a third above, or on a rest">+ Note</button>
-        <button data-a="del" ${off(ns.length)} title="Delete (⌫): a rest takes its place">Delete</button>
+        <button data-a="tie" class="np-arc ${ns.length && ns.every((n) => n.tie) ? 'on' : ''}" ${off(ns.length)} title="Tie (T): to the next note of the same pitch (tied: takes it away)" aria-label="Tie">${TIE_IC}</button>
+        <button data-a="slur" class="np-arc ${ns.length && ns.every((n) => n.slur) ? 'on' : ''}" ${off(ns.length)} title="Slur (S): over the picked notes; one note: to the next one (slurred: takes it away)" aria-label="Slur">${SLUR_IC}</button>
+        <button data-a="add" ${off(p.length)} title="Add a note (N): a third above, or on a rest" aria-label="Add a note">+♪</button>
+        <button data-a="del" ${off(ns.length)} title="Delete (⌫): a rest takes its place" aria-label="Delete" class="np-icon">${iconOn('bin')}</button>
       </div>
       <div class="np-acts">
         <button data-a="none" ${off(p.length)}>Clear</button>
@@ -346,6 +348,7 @@ export async function editNotes(view, it, host, opts = {}) {
   };
   const barMenu = (anchor) => {
     const t = target(), n = nStaves(), entries = [];
+    if (sel.size) entries.push({ label: 'Whole bar: pick every note of these bars (B)', run: wholeBar }, '-');
     const the = (s) => `the ${staffName(s, n)}`;
     if (t) {
       const b = t.bar, label = `bar ${b + 1}`;

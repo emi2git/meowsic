@@ -127,7 +127,8 @@ async function run(name, vp, how) {
   // 2. a whole-note chord: tap one of bar 4's right-hand notes, Whole bar → both notes → To left hand: joins the left chord
   f = await headAt((n) => n.bar === 3 && n.staff === 1 && n.midi === 64);
   await tapXY(f.x, f.y);
-  await act('bar');
+  await act('barmenu'); await sleep(250);  // Whole bar is the first entry of Bar ▾ (B on a keyboard)
+  await page.evaluate(() => [...document.querySelectorAll('.menu > button')].find((x) => x.textContent.startsWith('Whole bar')).click()); await sleep(200);
   check('Whole bar picks the chord (2 notes)', (await EN(() => window.__editNotes.sel.length)) === 2, JSON.stringify(await EN(() => window.__editNotes.sel)));
   await act('down'); await idle();
   ns = await EN(() => window.__editNotes.notes);
@@ -667,6 +668,47 @@ async function barTools(name, vp) {
   await page.close();
 }
 
+// ---- the edit bar fits on one row per line (nothing wraps) on iPad Pro 13" and iPad 11", portrait and landscape:
+// nothing picked, a note picked, a bar picked, and with 3 staves ----
+async function editBarFits() {
+  console.log('\nEdit bar on iPads');
+  const title = `Edit bar fits ${stamp}`;
+  const pv0 = await send('POST', '/items', { kind: 'score', title, musicxmlText: scoreXml(title) });
+  const wrapped = () => page.evaluate(() => [...document.querySelectorAll('.notes-panel .np-row, .notes-panel .np-acts')].filter((row) => {
+    const kids = [...row.children].filter((k) => k.offsetParent && !k.classList.contains('grow'));
+    const bot = Math.min(...kids.map((k) => k.getBoundingClientRect().bottom));
+    return kids.some((k) => k.getBoundingClientRect().top >= bot - 1);
+  }).map((row) => row.className));
+  let page;
+  for (const [dev, w, h] of [['iPad Pro 13"', 1032, 1376], ['iPad Pro 13"', 1376, 1032], ['iPad 11"', 834, 1194], ['iPad 11"', 1194, 834], ['iPad Air 11"', 820, 1180], ['iPad Air 11"', 1180, 820]]) {
+    page = await b.newPage(); await page.setViewport({ width: w, height: h, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+    page.on('pageerror', (e) => errs.push(`fits ${w}: ${e.message}`));
+    await page.goto(`${BASE}#/item/${pv0.id}`, { waitUntil: 'networkidle0' });
+    await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(600);
+    await page.evaluate(() => document.querySelector('#it-more').click()); await sleep(200);
+    await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+    await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(600);
+    const bad = [];
+    bad.push(...(await wrapped()).map((c) => `nothing picked: ${c}`));
+    await page.evaluate(() => window.__editNotes.select([window.__editNotes.notes.find((n) => !n.rest && n.staff === 1).ref])); await sleep(200);
+    bad.push(...(await wrapped()).map((c) => `a note: ${c}`));
+    await page.evaluate(() => window.__editNotes.pickBar(3, 2)); await sleep(200);
+    bad.push(...(await wrapped()).map((c) => `a bar: ${c}`));
+    await page.evaluate(() => window.__editNotes.run({ op: 'addstaff', at: 1, clef: 'treble' }));
+    for (let i = 0; i < 40 && (await page.evaluate(() => window.__editNotes.busy)); i++) await sleep(150);
+    await sleep(600);
+    await page.evaluate(() => window.__editNotes.select([window.__editNotes.notes.find((n) => !n.rest && n.staff === 2).ref])); await sleep(200);
+    bad.push(...(await wrapped()).map((c) => `3 staves: ${c}`));
+    check(`${dev} ${w}×${h}: the edit bar does not wrap`, !bad.length, bad.join('; '));
+    if (w === 820) await page.screenshot({ path: `${SHOTS}/editbar-${w}.png` });
+    await page.evaluate(() => { window.__editNotes.close(); }); await sleep(300);
+    await page.evaluate(() => [...document.querySelectorAll('.modal-wrap button')].find((x) => x.textContent.trim() === 'Close')?.click()); await sleep(300);
+    await page.close();
+  }
+  await send('POST', '/items/trash', { ids: [pv0.id] }).catch(() => {});
+}
+
+if (process.env.ONLY === 'fits') { await editBarFits(); await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
 if (process.env.ONLY === 'bar') { await barTools('Mac', MAC); await barTools('iPad', IPAD); await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
 await cueAndArcs('Mac', MAC);
 await cueAndArcs('iPad', IPAD);
@@ -679,6 +721,7 @@ await leftHand('Mac', MAC);
 await leftHand('iPad', IPAD);
 await barTools('Mac', MAC);
 await barTools('iPad', IPAD);
+await editBarFits();
 await b.close();
 if (errs.length) { console.log('\nconsole errors:'); errs.forEach((e) => console.log('  ', e)); }
 console.log(`\n${pass} passed, ${fail} failed${errs.length ? `, ${errs.length} console errors` : ''}`);
