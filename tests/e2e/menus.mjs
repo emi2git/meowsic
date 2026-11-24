@@ -3,8 +3,8 @@
 //   library row ⋯  Info · Move to Trash
 //   sheet          Info · Edit pages… · Crop page… · Make a score… · Export ▸ (Print / PDF…, Page 1 as an image) · Move to Trash
 //   book           Info · Export ▸ · Move to Trash   (read-only: no page editing, not in Fix pages)
-//   score          Info · Edit notes… (Notes | Lyrics inside) · (Revert note edits) · Request / Redo singing voice
-//                  · Export ▸ (MusicXML, MIDI, Print / PDF…) · Move to Trash — no Kids note names / Chords (toolbar toggles)
+//   score          Info · (Revert note edits) · Request / Redo singing voice · Export ▸ (MusicXML, MIDI, Print / PDF…)
+//                  · Move to Trash — no Edit notes / Kids note names / Chords (toolbar buttons, on screen at every width)
 //   singing voice  only with lyrics; "Singing voice in progress…" (disabled) while its job runs; "Redo singing voice" once
 //                  it has one; the toolbar Voice toggle is hidden until the score has a voice
 //   chords         Info · Export ▸ (Print / PDF…, Text file) · Move to Trash
@@ -58,8 +58,8 @@ const openItem = async (p, it) => { await p.goto(`${BASE}#/item/${it.id}`, { wai
 
 const SHEET = 'Info | - | Edit pages… | Crop page… | Make a score… | - | Export ▸ | - | Move to Trash';
 const BOOK = 'Info | - | Export ▸ | - | Move to Trash';
-const SCORE = (sing) => `Info | - | Edit notes… | - | ${sing} | - | Export ▸ | - | Move to Trash`;
-const SCORE_PLAIN = 'Info | - | Edit notes… | - | Export ▸ | - | Move to Trash';
+const SCORE = (sing) => `Info | - | ${sing} | - | Export ▸ | - | Move to Trash`;
+const SCORE_PLAIN = 'Info | - | Export ▸ | - | Move to Trash';
 const CHORDS = 'Info | - | Export ▸ | - | Move to Trash';
 
 for (const [dev, vp] of [['mac', { width: 1440, height: 900 }], ['ipad', { width: 1032, height: 1376, hasTouch: true, isMobile: true }], ['iphone', { width: 420, height: 912, hasTouch: true, isMobile: true }]]) {
@@ -114,6 +114,8 @@ for (const [dev, vp] of [['mac', { width: 1440, height: 900 }], ['ipad', { width
   await closeMenu(p);
   check(`${dev}: no Voice toggle without a voice`, await p.$eval('#sc-voice', (e) => e.hidden));
   check(`${dev}: Kids note names + Chords are toolbar toggles`, !!(await p.$('#sc-names')) && !!(await p.$('#sc-chords')));
+  const ed = await p.$eval('#sc-edit', (e) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return { w: r.width, h: r.height, x: r.x, right: r.right, vw: innerWidth, vis: s.visibility, disp: s.display }; });
+  check(`${dev}: Edit notes ✎ is in the toolbar, on screen`, ed.w > 20 && ed.h > 20 && ed.x >= 0 && ed.right <= ed.vw && ed.vis === 'visible' && ed.disp !== 'none', JSON.stringify(ed));
   // score without lyrics: no singing voice
   await openItem(p, plain);
   check(`${dev}: score without lyrics: no singing voice`, (await openMore(p)) === SCORE_PLAIN, await readMenu(p));

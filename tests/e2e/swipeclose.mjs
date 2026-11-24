@@ -47,11 +47,6 @@ async function run(name, vp) {
   };
   const more = async () => { await page.tap('#it-more'); await sleep(250); };
   const info = async () => { await more(); await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Info').click()); await sleep(300); };
-  const action = async (label, sel) => {
-    await more();
-    await page.evaluate((l) => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === l).click(), label);
-    await page.waitForSelector(sel, { timeout: 10000 }); await sleep(600);
-  };
   const annotate = async () => { await page.evaluate(() => [...document.querySelectorAll('.ink-toggle')].find((x) => x.offsetWidth)?.click()); await page.waitForSelector('.inkbar', { timeout: 5000 }); await sleep(200); };
 
   for (const it of [sheet, score]) {
@@ -68,7 +63,7 @@ async function run(name, vp) {
     check(`${k}: swipe with Info open stays`, (await hash()).startsWith('#/item/'), await hash()); // (a touch on the backdrop may close the popup itself)
   }
   for (const [label, sel] of [['Edit notes…', '.notes-panel']]) {
-    await open(score); await action(label, sel);
+    await open(score); await page.evaluate(() => document.querySelector('#sc-edit').click()); await page.waitForSelector(sel, { timeout: 10000 }); await sleep(600);
     for (const dir of ['down', 'up']) await swipe(dir);
     check(`score: swipe with ${label.replace('…', '')} open stays`, (await hash()).startsWith('#/item/') && !!(await page.$(sel)), await hash());
   }

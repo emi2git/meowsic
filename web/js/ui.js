@@ -64,6 +64,8 @@ const P = {
   piano: '<rect x="2.5" y="5" width="19" height="14" rx="1.5"/><path d="M7.25 13v6M12 13v6M16.75 13v6"/><path d="M6 5h2.5v8H6zM10.75 5h2.5v8h-2.5zM15.5 5H18v8h-2.5z" fill="currentColor"/>',
   // Simple piano (score toolbar): a keyboard under a slider
   simplepiano: '<rect x="2.5" y="10" width="19" height="10.5" rx="1.5"/><path d="M8.5 15.5v5M15.5 15.5v5"/><path d="M7 10h3v5.5H7zM14 10h3v5.5h-3z" fill="currentColor"/><path d="M3 5h18"/><circle cx="14" cy="5" r="2" fill="currentColor"/>',
+  // Play chords (score toolbar): a three-note chord over piano keys
+  chordplay: '<rect x="2.5" y="12" width="19" height="9" rx="1.5"/><path d="M7.25 16.5V21M12 16.5V21M16.75 16.5V21"/><path d="M6 12h2.5v4.5H6zM10.75 12h2.5v4.5h-2.5zM15.5 12H18v4.5h-2.5z" fill="currentColor"/><circle cx="9.5" cy="8.3" r="1.9" fill="currentColor" stroke="none"/><circle cx="14.5" cy="5.6" r="1.9" fill="currentColor" stroke="none"/><circle cx="9.5" cy="2.9" r="1.9" fill="currentColor" stroke="none"/><path d="M12.2 3v5.3"/>',
   chordgrid: '<rect x="6" y="3" width="12" height="18" rx="1.2"/><path d="M6 7.5h12M6 12h12M6 16.5h12M10 3v18M14 3v18"/>',
   voice: '<path d="M5 21v-3.2a2 2 0 0 0-.7-1.5A7 7 0 0 1 9.6 4a6.3 6.3 0 0 1 6.3 6.2l1.6 3.3h-1.6v2.2a2 2 0 0 1-2 2h-1.7V21"/><path d="M19 8.2a4.6 4.6 0 0 1 0 5.6M21.4 5.8a8.4 8.4 0 0 1 0 10.4"/>',
   // ukulele chords: a small guitar body with a sound hole and a neck with tuning pegs

@@ -351,7 +351,6 @@ export function addScoreView(main) {
   const f = { src: 'yt', outputs: new Set(['original']) };
   main.innerHTML = `
     <header class="top"><a class="icon-btn back" href="#/library?kind=sheet" aria-label="Back">‹ Back</a><h1>Add score</h1></header>
-    <div class="pad narrow" id="sf-jobs"></div>
     <form class="pad narrow form" id="sf">
       <div class="seg" id="sf-src"><button type="button" data-s="yt" class="on">${icon('link')}YouTube</button><button type="button" data-s="file">${icon('upload')}Audio file</button></div>
       <div id="sf-yt"><input id="sf-url" type="url" placeholder="https://www.youtube.com/watch?v=…" aria-label="YouTube link"></div>
@@ -359,7 +358,8 @@ export function addScoreView(main) {
       <label class="field">Title <input id="sf-title" placeholder="Filled in from the link or file"></label>
       <button class="primary big" id="sf-go">${icon('wave')}Start</button>
       <p class="muted small center"><a class="link" href="#/help">Help</a></p>
-    </form>`;
+    </form>
+    <div class="pad narrow" id="sf-jobs" hidden></div>`;
   // a recording always becomes the Original
   $('#sf-src', main).onclick = (e) => { const b = e.target.closest('[data-s]'); if (!b) return; f.src = b.dataset.s; $('#sf-src', main).querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); $('#sf-yt', main).hidden = f.src !== 'yt'; $('#sf-file', main).hidden = f.src !== 'file'; };
   $('#sf-url', main).oninput = (e) => { if (/youtu/.test(e.target.value) && !$('#sf-title', main).value) $('#sf-title', main).value = 'Song from YouTube'; };
@@ -376,28 +376,28 @@ export function addScoreView(main) {
     e.target.reset();
     $('#sf-fname', main).textContent = 'MP3, M4A, WAV or a video';
     f.file = null;
-    main.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(() => $('#sf-jobs', main)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 300);
   };
   return jobsList($('#sf-jobs', main));
 }
 
+// only jobs still going: finished and failed ones live in Activities. They sit below the form, one compact card each.
 function jobsList(host) {
   const draw = () => {
-    const jobs = store.jobs().filter((j) => !j.dismissed && j.kind !== 'tags' && j.kind !== 'organize'); // auto-tag jobs and Organize pages scans show in their own windows
+    const jobs = store.jobs().filter((j) => !j.dismissed && (j.status === 'running' || j.status === 'queued') && j.kind !== 'tags' && j.kind !== 'organize'); // auto-tag jobs and Organize pages scans show in their own windows
     host.hidden = !jobs.length;
-    host.innerHTML = `<h2 class="sub-h">In progress and done <a class="link small" href="#/activity">All activities ›</a></h2>` + jobs.map((j) => `
-      <section class="job ${j.status}">
-        <div class="job-head"><div><b>${esc(j.title)}</b><small>${esc(j.source)} · ${esc(j.output)}</small></div>
-          ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : j.status === 'done' ? `${(j.items || (Array.isArray(j.result) ? j.result : []).map((id) => ({ id, version: store.get(id)?.version }))).map((x) => `<a class="btn primary" href="#/item/${x.id}">Open ${VERSIONS[x.version] || 'score'}</a>`).join('')}<button data-dismiss="${j.id}">Dismiss</button>` : `<button data-dismiss="${j.id}">Dismiss</button>`}</div>
-        <ol class="stages">${stagesOf(j).map((s, i) => `<li class="${i < j.stage || j.status === 'done' ? 'done' : i === j.stage && j.status === 'running' ? 'now' : ''}"><span>${s}</span>${i === j.stage && j.status === 'running' ? `<progress max="1" value="${j.progress}"></progress>` : ''}</li>`).join('')}</ol>
-        ${['omr', 'lyrics', 'sing'].includes(j.kind) && j.status !== 'running' && j.log?.length ? `<p class="small">${esc(j.log.at(-1).msg)}</p>` : ''}
-        <small class="muted">${j.status === 'running' ? `Started ${ago(j.startedAt)}` : j.status === 'done' ? `Finished ${ago(j.doneAt)}` : j.status === 'failed' ? `Failed — ${esc(j.log?.at(-1)?.msg || '')}` : 'Cancelled'}</small>
-      </section>`).join('');
+    host.innerHTML = !jobs.length ? '' : `<h2 class="sub-h">In progress <a class="link small" href="#/activity">All activities ›</a></h2>` + jobs.map((j) => {
+      const st = stagesOf(j), n = Math.min(j.stage || 0, st.length - 1);
+      return `<section class="job compact ${j.status}">
+        <div class="job-head"><div><b>${esc(j.title)}</b><small>${j.status === 'queued' ? 'Waiting' : `${n + 1}/${st.length} · ${esc(st[n])}`} · ${esc(ago(j.startedAt))}</small></div>
+          ${j.status === 'running' ? `<button data-cancel="${j.id}">Cancel</button>` : ''}</div>
+        ${j.status === 'running' ? `<progress max="${st.length}" value="${n + (j.progress || 0)}"></progress>` : ''}
+      </section>`;
+    }).join('');
   };
   host.onclick = (e) => {
-    const c = e.target.closest('[data-cancel]'), d = e.target.closest('[data-dismiss]');
+    const c = e.target.closest('[data-cancel]');
     if (c) store.updateJob(c.dataset.cancel, { status: 'cancelled', doneAt: Date.now(), msg: 'Cancelled' }, { quiet: false });
-    if (d) store.dismissJob(d.dataset.dismiss);
   };
   draw();
   const a = store.onJobs(draw), b = store.on(draw);
