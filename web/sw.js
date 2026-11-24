@@ -3,7 +3,7 @@
 // Saved copies are kept tidy: one copy per URL path (the newest ?v=), an index in IndexedDB with the
 // size and last use of each, a size cap (least recently used go first), and a clean-up the app asks
 // for after each sync with the Mac (items the Mac no longer has). The app shell is never touched.
-const SHELL = 'meowsic-shell-v29', DATA = 'meowsic-data-v1';
+const SHELL = 'meowsic-shell-v30', DATA = 'meowsic-data-v1';
 const SHELL_FILES = ['./', 'index.html', 'css/app.css', 'css/photoimport.css', 'css/completeinfo.css', 'css/manage.css', 'css/beta.css', 'css/midiedit.css', 'css/lyricmode.css', 'manifest.webmanifest', 'icon.svg', 'icon-180.png', 'icon-512.png', 'vendor/osmd.min.js'];
 const MB = 1024 * 1024, DEFAULT_CAP = 1024 * MB;
 

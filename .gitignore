@@ -18,7 +18,7 @@ tools/.venv/
 __pycache__/
 
 # Meowsic server venv
-server/.venv/
+server/.venv
 .pytest_cache/
 migrate/.venv/
 
@@ -28,3 +28,6 @@ migrate/.venv/
 models--*/
 .claude/
 web/takes/
+
+# symlinks into the live folder (worktrees): no trailing slash, so a symlink can't be committed
+tests/e2e/node_modules

@@ -1230,6 +1230,13 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .viewer .nh-on path, .viewer .nh-on ellipse, .viewer .nh-on rect { fill: var(--acc) !important; stroke: var(--acc) !important; }
 .np-barpick { fill: var(--acc); fill-opacity: .06; pointer-events: none; }
 .np-barpick.on { fill-opacity: .16; }
+.np-range { fill: #2f7de1; fill-opacity: .10; stroke: #2f7de1; stroke-width: 2.5; stroke-opacity: .75; pointer-events: none; }
+.np-acts .np-clip button { min-width: 40px; padding: 0 9px; display: inline-flex; align-items: center; justify-content: center; }
+.np-clip .ic { width: 19px; height: 19px; }
+.np-clip .np-repeat { font-size: 19px; font-weight: 600; }
+.np-tools .np-respell { font-size: 14px; letter-spacing: -.5px; }
+:root[data-device="phone"] .np-acts .np-clip { flex: 1 1 100%; order: -1; }
+:root[data-device="phone"] .np-acts .np-clip .np-icon { flex: 1; min-width: 0; }
 .np-addstaff { display: grid; gap: 10px; margin: 10px 0; }
 .np-addstaff label { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
 .np-box { position: fixed; z-index: 60; border: 1.5px dashed var(--acc); background: color-mix(in srgb, var(--acc) 12%, transparent); border-radius: 4px; pointer-events: none; }

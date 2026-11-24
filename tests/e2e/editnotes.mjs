@@ -466,8 +466,8 @@ async function cueAndArcs(name, vp) {
     const dot = await page.$eval('.score-dots i:nth-child(2)', (e) => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width }; });
     await tapXY(dot.x, dot.y); await sleep(300);
     check('tapping a page dot turns there (and picks nothing)', (await S()).page === 2 && JSON.stringify(await EN(() => window.__editNotes.sel)) === JSON.stringify(kept) && dot.w >= 20, JSON.stringify(dot));
-    await page.keyboard.down('Shift'); await page.keyboard.press('ArrowLeft'); await page.keyboard.up('Shift'); await sleep(300);
-    check('Shift ← turns back a page', (await S()).page === 1);
+    await page.keyboard.press('PageUp'); await sleep(300);
+    check('Page ↑ turns back a page', (await S()).page === 1);
     // the last right-hand note on page 1, then → : the next note, on page 2
     const lastOn1 = await EN(() => {
       const clip = document.querySelector('#clip').getBoundingClientRect();
@@ -714,6 +714,185 @@ async function editBarFits() {
   await send('POST', '/items/trash', { ids: [pv0.id] }).catch(() => {});
 }
 
+// ---- range tools: a range (Mac: Shift-click, Shift ← →, ⌘A, Esc; iPad: long-press then tap / drag), copy / cut /
+// paste, ⟳ Repeat, octave on a range, ♯/♭ respell and the accidentals menu — one undo step each, saved like any edit ----
+async function rangeTools(name, vp) {
+  console.log(`\nRange tools ${name}`);
+  const touch = !!vp.hasTouch;
+  const title = `Ranges ${name} ${stamp}`;
+  const sc = await send('POST', '/items', { kind: 'score', title, musicxmlText: scoreXml(title) });
+  const page = await b.newPage(); await page.setViewport(vp);
+  page.on('pageerror', (e) => errs.push(`range ${name}: ${e.message}`));
+  page.on('console', (m) => m.type() === 'error' && !/404|409|favicon/.test(m.text()) && errs.push(`range ${name}: ${m.text()}`));
+  const EN = (f, ...a) => page.evaluate(f, ...a);
+  const idle = async () => { for (let i = 0; i < 60; i++) { await sleep(150); if (!(await EN(() => window.__editNotes?.busy))) break; } await sleep(600); };
+  const tapXY = async (x, y) => { if (touch) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); await sleep(150); };
+  const act = async (a) => { if (touch) await page.tap(`.notes-panel [data-a="${a}"]`); else await page.click(`.notes-panel [data-a="${a}"]`); await sleep(150); };
+  const key = async (k, mods = []) => { for (const m of mods) await page.keyboard.down(m); await page.keyboard.press(k); for (const m of [...mods].reverse()) await page.keyboard.up(m); await sleep(150); };
+  const headAt = (pred) => page.evaluate((src) => {
+    const f = new Function('n', `return (${src})(n)`);
+    const n = window.__editNotes.notes.find(f);
+    const g = n && document.querySelector(`#paper g[data-ref="${n.ref}"]`);
+    if (!g) return null;
+    const r = g.getBoundingClientRect();
+    return { ref: n.ref, x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }, pred.toString());
+  const music = (bar, staff) => EN(([bar, staff]) => window.__editNotes.notes.filter((n) => n.bar === bar && n.staff === staff).map((n) => (n.rest ? 'R' : n.midi) + '@' + n.on + ':' + n.dur).sort().join(' '), [bar, staff]);
+  const toastText = () => page.$eval('#toast', (e) => e.textContent).catch(() => '');
+  await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' });
+  await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(600);
+  await page.evaluate(() => document.querySelector('#it-more').click()); await sleep(200);
+  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+  await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(600);
+  const b1 = [await music(0, 1), await music(0, 2)], b2 = [await music(1, 1), await music(1, 2)];
+
+  // 1. a range over bars 1–2, both staves
+  let a = await headAt((n) => n.bar === 0 && n.staff === 1 && n.midi === 64 && n.on === 0);
+  let z = await headAt((n) => n.bar === 1 && n.staff === 2 && n.on === 2);
+  if (!touch) {
+    await tapXY(a.x, a.y);
+    await page.keyboard.down('Shift'); await page.mouse.click(z.x, z.y); await page.keyboard.up('Shift'); await sleep(200);
+  } else {
+    await page.touchscreen.touchStart(a.x, a.y); await sleep(700); await page.touchscreen.touchEnd(); await sleep(200);
+    check('long-press: a range of one note, waiting for the last one', (await EN(() => window.__editNotes.rangeArm)) && (await EN(() => window.__editNotes.range?.b)) === 1, JSON.stringify(await EN(() => window.__editNotes.range)));
+    z = await headAt((n) => n.bar === 1 && n.staff === 2 && n.on === 2);
+    await tapXY(z.x, z.y); await sleep(200);
+  }
+  let r = await EN(() => window.__editNotes.range);
+  check(`${touch ? 'long-press + tap' : 'Shift-click'}: a range over bars 1–2 on both staves`, r && r.a === 0 && r.b === 8 && r.s0 === 1 && r.s1 === 2, JSON.stringify(r));
+  check('…every note of it picked, drawn as a blue box', (await EN(() => window.__editNotes.sel.length)) === 13 && (await page.$$eval('#paper .np-range', (e) => e.length)) >= 2, `${await EN(() => window.__editNotes.sel.length)} / ${await page.$$eval('#paper .np-range', (e) => e.length)}`);
+  check('Copy / Cut / Repeat are on', !(await page.$eval('.notes-panel [data-a="copy"]', (e) => e.disabled)) && !(await page.$eval('.notes-panel [data-a="repeat"]', (e) => e.disabled)));
+  await page.screenshot({ path: `${SHOTS}/Range-${name}.png` });
+  if (touch) { // long-press, then drag to the last note
+    await EN(() => window.__editNotes.select([])); await sleep(150);
+    a = await headAt((n) => n.bar === 0 && n.staff === 1 && n.midi === 65);
+    z = await headAt((n) => n.bar === 1 && n.staff === 1 && n.on === 3);
+    await page.touchscreen.touchStart(a.x, a.y); await sleep(700);
+    for (let k = 1; k <= 8; k++) { await page.touchscreen.touchMove(a.x + ((z.x - a.x) * k) / 8, a.y + ((z.y - a.y) * k) / 8); await sleep(30); }
+    await page.touchscreen.touchEnd(); await sleep(250);
+    r = await EN(() => window.__editNotes.range);
+    check('long-press + drag: the range runs to the note let go on', r && r.a === 2 && r.b === 8 && r.s0 === 1 && r.s1 === 1 && !(await EN(() => window.__editNotes.rangeArm)), JSON.stringify(r));
+    await EN(() => window.__editNotes.setRange({ a: 0, b: 8, s0: 1, s1: 2 })); await sleep(200);
+  } else {
+    await key('ArrowRight', ['Shift']);
+    check('Shift →: the range a note longer', (await EN(() => window.__editNotes.range.b)) === 9, JSON.stringify(await EN(() => window.__editNotes.range)));
+    await key('ArrowLeft', ['Shift']);
+    check('Shift ←: back', (await EN(() => window.__editNotes.range.b)) === 8);
+  }
+  if (touch) await act('copy'); else await key('c', ['Meta']);
+  await sleep(600);
+  const clip = await EN(() => window.__editNotes.clip);
+  check(`${touch ? 'Copy' : '⌘C'}: 2 bars on 2 staves copied`, clip?.bars === 2 && clip.staves === 2 && clip.whole, JSON.stringify(clip && { bars: clip.bars, staves: clip.staves }));
+  check('…it says so', /Copied 2 bars on 2 staves/.test(await toastText()), await toastText());
+
+  // 2. paste at bar 3: bars 3–4 are bars 1–2 now
+  a = await headAt((n) => n.bar === 2 && n.staff === 1 && n.on === 0);
+  await tapXY(a.x, a.y);
+  const s0 = await EN(() => window.__editNotes.step);
+  if (touch) await act('paste'); else await key('v', ['Meta']);
+  await idle();
+  check(`${touch ? 'Paste' : '⌘V'}: bars 3–4 are bars 1–2, both hands`, (await music(2, 1)) === b1[0] && (await music(2, 2)) === b1[1] && (await music(3, 1)) === b2[0] && (await music(3, 2)) === b2[1], await music(3, 1));
+  let x = await EN(() => window.__editNotes.xml);
+  check('…one undo step, the bars full, 4 bars still', (await EN(() => window.__editNotes.step)) === s0 + 1 && barsFull(x) && x.split('<measure').length - 1 === 4);
+  r = await EN(() => window.__editNotes.range);
+  check('…what it wrote is the range now', r && r.a === 8 && r.b === 16, JSON.stringify(r));
+  // paste again at the last bar: a bar more at the end
+  a = await headAt((n) => n.bar === 3 && n.staff === 1 && n.on === 0);
+  await tapXY(a.x, a.y);
+  if (touch) await act('paste'); else await key('v', ['Meta']);
+  await idle();
+  x = await EN(() => window.__editNotes.xml);
+  check('Paste over the end: a bar added for it', x.split('<measure').length - 1 === 5 && barsFull(x) && (await music(4, 1)) === b2[0], String(x.split('<measure').length - 1));
+  await act('undo'); await idle();
+  check('Undo: 4 bars again', (await EN(() => window.__editNotes.xml)).split('<measure').length - 1 === 4);
+
+  // 3. octave on a range (⌘A: the whole score) / on a chord
+  if (!touch) {
+    await key('a', ['Meta']);
+    r = await EN(() => window.__editNotes.range);
+    check('⌘A: the whole score is the range', r.a === 0 && r.b === 16 && r.s1 === 2, JSON.stringify(r));
+    const before = await EN(() => window.__editNotes.notes.filter((n) => !n.rest).map((n) => n.midi).join());
+    await key('ArrowUp', ['Meta']); await idle();
+    const after = await EN(() => window.__editNotes.notes.filter((n) => !n.rest).map((n) => n.midi - 12).join());
+    check('⌘↑: every note of the range an octave up, the range stays', before === after && (await EN(() => window.__editNotes.range?.b)) === 16, `${before} | ${after}`);
+    await key('z', ['Meta']); await idle();
+    await key('Escape');
+    check('Esc: the range goes', !(await EN(() => window.__editNotes.range)) && !(await EN(() => window.__editNotes.sel.length)));
+  } else {
+    await EN(() => window.__editNotes.select(window.__editNotes.notes.filter((n) => n.bar === 0 && n.on === 0 && n.staff === 1).map((n) => n.ref))); await sleep(150);
+    await act('oct+'); await idle();
+    check('8↑ on a chord: both notes an octave up', (await EN(() => window.__editNotes.notes.filter((n) => n.bar === 0 && n.on === 0 && n.staff === 1).map((n) => n.midi).sort().join())) === '72,76');
+    await act('undo'); await idle();
+  }
+
+  // 4. ⟳ Repeat one note: the F4 on beat 3 again on beat 4, then again over the bar line
+  a = await headAt((n) => n.bar === 0 && n.staff === 1 && n.midi === 65);
+  await tapXY(a.x, a.y);
+  if (touch) await act('repeat'); else await key('r');
+  await idle();
+  check(`${touch ? '⟳' : 'R'}: the note again right after it`, (await music(0, 1)).split(' ').includes('65@3:1') && !(await music(0, 1)).includes('67@3'), await music(0, 1));
+  if (touch) await act('repeat'); else await key('r');
+  await idle();
+  check('…again: the next one too (into bar 2)', (await music(1, 1)).split(' ').includes('65@0:1'), await music(1, 1));
+  await act('undo'); await idle(); await act('undo'); await idle();
+  check('Undo twice: bar 1 as it was', (await music(0, 1)) === b1[0]);
+
+  // 5. Repeat a range of bars: bars 1–2 again as bars 3–4
+  await EN(() => window.__editNotes.setRange({ a: 0, b: 8, s0: 1, s1: 2 })); await sleep(200);
+  if (touch) await act('repeat'); else await key('r');
+  await idle();
+  check('Repeat a range: bars 3–4 are bars 1–2', (await music(2, 1)) === b1[0] && (await music(3, 2)) === b2[1] && barsFull(await EN(() => window.__editNotes.xml)));
+  await act('undo'); await idle();
+
+  // 6. cut bar 2's right hand: rests are left, the left hand stays
+  await EN(() => window.__editNotes.setRange({ a: 4, b: 8, s0: 1, s1: 1 })); await sleep(200);
+  if (touch) await act('cut'); else await key('x', ['Meta']);
+  await idle();
+  check(`${touch ? 'Cut' : '⌘X'}: bar 2's right hand is a whole-bar rest, the left hand stays`, (await music(1, 1)) === 'R@0:4' && (await music(1, 2)) === b2[1], await music(1, 1));
+  check('…the clip has it', (await EN(() => window.__editNotes.clip?.notes)) === 4);
+  await act('undo'); await idle();
+
+  // 7. ♯/♭ respell: F4 → E♯4 → G𝄫4 → F4 (the sound stays); held / right-click: ♯ ♭ ♮, courtesy
+  a = await headAt((n) => n.bar === 0 && n.staff === 1 && n.midi === 65);
+  await tapXY(a.x, a.y);
+  const spell = () => EN(() => { const n = window.__editNotes.notes.find((n) => n.bar === 0 && n.staff === 1 && n.on === 2); const m = new DOMParser().parseFromString(window.__editNotes.xml, 'application/xml'); const el = [...m.querySelectorAll('part > measure note')][n.ref]; return el.querySelector('step').textContent + (el.querySelector('alter')?.textContent || '') + ':' + (el.querySelector('accidental')?.textContent || '') + ':' + n.midi; });
+  if (touch) await act('respell'); else await key('j');
+  await idle();
+  check(`${touch ? '♯/♭' : 'J'}: F4 written as E♯4, a sharp shown, same pitch`, (await spell()) === 'E1:sharp:65', await spell());
+  if (touch) await act('respell'); else await key('j');
+  await idle();
+  check('…then G𝄫4', (await spell()) === 'G-2:flat-flat:65', await spell());
+  if (touch) await act('respell'); else await key('j');
+  await idle();
+  check('…then F4 again, no accidental', (await spell()) === 'F::65', await spell());
+  if (touch) {
+    const bb = await page.$eval('.notes-panel [data-a="respell"]', (e) => { const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+    await page.touchscreen.touchStart(bb.x, bb.y); await sleep(700); await page.touchscreen.touchEnd(); await sleep(300);
+  } else {
+    await page.click('.notes-panel [data-a="respell"]', { button: 'right' }); await sleep(300);
+  }
+  const items = await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
+  check(`${touch ? 'holding' : 'right-click on'} ♯/♭: ♯ ♭ ♮ and a courtesy accidental`, ['♯ Sharp', '♭ Flat', '♮ Natural'].every((t) => items.includes(t)) && items.some((t) => /Courtesy/.test(t)), items.join('|'));
+  check('…and holding did not respell', (await spell()) === 'F::65', await spell());
+  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === '♯ Sharp').click()); await idle();
+  check('♯ Sharp: F♯4', (await spell()) === 'F1:sharp:66', await spell());
+  await act('respell'); await idle();
+  check('♯/♭ on F♯4: G♭4', (await spell()) === 'G-1:flat:66', await spell());
+
+  // 8. save (into this score): the edits as one Activities step
+  if (!touch) {
+    await act('save'); await sleep(300);
+    await page.evaluate(() => document.querySelector('.np-save [data-mode="this"]').click()); await sleep(2500);
+    const saved = await xmlOf(sc.id);
+    check('Save: the respelled note is in the score', /<step>G<\/step>\s*<alter>-1<\/alter>\s*<octave>4<\/octave>/.test(saved));
+  } else {
+    await EN(() => { window.__editNotes.close(); }); await sleep(300);
+    await page.evaluate(() => [...document.querySelectorAll('.modal-wrap button')].find((x) => x.textContent.trim() === 'Close')?.click()); await sleep(300);
+  }
+  await send('POST', '/items/trash', { ids: [sc.id] }).catch(() => {});
+  await page.close();
+}
+if (process.env.ONLY === 'range') { await rangeTools('Mac', MAC); await rangeTools('iPad', IPAD); await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
 if (process.env.ONLY === 'fits') { await editBarFits(); await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
 if (process.env.ONLY === 'bar') { await barTools('Mac', MAC); await barTools('iPad', IPAD); await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
 // ---- rests: pick one in either hand (whole-bar rests too), change its length, Undo; Fill next rest ----
@@ -925,6 +1104,8 @@ await leftHand('Mac', MAC);
 await leftHand('iPad', IPAD);
 await barTools('Mac', MAC);
 await barTools('iPad', IPAD);
+await rangeTools('Mac', MAC);
+await rangeTools('iPad', IPAD);
 await editBarFits();
 await b.close();
 if (errs.length) { console.log('\nconsole errors:'); errs.forEach((e) => console.log('  ', e)); }

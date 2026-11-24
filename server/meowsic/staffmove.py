@@ -1020,6 +1020,8 @@ def edit_ex(text: str, op: dict, info=None):
         return set_lyrics(text, op), [], 0
     from .barops import OPS as BAR_OPS, bar_op
     if kind in BAR_OPS: return bar_op(text, op)  # Bar ▾: clear / add a hand in a bar, insert / delete bars, add / remove staves
+    from .rangeops import OPS as RANGE_OPS, range_op
+    if kind in RANGE_OPS: return range_op(text, op, info)  # copy / cut / paste / Repeat, respelling, accidentals
     if kind in ('fillbar', 'bartime'): return _bar_op(text, kind, op, info), [], 0
     if kind not in ('move', 'pitch', 'len', 'fill', 'restdel', 'delete', 'add', 'tie', 'slur', 'unslur', 'set'): raise HTTPException(400, f'Unknown edit: {kind}')
     root = ET.fromstring(text.encode('utf-8'))
@@ -1176,6 +1178,9 @@ def edit_ex(text: str, op: dict, info=None):
     tidy_score(root)  # no repeated time / key / clef (a bar left short is shown as such, never filled: incomplete_bars)
     fix_slurs(part, snap)
     fix_ties(part)
+    if tidy and kind in ('pitch', 'add', 'set', 'move'):  # accidentals where the bar needs them, redundant ones gone
+        from .rangeops import tidy_accidentals
+        tidy_accidentals(part, {b for b, _, _ in tidy})
     gone = max(0, ties_before + added + nb.get('ties', 0) - _tie_count(part))
     ET.indent(root, space='  ')
     out = _head(text) + ET.tostring(root, encoding='unicode') + '\n'
@@ -1327,6 +1332,16 @@ def preview(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cf
             'incomplete': incomplete_bars(ET.fromstring(out.encode('utf-8')))}
 
 
+@router.post('/items/{item_id}/editnotes/clip')
+def clip(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
+    """Copy: {ops, start, end, staves} -> {clip} (rangeops.clip_of) from the score as the edits so far leave it."""
+    from .rangeops import clip_of
+    it = must_item(c, item_id)
+    text = _xml_path(cf, it).read_text(encoding='utf-8')
+    out, _ = apply_ops(text, body.get('ops') or [])
+    return {'clip': clip_of(out, body.get('start'), body.get('end'), body.get('staves'))}
+
+
 def keep(d, name):
     (d / '.history').mkdir(exist_ok=True)
     rel = f'.history/notes-{now_ms()}-{name}'
@@ -1343,7 +1358,7 @@ def _what(ops):
     for o in ops:
         k = o.get('op') or ('move' if 'to' in o else '')
         k = f'move{o.get("to")}' if k == 'move' else k
-        cnt[k] = cnt.get(k, 0) + (len(o.get('bars') or []) if k == 'unmark' else 1 if k in ('alt', 'delbar', 'fillbar', 'bartime', 'clearbar', 'addhand', 'insbar', 'addstaff', 'delstaff') else len(o.get('refs') or []))
+        cnt[k] = cnt.get(k, 0) + (len(o.get('bars') or []) if k == 'unmark' else 1 if k in ('alt', 'delbar', 'fillbar', 'bartime', 'clearbar', 'addhand', 'insbar', 'addstaff', 'delstaff', 'clear', 'paste') else len(o.get('refs') or []))
     words = {'move1': lambda n: f'{s(n)} to the right hand', 'move2': lambda n: f'{s(n)} to the left hand', 'move3': lambda n: f'{s(n)} to staff 3',
              'pitch': lambda n: f'{s(n)} higher / lower', 'len': lambda n: f'{n} note{"s" if n != 1 else ""} / rest{"s" if n != 1 else ""} longer / shorter',
              'fill': lambda n: f'{s(n)} filled into the rest after', 'restdel': lambda n: f'{n} rest{"s" if n != 1 else ""} removed',
@@ -1356,7 +1371,10 @@ def _what(ops):
              'clearbar': lambda n: f'{n} bar{"s" if n != 1 else ""} cleared on one staff', 'addhand': lambda n: f'{n} bar{"s" if n != 1 else ""} given a staff',
              'insbar': lambda n: f'{n} empty bar{"s" if n != 1 else ""} added',
              'addstaff': lambda n: f'{n} staff added' if n == 1 else f'{n} staves added', 'delstaff': lambda n: f'{n} staff removed' if n == 1 else f'{n} staves removed',
-             'set': lambda n: f'{s(n)} played in'}
+             'set': lambda n: f'{s(n)} played in',
+             'clear': lambda n: f'{n} stretch{"es" if n != 1 else ""} cut', 'paste': lambda n: f'{n} paste{"s" if n != 1 else ""}',
+             'respell': lambda n: f'{s(n)} spelled another way', 'accidental': lambda n: f'{s(n)} given an accidental',
+             'courtesy': lambda n: f'{n} courtesy accidental{"s" if n != 1 else ""} changed'}
     verses = sorted({str(o.get('verse') or '1') for o in ops if o.get('op') == 'lyrics'}, key=lambda v: (len(v), v))
     out = [words[k](n) for k, n in cnt.items() if k in words and n] + ([f'lyrics of verse{"s" if len(verses) > 1 else ""} {", ".join(verses)}'] if verses else [])
     return ', '.join(out) or 'no notes'
