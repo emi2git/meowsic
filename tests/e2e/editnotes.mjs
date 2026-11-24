@@ -524,7 +524,8 @@ async function rests(name, vp) {
   page.on('pageerror', (e) => errs.push(`Rests ${name}: ${e.message}`));
   page.on('console', (m) => m.type() === 'error' && !/404|409|400|favicon/.test(m.text()) && errs.push(`Rests ${name}: ${m.text()}`));
   const tapXY = async (x, y) => { if (touch) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y); await sleep(150); };
-  const tap = async (sel) => { if (touch) await page.tap(sel); else await page.click(sel); await sleep(150); };
+  // the panel draws itself again on edits / player events: a button found a moment ago may be gone — try again
+  const tap = async (sel) => { for (let k = 0; ; k++) { try { if (touch) await page.tap(sel); else await page.click(sel); break; } catch (e) { if (k > 4 || !/detached|not clickable|No element/.test(e.message)) throw e; await sleep(200); } } await sleep(150); };
   const act = (a) => tap(`.notes-panel [data-a="${a}"]`);
   const EN = (f) => page.evaluate(f);
   const idle = async () => { for (let i = 0; i < 60; i++) { await sleep(150); if (!(await EN(() => window.__editNotes?.busy))) break; } await sleep(700); };
