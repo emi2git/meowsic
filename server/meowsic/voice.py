@@ -1,8 +1,9 @@
-"""Make it sing (beta): a score with English or Chinese lyrics -> a sung vocal + soft piano, saved with the score.
+"""Make it sing (beta): a score with English, Vietnamese or Chinese lyrics -> a sung vocal + soft piano, saved with the score.
 
 POST /api/items/{id}/sing   -> a 'sing' job (sing/sing.py in SoulX-Singer's own venv, in a subprocess);
-                               optional body {voice, octave}: the singer (default: the best for the score's language,
-                               en_target for English, zh_target for Chinese) and octaves to move the melody
+                               optional body {voice, octave}: the singer (default zh_target, a low male voice, for
+                               every language: the user's pick, take C) and octaves to move the melody (default:
+                               the auto octave, nearest the singer's own range)
 GET  /api/items/{id}/vocal  -> the rendered audio (m4a; Range requests, so Safari can seek)
 The score keeps the file name in score.vocal_audio ('<folder> vocal.m4a') and the tempo it was sung at in
 score.vocal_bpm: the player's Voice toggle plays it in place of the piano and maps the playhead with that tempo.
@@ -180,5 +181,6 @@ def sing_runner(ctx: JobContext):
     rep = done.get('report') or {}
     msg = f'Done — sung at {done["bpm"]:g} bpm'
     if rep: msg += f'; {rep["within50cPct"]}% of {rep["notes"]} notes within 50 cents, {rep["notesSilent"]} silent'
+    if rep.get('voice'): msg += f'; voice {rep["voice"]}, octave {rep.get("octaveShift", 0) // 12:+d}'
     ctx.update(stage=len(STAGES) - 1, progress=1, msg=msg, status='done', result=[item_id])
     return name

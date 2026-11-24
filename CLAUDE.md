@@ -4,7 +4,7 @@ One app for the family's sheet music, chord charts, books and scores, used on Ma
 - **web/**: a PWA in vanilla JS ES modules (no build step, no framework); `web/sw.js` caches the shell for offline.
 - **server/meowsic/**: FastAPI + SQLite (Python 3.12, `server/.venv`). It serves `web/` and `/api/*`.
 - **omr/**: sheet photo → score (homr + Audiveris + Apple Vision), with its own `omr/.venv`.
-- **sing/**: "Make it sing (beta)", run in SoulX-Singer's venv at `~/ai/SoulX-Singer/.venv`.
+- **sing/**: "Make it sing (beta)", run in SoulX-Singer's venv at `~/ai/SoulX-Singer/.venv`. Default singer for every song (English, Vietnamese, Mandarin): `zh_target`, a low male voice (the user's pick, "take C"); the auto octave (`octave_for`) fits the melody to its range. `{voice, octave}` on the sing job still picks another.
 - **migrate/**: one-off importers from the three old apps (done; the old data stays read-only).
 - More detail: `docs/architecture.md`. History: `WORKLOG.md`, `docs/history/`. Task list: `TASKS.md`.
 

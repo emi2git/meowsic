@@ -16,6 +16,19 @@ def test_voice_choices():
     assert len(set(sing.VOICES)) == len(sing.VOICES)
 
 
+def test_default_voice_is_take_c():
+    # the user's final pick: zh_target (low male) sings every language unless a voice is passed
+    assert sing.VOICE == 'zh_target' and set(sing.DEFAULT_VOICE.values()) == {'zh_target'}
+    assert set(sing.DEFAULT_VOICE) == {'English', 'Chinese', 'Vietnamese'}
+
+
+def test_auto_octave_for_a_low_male_voice():
+    zh_target = [50, 51, 53, 53, 55, 56]  # its clip sits around D3-G#3
+    assert sing.octave_for([60, 62, 64, 65, 67], zh_target) == -12   # a C4-G4 tune -> down one octave
+    assert sing.octave_for([48, 50, 52, 53, 55], zh_target) == 0     # already in its range
+    assert sing.octave_for([72, 74, 76, 77, 79], zh_target) == -24   # a high tune -> down two
+
+
 def test_voice_files(tmp_path, monkeypatch):
     a, j = sing.voice_files('en_target')
     assert a.name == 'en_target.mp3' and j.parent.name == 'audio'

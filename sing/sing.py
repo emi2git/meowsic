@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Make a lead sheet sing (beta), fully offline: MusicXML melody + English lyrics -> a sung vocal with a soft piano.
+"""Make a lead sheet sing (beta), fully offline: MusicXML melody + English / Vietnamese / Mandarin lyrics -> a sung vocal with a soft piano.
 
   sing.py --xml song.musicxml --out DIR --name "m-abc vocal" [--bpm 72] [--steps 32] [--device mps] [--check]
-          [--voice en_target] [--tune 0.85] [--octave N] [--verse N]
+          [--voice zh_target] [--tune 0.85] [--octave N] [--verse N]
 
 Only the words are sung: notes with a lyric syllable, their melisma / extend continuations and ties
 (singscore.mark_sung). Intros, piano fills and rests are silence for the singer (sung as rests, then gated to
@@ -11,7 +11,8 @@ every note keeps its exact time.
 
 Voice: SoulX-Singer (Soul-AILab, Apache-2.0) — zero-shot singing voice synthesis, score-controlled (MIDI notes +
 phonemes). Code in ~/ai/SoulX-Singer (its own .venv runs this script), weights in ~/ai/models/SoulX-Singer/model.pt.
-The singer is one of the project's annotated example clips (--voice; default en_target, an English pop voice); the
+The singer is one of the project's annotated example clips (--voice; default zh_target, a low male voice:
+the user's pick, take C, for every language); the
 clip is cut at its metadata start time so its audio lines up with its notes / phonemes.
 Pitch correction (--tune, default 0.85, 0 = off; sing/tune.py): WORLD (pyworld) tracks the sung f0, each note's
 slow drift is pulled to the score, vibrato and note-to-note glides are kept, then the voice is resynthesized.
@@ -53,9 +54,11 @@ EXTRA_VOICES = (
     'gt_alto1', 'gt_alto2a', 'gt_alto2b',                        # GTSinger EN-Alto-1 / EN-Alto-2 (female)
 )
 VOICES = BUILTIN_VOICES + EXTRA_VOICES
-VOICE = 'en_target'  # English pop singer: best words + pitch over the five (Amazing Grace tests, 2026-11)
-VOICE_ZH = 'zh_target'  # Mandarin: the user's favourite (take C)
-DEFAULT_VOICE = {'English': VOICE, 'Chinese': VOICE_ZH}
+# the default singer for every song (English, Vietnamese, Mandarin): zh_target, a low male voice, the user's final
+# pick ("take C", 2026-11). Its clip sits around D3-G#3, so the auto octave (octave_for) usually moves a melody down
+# one octave; --voice / --octave still pick another singer / range.
+VOICE = 'zh_target'
+DEFAULT_VOICE = {'English': VOICE, 'Chinese': VOICE, 'Vietnamese': VOICE}
 SR_OUT = 44100
 TAIL_Q = 1.0  # the last note rings on for a beat after the score ends
 
@@ -356,7 +359,7 @@ def main():
     say(1, 0, f'Loading the voice ({len(segs)} phrases at {bpm:g} bpm)')
 
     def on_seg(i, n, ws):
-        say(2, i / n, f'Phrase {i} of {n}: ' + ' '.join(dict.fromkeys(ws)))
+        say(2, i / n, f'Phrase {i} of {n} ({len(ws)} syllables)')  # counts only: lyric text never goes in a log
     dry, vsr, shift, _ = sing(segs, bpm, device, a.steps, a.cfg, on_seg, a.mode, a.voice, a.octave, lang)
     tuned = None
     if os.environ.get('MEOWSIC_SING_RAW'):  # debugging: the voice as the model sang it, before tuning / gating

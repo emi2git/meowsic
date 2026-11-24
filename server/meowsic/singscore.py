@@ -9,10 +9,13 @@ words(notes)         -> sung units: one per rest (unsung notes count as rests) o
 segments(ws, bpm)    -> phrases of a few seconds, cut at rests or after long notes (the model sings one at a time)
 soulx_meta(seg, g2p) -> one SoulX-Singer target-metadata entry: word-level ARPAbet phonemes repeated on every
                         note of the word, note_type 1 rest / 2 word start / 3 same word continues (its training format)
-has_lyrics(xml)      -> True when the melody carries lyrics (English words or Chinese characters)
-language(notes)      -> 'Chinese' (one character per note, SoulX-Singer 'Mandarin' zh_<pinyin><tone> phonemes) or 'English'
+has_lyrics(xml)      -> True when the melody carries lyrics (words in any Latin script, or Chinese characters)
+language(notes)      -> 'Chinese' (one character per note, SoulX-Singer 'Mandarin' zh_<pinyin><tone> phonemes),
+                        'Vietnamese' (sung by SoulX-Singer as 'English': vietnamese() maps each syllable to ARPAbet,
+                        since the model only knows Mandarin, Cantonese and English phonemes) or 'English'
 """
 import re
+import unicodedata
 import xml.etree.ElementTree as ET
 
 STEP = {'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11}
@@ -23,14 +26,22 @@ KIND = {  # MusicXML harmony kind -> intervals above the root
     'suspended-second': (0, 2, 7), 'major-sixth': (0, 4, 7, 9), 'minor-sixth': (0, 3, 7, 9),
     'dominant-ninth': (0, 4, 7, 10), 'power': (0, 7),
 }
-WORD = re.compile(r"[A-Za-z]+(?:'[A-Za-z]+)*")
-CJK = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
+CJK_RANGE = '\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff'
+CJK = re.compile(f'[{CJK_RANGE}]')
+LETTER = rf"[^\W\d_{CJK_RANGE}]"  # any Unicode letter but Chinese characters (é, ă, ư, đ ... all count)
+WORD = re.compile(rf"{LETTER}+(?:'{LETTER}+)*")
 COUNT = set('一二两三四五六七八九十百千几每这那哪')
 NEUTRAL = set('的得地了着吧呢吗嘛们么啊呀')  # usually toneless particles / suffixes (zh_..5 when the voice knows it)
 
 
+def nfc(t) -> str:
+    """Unicode NFC: a decomposed 'a' + combining breve becomes one letter 'ă' (scores come both ways)."""
+    return unicodedata.normalize('NFC', t or '')
+
+
 def has_text(t) -> bool:
-    return bool(WORD.search(t or '') or CJK.search(t or ''))
+    t = nfc(t)
+    return bool(WORD.search(t) or CJK.search(t))
 
 
 def _strip_ns(root):
@@ -119,7 +130,7 @@ def read(xml: str, verse=None) -> dict:
         lyrs = n.pop('lyrics', None)
         if lyrs is None: continue
         lyr = lyrs.get(v) if multi else next(iter(lyrs.values()), None)
-        n['text'] = (lyr.findtext('text') or '').strip() if lyr is not None else ''
+        n['text'] = nfc(lyr.findtext('text') or '').strip() if lyr is not None else ''
         n['syllabic'] = (lyr.findtext('syllabic') or 'single').strip() if lyr is not None else ''
         n['extend'] = lyr is not None and lyr.find('extend') is not None
         extend_used |= n['extend']
@@ -138,16 +149,35 @@ def has_lyrics(xml: str) -> bool:
     return len(sung) > 0 and len(with_text) >= max(3, 0.4 * len(sung))
 
 
+VI_MARKS = {'\u0306', '\u031b', '\u0323', '\u0309'}  # breve, horn, dot below, hook above: Vietnamese, not French
+
+
+def is_vietnamese(word: str) -> bool:
+    """True for a syllable only Vietnamese writes: đ, ă / ơ / ư, a dot below or a hook above, or two marks on one
+    vowel (ấ, ề ...). Plain ones ('em', 'anh') can't tell, so language() decides per song."""
+    w = nfc(word).lower()
+    if 'đ' in w: return True
+    d = unicodedata.normalize('NFD', w)
+    if any(c in VI_MARKS for c in d): return True
+    return bool(re.search(r'[\u0300-\u036f]{2}', d))
+
+
 def language(notes) -> str:
-    """'Chinese' when most lyric notes carry Chinese characters, else 'English'."""
+    """'Chinese' when most lyric notes carry Chinese characters; else 'Vietnamese' when at least 1 in 8 of the
+    Latin-letter syllables is spelled the Vietnamese way (is_vietnamese); else 'English'."""
     zh = sum(1 for n in notes if CJK.search(n.get('text') or ''))
-    en = sum(1 for n in notes if WORD.search(n.get('text') or ''))
-    return 'Chinese' if zh > en else 'English'
+    en = sum(1 for n in notes if not CJK.search(n.get('text') or '') and WORD.search(nfc(n.get('text'))))
+    if zh > en: return 'Chinese'
+    lat = [w for n in notes if not CJK.search(n.get('text') or '') for w in WORD.findall(nfc(n.get('text')))]
+    vi = sum(1 for w in lat if is_vietnamese(w))
+    return 'Vietnamese' if lat and vi >= max(1, len(lat) / 8) else 'English'
 
 
 def clean_word(text: str) -> str:
-    """'grace!' -> 'grace', 'you’re' -> "you're", '虎，' -> '虎'; '' when nothing singable is left."""
-    if CJK.search(text or ''): return ''.join(CJK.findall(text))
+    """'grace!' -> 'grace', 'you’re' -> "you're", '虎，' -> '虎', 'trăng,' -> 'trăng' (NFC); '' when nothing singable
+    is left."""
+    text = nfc(text)
+    if CJK.search(text): return ''.join(CJK.findall(text))
     t = text.replace('’', "'").replace('‘', "'")
     m = WORD.findall(t)
     return "'".join(m) if len(m) > 1 and "'" in t else (m[0] if m else '')
@@ -257,6 +287,68 @@ def add_pinyin(segs, zh=None):
     return segs
 
 
+# ---------- Vietnamese -> ARPAbet (SoulX-Singer has no Vietnamese phonemes; its English set comes closest) ----------
+# A standard (Northern-leaning) reading, one syllable at a time. The tone marks are dropped (the melody carries the
+# pitch); the vowel letters ă â ê ô ơ ư keep their own sounds. A letter the tables don't know is read without its
+# marks (the fallback), never dropped.
+VI_TONES = {'̀', '́', '̃', '̉', '̣'}  # huyền sắc ngã hỏi nặng
+VI_ONSETS = [('ngh', ['NG']), ('ng', ['NG']), ('nh', ['N', 'Y']), ('ch', ['CH']), ('tr', ['CH']), ('th', ['T']),
+             ('ph', ['F']), ('kh', ['HH']), ('gh', ['G']), ('qu', ['K', 'W']), ('gi', ['Z']), ('b', ['B']),
+             ('c', ['K']), ('k', ['K']), ('q', ['K']), ('d', ['Z']), ('đ', ['D']), ('g', ['G']), ('h', ['HH']),
+             ('l', ['L']), ('m', ['M']), ('n', ['N']), ('p', ['P']), ('r', ['R']), ('s', ['S']), ('t', ['T']),
+             ('v', ['V']), ('x', ['S'])]
+VI_CODAS = [('ng', ['NG']), ('nh', ['NG']), ('ch', ['K']), ('c', ['K']), ('t', ['T']), ('p', ['P']), ('m', ['M']),
+            ('n', ['N'])]
+VI_NUCLEI = [('uyê', ['W', 'IY1', 'AH0']), ('uya', ['W', 'IY1', 'AH0']), ('iê',['IY1', 'AH0']), ('yê', ['IY1', 'AH0']), ('ia', ['IY1', 'AH0']), ('ya', ['IY1', 'AH0']),
+             ('uô', ['UW1', 'AH0']), ('ua', ['UW1', 'AH0']), ('ươ', ['UH1', 'AH0']), ('ưa', ['UH1', 'AH0']),
+             ('oa', ['W', 'AA1']), ('oă', ['W', 'AA1']), ('oe', ['W', 'EH1']), ('uy', ['W', 'IY1']),
+             ('uê', ['W', 'EY1']), ('uâ', ['W', 'AH1']), ('uơ', ['W', 'AH1']),
+             ('a', ['AA1']), ('ă', ['AA1']), ('â', ['AH1']), ('e', ['EH1']), ('ê', ['EY1']), ('i', ['IY1']),
+             ('y', ['IY1']), ('o', ['AO1']), ('ô', ['OW1']), ('ơ', ['AH1']), ('u', ['UW1']), ('ư', ['UH1'])]
+VI_GLIDES = {('AA1', 'Y'): ['AY1'], ('AA1', 'W'): ['AW1'], ('AO1', 'Y'): ['OY1'], ('OW1', 'Y'): ['OY1'],
+             ('AH1', 'W'): ['OW1'], ('AH1', 'Y'): ['EY1'], ('UW1', 'Y'): ['UW1', 'IY0'], ('IY1', 'W'): ['IY1', 'UW0']}
+VI_PLAIN = {'a': ['AA1'], 'e': ['EH1'], 'i': ['IY1'], 'o': ['OW1'], 'u': ['UW1'], 'y': ['IY1'], 'f': ['F'],
+            'j': ['JH'], 'w': ['W'], 'z': ['Z']}
+VI_VOWELS = 'aăâeêioôơuưy'
+
+
+def vi_base(syl: str) -> str:
+    """the syllable, lower case, tone mark dropped, vowel letters kept ('người' -> 'ngươi'); letters only"""
+    d = unicodedata.normalize('NFD', nfc(syl).lower())
+    return ''.join(c for c in unicodedata.normalize('NFC', ''.join(c for c in d if c not in VI_TONES)) if c.isalpha())
+
+
+def vietnamese(syl: str) -> list:
+    """One Vietnamese syllable -> ARPAbet with one stressed vowel: 'trăng' -> ['CH', 'AA1', 'NG'],
+    'đi' -> ['D', 'IY1']. Several syllables written together are read one after the other."""
+    s, out = vi_base(syl), []
+    while s:
+        n0 = len(out)
+        on = next(((k, v) for k, v in VI_ONSETS if s.startswith(k)), None)
+        if on:
+            k, v = on
+            if k == 'gi' and (len(s) == 2 or s[2] not in VI_VOWELS): k, v = 'g', ['Z']  # 'gì', 'gìn': i is the vowel
+            if k == 'qu' and (len(s) == 2 or s[2] not in VI_VOWELS): k, v = 'q', ['K']  # 'qu' alone: u is the vowel
+            out += v; s = s[len(k):]
+        nu = next(((k, v) for k, v in VI_NUCLEI if s.startswith(k)), None)
+        if nu:
+            k, v = nu[0], list(nu[1])
+            s = s[len(k):]
+            g = 'Y' if s[:1] in ('i', 'y') else 'W' if s[:1] in ('o', 'u') else None
+            if g:
+                v = v[:-1] + VI_GLIDES.get((v[-1], g), [v[-1], g]); s = s[1:]
+            elif s.startswith(('nh', 'ch')) and v[-1] == 'AA1':
+                v[-1] = 'AY1'  # 'anh', 'ách': the Northern 'ai' colour
+            out += v
+            co = next(((k, v) for k, v in VI_CODAS if s.startswith(k)), None)
+            if co: out += co[1]; s = s[len(co[0]):]
+        if len(out) == n0:  # a letter the tables don't know: read it without its marks, never drop it
+            c = unicodedata.normalize('NFD', s[0])[0]
+            out += next((v for k, v in VI_ONSETS if k == c), None) or VI_PLAIN.get(c, [])
+            s = s[1:]
+    return out
+
+
 def split_syllables(phones, n):
     """Word phonemes -> n syllables, one vowel each (a lone consonant between vowels starts the next one):
     ['AH0','M','EY1','Z','IH0','NG'], 3 -> [['AH0'], ['M','EY1'], ['Z','IH0','NG']]. None when the vowels don't match."""
@@ -319,10 +411,15 @@ def soulx_meta(seg, bpm, g2p, index=0, tail_q=0.0, mode='syllable', lang='Englis
                     dur.append(n['d'] * spq / len(own)); text.append(chars[min(start + i, len(chars) - 1)])
                     ph.append('zh_' + p_); pitch.append(n['midi']); typ.append(2)
             continue
-        phones = [p for p in g2p(w['word'].lower()) if re.fullmatch(r'[A-Z]+[0-2]?', p)]
-        tok = 'en_' + '-'.join(phones) if phones else '<SP>'
         syl = w.get('syl') or [0] * len(w['notes'])
-        parts = split_syllables(phones, syl[-1] + 1) if mode == 'syllable' else None
+        if lang == 'Vietnamese':  # every written syllable is a sung one (vietnamese() reads them one by one)
+            vp = [(g2p or vietnamese)(x) for x in (w.get('syllables') or [w['word']])]
+            phones = [p for x in vp for p in x]
+            parts = vp if mode == 'syllable' and len(vp) == syl[-1] + 1 and all(vp) else None
+        else:
+            phones = [p for p in g2p(w['word'].lower()) if re.fullmatch(r'[A-Z]+[0-2]?', p)]
+            parts = split_syllables(phones, syl[-1] + 1) if mode == 'syllable' else None
+        tok = 'en_' + '-'.join(phones) if phones else '<SP>'
         for k, n in enumerate(w['notes']):
             if not n.get('sung', True):  # an unsung note inside a word: silence, same length
                 dur.append(n['d'] * spq); text.append('<SP>'); ph.append('<SP>'); pitch.append(0); typ.append(1)
