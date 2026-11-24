@@ -1,4 +1,4 @@
-"""Fit lyrics by hand (score ⋯ → "Fit lyrics…", web/js/views/fitlyrics.js).
+"""Lyrics by hand: the endpoints below (used by Claude / scripts; the app's ⋯ entry is gone) and set_lyrics, the words step of Edit notes → Lyrics (web/js/views/lyricmode.js).
 
 GET  /api/items/{id}/lyrics?line=           the melody lines of the score (part / staff / voice), the chosen line's
                                             notes and bars, and the words already under them, per verse
@@ -249,6 +249,52 @@ def apply(text: str, key, verse, notes, holds=()) -> str:
         ET.SubElement(ly, 'text').text = t
         if k + 1 in held and s in ('single', 'end'): ET.SubElement(ly, 'extend')
         _insert(all_notes[r], ly, verse)
+    return _head(text) + ET.tostring(root, encoding='unicode')
+
+
+def set_lyrics(text: str, op: dict) -> str:
+    """Edit notes → Lyrics (web/js/views/lyricmode.js): one step of its ops,
+    {op: 'lyrics', staff, verse, notes: [{ref, text, syllabic, extend?}]}. Verse `verse` on staff `staff` of the part
+    Edit notes edits (staffmove.edit_part) becomes exactly `notes` (refs as staffmove.notes gives them); a note left
+    out has no words in that verse. Only <lyric> elements change (and the "check lyrics" marks of the bars written):
+    notes, ties, slurs and chords stay as they are."""
+    from .staffmove import edit_part
+    verse = '1' if op.get('verse') in (None, '') else str(op['verse']).strip()
+    if not verse.isdigit() or not 1 <= int(verse) <= 12: raise HTTPException(400, 'Verse must be 1–12')
+    staff = str(op.get('staff') or '1').strip()
+    root = _parse(text)
+    _, part, _ = edit_part(root)
+    if part is None: raise HTTPException(400, 'This score has no notes')
+    all_notes = list(part.iter('note'))
+    want = {}
+    for x in op.get('notes') or []:
+        try: r = int(x.get('ref'))
+        except (TypeError, ValueError, AttributeError): raise HTTPException(400, 'Each syllable needs the ref of its note')
+        if not 0 <= r < len(all_notes): raise HTTPException(400, f'No note {r} in this score')
+        e = all_notes[r]
+        if e.find('pitch') is None or e.find('grace') is not None: raise HTTPException(400, f'Note {r} is a rest or a grace note')
+        if _staff(e) != staff: raise HTTPException(400, f'Note {r} is not on staff {staff}')
+        t = str(x.get('text') or '').strip()
+        if not t: raise HTTPException(400, 'A syllable has no text')
+        s = x.get('syllabic') or 'single'
+        if s not in SYLLABIC: raise HTTPException(400, f'syllabic must be one of {", ".join(SYLLABIC)}')
+        if r in want: raise HTTPException(400, f'Two syllables on note {r}')
+        want[r] = (t, s, bool(x.get('extend')))
+    for e in all_notes:
+        if _staff(e) != staff: continue
+        for ly in e.findall('lyric'):
+            if (ly.get('number') or '1').strip() == verse: e.remove(ly)
+    for r, (t, s, ext) in want.items():
+        ly = ET.Element('lyric', {'number': verse})
+        ET.SubElement(ly, 'syllabic').text = s
+        ET.SubElement(ly, 'text').text = t
+        if ext: ET.SubElement(ly, 'extend')
+        _insert(all_notes[r], ly, verse)
+    got = {id(all_notes[r]) for r in want}
+    for m in part.findall('measure'):
+        if not any(id(e) in got for e in m.iter('note')): continue
+        for d in [d for d in m.findall('direction') if any((w.text or '') == lf.CHECK for w in d.iter('words'))]:
+            m.remove(d)
     return _head(text) + ET.tostring(root, encoding='unicode')
 
 
