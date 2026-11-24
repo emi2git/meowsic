@@ -1,4 +1,4 @@
-// Feedback, shared by the Developer page (views/feedback.js) and the quick feedback popover in the item
+// Feedback, shared by the Feedback page (views/feedback.js) and the quick feedback popover in the item
 // views (quickfeedback.js): one pool on the Mac (server/meowsic/feedback.py), one copy on this device.
 // Offline: a note waits in the store's outbox (the app's own id, so a resend is not stored twice).
 import { store, uid } from './store.js';

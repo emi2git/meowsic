@@ -1,5 +1,5 @@
-// Developer page = Feedback (js/views/feedback.js) against a test server (BASE, default :5190) on a copy of the data —
-// never the real library. Mac, iPad Pro 13 and iPhone Air: old #/feedback lands on Developer, mic on the box,
+// Feedback page (js/views/feedback.js) against a test server (BASE, default :5190) on a copy of the data —
+// never the real library. Mac, iPad Pro 13 and iPhone Air: old #/feedback lands on Feedback, mic on the box,
 // Submit → newest first, collapsed rows (time + status + first line), Edit (history kept), Remove (soft),
 // Fixed / Won't fix (set by Claude) hide Edit / Remove and the Mac says 409, offline submit waits and is sent later.
 // SHOTS = folder for screenshots.
@@ -30,12 +30,12 @@ for (const [name, vp, short] of [['Mac', MAC, 'mac'], ['iPad Pro 13', IPAD, 'ipa
   page.on('console', (m) => m.type() === 'error' && !/409|503|Failed to load resource|ERR_INTERNET_DISCONNECTED/.test(m.text()) && errs.push(`${short}: ${m.text()}`));
   await page.goto(BASE + '#/feedback', { waitUntil: 'networkidle0' }); await sleep(500);
   check('#/feedback lands on #/developer', (await page.evaluate(() => location.hash)) === '#/developer');
-  check('page is Developer, old-app card gone', (await page.$eval('h1', (e) => e.textContent)) === 'Developer' && !(await page.$eval('#main', (e) => e.textContent)).includes('Bring in the old apps'));
+  check('page is Feedback, old-app card gone', (await page.$eval('h1', (e) => e.textContent)) === 'Feedback' && !(await page.$eval('#main', (e) => e.textContent)).includes('Bring in the old apps'));
   if (vp === PHONE) {
     await page.click('#tab-more'); await sleep(200);
-    check('iPhone More menu has Developer', (await page.$eval('.menu', (e) => e.textContent)).includes('Developer'));
+    check('iPhone More menu has Feedback', (await page.$eval('.menu', (e) => e.textContent)).includes('Feedback'));
     await page.evaluate(() => document.querySelector('.menu')?.remove());
-  } else check('left bar App has Developer, highlighted', await page.$eval('#side a[href="#/developer"]', (e) => e.classList.contains('on')));
+  } else check('left bar Developer section has Feedback, highlighted', await page.$eval('#side a[href="#/developer"]', (e) => e.classList.contains('on')));
   check('mic on the feedback box', await page.evaluate(() => { const m = document.querySelector('#fb-text + .ti-mic'); return !!m && !m.hidden; }));
   check('Submit off while empty', await page.$eval('#fb-send', (e) => e.disabled));
 
