@@ -47,8 +47,7 @@ async function open(vp, name) {
   page.on('console', (m) => m.type() === 'error' && !/400|404|409|favicon/.test(m.text()) && errs.push(`${name}: ${m.text()}`));
   await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(800);
-  await page.evaluate(() => document.querySelector('#it-more').click()); await sleep(250);
-  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+  await page.evaluate(() => document.querySelector('#sc-edit').click());
   await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(900);
   return { page, sc };
 }

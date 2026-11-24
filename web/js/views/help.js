@@ -36,7 +36,7 @@ export function helpView(main) {
         'Progress shows on the Add score page and in <b>Activities</b>; keep using Meowsic meanwhile.',
       ])}
       ${sec('editnotes', 'Edit notes', [
-        'Score ⋯ → <b>Edit notes</b>. Tap / click a note or rest to pick it; drag a box around notes; tap a bar’s empty space for <b>Bar ▾</b>; tap above the top staff for a chord name.',
+        'The score’s ✎ opens <b>Edit notes</b>. Tap / click a note or rest to pick it; drag a box around notes; tap a bar’s empty space for <b>Bar ▾</b>; tap above the top staff for a chord name.',
         'iPad / iPhone: hold a note, then tap or drag to another for a range; <b>Several</b> adds each tap.',
         'Mac mouse: ⌘-click adds one, Shift-click picks a range. <b>Drag a note</b> up / down to change its pitch (in the key; ⌥ a semitone) or sideways to another beat (onto rests; onto a note of the same length they swap); Esc cancels.',
         'Click a <b>tie or slur</b> to pick it, then its ✕ or ⌫ takes it away.',
