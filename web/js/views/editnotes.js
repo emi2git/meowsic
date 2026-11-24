@@ -416,9 +416,24 @@ export async function editNotes(view, it, host, opts = {}) {
   // replace: this op takes the place of the last edit (still one undo step), e.g. "Pull the next notes earlier";
   // after(j): an offer shown when nothing else needs saying ({ text, label, run })
   const KEEP_RANGE = new Set(['pitch', 'respell', 'accidental', 'courtesy', 'clear', 'len', 'tie', 'slur', 'unslur', 'delete', 'move']);
+  // keys / buttons pressed while an edit is on its way wait in `queue` (each reads the picked notes when its turn
+  // comes) instead of being lost; while more are waiting an edit's result is not drawn (`stale`): only the last is
+  const queue = [];
+  let stale = false;
+  const act = (f) => { if (busy || queue.length) { if (queue.length < 12) queue.push(f); return; } f(); };
+  const drain = async () => {
+    while (!busy && queue.length && !closed) { try { await queue.shift()(); } catch (e) { toast(e.message); } }
+    if (busy || queue.length || !stale || closed) return;
+    stale = false; busy = true;
+    try { await show(cur().xml); cue(cur().bar, false); keepInView(); } finally { busy = false; }
+    if (queue.length) drain();
+  };
+  // the picked notes dim at once: the edit is seen to start before the score is drawn again
+  const waitMark = () => paper.querySelectorAll('g[data-ref].nh-on').forEach((g) => g.classList.add('nh-wait'));
   const run = async (op, onErr, { replace = false, after, bar: atBar, range: newRange } = {}) => {
     if (busy || (replace && at === 0)) return;
     busy = true;
+    waitMark();
     try {
       const from = replace ? at - 1 : at;
       const ops = [...steps[from].ops, op];
@@ -438,7 +453,8 @@ export async function editNotes(view, it, host, opts = {}) {
       }
       took = new Set(j.tookRefs || []);
       draw();
-      await show(j.xml);
+      if (queue.length) stale = true; // more edits waiting: draw only the last
+      else { stale = false; await show(j.xml); }
       const said = [];
       if (j.took?.length) said.push(tookWords(j.took));
       if (j.said?.length) said.push(...j.said);
@@ -450,7 +466,11 @@ export async function editNotes(view, it, host, opts = {}) {
       if (said.length) toast(said.join(' · '));
       else if (offer) toast(offer.text, offer);
       keepInView();
-    } catch (e) { if (!onErr?.(e)) toast(e.message); } finally { busy = false; }
+    } catch (e) {
+      paper.querySelectorAll('.nh-wait').forEach((g) => g.classList.remove('nh-wait'));
+      queue.length = 0; // the keys pressed after a refused edit were meant for its result: dropped
+      if (!onErr?.(e)) toast(e.message);
+    } finally { busy = false; drain(); }
   };
   const LEN_NAME = { 4: 'whole', 3: 'dotted half', 2: 'half', 1.5: 'dotted quarter', 1: 'quarter', 0.75: 'dotted 8th', 0.5: '8th', 0.375: 'dotted 16th', 0.25: '16th' };
   const lenName = (q) => LEN_NAME[q] || `${q}-beat`;
@@ -893,7 +913,10 @@ export async function editNotes(view, it, host, opts = {}) {
     const bar = steps[Math.max(at, k)].bar;
     at = k;
     draw();
-    try { await show(cur().xml); cue(bar); } finally { busy = false; }
+    try {
+      if (queue.length) stale = true; // another undo / edit waits: draw only the last
+      else { stale = false; await show(cur().xml); cue(bar); }
+    } finally { busy = false; drain(); }
   };
 
   // ---- save / close ----
@@ -956,14 +979,15 @@ export async function editNotes(view, it, host, opts = {}) {
 
   panel.addEventListener('click', (e) => {
     const l = e.target.closest('[data-len]');
-    if (l) return setLen(+l.dataset.len);
+    if (l) return act(() => setLen(+l.dataset.len));
     const a = e.target.closest('[data-a]')?.dataset.a;
     if (!a) return;
-    ({ close: () => close(), undo: () => goStep(at - 1), redo: () => goStep(at + 1), save, up: () => moveTo(-1), down: () => moveTo(1), barmenu: () => barMenu(e.target.closest('[data-a]')),
+    const fn = ({ close: () => close(), undo: () => goStep(at - 1), redo: () => goStep(at + 1), save, up: () => moveTo(-1), down: () => moveTo(1), barmenu: () => barMenu(e.target.closest('[data-a]')),
       'semi-': () => pitch(-1), 'semi+': () => pitch(1), 'oct-': () => pitch(-12), 'oct+': () => pitch(12), dot, del, add, fill,
       copy: () => copy(), cut: () => copy(true), paste, repeat, respell: () => (heldMenu ? (heldMenu = false) : respell()),
       bar: wholeBar, none: () => setSel([]), several: () => { several = !several; draw(); }, tie, slur, playhere: playHere,
-      prev: () => turn(-1), next: () => turn(1) })[a]?.();
+      prev: () => turn(-1), next: () => turn(1) })[a];
+    if (fn) act(fn);
   });
   // ♯/♭ held down (or right-clicked): the accidentals menu
   let heldMenu = false, holdT = null;
@@ -1002,13 +1026,13 @@ export async function editNotes(view, it, host, opts = {}) {
     }
     if (!f) return;
     e.preventDefault(); e.stopPropagation();
-    f();
+    act(f); // busy: it waits its turn (queue)
   };
   document.addEventListener('keydown', onKey, true);
   host.addEventListener('pagechange', () => !closed && draw());
 
   const api = { get sel() { return [...sel]; }, get notes() { return cur().notes; }, get step() { return at; }, get steps() { return steps.length; },
-    get ops() { return cur().ops; }, get xml() { return cur().xml; }, select: (refs) => setSel(refs), get busy() { return busy; }, close,
+    get ops() { return cur().ops; }, get xml() { return cur().xml; }, select: (refs) => setSel(refs), get busy() { return busy || queue.length > 0 || stale; }, close,
     get cueBar() { return cueAt; }, run: (op) => run(op), get barPick() { return barPick; }, pickBar: (bar, staff = 1) => { barPick = { bar, staff }; setSel([]); },
     get staves() { return nStaves(); }, get took() { return [...took]; }, get lyrics() { return lyr; },
     get range() { return rng && { ...rng }; }, get chords() { return chordsOf(); }, chordAt: (x, y) => chordAt(x, y), setRange: (r) => setRange(r), get clip() { return clip; }, get rangeArm() { return rangeArm; } };

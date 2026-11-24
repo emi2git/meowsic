@@ -1137,6 +1137,7 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .nh-hit { cursor: pointer; }
 .nh-hit:hover path, .nh-hit:hover ellipse { fill: var(--acc-text); stroke: var(--acc-text); }
 .viewer .nh-on path, .viewer .nh-on ellipse, .viewer .nh-on rect { fill: var(--acc) !important; stroke: var(--acc) !important; }
+.viewer .nh-wait { opacity: 0.35; } /* Edit notes: the edit is on its way (the score draws again when it is back) */
 .np-barpick { fill: var(--acc); fill-opacity: .06; pointer-events: none; }
 .np-barpick.on { fill-opacity: .16; }
 .np-choices { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }

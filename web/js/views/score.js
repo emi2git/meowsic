@@ -103,10 +103,18 @@ export function scoreBody(root, it, { perform = false } = {}) {
     const c = osmd.cursor;
     c.show(); c.reset();
     const el = c.cursorElement;
-    while (!c.iterator.EndReached) {
-      stops.push({ q: c.iterator.currentTimeStamp.RealValue * 4, x: el.offsetLeft + el.offsetWidth / 2, top: el.offsetTop, h: el.offsetHeight });
-      c.next();
-    }
+    // OSMD repaints the cursor image (a canvas → toDataURL) on every step, and offsetLeft forces a layout each time:
+    // on a long score that was ~300 ms per drawing. The cursor is never shown (the orange line is ours), so skip the
+    // image while stepping and read the place from the style OSMD sets (same numbers, no layout).
+    const style = c.updateStyle;
+    c.updateStyle = function () {};
+    const px = (v) => parseFloat(v) || 0;
+    try {
+      while (!c.iterator.EndReached) {
+        stops.push({ q: c.iterator.currentTimeStamp.RealValue * 4, x: px(el.style.left) + (+el.width || 0) / 2, top: px(el.style.top), h: +el.height || 0 });
+        c.next();
+      }
+    } finally { c.updateStyle = style; }
     c.hide();
     bar?.remove();
     bar = document.createElement('div');
