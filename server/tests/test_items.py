@@ -116,7 +116,7 @@ def test_score_musicxml(client, data):
     client.patch(f'/api/items/{i}', json={'title': 'Ode to Joy'})
     it = client.get(f'/api/items/{i}').json()
     assert it['title'] == 'Ode to Joy' and (it['folder'], it['musicxml'], it['musicxmlOriginal']) == (i, f'{i}.musicxml', f'{i} (original).musicxml')
-    assert sorted(p.name for p in (data / 'items' / i).iterdir()) == [f'{i} (original).musicxml', f'{i}.musicxml']
+    assert sorted(p.name for p in (data / 'items' / i).iterdir()) == ['.history', f'{i} (original).musicxml', f'{i}.musicxml']
     assert client.get(f'/api/items/{i}/musicxml').text == '<score>v1</score>'
 
 
