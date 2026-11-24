@@ -95,12 +95,12 @@ async function run(name, vp, how) {
   check('player fits on the screen', box.right <= vp.width && box.w < 160, JSON.stringify(box));
   if (name === 'Mac' || name === 'iPhone') await page.screenshot({ path: `${SHOTS}/${name}-player.png` });
 
-  // ---- Edit notes… in the Info actions ----
+  // ---- Edit notes… in the score ⋯ ----
   await tap('#it-more'); await sleep(200);
-  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Info').click()); await sleep(400);
-  const entries = await page.$$eval('.info-actions button', (e) => e.map((x) => x.textContent.trim()));
-  check('score Info actions have Edit notes…', entries.includes('Edit notes…'), entries.join('|'));
-  await page.evaluate(() => [...document.querySelectorAll('.info-actions button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+ 
+  const entries = await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
+  check('score ⋯ has Edit notes…', entries.includes('Edit notes…'), entries.join('|'));
+  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
   await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(600);
   const nNotes = await EN(() => window.__editNotes.notes.filter((n) => !n.rest).length);
   const tagged = await page.$$eval('#paper g[data-ref]', (e) => new Set(e.map((g) => g.dataset.ref)).size);

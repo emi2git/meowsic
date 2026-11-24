@@ -6,6 +6,7 @@ import { keyInfo, keyAt, STEPS, linesHtml, diagramsHtml } from '../chordchart.js
 import { attachSwipe, flipBy } from '../swipe.js';
 import { isTouch } from '../device.js';
 import { paginate, pageOfBlock, showPage, pagerInput } from '../pager.js';
+import { printEntry, download } from './actions.js';
 
 let size = 18;
 try { size = +localStorage.getItem('meowsic-chord-size') || 18; } catch {}
@@ -98,4 +99,9 @@ export function chordsToolbar(bar, it, view) {
   };
   drawBar();
   return store.on(() => { if (document.activeElement?.id !== 'cv-key') drawBar(); });
+}
+
+// Export ▸ for a chord chart: print (or save as PDF), the chart as text (as it came: original key)
+export function chordsExports(it) {
+  return [printEntry(it.id), ...(it.text ? [{ label: 'Text file', icon: 'download', run: () => download(`${it.title}.txt`, it.text, 'text/plain;charset=utf-8') }] : [])];
 }

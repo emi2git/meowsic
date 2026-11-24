@@ -4,6 +4,7 @@ import { $, esc, icon, iconOn, toast, sheet as modal, confirmSheet } from '../ui
 import { sheetUrl } from '../sheet-art.js';
 import { InkLayer, inkToolbar } from './annotate.js';
 import { go } from '../app.js';
+import { printEntry, download } from './actions.js';
 import { attachSwipe, backToLibrary } from '../swipe.js';
 import { isTouch, isDesktop } from '../device.js';
 import { watchImage, markFailed } from '../conn.js';
@@ -233,16 +234,29 @@ export function startInk(view, host) {
   if (top) top.querySelector('#it-more').before(tb); else host.append(tb);
 }
 
-export function sheetExtraMenu(it, view) {
+// the sheet's ⋯ tools (actions.viewerMenu). Pages — reorder, split, merge, delete, crop — are edited in one place,
+// Manage library → Organize pages; Crop page… opens it on the crop of the page shown. Books are read-only PDFs:
+// no page editing and no Make a score (Organize pages leaves them out).
+export function sheetTools(it, view) {
+  if (store.mode !== 'server' || it.book) return [];
+  const org = `#/manage?id=${encodeURIComponent(it.id)}&back=item`;
   return [
-    ...(store.mode === 'server' ? [{ label: 'Make a score (beta)…', icon: 'wave', run: () => makeScore(it) }] : []),
+    ...(it.pageFiles?.length ? [{ label: 'Edit pages…', icon: 'edit', run: () => go(org) },
+      { label: 'Crop page…', icon: 'edit', run: () => go(`${org}&crop=${view?.page || 1}`) }] : []),
+    { label: 'Make a score…', icon: 'wave', run: () => makeScore(it) },
   ];
 }
+// Export ▸ for a sheet or book: print (or save as PDF), the page shown as an image
+export function sheetExports(it, view) {
+  const p = view?.page || 1, f = it.pageFiles?.[p - 1];
+  return [printEntry(it.id),
+    ...(f ? [{ label: `Page ${p} as an image`, icon: 'download', run: () => download(`${it.title} - page ${p}${(f.match(/\.\w+$/) || ['.jpg'])[0]}`, { url: store.pageUrl(it.id, p, it.updatedAt) }) }] : [])];
+}
 
-// photo → score (beta): the Mac reads the notes, chord names and words; unsure bars are marked "check"
+// photo → score: the Mac reads the notes, chord names and words; unsure bars are marked "check"
 async function makeScore(it) {
-  const ok = await confirmSheet({ title: `Make a score from “${it.title}”?`, body: `Beta. The Mac reads all ${it.pages} page${it.pages > 1 ? 's' : ''} (about 20 s a page). The new score is its own entry; bars it isn't sure about are marked “check” in red.`, ok: 'Make score' });
+  const ok = await confirmSheet({ title: `Make a score from “${it.title}”?`, body: `The Mac reads all ${it.pages} page${it.pages > 1 ? 's' : ''} (about 20 s a page). The new score is its own entry; bars it isn't sure about are marked “check” in red.`, ok: 'Make score' });
   if (!ok) return;
-  store.addJob({ kind: 'omr', title: it.title, source: `From the sheet “${it.title}”`, output: 'Score (beta)', outputs: ['original'], fromItemId: it.id, artist: it.artist || '' });
+  store.addJob({ kind: 'omr', title: it.title, source: `From the sheet “${it.title}”`, output: 'Score', outputs: ['original'], fromItemId: it.id, artist: it.artist || '' });
   toast('Reading the sheet…', { label: 'Progress', run: () => go('#/jobs') });
 }

@@ -1,5 +1,6 @@
 // Manage library: two tabs — Organize pages (#/manage; #/cleanup and #/organize go here too) and Trash
-// (#/manage/trash; #/bin and #/trash go there). Organize pages: any sheet or book, its pages in a grid —
+// (#/manage/trash; #/bin and #/trash go there). Organize pages: any sheet (books are read-only PDFs and are not
+// listed here: no rearranging, splitting or merging them), its pages in a grid —
 //  · split   tap the page where a new song starts (the Mac reads its title); "Make N new sheets…" moves each
 //            song into its own sheet (books: pages before the first start stay in the book)
 //  · merge   untap a start to join two songs of this sheet; Merge… adds the pages of another sheet after these
@@ -63,10 +64,11 @@ export function cleanupView(main, { parts = [], q } = {}) {
     main.innerHTML = head('organize') + '<p class="pad muted">Organize pages needs the Mac.</p>';
     return;
   }
-  let id0 = q?.get?.('id') || null;
-  if (!id0) { try { id0 = localStorage.getItem('meowsic-org-id') || localStorage.getItem('meowsic-cu-songsplit'); } catch {} }
+  let id0 = q?.get?.('id') || null, remembered = false;
+  if (!id0) { try { id0 = localStorage.getItem('meowsic-org-id') || localStorage.getItem('meowsic-cu-songsplit'); remembered = !!id0; } catch {} }
+  const cropAt = +q?.get?.('crop') || 0;  // the sheet's ⋯ → Crop page…: open on the crop of that page
   const bs = { items: null, scan: null, job: null, id: id0, book: null, starts: {}, focus: 1, list: !id0 || (isNarrow() && !q?.get?.('id')), saving: {}, loading: false,
-    q: Promise.resolve(), det: {}, sug: null, find: '', hidden: false, undo: UNDO, busy: false, drag: null, alive: true };
+    q: Promise.resolve(), det: {}, sug: null, find: '', hidden: false, undo: UNDO, busy: false, drag: null, alive: true, cropAt };
   const backTo = q?.get?.('back') === 'item' && q.get('id') ? { id: q.get('id'), title: store.get(q.get('id'))?.title || 'Back' } : null;  // opened from a sheet: Back goes there
   main.innerHTML = head('organize', `<button id="cu-undo" class="cu-undo" disabled title="Undo (U)">↶ Undo</button>
       <button id="cu-help" class="icon-btn" aria-label="Help" title="Help">?</button>`, backTo) + '<div class="cu organize" id="cu"></div>';
@@ -119,14 +121,24 @@ export function cleanupView(main, { parts = [], q } = {}) {
       if (!body.querySelector('.bs')) body.innerHTML = '<p class="pad muted">Loading…</p>';
       try {
         if (!bs.items) await fetchAll();
-        if (bs.id && !it()) { bs.id = null; bs.list = true; }
-        if (!bs.id && !isNarrow()) bs.id = bs.scan?.candidates?.[0]?.id || bs.items[0]?.id || null;
+        if (bs.id && !it()) { bs.id = null; bs.list = true; }  // gone, in the Trash, or a book (books are not organized)
+        // coming back: the sheet worked on last time, unless it was marked a complete song since — it is done,
+        // and opening it again read as "the songs I marked still come up" (bug b)
+        if (remembered && it()?.reviewed) { bs.id = null; bs.list = isNarrow(); }
+        remembered = false;
+        if (!bs.id && !isNarrow()) bs.id = nextToCheck();
         if (bs.id) await fetchBook();
       } catch (e) { toast(e.message); bs.loading = false; return; }
       bs.loading = false;
       if (!bs.alive) return;
     }
     render();
+    if (bs.cropAt && bs.book && bs.cropAt <= (bs.book.pages || 0)) { bs.focus = bs.cropAt; bs.cropAt = 0; paint(); cropPage(); }
+  };
+  // what to open when nothing is picked: the first recommended sheet, else the first one not marked complete
+  const nextToCheck = (after = null) => {
+    const cs = (bs.scan?.candidates || []).map((c) => c.id).filter((x) => x !== after);
+    return cs[0] || bs.items.find((x) => !x.reviewed && x.id !== after)?.id || null;
   };
 
   // ---------- the side: Recommended to check, then every sheet and book ----------
@@ -146,7 +158,7 @@ export function cleanupView(main, { parts = [], q } = {}) {
     return xs.slice(0, LIST_MAX).map((b) => {
       const n = Object.keys(b.id === bs.id ? bs.starts : b.starts).length;
       return `<li data-id="${esc(b.id)}" class="${b.id === bs.id ? 'on' : ''} ${n ? 'marked' : ''}"><b>${esc(b.title)}</b><small>${b.book ? 'Book · ' : ''}${plural(b.pages, 'page')}${n ? ` · <span class="bs-cnt">${plural(n, 'start')} marked</span>` : ''}${b.reviewed ? ' · complete song' : ''}</small></li>`;
-    }).join('') + (xs.length > LIST_MAX ? `<li class="og-more muted small">${xs.length - LIST_MAX} more — type to find them</li>` : '') + (!xs.length ? '<li class="og-more muted small">No sheet or book with that name</li>' : '');
+    }).join('') + (xs.length > LIST_MAX ? `<li class="og-more muted small">${xs.length - LIST_MAX} more — type to find them</li>` : '') + (!xs.length ? '<li class="og-more muted small">No sheet with that name</li>' : '');
   };
   const hiddenHtml = () => {
     const xs = bs.items.filter((x) => x.reviewed);
@@ -157,8 +169,8 @@ export function cleanupView(main, { parts = [], q } = {}) {
     <section class="og-rec"><div class="og-rec-h"><b>Recommended to check</b><span class="grow"></span><button id="og-refresh" class="ghost" ${bs.job ? 'disabled' : ''}>↻ Refresh</button></div>
       <div class="og-scan" id="og-scan">${scanLine()}</div><div id="og-candwrap">${candHtml()}</div>
       <label class="og-showh small"><input type="checkbox" id="og-hidden" ${bs.hidden ? 'checked' : ''}> Show hidden</label><div id="og-hidwrap">${hiddenHtml()}</div></section>
-    <section class="og-all"><div class="og-rec-h"><b>All sheets and books</b><span class="muted small">${bs.items.length}</span></div>
-      <input id="og-find" type="search" placeholder="Find a sheet or book" value="${esc(bs.find)}" aria-label="Find a sheet or book" enterkeyhint="search">
+    <section class="og-all"><div class="og-rec-h"><b>All sheets</b><span class="muted small">${bs.items.length}</span></div>
+      <input id="og-find" type="search" placeholder="Find a sheet" value="${esc(bs.find)}" aria-label="Find a sheet" enterkeyhint="search">
       <ol class="bs-list og-items" id="bs-list">${itemsHtml()}</ol></section>`;
   const paintSide = () => {
     const s = $('#og-side', body); if (!s) return;
@@ -215,6 +227,11 @@ export function cleanupView(main, { parts = [], q } = {}) {
     if (r.activity) bs.undo.push({ label: on ? 'complete song' : 'check again', run: () => api('POST', `/activity/${encodeURIComponent(r.activity)}/undo`, {}) });
     toast(on ? `“${x?.title || ''}” is a complete song — scans leave it out` : `“${x?.title || ''}” can come up in checks again`);
     paintSide(); paintBar();
+    // the open sheet is done: on to the next one to check (iPhone: back to the list)
+    if (on && id === bs.id && bs.scan) {
+      if (isNarrow()) { bs.list = true; body.querySelector('.bs')?.classList.remove('has-book'); }
+      else { const nx = nextToCheck(id); if (nx && nx !== id) openBook(nx); }
+    }
   });
 
   // ---------- the editor ----------
@@ -321,7 +338,7 @@ export function cleanupView(main, { parts = [], q } = {}) {
     }
     paintSegs(); paintBar();
     const li = $(`#bs-list li[data-id="${CSS.escape(bs.id)}"] small`, body), x = it();  // the list line: how many starts
-    if (li && x) { const n = Object.keys(bs.starts).length; li.innerHTML = `${x.book ? 'Book · ' : ''}${plural(bs.book.pages, 'page')}${n ? ` · <span class="bs-cnt">${plural(n, 'start')} marked</span>` : ''}${x.reviewed ? ' · complete song' : ''}`; }
+    if (li && x && bs.book) { const n = Object.keys(bs.starts).length; li.innerHTML = `${x.book ? 'Book · ' : ''}${plural(bs.book.pages, 'page')}${n ? ` · <span class="bs-cnt">${plural(n, 'start')} marked</span>` : ''}${x.reviewed ? ' · complete song' : ''}`; }
   };
   const paintDet = (fig, p) => {
     const h = fig.querySelector('.bs-det'); if (!h) return;

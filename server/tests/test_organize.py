@@ -1,6 +1,7 @@
 """Organize pages: delete and reorder pages (kept in .history, undo puts back exact files and order),
 cross-song moves keep the song-start marks on their pages, the Refresh scan and "This is a complete song"."""
 import hashlib
+import json
 
 import pytest
 
@@ -205,3 +206,66 @@ def test_crop_after_the_daily_clean_up(client, data):
     for f in (data / 'items' / it['folder'] / '.history').glob('deleted-*'): f.unlink()
     u = client.post(f'/api/activity/{r["activity"]}/undo', json={})
     assert u.status_code == 409 and 'missing' in u.text
+
+
+def twice_sheet(client, data, title):
+    """A sheet whose page 2 is page 1 again and page 3 is blank (a 'duplicate' and a 'blank' candidate)."""
+    files = [('files', (f'{k}.png', busy_png(k), 'image/png')) for k in range(2)] + [('files', ('w.png', png((255, 255, 255)), 'image/png'))]
+    it = client.post('/api/sheets', data={'title': title}, files=files).json()['item']
+    d = data / 'items' / it['folder']
+    (d / it['pageFiles'][1]).write_bytes((d / it['pageFiles'][0]).read_bytes())
+    return it
+
+
+def test_books_are_left_out_of_organize(client, app, data):
+    """Books are read-only PDFs: never listed, scanned or offered for merging, even with a page twice / blank."""
+    bk = twice_sheet(client, data, 'Songbook (part 1)')
+    bk = client.post('/api/items/book', json={'ids': [bk['id']], 'book': True}).json()['items'][0]
+    assert bk['book']
+    other = make(client, 'Songbook (part 2)', COLS[:2])  # "one song in parts" with the book: no merge offered
+    client.post('/api/organize/scan', json={'wait': True})
+    g = client.get('/api/organize').json()
+    ids = {x['id'] for x in g['items']}
+    assert bk['id'] not in ids and other['id'] in ids
+    assert not any(x['id'] == bk['id'] or bk['id'] in (x.get('others') or []) for x in g['scan']['candidates'])
+    assert g['scan']['items'] == len(ids)
+    # a scan stored before it became a book still lists it: left out when shown
+    c = app.state.connect()
+    c.execute('UPDATE organize_scan SET result=? WHERE id=1', (json.dumps({'items': 2, 'candidates': [
+        {'id': bk['id'], 'kind': 'blank', 'score': 0.6, 'reason': 'x', 'pages': [3]},
+        {'id': other['id'], 'kind': 'merge', 'score': 0.75, 'reason': 'x', 'others': [bk['id']]}]}),))
+    c.commit(); c.close()
+    assert client.get('/api/organize').json()['scan']['candidates'] == []
+
+
+def test_complete_songs_never_come_back(client, app, data):
+    """Marked "This is a complete song": out of what is shown at once, out of a scan that read the marks before
+    they were made (it was running), out of every later scan — as the item and as the other half of a merge."""
+    from meowsic import organize
+    from meowsic.db import connect
+    a = make(client, 'Moon River (part 1)', COLS[:2])
+    b = make(client, 'Moon River (part 2)', COLS[2:4])
+    dup = twice_sheet(client, data, 'Twice')
+    client.post('/api/organize/scan', json={'wait': True})
+    cands = lambda: client.get('/api/organize').json()['scan']['candidates']
+    assert {x['id'] for x in cands()} >= {a['id'], dup['id']}
+    marked = {b['id'], dup['id']}
+    shown = lambda: [x for x in cands() if x['id'] in marked or set(x.get('others') or []) & marked]
+    for i in marked: assert client.post('/api/organize/reviewed', json={'id': i, 'on': True}).json()['reviewed']
+    assert shown() == []
+    # the scan ran before the marks: what it stored has them, what is shown does not
+    cf = app.state.cfg
+    c = connect(cf); c.execute('DELETE FROM organize_reviewed'); c.commit(); c.close()
+    res = organize.scan(cf, read=False)
+    assert any(x['id'] in marked or set(x.get('others') or []) & marked for x in res['candidates'])
+    c = connect(cf)
+    for i in marked: organize.set_reviewed(c, i, True)
+    c.execute('INSERT OR REPLACE INTO organize_scan(id, job_id, at, result) VALUES (1,?,?,?)', ('j', res['at'], json.dumps({'items': res['items'], 'candidates': res['candidates']})))
+    c.commit(); c.close()
+    assert shown() == []
+    client.post('/api/organize/scan', json={'wait': True})
+    assert shown() == []
+    assert {x['id'] for x in client.get('/api/organize').json()['items'] if x['reviewed']} == marked
+    # marking it again is a no-op (no second Activities row), never a toggle
+    assert client.post('/api/organize/reviewed', json={'id': dup['id'], 'on': True}).json()['activity'] is None
+    assert shown() == []

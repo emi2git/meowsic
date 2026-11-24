@@ -20,10 +20,10 @@ const before = await fetch(`${BASE}api/items/${sc.id}/musicxml`).then((r) => r.t
 const nScores = items.filter((x) => x.kind === 'score').length;
 
 await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' }); await sleep(1500);
-await page.click('#it-more'); await sleep(200); await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Info').click()); await sleep(300);
-const entries = await page.$$eval('.info-actions button', (e) => e.map((x) => x.textContent.trim()));
+await page.click('#it-more'); await sleep(200);
+const entries = await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
 check('score ⋯ has Add lyrics from a sheet…', entries.some((t) => /Add lyrics from a sheet/.test(t)), entries.join('|'));
-await page.evaluate(() => [...document.querySelectorAll('.info-actions button')].find((x) => /Add lyrics from a sheet/.test(x.textContent)).click()); await sleep(400);
+await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => /Add lyrics from a sheet/.test(x.textContent)).click()); await sleep(400);
 const listed = await page.$$eval('#al-list [data-id]', (e) => e.map((x) => ({ id: x.dataset.id, same: !!x.querySelector('.have') })));
 check('the sheet picker lists the same song first', listed[0]?.same && listed.some((x) => x.id === sh.id), JSON.stringify(listed.slice(0, 3)));
 await page.type('#al-q', 'zzzz-nothing'); await sleep(100);

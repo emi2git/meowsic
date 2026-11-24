@@ -133,33 +133,31 @@ const xShown = (p) => p.$eval('#lib-q-x', (e) => !e.hidden && e.getBoundingClien
     await api('/items/purge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [lead.id, two.id] }) });
   }
 
-  console.log('Version from the ⋯ menu');
+  console.log('Version from the row ⋯ → Info');
   await to(p, '#/library?kind=sheet');
   const sid = (await ids(p))[0];
   await p.click(`tr.row[data-id="${sid}"] .row-more`); await sleep(250);
-  check('⋯ has "Version: Lead / Piano / Duet…"', (await menuItems(p)).some((x) => x.label === 'Version: Lead / Piano / Duet…'), JSON.stringify(await menuItems(p)));
-  await clickMenu(p, 'Version:');
-  check('…which offers Lead, Piano, Duet, Not set', (await menuItems(p)).map((x) => x.label).join('|') === 'Lead|Piano|Duet|Not set');
-  await clickMenu(p, 'Duet'); await sleep(500);
+  check('row ⋯ = Info · Move to Trash (Version lives in Info)', (await menuItems(p)).map((x) => x.label).join('|') === 'Info|Move to Trash', JSON.stringify(await menuItems(p)));
+  await clickMenu(p, 'Info');
+  check('…Info offers Lead, Piano, Duet', (await p.$$eval('#if-ver [data-ver]', (e) => e.map((x) => x.textContent).join('|'))) === 'Lead|Piano|Duet');
+  if (!(await p.$('#if-ver [data-ver="duet"].on'))) await p.click('#if-ver [data-ver="duet"]');
+  await p.click('#if-save'); await sleep(500);
   check('set Duet: column + server', (await p.$eval(`tr.row[data-id="${sid}"] .c-ver`, (e) => e.textContent)) === 'Duet' && (await api('/items/' + sid)).version === 'duet');
-  await p.click(`tr.row[data-id="${sid}"] .row-more`); await sleep(250);
-  check('⋯ now says "Version: Duet…"', (await menuItems(p)).some((x) => x.label === 'Version: Duet…'));
-  await clickMenu(p, 'Version:');
-  check('…Duet ticked', (await menuItems(p)).find((x) => x.checked === 'true')?.label === 'Duet');
-  await p.mouse.click(5, 890); await sleep(150);
+  await p.click(`tr.row[data-id="${sid}"] .row-more`); await sleep(250); await clickMenu(p, 'Info');
+  check('…Duet lit in Info', !!(await p.$('#if-ver [data-ver="duet"].on')));
+  await p.keyboard.press('Escape'); await sleep(200); await p.evaluate(() => document.querySelector('#it-info [data-close]')?.click()); await sleep(200);
   await to(p, '#/library?kind=score');
-  await p.click('#lib-rows tr.row .row-more'); await sleep(250);
-  check('scores: no Version item in ⋯ (their version is the arrangement)', !(await menuItems(p)).some((x) => x.label.startsWith('Version')));
-  await p.mouse.click(5, 890); await sleep(150);
+  await p.click('#lib-rows tr.row .row-more'); await sleep(250); await clickMenu(p, 'Info');
+  check('scores: no Version choice in Info (their version is the arrangement)', !(await p.$('#if-ver [data-ver]')));
+  await p.keyboard.press('Escape'); await sleep(200); await p.evaluate(() => document.querySelector('#it-info [data-close]')?.click()); await sleep(200);
 
   console.log('Sheet key');
   await to(p, '#/library?kind=sheet');
   const kid = (await ids(p))[0];
   await p.click(`tr.row[data-id="${kid}"] .row-more`); await sleep(250);
-  check('⋯ has "Key: not set…" (or the key)', (await menuItems(p)).some((x) => /^Key: .+…$/.test(x.label)));
-  await clickMenu(p, 'Key:'); await sleep(250);
-  await p.$eval('.modal input, dialog input, .sheet input', (e) => { e.value = 'F#m'; });
-  await p.evaluate(() => document.querySelector('.modal form, dialog form, .sheet form').requestSubmit()); await sleep(600);
+  await clickMenu(p, 'Info'); await sleep(250);  // the key is edited in Info
+  await p.$eval('#if-key', (e) => { e.value = 'F#m'; });
+  await p.click('#if-save'); await sleep(600);
   check('key saved: Key column + server', (await p.$eval(`tr.row[data-id="${kid}"] .c-key`, (e) => e.textContent)) === 'F#m' && (await api('/items/' + kid)).key === 'F#m');
   for (const [k, h] of [['', 'All'], ['sheet', 'Sheets'], ['score', 'Scores'], ['chords', 'Chords']]) {
     await to(p, '#/library' + (k ? '?kind=' + k : ''));
@@ -235,10 +233,9 @@ const xShown = (p) => p.$eval('#lib-q-x', (e) => !e.hidden && e.getBoundingClien
   await p.click('#if-save'); await sleep(500);
   check('tap the lit one + Save → not set', (await api('/items/' + sid)).version === '');
   await info();
-  await p.evaluate(() => [...document.querySelectorAll('.info-actions button')].find((x) => x.textContent.startsWith('Version:')).click()); await sleep(300);
-  await clickMenu(p, 'Lead'); await sleep(500);
+  await p.click('#if-ver [data-ver="lead"]'); await p.click('#if-save'); await sleep(500);
   await info();
-  check('Info actions → Version → Lead (Info follows)', (await api('/items/' + sid)).version === 'lead' && (await seg()) === 'Lead*|Piano|Duet');
+  check('Info → Version Lead + Save (Info follows)', (await api('/items/' + sid)).version === 'lead' && (await seg()) === 'Lead*|Piano|Duet');
   await p.keyboard.press('Escape'); await sleep(200);
   const clear = scores.find((x) => x.version === 'clear') || scores[0];
   await to(p, '#/item/' + clear.id); await sleep(800);

@@ -45,10 +45,11 @@ async function run(name, vp) {
     for (let i = 1; i <= 5; i++) await page.touchscreen.touchMove(r.x + 2, y0 + (dir === 'up' ? -40 : 40) * i);
     await page.touchscreen.touchEnd(); await sleep(700);
   };
-  const info = async () => { await page.tap('#it-more'); await sleep(200); await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Info').click()); await sleep(300); };
+  const more = async () => { await page.tap('#it-more'); await sleep(250); };
+  const info = async () => { await more(); await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Info').click()); await sleep(300); };
   const action = async (label, sel) => {
-    await info();
-    await page.evaluate((l) => [...document.querySelectorAll('.info-actions button')].find((x) => x.textContent.trim() === l).click(), label);
+    await more();
+    await page.evaluate((l) => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === l).click(), label);
     await page.waitForSelector(sel, { timeout: 10000 }); await sleep(600);
   };
   const annotate = async () => { await page.evaluate(() => [...document.querySelectorAll('.ink-toggle')].find((x) => x.offsetWidth)?.click()); await page.waitForSelector('.inkbar', { timeout: 5000 }); await sleep(200); };

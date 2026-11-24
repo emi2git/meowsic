@@ -27,7 +27,7 @@ const heads = (p) => p.$$eval('.lib-table th', (e) => e.filter((x) => x.getBound
 const tap = (p, sel) => (p.viewport()?.hasTouch ? p.tap(sel) : p.click(sel));
 const openInfo = async (p) => {
   await tap(p, '#it-more'); await sleep(250);
-  const menu = await p.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
+  const menu = await p.$$eval('.menu button', (e) => e.map((x) => x.querySelector('span').textContent.trim()));
   await p.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Info')?.click()); await sleep(400);
   return menu;
 };
@@ -56,15 +56,14 @@ for (const [name, d] of Object.entries(DEV)) {
   const n = all.filter((x) => x.tags.includes(sheet.tags[0])).length;
   check(`${name}: the tag filter still works`, await p.evaluate(() => +(document.querySelector('.pager-row .muted')?.textContent.match(/\d+/)?.[0] ?? -1)) === n);
 
-  // the viewer: ⋯ = Info only; the popup
+  // the viewer: ⋯ = Info · tools · Export · Move to Trash; Info = the popup that edits
   await p.goto(`${BASE}#/item/${sheet.id}`, { waitUntil: 'networkidle0' }); await sleep(900);
   const menu = await openInfo(p);
-  check(`${name}: sheet ⋯ holds only Info`, menu.join('|') === 'Info', menu.join('|'));
+  check(`${name}: sheet ⋯ = Info · Edit pages… · Crop page… · Make a score… · Export · Move to Trash`, menu.join('|') === 'Info|Edit pages…|Crop page…|Make a score…|Export|Move to Trash', menu.join('|'));
   check(`${name}: Info popup with every field`, (await p.$$('#if-title, #if-artist, #if-album, #if-key, #if-ver, #if-tags, #if-save')).length === 7);
   const facts = await p.$eval('.if-facts', (e) => e.textContent);
   check(`${name}: Info shows type, pages, file, practice, dates`, ['Type', 'Pages', 'File', 'Practice', 'Added'].every((w) => facts.includes(w)), facts.slice(0, 200));
-  const acts = await p.$$eval('.info-actions button', (e) => e.map((x) => x.textContent.trim()));
-  check(`${name}: sheet actions in Info (Rename, Edit tags, Edit pages, Print, Trash), no book toggle`, ['Rename…', 'Edit tags…', 'Edit pages…', 'Print…', 'Move to Trash'].every((a) => acts.includes(a)) && !acts.some((a) => /book/i.test(a)), acts.join('|'));
+  check(`${name}: Info has no Actions section (they are in ⋯ only)`, !(await p.$('#it-info .info-actions, #it-info .if-act-head')));
   if (name === 'iphone') {
     const r = await p.$eval('.info-modal', (e) => { const r = e.getBoundingClientRect(); return [r.width, r.height, innerWidth, innerHeight]; });
     check('iphone: Info is full screen', Math.abs(r[0] - r[2]) < 2 && Math.abs(r[1] - r[3]) < 2, r.join());
@@ -86,20 +85,18 @@ for (const [name, d] of Object.entries(DEV)) {
   check(`${name}: Save writes artist, album, key, version`, it.album === `Album ${d.viewport.width}` && it.artist === 'Tester Person' && it.key === 'F#m' && it.version === want, JSON.stringify([it.album, it.artist, it.key, it.version]));
   const act = (await api('/activity')).find((a) => a.type === 'edit');
   check(`${name}: one undoable Activities row`, act && /album/.test(act.detail) && act.undo !== false, JSON.stringify(act).slice(0, 200));
-  // an action from the popup runs (Rename… opens its sheet)
-  await openInfo(p);
-  await p.evaluate(() => [...document.querySelectorAll('.info-actions button')].find((x) => x.textContent.trim() === 'Rename…').click()); await sleep(400);
-  check(`${name}: an action from Info runs (Rename…)`, (await p.$eval('.modal h2', (e) => e.textContent)) === 'Rename' && !(await p.$('#it-info')));
-  await p.keyboard.press('Escape'); await sleep(200);
+  // the title is renamed in Info (tapping the title opens it)
+  await tap(p, '#it-title'); await sleep(400);
+  check(`${name}: tapping the title opens Info`, !!(await p.$('#it-info #if-title')));
+  await p.keyboard.press('Escape'); await sleep(200); await p.evaluate(() => document.querySelector('#it-info [data-close]')?.click()); await sleep(200);
   // score + chord chart
   await p.goto(`${BASE}#/item/${score.id}`, { waitUntil: 'networkidle0' }); await sleep(2000);
-  check(`${name}: score ⋯ holds only Info`, (await openInfo(p)).join('|') === 'Info');
-  const sa = await p.$$eval('.info-actions button', (e) => e.map((x) => x.textContent.trim()));
-  check(`${name}: score actions from score.js show in Info`, sa.some((a) => a.startsWith('Make another version')) && sa.includes('Export as MusicXML'), sa.join('|'));
+  const sa = await openInfo(p);
+  check(`${name}: score ⋯ = Info, score.js tools, Export, Move to Trash`, sa[0] === 'Info' && sa.some((a) => a.startsWith('Make another version')) && sa.includes('Export') && sa.at(-1) === 'Move to Trash', sa.join('|'));
   check(`${name}: score Info shows its source`, !!(await p.$('#dt-source')));
   await p.keyboard.press('Escape'); await sleep(200);
   await p.goto(`${BASE}#/item/${chord.id}`, { waitUntil: 'networkidle0' }); await sleep(900);
-  check(`${name}: chord ⋯ holds only Info`, (await openInfo(p)).join('|') === 'Info');
+  check(`${name}: chord ⋯ = Info · Export · Move to Trash`, (await openInfo(p)).join('|') === 'Info|Export|Move to Trash');
   check(`${name}: chord Info has a Version choice`, (await p.$$('#if-ver [data-ver]')).length === 3);
   await p.keyboard.press('Escape');
   if (name === 'mac') {  // the drawn score credits: the real artist + "… by Meowsic"

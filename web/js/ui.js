@@ -165,12 +165,16 @@ export function promptSheet({ title, value = '', placeholder = '', ok = 'Save', 
 }
 
 // ---------- pop-up menu ----------
-export function menu(anchor, entries) {
+// entries: { label, icon?, run, danger?, checked?, disabled? } | '-' (a line) | { label, sub: [entries] } — a
+// submenu ("Export ▸"): tapping it shows its entries in the same place, with "‹ label" on top to go back
+// (one level, the same on iPad, iPhone and Mac; no hover fly-outs)
+export function menu(anchor, entries, { parent = null } = {}) {
   document.querySelector('.menu')?.remove();
+  if (parent) entries = [{ label: parent.label, back: true, run: () => menu(anchor, parent.entries) }, '-', ...entries];
   const m = document.createElement('div');
-  m.className = 'menu';
+  m.className = 'menu' + (parent ? ' sub' : '');
   m.setAttribute('role', 'menu');
-  m.innerHTML = entries.map((e, i) => (e === '-' ? '<hr>' : `<button role="${'checked' in e ? 'menuitemcheckbox' : 'menuitem'}" data-i="${i}" class="${e.danger ? 'danger' : ''}"${'checked' in e ? ` aria-checked="${!!e.checked}"` : ''}>${e.icon ? icon(e.icon) : ''}<span>${esc(e.label)}</span>${'checked' in e ? `<b class="mcheck">${e.checked ? '✓' : ''}</b>` : ''}</button>`)).join('');
+  m.innerHTML = entries.map((e, i) => (e === '-' ? '<hr>' : `<button role="${'checked' in e ? 'menuitemcheckbox' : 'menuitem'}" data-i="${i}" class="${e.danger ? 'danger' : ''}${e.back ? ' mback' : ''}"${'checked' in e ? ` aria-checked="${!!e.checked}"` : ''}${e.sub ? ' aria-haspopup="menu"' : ''}${e.disabled ? ' disabled' : ''}>${e.back ? '<b class="msub">‹</b>' : e.icon ? icon(e.icon) : ''}<span>${esc(e.label)}</span>${'checked' in e ? `<b class="mcheck">${e.checked ? '✓' : ''}</b>` : e.sub ? '<b class="msub">›</b>' : ''}</button>`)).join('');
   document.body.append(m);
   const r = anchor.getBoundingClientRect();
   const mw = m.offsetWidth, mh = m.offsetHeight;
@@ -179,7 +183,13 @@ export function menu(anchor, entries) {
   const off = (e) => { if (!m.contains(e.target)) close(); };
   const close = () => { m.remove(); document.removeEventListener('pointerdown', off, true); };
   setTimeout(() => document.addEventListener('pointerdown', off, true));
-  m.onclick = (e) => { const b = e.target.closest('button'); if (!b) return; close(); entries[+b.dataset.i].run(); };
+  m.onclick = (e) => {
+    const b = e.target.closest('button'); if (!b || b.disabled) return;
+    const x = entries[+b.dataset.i];
+    close();
+    if (x.sub) menu(anchor, x.sub, { parent: { label: x.label, entries } });
+    else x.run();
+  };
   m.querySelector('button')?.focus();
 }
 

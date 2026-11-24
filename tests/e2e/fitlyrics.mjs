@@ -46,10 +46,10 @@ async function run(name, vp, saveMode) {
   await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' });
   await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(600);
   await tap('#it-more'); await sleep(150);
-  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Info').click()); await sleep(300);
-  const entries = await page.$$eval('.info-actions button', (e) => e.map((x) => x.textContent.trim()));
-  check('score Info actions have Fit lyrics…', entries.includes('Fit lyrics…'), entries.join('|'));
-  await page.evaluate(() => [...document.querySelectorAll('.info-actions button')].find((x) => x.textContent.trim() === 'Fit lyrics…').click());
+ 
+  const entries = await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
+  check('score ⋯ has Fit lyrics…', entries.includes('Fit lyrics…'), entries.join('|'));
+  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Fit lyrics…').click());
   await page.waitForSelector('.fitly #fl-text', { timeout: 8000 });
   check('a score with no words opens on the words box', !!(await page.$('.fitly .fl-words')));
   const noScroll = () => page.evaluate(() => ({ doc: document.scrollingElement.scrollHeight <= innerHeight + 1, top: document.scrollingElement.scrollTop, panel: document.querySelector('.fitly').getBoundingClientRect().bottom <= innerHeight + 1 }));
@@ -143,8 +143,8 @@ async function run(name, vp, saveMode) {
   check('reload: the score shows the words', /Twin/.test(drawn2) && /won/.test(drawn2), drawn2.slice(0, 80));
   // the editor reads them back (hold included)
   await tap('#it-more'); await sleep(150);
-  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Info').click()); await sleep(300);
-  await page.evaluate(() => [...document.querySelectorAll('.info-actions button')].find((x) => x.textContent.trim() === 'Fit lyrics…').click());
+ 
+  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Fit lyrics…').click());
   await page.waitForSelector('.fitly .fl-strip', { timeout: 8000 });
   check('the editor reads the saved words back', (await toks()) === 'Twin- kle Twin- kle lit- tle _ star how I won- der what you', await toks());
   await act('close'); await sleep(200);

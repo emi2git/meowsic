@@ -1,6 +1,6 @@
-// Make it sing (beta) + the score player's Voice toggle (server on $BASE, default :5244, temp data; the server runs with
+// Request singing voice + the score player's Voice toggle (server on $BASE, default :5244, temp data; the server runs with
 // MEOWSIC_SING_PYTHON = a stand-in that "sings" a 12 s test tone, so no model is needed):
-// ⋯ → Make it sing → job → Voice button appears (on); Play plays the audio with the playhead in sync; tap on
+// ⋯ → Request singing voice → job → Voice button appears (on); Play plays the audio with the playhead in sync; tap on
 // the music and dragging the line move the audio; Voice off/on swaps piano ↔ voice at the same spot; Stop goes back to the start; a tempo change
 // goes back to the piano; it ends; the choice is remembered; iPhone: a tap on Play starts the audio.
 import puppeteer from 'puppeteer-core';
@@ -31,10 +31,10 @@ const page = await newPage({ width: 1440, height: 900 });
 await page.goto(`${BASE}#/item/${it.id}`, { waitUntil: 'networkidle0' }); await sleep(1500);
 check('score renders', (await page.$$('#osmd svg')).length >= 1);
 check('no Voice button before it sings', await page.$eval('#sc-voice', (e) => e.hidden));
-await page.click('#it-more'); await sleep(200); await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Info').click()); await sleep(300);
-const menuItems = await page.$$eval('.info-actions button', (e) => e.map((x) => x.textContent.trim()));
-check('⋯ has Make it sing (beta)', menuItems.some((t) => /^Make it sing \(beta\)/.test(t)), menuItems.join('|'));
-await page.evaluate(() => [...document.querySelectorAll('.info-actions button')].find((x) => /Make it sing/.test(x.textContent)).click()); await sleep(300);
+await page.click('#it-more'); await sleep(200);
+const menuItems = await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
+check('⋯ has Request singing voice', menuItems.includes('Request singing voice'), menuItems.join('|'));
+await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Request singing voice').click()); await sleep(300);
 check('asks first', !!(await page.$('.modal [data-ok]')));
 await page.click('.modal [data-ok]'); await sleep(300);
 let job;

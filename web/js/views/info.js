@@ -1,11 +1,11 @@
-// Info popup for one sheet, chord chart or score (the viewer's ⋯ holds only "Info"): everything about the item,
-// the editable fields with the voice mic (textinput.js puts it on every text field), Save / Cancel, and an
-// Actions section drawn from the same list the ⋯ menu used (actions.itemActions + the view's tools / exports),
-// so anything a view adds there shows up here too. Save = one PATCH (the Mac keeps history + Activities undo).
+// Info popup for one sheet, book, chord chart or score — the ONE place to read and edit an item: the editable
+// fields (title, artist, album, key, version, tags; textinput.js puts the voice mic on every text field), the
+// facts, Save / Cancel. Save = one PATCH (the Mac keeps history + Activities undo). Things to DO with an item
+// (Edit pages, Make a score, Export, Move to Trash…) live only in the ⋯ menus (actions.js), never here too.
 // iPhone: a full-screen sheet (app.css).
 import { store } from '../store.js';
-import { $, esc, icon, badge, ago, mins, scoreSource, sheet, tagPicker, toast } from '../ui.js';
-import { itemActions, metaText, verLabel, verDetail, SHEET_VERSIONS } from './actions.js';
+import { $, esc, badge, ago, mins, scoreSource, sheet, tagPicker, toast } from '../ui.js';
+import { metaText, verLabel, verDetail, SHEET_VERSIONS } from './actions.js';
 import { VERSIONS } from '../musicxml.js';
 
 const fmtDate = (t) => (t ? new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
@@ -21,7 +21,7 @@ function originRow(it) {
 
 const FIELD = (k, label, v, ph) => `<label class="if-row"><span>${label}</span><input type="text" id="if-${k}" data-k="${k}" value="${esc(v || '')}" placeholder="${esc(ph)}" autocomplete="off"></label>`;
 
-export function openInfo(id, { anchor, tools = [], exports = [] } = {}) {
+export function openInfo(id) {
   const it = store.get(id);
   if (!it) return null;
   const plays = store.plays(it.id);
@@ -29,7 +29,6 @@ export function openInfo(id, { anchor, tools = [], exports = [] } = {}) {
   const src = it.kind === 'score' ? scoreSource(it) : null;
   const versioned = it.kind === 'sheet' || it.kind === 'chords';
   let version = it.version || '', tags = [...it.tags];
-  const actions = itemActions(anchor, id, { viewer: true, tools, exports });
   const onHash = () => s.close(); // going somewhere else (Back, a link): the popup goes too
   const s = sheet(`<div id="it-info" class="info">
     <div class="info-head"><h2>Info</h2><span class="grow"></span><button type="button" data-close>Cancel</button><button type="button" class="primary" id="if-save">Save</button></div>
@@ -53,9 +52,6 @@ export function openInfo(id, { anchor, tools = [], exports = [] } = {}) {
       <dt>Added</dt><dd>${fmtDate(it.createdAt)}</dd>
       ${it.updatedAt ? `<dt>Changed</dt><dd>${fmtDate(it.updatedAt)}</dd>` : ''}
     </dl>
-    <h3 class="if-act-head">Actions</h3>
-    <div class="info-actions" role="group" aria-label="Actions">${actions.map((e, i) => (e === '-' ? '<hr>'
-      : `<button type="button" data-i="${i}" class="${e.danger ? 'danger' : ''}"${'checked' in e ? ` role="menuitemcheckbox" aria-checked="${!!e.checked}"` : ''}>${e.icon ? icon(e.icon) : ''}<span>${esc(e.label)}</span>${'checked' in e ? `<b class="mcheck">${e.checked ? '✓' : ''}</b>` : ''}</button>`)).join('')}</div>
   </div>`, { wide: true, onClose: () => removeEventListener('hashchange', onHash) });
   s.el.classList.add('info-modal');
   addEventListener('hashchange', onHash, { once: true });
@@ -84,11 +80,5 @@ export function openInfo(id, { anchor, tools = [], exports = [] } = {}) {
   };
   $('#if-save', s.el).onclick = save;
   s.el.querySelector('.if-fields').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('input[data-k]')) { e.preventDefault(); save(); } });
-  $('.info-actions', s.el).onclick = (e) => {
-    const b = e.target.closest('[data-i]');
-    if (!b) return;
-    s.close();
-    actions[+b.dataset.i].run();
-  };
   return s;
 }

@@ -1,4 +1,4 @@
-// Manage library → Organize pages: split a book / a sheet into songs, against a test server (BASE, default :5190). Never the real library.
+// Manage library → Organize pages: books are not offered (read-only); split a sheet into songs, against a test server (BASE, default :5190). Never the real library.
 // Makes (or reuses) the book "Booksplit test": 10 pages, each a colour + its big page number, so a
 // page can be recognised wherever it ends up. Marks 3 starts, reloads, makes the sheets, undoes.
 import puppeteer from 'puppeteer-core';
@@ -57,106 +57,22 @@ const pagesOf = (it) => page.evaluate(async (it, cols) => {
 }, it, Array.from({ length: N }, (_, k) => colour(k + 1)));
 check('pages recognisable by colour', (await pagesOf(before)).join() === '1,2,3,4,5,6,7,8,9,10', (await pagesOf(before)).join());
 
-// ---- Mac: mark three starts ----
-await page.goto(BASE + `#/manage?id=${book.id}`, { waitUntil: 'networkidle0' }); await sleep(900);
-check('Manage library → Organize pages tab is on; tabs are Organize pages + Trash only', (await page.$eval('.cu-tabs a.on', (e) => e.dataset.tab)) === 'organize' && (await page.$$eval('.cu-tabs a', (e) => e.map((x) => x.dataset.tab).join())) === 'organize,trash');
-check('book pages shown', (await page.$$('#bs-grid figure')).length === N);
-check('Make button off until a start is marked', await page.$eval('#bs-make', (e) => e.disabled));
-await page.click('#bs-grid figure[data-p="3"] .bs-pg'); await sleep(300);
-check('click marks page 3', await page.$eval('#bs-grid figure[data-p="3"]', (e) => e.classList.contains('start')));
-check('title box gets focus (placeholder)', await page.evaluate(() => document.activeElement?.placeholder === 'Title of this sheet'));
-await page.keyboard.type('Alpha'); await page.keyboard.press('Enter'); await sleep(200);
-for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight');
-check('→ moves focus to page 6', await page.$eval('#bs-grid figure.focus', (e) => e.dataset.p) === '6');
-await page.keyboard.press('s'); await sleep(300);
-await page.keyboard.type('Beta'); await page.keyboard.press('Enter'); await sleep(200);
-check('S marks page 6', await page.$eval('#bs-grid figure[data-p="6"]', (e) => e.classList.contains('start')));
-// page 2 by mistake, then U undoes it
-await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft'); await page.keyboard.press('ArrowLeft');
-await page.keyboard.press('Enter'); await sleep(300);
-await page.evaluate(() => document.activeElement?.blur());
-check('Enter marks page 2', await page.$eval('#bs-grid figure[data-p="2"]', (e) => e.classList.contains('start')));
-await page.keyboard.press('u'); await sleep(1500);
-check('U undoes the mark', !(await page.$eval('#bs-grid figure[data-p="2"]', (e) => e.classList.contains('start'))));
-// page 9 from the large view
-await page.click('#bs-grid figure[data-p="9"] .bs-zoom'); await sleep(500);
-check('⤢ opens the page large', !!(await page.$('.bs-modal #bs-big')) && (await page.$eval('#bs-lt', (e) => e.textContent)).startsWith('Page 9'));
-await page.keyboard.press('s'); await sleep(300);
-check('S in the large view marks it', (await page.$eval('#bs-lm', (e) => e.textContent)) === 'Not a new sheet');
-await page.keyboard.press(' '); await sleep(300);
-check('Space closes the large view', !(await page.$('.bs-modal')));
-await page.evaluate(() => document.activeElement?.blur());
-await sleep(900);
-let saved = (await api(`/books/${book.id}/split`)).starts;
-check('marks + titles saved on the Mac', JSON.stringify(saved) === JSON.stringify({ 3: 'Alpha', 6: 'Beta', 9: '' }), JSON.stringify(saved));
-const segs = await page.$$eval('.bs-seg', (e) => e.map((x) => x.textContent));
-check('segments shown', segs.join('|') === 'Stays in the book: pages 1–2|Sheet 1: pages 3–5 · Alpha|Sheet 2: pages 6–8 · Beta|Sheet 3: pages 9–10', segs.join('|'));
-check('list shows 3 marked', (await page.$eval(`#bs-list li[data-id="${book.id}"] small`, (e) => e.textContent)).includes('3 starts marked'));
-await page.screenshot({ path: 'booksplit-mac.png' });
-
-// ---- reload: marks kept ----
-await page.reload({ waitUntil: 'networkidle0' }); await sleep(1000);
-check('after reload: same book open', (await page.$$('#bs-grid figure')).length === N);
-check('after reload: 3 starts', (await page.$$eval('#bs-grid figure.start', (e) => e.map((x) => x.dataset.p).join())) === '3,6,9');
-check('after reload: titles in the boxes', (await page.$$eval('#bs-grid figure.start input', (e) => e.map((x) => x.value).join('|'))) === 'Alpha|Beta|');
-check('Make button says 3', (await page.$eval('#bs-make', (e) => e.textContent)) === 'Make 3 sheets…');
-
-// ---- make the sheets ----
-await page.click('#bs-make'); await sleep(400);
-await sleep(300);
-const conf = await page.$$eval('.bs-confirm li', (e) => e.map((x) => x.textContent.replace(/\s+/g, ' ').trim()));
-check('confirm lists the sheets', conf.join('|') === `Alpha pages 3–5 (3 p)|Beta pages 6–8 (3 p)|${TITLE} — p9 pages 9–10 (2 p)`, conf.join('|'));
-await page.click('.modal [data-ok]'); await sleep(2000);
-const all = await api('/items');
-const nb = all.find((x) => x.id === book.id);
-check('book keeps pages 1–2', nb.pages === 2 && (await pagesOf(nb)).join() === '1,2', `${nb.pages} ${(await pagesOf(nb)).join()}`);
-const want = [['Alpha', '3,4,5'], ['Beta', '6,7,8'], [`${TITLE} — p9`, '9,10']];
-const made = [];
-for (const [t, pg] of want) {
-  const s = all.find((x) => x.title === t && !x.deleted);
-  made.push(s);
-  check(`sheet “${t}” has pages ${pg}`, s && !s.book && s.artist === 'E2E' && (await pagesOf(s)).join() === pg, s ? (await pagesOf(s)).join() : 'missing');
+// ---- books are read-only PDFs now: Organize pages never offers them (no splitting, merging, rearranging) ----
+for (const [name, vp] of [['mac', { width: 1440, height: 900 }], ['ipad', { width: 1032, height: 1376, hasTouch: true, isMobile: true }], ['iphone', { width: 420, height: 912, hasTouch: true, isMobile: true }]]) {
+  const p = name === 'mac' ? page : await newPage(vp);
+  await p.goto(BASE + `#/manage?id=${book.id}`, { waitUntil: 'networkidle0' }); await p.reload({ waitUntil: 'networkidle0' }); await sleep(900);
+  check(`${name}: Manage library tabs are Organize pages + Trash only`, (await p.$$eval('.cu-tabs a', (e) => e.map((x) => x.dataset.tab).join())) === 'organize,trash');
+  check(`${name}: the book does not open in Organize pages`, (await p.$eval('#bs-grid', (e) => e.dataset.id).catch(() => null)) !== book.id);
+  check(`${name}: the book is not in the list nor in Recommended`, !(await p.$(`#bs-list li[data-id="${book.id}"], #og-cands li[data-id="${book.id}"]`)));
+  await p.goto(BASE + `#/item/${book.id}`, { waitUntil: 'networkidle0' }); await sleep(700);
+  await p.$eval('#it-more', (e) => e.click()); await sleep(300);
+  const m = await p.$$eval('.menu button', (e) => e.map((x) => x.querySelector('span').textContent.trim()));
+  check(`${name}: book ⋯ has no Edit pages / Crop page / Make a score`, m.join('|') === 'Info|Export|Move to Trash', m.join('|'));
+  if (p !== page) await p.close();
 }
-check('book page grid shows 2 pages now', (await page.$$('#bs-grid figure')).length === 2);
-check('Undo button offers it', (await page.$eval('#cu-undo', (e) => e.textContent)).includes('make sheets'));
-await page.screenshot({ path: 'booksplit-made.png' });
-
-// ---- undo ----
-await page.keyboard.press('z'); await sleep(2500);
-const back = await api('/items/' + book.id);
-check('undo: book has all 10 pages in order', back.pages === N && (await pagesOf(back)).join() === '1,2,3,4,5,6,7,8,9,10', (await pagesOf(back)).join());
-check('undo: same file names', back.pageFiles.join() === before.pageFiles.join());
-const gone = await Promise.all(made.filter(Boolean).map((s) => fetch(`${BASE}api/items/${s.id}`).then((r) => r.status)));
-check('undo: new sheets removed', gone.every((x) => x === 404), gone.join());
-check('undo: marks back on screen', (await page.$$eval('#bs-grid figure.start', (e) => e.map((x) => x.dataset.p).join())) === '3,6,9');
-await post(`/books/${book.id}/split`, { starts: {} });
-
-// ---- touch: iPad landscape / portrait, iPhone ----
-for (const [name, w, h, colsWant] of [['iPad landscape', 1366, 1024, [3, 5]], ['iPad portrait', 1024, 1366, [3, 5]], ['iPhone', 390, 844, [2, 2]]]) {
-  const p = await newPage({ width: w, height: h, hasTouch: true, isMobile: true });
-  await p.goto(BASE + '#/library', { waitUntil: 'networkidle0' });
-  await p.goto(BASE + `#/manage?id=${book.id}`, { waitUntil: 'networkidle0' }); await sleep(1000);
-  if (!(await p.$('#bs-grid'))) { await p.tap(`#bs-list li[data-id="${book.id}"]`); await sleep(800); }
-  const fit = await p.evaluate(() => {
-    const se = document.scrollingElement, mk = document.querySelector('#bs-make').getBoundingClientRect();
-    const g = document.querySelector('#bs-grid'), fig = g.querySelector('figure').getBoundingClientRect();
-    return { sh: se.scrollHeight, sw: se.scrollWidth, ih: innerHeight, iw: innerWidth, mkb: mk.bottom, mkw: mk.width, cols: getComputedStyle(g).gridTemplateColumns.split(' ').length, fw: fig.width };
-  });
-  check(`${name}: no page scroll`, fit.sh <= fit.ih + 1 && fit.sw <= fit.iw + 1, JSON.stringify(fit));
-  check(`${name}: Make button on screen`, fit.mkb <= fit.ih && fit.mkw > 80, JSON.stringify(fit));
-  check(`${name}: ${colsWant.join('–')} pages a row`, fit.cols >= colsWant[0] && fit.cols <= colsWant[1], fit.cols);
-  check(`${name}: thumbnails big enough to read`, fit.fw >= 150, fit.fw);
-  await p.tap('#bs-grid figure[data-p="4"] .bs-pg'); await sleep(700);
-  check(`${name}: tap marks page 4`, await p.$eval('#bs-grid figure[data-p="4"]', (e) => e.classList.contains('start')) && '4' in (await api(`/books/${book.id}/split`)).starts);
-  await p.screenshot({ path: `booksplit-${name.replace(/ /g, '-').toLowerCase()}.png` });
-  await p.tap('#bs-grid figure[data-p="4"] .bs-pg'); await sleep(700);
-  check(`${name}: tap again unmarks`, !(await p.$eval('#bs-grid figure[data-p="4"]', (e) => e.classList.contains('start'))) && !('4' in (await api(`/books/${book.id}/split`)).starts));
-  if (name === 'iPhone') {
-    await p.tap('#bs-back'); await sleep(300);
-    check('iPhone: ‹ All shows the list', await p.$eval('#bs-list', (e) => e.getBoundingClientRect().height > 50));
-  }
-  await p.close();
-}
+const org = await api('/organize');
+check('/api/organize leaves the book out', !org.items.some((x) => x.id === book.id));
+check('the book keeps its pages', (await api('/items/' + book.id)).pages === N);
 
 // ---- title detection: marking a start fills its title from the page (Apple Vision on the Mac) ----
 {
@@ -183,33 +99,7 @@ for (const [name, w, h, colsWant] of [['iPad landscape', 1366, 1024, [3, 5]], ['
   }, T2);
   const probe = await api(`/items/${tb.id}/pages/2/title`);
   if (probe.error && !probe.title) console.log('  skip title detection (Vision not available):', probe.error);
-  else {
-    check('API reads the title of page 2', probe.title === 'Moon River' && probe.confidence >= 0.5, JSON.stringify(probe));
-    await page.goto(BASE + `#/manage?id=${tb.id}`, { waitUntil: 'networkidle0' }); await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
-    check('titles test book open', (await page.$$('#bs-grid figure')).length === 3);
-    await page.click('#bs-grid figure[data-p="2"] .bs-pg');
-    await page.waitForFunction(() => document.querySelector('#bs-grid figure[data-p="2"] input')?.value === 'Moon River', { timeout: 8000 }).catch(() => {});
-    check('marking page 2 fills its title', await page.$eval('#bs-grid figure[data-p="2"] input', (e) => e.value) === 'Moon River');
-    await page.waitForFunction(() => /detected/.test(document.querySelector('#bs-grid figure[data-p="2"] .bs-det')?.textContent || ''), { timeout: 8000 }).catch(() => {});  // the box may be filled from the suggestions first
-    check('“detected” hint shown',/detected/.test(await page.$eval('#bs-grid figure[data-p="2"] .bs-det', (e) => e.textContent)));
-    await sleep(800);
-    check('detected title saved on the Mac', (await api(`/books/${tb.id}/split`)).starts['2'] === 'Moon River');
-    // you type first: your text wins
-    await page.click('#bs-grid figure[data-p="3"] .bs-pg');
-    await page.evaluate(() => { const i = document.querySelector('#bs-grid figure[data-p="3"] input'); i.focus(); i.select(); });
-    await page.keyboard.type('Mine'); await sleep(2500);
-    check('typed title is not overwritten', await page.$eval('#bs-grid figure[data-p="3"] input', (e) => e.value) === 'Mine');
-    // a page with no title: the hint says so, the box stays empty
-    await page.evaluate(() => document.activeElement?.blur());
-    await page.click('#bs-grid figure[data-p="1"] .bs-pg');
-    await page.waitForFunction(() => /couldn/.test(document.querySelector('#bs-grid figure[data-p="1"] .bs-det')?.textContent || ''), { timeout: 8000 }).catch(() => {});
-    check('no title → “couldn’t read the title”', /couldn/.test(await page.$eval('#bs-grid figure[data-p="1"] .bs-det', (e) => e.textContent)) && await page.$eval('#bs-grid figure[data-p="1"] input', (e) => e.value) === '');
-    // prefetch: a start marked elsewhere with no title gets one when the book opens
-    await post(`/books/${tb.id}/split`, { starts: { 3: '' } });
-    await page.reload({ waitUntil: 'networkidle0' }); await sleep(500);
-    await page.waitForFunction(() => document.querySelector('#bs-grid figure[data-p="3"] input')?.value === 'Yesterday', { timeout: 8000 }).catch(() => {});
-    check('empty marked start is filled on open', await page.$eval('#bs-grid figure[data-p="3"] input', (e) => e.value) === 'Yesterday');
-  }
+  else check('API reads the title of page 2 (books: read by the API only; Organize pages does not offer books)', probe.title === 'Moon River' && probe.confidence >= 0.5, JSON.stringify(probe));
   await post(`/books/${tb.id}/split`, { starts: {} });
   await post('/items/purge', { ids: [tb.id] });
 }

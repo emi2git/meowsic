@@ -1,9 +1,35 @@
-// Actions shared by the library, viewers and tags.
+// Actions shared by the library, viewers and tags, and the item ⋯ menus.
 import { store } from '../store.js';
-import { esc, icon, sheet, toast, menu, promptSheet, tagPicker, KIND } from '../ui.js';
+import { esc, sheet, toast, menu, tagPicker } from '../ui.js';
 import { go } from '../app.js';
 import { sheetUrl } from '../sheet-art.js';
-import { VERSIONS } from '../musicxml.js';
+import { openInfo } from './info.js';
+
+// The item menus. Info (info.js) is the one place to read and edit an item (title, artist, album, key, version,
+// tags), so a ⋯ menu holds only things to DO with it, and nothing twice:
+//   library row ⋯   Info · Move to Trash   (nothing to print or change in a song that is not open)
+//   viewer ⋯        Info · the kind's tools · Export ▸ · Move to Trash
+// tools / exports come from the view (sheet.js sheetTools / sheetExports, score.js scoreTools / scoreExportMenu,
+// chordsview.js chordsExports) and are built each time ⋯ is tapped, so their labels follow the item.
+const infoEntry = (id) => ({ label: 'Info', icon: 'info', run: () => openInfo(id) });
+const trashEntry = (id) => ({ label: 'Move to Trash', icon: 'bin', danger: true, run: () => binItems(id) });
+export function itemMenu(anchor, id) {
+  menu(anchor, [infoEntry(id), '-', trashEntry(id)]);
+}
+export function viewerMenu(anchor, id, { tools = [], exports = [] } = {}) {
+  const group = (...g) => g.filter((x) => x.length).flatMap((x, i) => (i ? ['-', ...x] : x));
+  menu(anchor, group([infoEntry(id)], tools, exports.length ? [{ label: 'Export', icon: 'download', sub: exports }] : [], [trashEntry(id)]));
+}
+// Export ▸ "Print / PDF…": the print view (the browser's print dialog also saves a PDF)
+export const printEntry = (id) => ({ label: 'Print / PDF…', icon: 'print', run: () => go(`#/print?item=${encodeURIComponent(id)}`) });
+// save a file: text or a Blob (or { url } for a file the Mac serves)
+export function download(name, data, type = 'application/octet-stream') {
+  const a = document.createElement('a');
+  a.href = data?.url || URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type }));
+  a.download = name;
+  document.body.append(a); a.click(); a.remove();
+  if (!data?.url) setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
 
 export function thumbHtml(it) {
   if (it.kind === 'sheet') {
@@ -53,13 +79,6 @@ export function versionMenu(anchor, ids) {
   })));
 }
 
-// a sheet's key ('F', 'Am', 'Eb major'); empty clears it
-export async function editKey(id) {
-  const it = store.get(id);
-  const k = await promptSheet({ title: `Key — ${it.title}`, value: it.key || '', placeholder: 'e.g. C, Am, F#m, Bb', required: false });
-  if (k !== null && k !== (it.key || '')) store.update(id, { key: k });
-}
-
 export function editTags(ids) {
   ids = [].concat(ids);
   const items = ids.map((id) => store.get(id));
@@ -85,33 +104,9 @@ export function editTags(ids) {
   };
 }
 
-export async function rename(id) {
-  const it = store.get(id);
-  const t = await promptSheet({ title: 'Rename', value: it.title });
-  if (t) store.update(id, { title: t });
-}
-
 export function binItems(ids) {
   ids = [].concat(ids);
   store.bin(ids);
   toast(ids.length > 1 ? `${ids.length} items moved to Trash` : 'Moved to Trash', { label: 'Undo', run: () => store.restore(ids) });
 }
 
-// An item's actions, grouped ('-' = a line). The library ⋯ menu shows them; in a viewer the ⋯ holds only Info and
-// these are the Actions section of the Info popup (info.js), so whatever a view adds to tools / exports shows there too.
-export function itemActions(anchor, id, { viewer = false, info, tools = [], exports = [] } = {}) {
-  const group = (...g) => g.filter((x) => x.length).flatMap((x, i) => (i ? ['-', ...x] : x));
-  return group(
-    viewer ? (info ? [{ label: 'Info', icon: 'info', run: info }] : []) : [{ label: 'Open', icon: 'right', run: () => go(`#/item/${id}`) }],
-    [{ label: 'Rename…', icon: 'edit', run: () => rename(id) }, { label: 'Edit tags…', icon: 'tag', run: () => editTags(id) },
-      ...(['sheet', 'chords'].includes(store.get(id)?.kind) ? [{ label: `Version: ${verLabel(store.get(id)) || 'Lead / Piano / Duet'}…`, icon: 'score', run: () => versionMenu(anchor, id) },
-        { label: `Key: ${store.get(id).key || 'not set'}…`, icon: 'edit', run: () => editKey(id) }] : [])],
-    // pages (split, merge, reorder, delete, crop) are edited in one place: Manage library → Organize pages
-    [...(store.mode === 'server' && store.get(id)?.kind === 'sheet' && store.get(id)?.pageFiles?.length ? [{ label: 'Edit pages…', icon: 'edit', run: () => go(`#/manage?id=${encodeURIComponent(id)}&back=item`) }] : []), ...tools],
-    [{ label: 'Print…', icon: 'print', run: () => go(`#/print?item=${id}`) }, ...exports],
-    [{ label: 'Move to Trash', icon: 'bin', danger: true, run: () => binItems(id) }],
-  );
-}
-export function itemMenu(anchor, id, opts = {}) {
-  menu(anchor, itemActions(anchor, id, opts));
-}

@@ -14,8 +14,10 @@ const go = async (h) => { await page.evaluate((h) => (location.hash = h), h); aw
 const text = (sel) => page.$eval(sel, (e) => e.textContent.trim());
 const count = (sel) => page.$$eval(sel, (e) => e.length);
 const clickText = async (sel, t) => { const ok = await page.evaluate((sel, t) => { const b = [...document.querySelectorAll(sel)].find((e) => e.textContent.includes(t)); if (b) b.click(); return !!b; }, sel, t); if (!ok) throw new Error(`no ${sel} with "${t}"`); await sleep(300); };
-// the viewer's ⋯ holds only Info; the actions are at the bottom of the Info popup
+// the viewer's ⋯: Info · the kind's tools · Export ▸ · Move to Trash (Info only edits; no actions in it)
 const openInfo = async () => { await page.click('#it-more'); await sleep(150); await clickText('.menu button', 'Info'); await sleep(200); };
+const moreMenu = async () => { await page.click('#it-more'); await sleep(150); return page.$$eval('.menu > *', (e) => e.map((x) => (x.tagName === 'HR' ? '-' : x.querySelector('span').textContent.trim())).join('|')); };
+const closeMenu = async () => { await page.keyboard.press('Escape'); await page.mouse.click(5, 880); await sleep(150); await page.evaluate(() => document.querySelector('.menu')?.remove()); };
 const closeInfo = async () => { await page.keyboard.press('Escape'); await sleep(150); };
 let pass = 0, fail = 0;
 const check = (name, cond, extra = '') => { if (cond) { pass++; console.log('  ok  ', name); } else { fail++; console.log('  FAIL', name, extra); } };
@@ -204,7 +206,7 @@ await page.click('#sv-ink'); await sleep(150);
 check('Annotate opens the pen bar', !!(await page.$('.inkbar')));
 await page.click('#sv-ink'); await sleep(150);
 check('clicking Annotate again closes it', !(await page.$('.inkbar')));
-check('viewer ⋯ holds only Info', await (async () => { await page.click('#it-more'); await sleep(150); const l = await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim())); await page.keyboard.press('Escape'); await page.mouse.click(5, 880); await sleep(150); return l.join('|') === 'Info'; })());
+{ const m = await moreMenu(); await closeMenu(); check('sheet ⋯ (preview): Info · Export ▸ · Move to Trash', m === 'Info|-|Export|-|Move to Trash', m); }
 await openInfo();
 check('Info popup shows practice', (await text('#it-info')).includes('Practice'));
 check('Info popup: title / artist / album / key fields + Save', (await count('#if-title, #if-artist, #if-album, #if-key, #if-save')) === 5);
@@ -239,7 +241,7 @@ check('tempo shows bpm and − slows it', (await text('#sc-rate')) === '70 bpm',
 await page.click('#sc-fast'); await page.click('#sc-fast'); await sleep(100);
 check('tempo + speeds it up', (await text('#sc-rate')) === '80 bpm', await text('#sc-rate'));
 check('no Version dropdown', !(await page.$('#sc-ver')));
-await openInfo(); await clickText('.info-actions button', 'Make another version');
+await page.click('#it-more'); await sleep(150); await clickText('.menu button', 'Make another version');
 check('make another version offers Simple Piano and Lead sheet, never Original', (await page.$$eval('#gv [data-o]', (e) => e.map((b) => b.dataset.o))).join() === 'clear,lead', await page.$$eval('#gv [data-o]', (e) => e.map((b) => b.dataset.o).join()));
 await page.click('#gv [data-o="lead"]'); await page.click('#gv [data-o="clear"]');
 check('generate button counts picks', (await text('.modal [data-ok]')) === 'Make 2');
@@ -250,7 +252,7 @@ check('lead + simple piano generated as two new entries', gen);
 d = await db();
 check('new entries tagged Lead sheet / Simple Piano', d.items.some((x) => x.title === 'Amazing Grace' && x.tags.includes('Lead sheet')) && d.items.some((x) => x.title === 'Amazing Grace' && x.tags.includes('Simple Piano')));
 await go('#/item/m-02i'); await sleep(1200);
-await openInfo(); await clickText('.info-actions button', 'Make another version');
+await page.click('#it-more'); await sleep(150); await clickText('.menu button', 'Make another version');
 check('versions you have stay pickable', !(await page.$eval('#gv [data-o="clear"]', (b) => b.disabled)));
 await page.click('#gv [data-o="clear"]'); await sleep(100);
 check('picking one you have shows a warning', (await text('#gv-warn')).includes('already have Simple Piano'), await text('#gv-warn'));
@@ -268,10 +270,9 @@ await go('#/library?tags=Lead%20sheet');
 check('version is a tag (Lead sheet)', (await count('#lib-rows .row')) === 2, await count('#lib-rows .row'));
 await go('#/item/m-02i'); await sleep(1200);
 check('no Loop, no Files, no Details in the score header', !/Loop|Files|Details/.test(await text('.item-top')));
-await openInfo();
-check('Export is in the Info actions', /Export as MusicXML/.test(await text('.info-actions')));
-check('score actions order: Rename, Edit tags, Make another version, Kids note names, Chords, Print, Export…, Move to Trash', (await page.$$eval('.info-actions button', (e) => e.map((x) => x.textContent.trim()))).join('|') === 'Rename…|Edit tags…|Make another version…|Kids note names|Chords: Chords off (tap for piano chords)|Print…|Export as MusicXML|Export as MIDI|Export as PDF|Move to Trash', (await page.$$eval('.info-actions button', (e) => e.map((x) => x.textContent.trim()))).join('|'));
-await page.keyboard.press('Escape'); await page.mouse.click(5, 880); await sleep(150);
+{ const m = await moreMenu(); check('score ⋯ (preview): Info · Make another version… · Export ▸ · Move to Trash (Kids note names / Chords are toolbar toggles)', m === 'Info|-|Make another version…|-|Export|-|Move to Trash', m);
+  await clickText('.menu button', 'Export'); const x = await page.$$eval('.menu button span', (e) => e.map((y) => y.textContent.trim()).join('|'));
+  check('score Export ▸ MusicXML, MIDI, Print / PDF…', x === 'Export|MusicXML|MIDI|Print / PDF…', x); await closeMenu(); }
 await page.click('#sc-tup'); await sleep(1200);
 check('transpose +1', (await text('#sc-tval')) === '+1');
 await page.click('#sc-zin'); await sleep(300);
@@ -318,9 +319,8 @@ await page.click('.editbar [data-a="reset"]'); await sleep(900);
 check('reset button next to undo goes back to the original', !(await db()).items.find((x) => x.id === 'm-02f').measures);
 await page.click('.editbar [data-a="undo"]'); await sleep(900);
 check('undo after reset brings the edits back', !!(await db()).items.find((x) => x.id === 'm-02f').measures);
-await openInfo();
-check('Revert note edits is in the Info actions', (await text('.info-actions')).includes('Revert note edits'));
-await clickText('.info-actions button', 'Revert note edits'); await sleep(900);
+check('Revert note edits is in the score ⋯', (await moreMenu()).includes('Revert note edits'));
+await clickText('.menu button', 'Revert note edits'); await sleep(900);
 check('revert to original', !(await db()).items.find((x) => x.id === 'm-02f').measures);
 await page.click('#sc-edit'); await sleep(200); await page.click('.editbar [data-a="done"]'); await sleep(200);
 check('Done closes the editor', !(await page.$('.editbar')));
@@ -329,9 +329,8 @@ for (const id of ['s-001', 'c-024', 'm-02i']) {
   await go('#/item/' + id); await sleep(id === 'm-02i' ? 1200 : 300);
   check(`no Perform on ${id}`, !(await page.evaluate(() => /perform/i.test(document.querySelector('.item-top').textContent))));
   check(`one header band on ${id}`, await page.$eval('.item-top', (e) => e.offsetHeight < 90), await page.$eval('.item-top', (e) => e.offsetHeight));
-  await openInfo();
-  check(`no Performance in Info actions ${id}`, !(await text('.info-actions')).includes('Perform'));
-  await page.keyboard.press('Escape'); await page.mouse.click(5, 880); await sleep(150);
+  check(`no Performance in the ⋯ of ${id}`, !(await moreMenu()).includes('Perform'));
+  await closeMenu();
 }
 await go('#/perform/s-001'); await sleep(300);
 check('old perform link falls back to the library', !(await page.$('.perform-wrap')));

@@ -47,7 +47,7 @@ def make_it_sing(item_id: str, request: Request, c=Depends(conn), cf=Depends(cfg
     xml = score_xml(cf, it)
     if not singscore.has_lyrics(xml.read_text(encoding='utf-8')):
         raise HTTPException(400, 'This score has no English lyrics to sing')
-    return start_job(request.app, 'sing', it['title'], 'Make it sing (beta)', ['voice'], {'fromItemId': item_id})
+    return start_job(request.app, 'sing', it['title'], 'Singing voice', ['voice'], {'fromItemId': item_id})
 
 
 @router.get('/items/{item_id}/vocal')

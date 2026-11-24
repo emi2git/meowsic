@@ -1,6 +1,8 @@
-"""Manage library → Organize pages: every sheet and book, plus "Recommended to check".
+"""Manage library → Organize pages: every sheet (not books), plus "Recommended to check".
 
-Refresh runs a scan as a job (kind 'organize', progress like any job): it looks at every live sheet and book
+Books (PDF songbooks, method books) are read-only here: they are never listed, scanned or offered for
+rearranging, splitting or merging — a book is kept as the PDF it came in as.
+Refresh runs a scan as a job (kind 'organize', progress like any job): it looks at every live sheet
 and lists what looks fishy, most likely first, each with a short reason —
   several   the pages show more than one title / a page starts like a new song / page dots start again
   merge     sheets whose titles say they are one song in parts ("X (2)", "X part 2", "X — p6")
@@ -13,7 +15,6 @@ What a page looks like (a tiny grey picture, its spread) is cached in work/organ
 the title cache (titles.py, the same Vision reading the editor's title detection uses) — the scan reads the
 titles of pages not read before when Vision is set up on this Mac.
 """
-import hashlib
 import hashlib
 import json
 import re
@@ -192,8 +193,9 @@ def merge_candidates(items: list[dict]) -> list[dict]:
 
 
 def _items(c) -> list[dict]:
+    """Every live sheet with pages — books are left out (read-only PDFs: no rearranging, splitting or merging)."""
     rows = c.execute("SELECT i.id, i.title, s.pages, s.book, i.updated_at, i.created_at, i.folder FROM item i JOIN sheet s ON s.item_id = i.id "
-                     "WHERE i.deleted_at IS NULL AND i.kind = 'sheet' AND i.folder IS NOT NULL AND s.pages >= 1").fetchall()
+                     "WHERE i.deleted_at IS NULL AND i.kind = 'sheet' AND i.folder IS NOT NULL AND s.pages >= 1 AND s.book = 0").fetchall()
     return [{'id': r[0], 'title': r[1], 'pages': r[2], 'book': bool(r[3]), 'updatedAt': r[4], 'createdAt': r[5], 'folder': r[6]} for r in rows]
 
 
@@ -229,7 +231,7 @@ def _read_titles(cf, c, items, tcache, progress):
 
 
 def scan(cf, progress=lambda done, total, msg: None, read=True) -> dict:
-    """Look at every live sheet and book; {at, items, candidates} most likely first."""
+    """Look at every live sheet (not books); {at, items, candidates} most likely first."""
     from .booksplit import _hint
     c = connect(cf)
     try:
@@ -267,7 +269,7 @@ def scan(cf, progress=lambda done, total, msg: None, read=True) -> dict:
             done += it['pages']
             if k % 10 == 0 or k == len(items) - 1: progress(done, total, f'Checked {k + 1} of {len(items)}')
         with _cache_lock: _save(cf, cache)
-        cands += merge_candidates([it for it in items if not it['book']])
+        cands += merge_candidates(items)
         cands = [x for x in cands if x['id'] not in hidden and not any(o in hidden for o in x.get('others') or [])]
         cands.sort(key=lambda x: (-x['score'], KINDS.index(x['kind'])))
         return {'at': now_ms(), 'items': len(items), 'candidates': cands}
@@ -299,7 +301,7 @@ def _view(c, scan_row):
 
 @router.get('/organize')
 def organize_get(c=Depends(conn)):
-    """{items: every live sheet and book (reviewed flag, marks), scan: the newest Recommended to check, job: a running scan}."""
+    """{items: every live sheet, books left out (reviewed flag, marks), scan: the newest Recommended to check, job: a running scan}."""
     hidden = reviewed_ids(c)
     undo = cs.can_unmake(c)
     items = [{k: v for k, v in it.items() if k != 'folder'} | {'reviewed': it['id'] in hidden, 'starts': cs.split_starts(c, it['id']), 'canUnmake': it['id'] in undo}

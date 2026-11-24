@@ -1,12 +1,11 @@
 // One item (sheet, chord chart or score): header, toolbar, body, Info popup (info.js).
 import { store } from '../store.js';
-import { $, esc, iconOn, menu, CAT } from '../ui.js';
+import { $, esc, iconOn, CAT } from '../ui.js';
 import { go, HOME } from '../app.js';
-import { rename } from './actions.js';
+import { viewerMenu } from './actions.js';
 import { openInfo } from './info.js';
-import { autoTag } from './autotag.js';
-import { sheetBody, sheetToolbar, sheetExtraMenu, startInk } from './sheet.js';
-import { chordsBody, chordsToolbar } from './chordsview.js';
+import { sheetBody, sheetToolbar, sheetTools, sheetExports, startInk } from './sheet.js';
+import { chordsBody, chordsToolbar, chordsExports } from './chordsview.js';
 import { scoreBody, scoreToolbar, scoreExportMenu, scoreTools } from './score.js';
 import { verifiedBadgeHtml, wireVerified } from './verified.js';
 
@@ -21,7 +20,7 @@ export function itemView(main, { parts }) {
     <div class="viewer k-${it.kind}">
       <header class="top item-top">
         <a class="icon-btn back" href="${back}" aria-label="Back">‹ Back</a>
-        <h1 class="item-title" id="it-title" title="${esc(it.title)}${it.artist ? ' — ' + esc(it.artist) : ''} (tap to rename)">${esc(it.title)}</h1>
+        <h1 class="item-title" id="it-title" title="${esc(it.title)}${it.artist ? ' — ' + esc(it.artist) : ''} (tap for Info)">${esc(it.title)}</h1>
         ${it.kind === 'score' ? verifiedBadgeHtml(it) : ''}
         <div class="toolbar inline" id="it-bar"></div>
         ${document.fullscreenEnabled || document.webkitFullscreenEnabled ? `<button class="icon-btn" id="it-full" aria-label="Full screen" title="Full screen">${iconOn('perform')}</button>` : ''}
@@ -63,14 +62,10 @@ export function itemView(main, { parts }) {
     $('#it-more', main).before(ink);
   }
 
-  // ⋯ = Info only: the popup shows and edits everything, and holds the item's actions (info.js)
-  const info = () => openInfo(it.id, {
-    anchor: $('#it-more', main),
-    tools: [...(store.mode === 'server' ? [{ label: 'Auto-tag…', icon: 'tag', run: () => autoTag([it.id]) }] : []), ...(it.kind === 'sheet' ? sheetExtraMenu(it, view) : it.kind === 'score' ? scoreTools(it, view) : [])],
-    exports: it.kind === 'score' ? scoreExportMenu(it, view) : [],
-  });
-  $('#it-title', main).onclick = () => rename(it.id);
-  $('#it-more', main).onclick = (e) => menu(e.currentTarget, [{ label: 'Info', icon: 'info', run: info }]);
+  // ⋯ = Info · the kind's tools · Export ▸ · Move to Trash (actions.viewerMenu); Info is where everything is edited
+  $('#it-title', main).onclick = () => openInfo(it.id);
+  $('#it-more', main).onclick = (e) => viewerMenu(e.currentTarget, it.id, it.kind === 'sheet' ? { tools: sheetTools(it, view), exports: sheetExports(it, view) }
+    : it.kind === 'score' ? { tools: scoreTools(it, view), exports: scoreExportMenu(it, view) } : { exports: chordsExports(it) });
 
   // full screen: hides the browser's tabs and address bar; press again or Esc to leave
   $('#it-full', main)?.addEventListener('click', () => {

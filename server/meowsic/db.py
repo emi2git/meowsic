@@ -361,4 +361,10 @@ def job_json(row) -> dict:
         'outputs': json.loads(j['outputs']), 'status': j['status'], 'stage': j['stage'], 'progress': j['progress'],
         'log': json.loads(j['log']), 'result': json.loads(j['result']) if j['result'] else None,
         'startedAt': j['started_at'], 'doneAt': j['done_at'], 'dismissed': bool(j['dismissed']),
+        'fromItemId': _params(j).get('fromItemId'),  # the item a job works on (score ⋯: "Singing voice in progress…")
     }
+
+
+def _params(j) -> dict:
+    try: return json.loads(j.get('params') or '{}') or {}
+    except (TypeError, ValueError): return {}

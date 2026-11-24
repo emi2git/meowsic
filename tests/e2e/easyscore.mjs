@@ -101,19 +101,18 @@ const pos = (await page.evaluate(() => window.__score.player.now()));
 check('Play moves the playhead', pos > 0.3, String(pos));
 await page.click('#sc-play'); await sleep(300);
 
-// ⋯ menu toggle
-const menuItem = async () => { await page.click('#it-more'); await sleep(300); await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Info').click()); await sleep(300); return page.$$eval('.info-actions button', (bs) => bs.map((x) => ({ t: x.textContent, c: x.getAttribute('aria-checked') }))).then((l) => l.find((x) => x.t.startsWith('Kids note names'))); };
-let mi = await menuItem();
-check('⋯ menu has "Kids note names", checked', mi && mi.c === 'true', JSON.stringify(mi));
-await page.evaluate(() => [...document.querySelectorAll('.info-actions button')].find((x) => x.textContent.startsWith('Kids note names')).click()); await sleep(2000);
+// ⋯ no longer has it (the toolbar toggle is the one place); the toolbar toggle turns it off and on
+const menuLabels = async () => { await page.click('#it-more'); await sleep(300); const l = await page.$$eval('.menu button', (bs) => bs.map((x) => x.textContent.trim())); await page.evaluate(() => document.querySelector('.menu')?.remove()); return l; };
+let ml = await menuLabels();
+check('⋯ menu has no "Kids note names" (toolbar toggle)', ml.includes('Info') && !ml.some((t) => /Kids note names/.test(t)), ml.join('|'));
+await page.click('#sc-names'); await sleep(2000);
 s = await state();
 check('toggle off: no letters, button off', s.letters.length === 0 && s.kbds.length === 0 && s.btn === false);
 await page.reload({ waitUntil: 'networkidle0' }); await sleep(2500);
 s = await state();
 check('off is remembered on this device', s.letters.length === 0);
-mi = await menuItem();
-check('menu shows it unchecked', mi && mi.c === 'false', JSON.stringify(mi));
-await page.evaluate(() => [...document.querySelectorAll('.info-actions button')].find((x) => x.textContent.startsWith('Kids note names')).click()); await sleep(2000);
+check('toolbar shows it off', await page.$eval('#sc-names', (e) => e.getAttribute('aria-pressed')) === 'false');
+await page.click('#sc-names'); await sleep(2000);
 s = await state();
 check('toggle on again: letters back', s.letters.length === want.steps.length);
 await page.screenshot({ path: 'easyscore.png' });

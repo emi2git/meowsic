@@ -1,7 +1,7 @@
 // real job runners through the UI (server on :5190, temp data)
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
-const BASE = 'http://localhost:5190/';
+const BASE = process.env.BASE || 'http://localhost:5190/';
 const b = await puppeteer.launch({ executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: 'new' });
 const page = await b.newPage(); await page.setViewport({ width: 1440, height: 900 });
 const errs = []; page.on('pageerror', (e) => errs.push(e.message));
@@ -11,8 +11,8 @@ const api = (p, o) => fetch(BASE + 'api' + p, o).then((r) => r.json());
 const xml = fs.readFileSync('/Users/emi2mac/Documents/Emi Music Note/memory-from-cats-andrew-lloyd-webber/memory-from-cats-andrew-lloyd-webber.musicxml', 'utf8');
 const sc = await api('/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'score', title: 'Memory', version: 'original', tags: ['Original'], musicxmlText: xml }) });
 await page.goto(BASE + '#/item/' + sc.id, { waitUntil: 'networkidle0' }); await sleep(4000);
-await page.click('#it-more'); await sleep(200); await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Info').click()); await sleep(300);
-await page.evaluate(() => [...document.querySelectorAll('.info-actions button')].find((x) => x.textContent.includes('Make another version')).click()); await sleep(300);
+await page.click('#it-more'); await sleep(200);
+await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.includes('Make another version')).click()); await sleep(300);
 const oldJobs = new Set((await api('/jobs')).map((j) => j.id)); const scoresBefore = (await api('/items?kind=score')).length;
 await page.click('#gv [data-o="lead"]'); await page.click('#gv [data-o="clear"]'); await page.click('.modal [data-ok]');
 let done = null; const t0 = Date.now();

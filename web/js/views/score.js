@@ -4,6 +4,7 @@ import { store } from '../store.js';
 import { $, esc, icon, iconOn, toast, menu, sheet as modal, confirmSheet } from '../ui.js';
 import { pageSrc } from './sheet.js';
 import { go } from '../app.js';
+import { printEntry, download } from './actions.js';
 import { TUNES } from '../mock.js';
 import { musicXml, tuneNotes, VERSIONS, VERSION_HELP, barBeats, xmlInfo } from '../musicxml.js';
 import { ScorePlayer, VoicePlayer } from '../audio.js';
@@ -404,6 +405,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     async showXml(text) { xmlText = classicXml(text, it); info = xmlInfo(xmlText); tune = { ...tune, bpm: info.bpm, beats: info.beats }; makePlayer(); await render(); },
     async reload() { if (!real) return; await loadReal(); makePlayer(); await render(); },
     get player() { return player; },
+    get pianoNotes() { return midi?.notes || []; },  // what the piano plays (Export ▸ MIDI)
     get version() { return version; },
     async setTranspose(n) { store.update(it.id, { transpose: n }); it.transpose = n; midi.shift = n; await render(); },
     // Voice: the sung audio (Make it sing) in place of the piano
@@ -429,23 +431,46 @@ export function scoreBody(root, it, { perform = false } = {}) {
   };
 }
 
-// Export entries for the item's More menu
+// a sing job for this score that has not finished yet (the Mac's jobs carry the score as fromItemId)
+const singing = (it) => store.jobs().some((j) => j.kind === 'sing' && j.fromItemId === it.id && ['queued', 'running'].includes(j.status));
+// the score's ⋯ tools (actions.viewerMenu), built each time ⋯ is tapped. Kids note names, Chords and Voice are
+// toolbar toggles, so they are not here too. The singing voice needs lyrics; while its job runs it shows, greyed.
 export function scoreTools(it, view) {
-  return [{ label: 'Make another version…', icon: 'plus', run: () => generateVersions(it) },
-    ...(store.mode === 'server' ? [{ label: 'Add lyrics from a sheet…', icon: 'text', run: () => addLyrics(it) }] : []),
-    ...(store.mode === 'server' && view.real ? [{ label: 'Fit lyrics…', icon: 'text', run: () => fitLyrics(view, it, document.querySelector('.viewer')) }] : []),
-    ...(store.mode === 'server' && view.real ? [{ label: 'Edit notes…', icon: 'edit', run: () => editNotes(view, it, document.querySelector('.viewer')) }] : []),
-    { label: 'Kids note names', icon: 'baby', checked: view.easy, run: () => view.setEasy(!view.easy) },
-    { label: `Chords: ${MODE_LABEL[chordsMode()]} (tap for ${MODE_LABEL[nextMode(chordsMode())].toLowerCase()})`, icon: CHORD_ICON[chordsMode()], run: () => document.querySelector('.viewer')?.dispatchEvent(new CustomEvent('uketoggle')) },
-    ...(view.real && /<lyric[\s>]/.test(view.xml()) ? [{ label: view.hasVoice ? 'Make it sing again (beta)' : 'Make it sing (beta)', icon: 'wave', run: () => makeItSing(it) }] : []),
+  const srv = store.mode === 'server', viewer = () => document.querySelector('.viewer');
+  const notes = [{ label: 'Make another version…', icon: 'plus', run: () => generateVersions(it) },
+    ...(srv && view.real ? [{ label: 'Edit notes…', icon: 'edit', run: () => editNotes(view, it, viewer()) }] : []),
     ...(it.measures ? [{ label: 'Revert note edits', icon: 'restore', run: async () => { await view.revert(); document.querySelector('.editbar')?.dispatchEvent(new Event('close')); toast('Back to the original notes'); } }] : [])];
+  const words = [...(srv ? [{ label: 'Add lyrics from a sheet…', icon: 'text', run: () => addLyrics(it) }] : []),
+    ...(srv && view.real ? [{ label: 'Fit lyrics…', icon: 'text', run: () => fitLyrics(view, it, viewer()) }] : []),
+    ...(view.real && /<lyric[\s>]/.test(view.xml()) ? [singing(it) ? { label: 'Singing voice in progress…', icon: 'voice', disabled: true, run: () => {} }
+      : { label: it.vocalAudio ? 'Redo singing voice' : 'Request singing voice', icon: 'voice', run: () => makeItSing(it) }] : [])];
+  return words.length ? [...notes, '-', ...words] : notes;
 }
+// Export ▸ for a score: the notes as MusicXML or MIDI (as shown: edits and transposition), print / PDF
 export function scoreExportMenu(it, view) {
+  const name = `${it.title} - ${VERSIONS[view.version] || 'Score'}`;
   return [
-    { label: 'Export as MusicXML', icon: 'download', run: () => download(`${it.title} - ${VERSIONS[view.version]}.musicxml`, view.xml(), 'application/vnd.recordare.musicxml+xml') },
-    { label: 'Export as MIDI', icon: 'download', run: () => toast('MIDI export comes with the Mac server (phase 2).') },
-    { label: 'Export as PDF', icon: 'download', run: () => toast('PDF export comes with the Mac server (phase 2).') },
+    { label: 'MusicXML', icon: 'download', run: () => download(`${name}.musicxml`, view.xml(), 'application/vnd.recordare.musicxml+xml') },
+    { label: 'MIDI', icon: 'download', run: () => download(`${name}.mid`, midiFile(view.pianoNotes, view.tune.bpm, it.transpose || 0), 'audio/midi') },
+    printEntry(it.id),
   ];
+}
+// notes [{q: start in quarters, d: length, n: MIDI note, v: velocity}] → a Standard MIDI File (one track, piano)
+export function midiFile(notes, bpm = 100, shift = 0) {
+  const TPQ = 480, ev = [];
+  for (const x of notes || []) {
+    const n = Math.max(0, Math.min(127, Math.round(x.n + shift))), on = Math.round(x.q * TPQ), off = Math.max(on + 1, Math.round((x.q + x.d) * TPQ));
+    ev.push([on, 1, [0x90, n, Math.max(1, Math.min(127, x.v || 80))]], [off, 0, [0x80, n, 0]]);
+  }
+  ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);  // at the same tick: note-offs first
+  const vlq = (v) => { const b = [v & 0x7f]; while ((v >>= 7)) b.unshift((v & 0x7f) | 0x80); return b; };
+  const us = Math.round(60e6 / (bpm || 100));
+  const trk = [...vlq(0), 0xff, 0x51, 3, (us >> 16) & 255, (us >> 8) & 255, us & 255, ...vlq(0), 0xc0, 0];
+  let t = 0;
+  for (const [at, , m] of ev) { trk.push(...vlq(at - t), ...m); t = at; }
+  trk.push(...vlq(0), 0xff, 0x2f, 0);
+  const u32 = (v) => [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255];
+  return new Blob([new Uint8Array([0x4d, 0x54, 0x68, 0x64, ...u32(6), 0, 0, 0, 1, TPQ >> 8, TPQ & 255, 0x4d, 0x54, 0x72, 0x6b, ...u32(trk.length), ...trk])], { type: 'audio/midi' });
 }
 
 export function scoreToolbar(bar, it, view) {
@@ -539,28 +564,23 @@ export function scoreToolbar(bar, it, view) {
   const onSpace = (e) => { if (e.key === ' ' && !e.target.closest('input,select,textarea,button')) { e.preventDefault(); playBtn.click(); } };
   document.addEventListener('keydown', onSpace);
   const offCheck = checkBadge($('#sc-check', bar), view, it, viewer); // "N to check": bars the sheet reader was not sure of
+  const offVoice = store.on(() => { if (voiceBtn.hidden === view.hasVoice) vl(); });  // a voice made elsewhere (another device): Voice shows on the next item refresh
+  if (store.mode === 'server') store.refreshJobs().catch(() => {});  // a sing job still running (after a reload): ⋯ says so, and Voice appears when it is done
   return () => {
-    offCheck();
+    offCheck(); offVoice();
     host.removeEventListener('ended', onEnd); document.removeEventListener('keydown', onSpace); removeEventListener('meowsic-new-items', onSung);
     viewer?.removeEventListener('ukeclose', onUkeClose); viewer?.removeEventListener('uketoggle', onUkeToggle); uke?.destroy(); uke = null;
   };
 }
 
-// Make it sing (beta): the Mac sings the melody with its lyrics (SoulX-Singer, offline) over a soft piano;
-// the audio is saved with this score and the Voice button plays it
+// Request singing voice (the "sing" job): the Mac sings the melody with its lyrics (SoulX-Singer, offline) over a
+// soft piano; the audio is saved with this score and the toolbar's Voice toggle (shown once it exists) plays it
 async function makeItSing(it) {
-  const ok = await confirmSheet({ title: `Make “${it.title}” sing?`, body: 'Beta. The Mac sings the melody with its English lyrics over a soft piano (about 2–3 minutes for a short song). When it is done, Play sings it; the Voice button switches back to the piano.', ok: 'Make it sing' });
+  const again = !!it.vocalAudio;
+  const ok = await confirmSheet({ title: `${again ? 'Redo the' : 'Request a'} singing voice for “${it.title}”?`, body: `The Mac sings the melody with its lyrics over a soft piano (about 2–3 minutes for a short song).${again ? ' The new voice replaces the one it has.' : ''} When it is done, Play sings it; the Voice button switches back to the piano.`, ok: again ? 'Redo' : 'Request' });
   if (!ok) return;
-  store.addJob({ kind: 'sing', title: it.title, source: 'Make it sing (beta)', output: 'Voice', outputs: ['voice'], fromItemId: it.id });
+  store.addJob({ kind: 'sing', title: it.title, source: 'Singing voice', output: 'Voice', outputs: ['voice'], fromItemId: it.id });
   toast('Singing… progress is in Add → Score');
-}
-
-function download(name, text, type) {
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([text], { type }));
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
 // make other arrangements of this score; each one becomes its own entry, tagged with its version (never Original: it exists)
