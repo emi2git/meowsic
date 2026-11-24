@@ -2,7 +2,12 @@
 """Make a lead sheet sing (beta), fully offline: MusicXML melody + English lyrics -> a sung vocal with a soft piano.
 
   sing.py --xml song.musicxml --out DIR --name "m-abc vocal" [--bpm 72] [--steps 32] [--device mps] [--check]
-          [--voice en_target] [--tune 0.85] [--octave N]
+          [--voice en_target] [--tune 0.85] [--octave N] [--verse N]
+
+Only the words are sung: notes with a lyric syllable, their melisma / extend continuations and ties
+(singscore.mark_sung). Intros, piano fills and rests are silence for the singer (sung as rests, then gated to
+silence outside the sung notes, so the model can't hum in a long rest); the piano still plays everything, and
+every note keeps its exact time.
 
 Voice: SoulX-Singer (Soul-AILab, Apache-2.0) — zero-shot singing voice synthesis, score-controlled (MIDI notes +
 phonemes). Code in ~/ai/SoulX-Singer (its own .venv runs this script), weights in ~/ai/models/SoulX-Singer/model.pt.
@@ -49,6 +54,8 @@ EXTRA_VOICES = (
 )
 VOICES = BUILTIN_VOICES + EXTRA_VOICES
 VOICE = 'en_target'  # English pop singer: best words + pitch over the five (Amazing Grace tests, 2026-11)
+VOICE_ZH = 'zh_target'  # Mandarin: the user's favourite (take C)
+DEFAULT_VOICE = {'English': VOICE, 'Chinese': VOICE_ZH}
 SR_OUT = 44100
 TAIL_Q = 1.0  # the last note rings on for a beat after the score ends
 
@@ -122,24 +129,36 @@ def load_prompt(proc, voice):
         os.unlink(tmp)
 
 
-def sing(segs, bpm, device, steps, cfg_scale, on_seg, mode='syllable', voice=VOICE, octave=None):
+def sing(segs, bpm, device, steps, cfg_scale, on_seg, mode='syllable', voice=VOICE, octave=None, lang='English'):
     import numpy as np
     import torch
     model, proc, cfg = load_voice(device)
-    g2p = make_g2p()
+    g2p = make_g2p() if lang == 'English' else None
     phones = set(proc.phone2idx)
     prompt, prompt_meta = load_prompt(proc, voice)
-    pt_med = float(np.median([int(x) for x in prompt_meta['note_pitch'].split() if int(x) > 0]))
+    pt = [int(x) for x in prompt_meta['note_pitch'].split() if int(x) > 0]
     sr = cfg.audio.sample_rate
-    metas = [singscore.soulx_meta(s, bpm, g2p, i, TAIL_Q if i == len(segs) - 1 else 0, mode=mode) for i, s in enumerate(segs)]
+    if lang == 'Chinese': singscore.add_pinyin(segs)
+    metas = [singscore.soulx_meta(s, bpm, g2p, i, TAIL_Q if i == len(segs) - 1 else 0, mode=mode, lang=lang) for i, s in enumerate(segs)]
+
+    def known(p):
+        if p == '<SP>': return p
+        if p.startswith('zh_'):  # an unknown tone of a known syllable -> the nearest tone the model has
+            return p if p in phones else next((p[:-1] + t for t in '51234' if p[:-1] + t in phones), '<SP>')
+        return p if all(('en_' + x) in phones for x in p[3:].split('-')) else '<SP>'
     for m in metas:  # a phoneme the model does not know (rare) -> sung as a breath instead of crashing
-        m['phoneme'] = ' '.join(p if p == '<SP>' or all(('en_' + x) in phones for x in p[3:].split('-')) else '<SP>' for p in m['phoneme'].split())
+        ph = [known(p) for p in m['phoneme'].split()]
+        m['phoneme'] = ' '.join(ph)
+        m['note_pitch'] = ' '.join('0' if p == '<SP>' else x for p, x in zip(ph, m['note_pitch'].split()))
+        m['note_type'] = ' '.join('1' if p == '<SP>' else x for p, x in zip(ph, m['note_type'].split()))
     gt = [int(x) for m in metas for x in m['note_pitch'].split() if int(x) > 0]
-    shift = int(12 * round((pt_med - float(np.median(gt))) / 12)) if gt else 0  # whole octaves only: same notes, the singer's range
+    shift = octave_for(gt, pt)  # whole octaves only: same notes, the singer's comfortable range
     if octave is not None: shift = 12 * octave  # --octave: the caller picks the range (e.g. 0 for a female voice, -1 for a male one)
     total = int(round((metas[-1]['time'][1]) / 1000 * sr)) + sr
     out = np.zeros(total, dtype=np.float32)
     for i, m in enumerate(metas):
+        if not any(int(x) > 0 for x in m['note_pitch'].split()):  # nothing to sing in this phrase (an intro, a fill)
+            on_seg(i + 1, len(metas), []); continue
         tgt = proc.process(dict(m), None)
         with torch.no_grad():
             y = model.infer({'prompt': prompt, 'target': tgt}, auto_shift=False, pitch_shift=shift, n_steps=steps, cfg=cfg_scale, control='score')
@@ -151,6 +170,35 @@ def sing(segs, bpm, device, steps, cfg_scale, on_seg, mode='syllable', voice=VOI
         out[a:a + n] += y
         on_seg(i + 1, len(metas), m['text'].replace('<SP>', '').split())
     return out, sr, shift, metas
+
+
+def octave_for(melody, voice):
+    """Semitones (whole octaves) to move the melody so it sits in the singer's comfortable range: the middle 80 % of
+    the pitches in the voice's own clip. Fewest semitones outside that range wins, then the closest median."""
+    import numpy as np
+    if not melody or not voice: return 0
+    lo, hi = np.percentile(voice, 10), np.percentile(voice, 90)
+    mel, med = np.asarray(melody, float), float(np.median(voice))
+
+    def cost(k):
+        m = mel + 12 * k
+        return (float(np.sum(np.clip(lo - m, 0, None) + np.clip(m - hi, 0, None))), abs(float(np.median(m)) - med))
+    return 12 * min(range(-3, 3), key=cost)
+
+
+def gate(y, sr, notes, bpm, ramp=0.03):
+    """Silence outside the sung notes (singscore.sung_spans), with short fades: no voice before the first word,
+    in rests or on unsung notes, whatever the model made there."""
+    import numpy as np
+    g = np.zeros(len(y), dtype=np.float32)
+    r = max(1, int(ramp * sr))
+    for a, b in singscore.sung_spans(notes, 60.0 / bpm):
+        i, j = int(a * sr), min(len(y), int(b * sr))
+        if j <= i: continue
+        g[i:j] = 1
+        k = min(r, (j - i) // 2)
+        if k: g[i:i + k] = np.minimum(g[i:i + k], np.linspace(0, 1, k)); g[j - k:j] = np.minimum(g[j - k:j], np.linspace(1, 0, k))
+    return (y * g).astype(np.float32)
 
 
 # ---------- the piano ----------
@@ -237,7 +285,13 @@ def check(dry, sr, info, bpm, shift, mix_len):
     L = min(len(f0), len(rms))
     f0, voiced, rms = f0[:L], voiced[:L], rms[:L]
     times = np.arange(L) * hop / sr
-    sung = [n for n in info['notes'] if n['midi']]
+    sung = [n for n in info['notes'] if n['midi'] and n.get('sung', True)]
+    pk = float(np.percentile(rms, 95)) or 1.0
+    heard = voiced & ~np.isnan(f0) & (rms > 0.05 * pk)
+    first = sung[0]['q'] * spq if sung else 0.0
+    pre_voiced = float(heard[times < first - 0.05].sum() * hop / sr)  # voice before the first word (should be 0)
+    unsung = [n for n in info['notes'] if n['midi'] and not n.get('sung', True)]
+    un_voiced = sum(float(heard[(times >= n['q'] * spq + 0.25) & (times < (n['q'] + n['d']) * spq - 0.05)].sum() * hop / sr) for n in unsung)
     within, tracked, silent, cents_all = 0, 0, 0, []
     for n in sung:
         a, b = n['q'] * spq, (n['q'] + n['d']) * spq
@@ -260,6 +314,8 @@ def check(dry, sr, info, bpm, shift, mix_len):
         'notes': len(sung), 'notesTracked': tracked, 'notesSilent': silent,
         'within50c': within, 'within50cPct': round(100 * within / len(sung), 1) if sung else 0,
         'medianAbsCents': round(float(np.median(np.abs(cents_all))), 1) if cents_all else None, 'octaveShift': shift,
+        'firstWordSeconds': round(first, 2), 'voicedBeforeFirstWord': round(pre_voiced, 2),
+        'unsungNotes': len(unsung), 'voicedOnUnsung': round(un_voiced, 2), 'verse': info.get('verse'),
     }
 
 
@@ -275,10 +331,11 @@ def main():
     ap.add_argument('--check', action='store_true')
     ap.add_argument('--mode', choices=('syllable', 'word'), default='syllable', help='phonemes per syllable (default) or per word')
     ap.add_argument('--seed', type=int, default=0, help='same seed + same score = the same take')
-    ap.add_argument('--voice', choices=VOICES, default=VOICE, help='the singer: a SoulX-Singer example clip or an installed extra voice (sing/make_voices.py)')
+    ap.add_argument('--voice', choices=VOICES, default=None, help='the singer: a SoulX-Singer example clip or an installed extra voice (sing/make_voices.py)')
     ap.add_argument('--tune', type=float, default=0.85,
                     help='pitch correction: how far each note\'s pitch is pulled to the score, 0 (off) .. 1 (vibrato kept)')
     ap.add_argument('--octave', type=int, default=None, help='octaves to move the melody (default: nearest the singer\'s own range)')
+    ap.add_argument('--verse', default=None, help='lyric verse to sing (default: the first; repeats are not unfolded)')
     a = ap.parse_args()
     os.environ.setdefault('PYTORCH_ENABLE_MPS_FALLBACK', '1')
     import numpy as np
@@ -289,19 +346,25 @@ def main():
 
     say(0, 0, 'Reading the score')
     xml = Path(a.xml).read_text(encoding='utf-8')
-    info = singscore.read(xml)
-    if not singscore.has_lyrics(xml): raise SystemExit('This score has no English lyrics to sing')
+    info = singscore.read(xml, a.verse)
+    if not singscore.has_lyrics(xml): raise SystemExit('This score has no lyrics to sing')
+    lang = singscore.language(info['notes'])
+    a.voice = a.voice or DEFAULT_VOICE[lang]
+    if lang == 'Chinese' and not singscore.mandarin('一'): raise SystemExit('Chinese lyrics need the macOS Mandarin transform (osascript)')
     bpm = singscore.song_bpm(info, a.bpm)
     segs = singscore.segments(singscore.words(info['notes']), bpm)
     say(1, 0, f'Loading the voice ({len(segs)} phrases at {bpm:g} bpm)')
 
     def on_seg(i, n, ws):
         say(2, i / n, f'Phrase {i} of {n}: ' + ' '.join(dict.fromkeys(ws)))
-    dry, vsr, shift, _ = sing(segs, bpm, device, a.steps, a.cfg, on_seg, a.mode, a.voice, a.octave)
+    dry, vsr, shift, _ = sing(segs, bpm, device, a.steps, a.cfg, on_seg, a.mode, a.voice, a.octave, lang)
     tuned = None
+    if os.environ.get('MEOWSIC_SING_RAW'):  # debugging: the voice as the model sang it, before tuning / gating
+        out_raw = Path(a.out); out_raw.mkdir(parents=True, exist_ok=True); sf.write(out_raw / f'{a.name} raw.wav', dry, vsr)
     if a.tune > 0:
         say(2, 1, 'Tuning the voice to the score')
-        dry, tuned = tune.retune(dry, vsr, info['notes'], bpm, shift, strength=min(1.0, a.tune))
+        dry, tuned = tune.retune(dry, vsr, [n for n in info['notes'] if n.get('sung', True)], bpm, shift, strength=min(1.0, a.tune))
+    dry = gate(dry, vsr, info['notes'], bpm)
     end_s = (info['endQ'] + TAIL_Q) * 60 / bpm
     dry = np.pad(dry, (0, max(0, int(end_s * vsr) - len(dry))))[:int(end_s * vsr)]
 
@@ -318,7 +381,7 @@ def main():
     if a.check:
         say(4, 0, 'Checking pitch and timing')
         rep = check(dry, vsr, info, bpm, shift, len(m))
-        rep.update(voice=a.voice, tune=a.tune, tuning=tuned)
+        rep.update(voice=a.voice, tune=a.tune, tuning=tuned, language=lang)
     print(json.dumps({'done': True, 'm4a': str(m4a), 'wav': str(wav), 'dry': str(dry_p), 'bpm': bpm, 'report': rep}), flush=True)
 
 

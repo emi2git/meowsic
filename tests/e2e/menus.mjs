@@ -3,7 +3,7 @@
 //   library row ⋯  Info · Move to Trash
 //   sheet          Info · Edit pages… · Crop page… · Make a score… · Export ▸ (Print / PDF…, Page 1 as an image) · Move to Trash
 //   book           Info · Export ▸ · Move to Trash   (read-only: no page editing, not in Fix pages)
-//   score          Info · Edit notes… · (Revert note edits) · Request / Redo singing voice
+//   score          Info · Edit notes… (Notes | Lyrics inside) · (Revert note edits) · Request / Redo singing voice
 //                  · Export ▸ (MusicXML, MIDI, Print / PDF…) · Move to Trash — no Kids note names / Chords (toolbar toggles)
 //   singing voice  only with lyrics; "Singing voice in progress…" (disabled) while its job runs; "Redo singing voice" once
 //                  it has one; the toolbar Voice toggle is hidden until the score has a voice

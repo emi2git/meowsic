@@ -716,6 +716,9 @@ def edit_ex(text: str, op: dict):
     kind = op.get('op') or ('move' if 'to' in op else None)
     if kind == 'unmark': return unmark(text, op.get('bars')), [], 0
     if kind == 'alt': return use_measure(text, op.get('bar'), op.get('measure')), [], 0
+    if kind == 'lyrics':  # Lyrics mode (lyricmode.js): only <lyric> elements change
+        from .lyricsedit import set_lyrics
+        return set_lyrics(text, op), [], 0
     from .barops import OPS as BAR_OPS, bar_op
     if kind in BAR_OPS: return bar_op(text, op)  # Bar ▾: clear / add a staff in a bar, insert / delete bars, add / remove staves
     if kind not in ('move', 'pitch', 'len', 'delete', 'add', 'tie', 'slur', 'unslur', 'set'): raise HTTPException(400, f'Unknown edit: {kind}')
@@ -911,10 +914,13 @@ def _what(ops):
              'insbar': lambda n: f'{n} empty bar{"s" if n != 1 else ""} added', 'delbar': lambda n: f'{n} bar{"s" if n != 1 else ""} deleted',
              'addstaff': lambda n: f'{n} staff added' if n == 1 else f'{n} staves added', 'delstaff': lambda n: f'{n} staff removed' if n == 1 else f'{n} staves removed',
              'set': lambda n: f'{s(n)} played in'}
-    return ', '.join(words[k](n) for k, n in cnt.items() if k in words and n) or 'no notes'
+    verses = sorted({str(o.get('verse') or '1') for o in ops if o.get('op') == 'lyrics'}, key=lambda v: (len(v), v))
+    out = [words[k](n) for k, n in cnt.items() if k in words and n] + ([f'lyrics of verse{"s" if len(verses) > 1 else ""} {", ".join(verses)}'] if verses else [])
+    return ', '.join(out) or 'no notes'
 
 
 def _tag(ops):
+    if all(o.get('op') == 'lyrics' for o in ops): return 'Lyrics added'  # lyricsfit.TAG: words only
     return TAG if all((o.get('op') or 'move') == 'move' for o in ops) else TAG_EDIT
 
 

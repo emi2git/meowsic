@@ -148,7 +148,7 @@ async function run(name, vp, how) {
 }
 
 // Words read too poorly to write: bars 2 + 3 "lyrics unsure" (verse 1, that line), bar 4 a note reason.
-// Mac: Fix lyrics opens Fit lyrics on verse 1 at bar 2 → words typed, fitted, saved into this score → bars 2 + 3 checked,
+// Mac: Fix lyrics opens Edit notes in Lyrics mode on verse 1 at bar 2 → words pasted, saved into this score → bars 2 + 3 checked,
 // bar 4 left → Mark all as looks right asks first (Cancel keeps it), then marks it → none left; Activities can undo.
 async function lyricsRun() {
   console.log('\nMac: lyrics unsure + Mark all');
@@ -171,15 +171,17 @@ async function lyricsRun() {
   const btns = await page.$$eval('.cb-panel .cb-acts button', (e) => e.map((x) => x.textContent.trim()));
   check('a "lyrics unsure" bar offers Fix lyrics and Mark all', btns.includes('Fix lyrics') && btns.includes('Mark all as looks right'), btns.join('|'));
   await page.click('.cb-panel [data-a="lyrics"]');
-  await page.waitForSelector('.fitly', { timeout: 8000 }); await sleep(500);
-  check('Fix lyrics: the check panel gives way to Fit lyrics on verse 1', !(await page.$('.cb-panel')) && (await page.evaluate(() => window.__fitLyrics?.verse)) === '1');
-  await page.waitForSelector('.fitly #fl-text');
-  await page.$eval('#fl-text', (e) => { e.value = 'Joy-ful joy-ful we a-dore thee God of glo-ry Lord of love'; e.dispatchEvent(new Event('input', { bubbles: true })); });
-  await page.click('.fitly [data-a="fit"]'); await sleep(300);
-  await page.click('.fitly [data-a="save"]'); await page.waitForSelector('.modal [data-mode="this"]');
-  await page.click('.modal [data-mode="this"]'); await sleep(2500);
+  await page.waitForSelector('.notes-panel.lyrics .ly-bar', { timeout: 8000 }); await sleep(800);
+  const lm = await page.evaluate(() => ({ v: window.__editNotes?.lyrics?.verse, at: window.__editNotes?.lyrics?.at, bar: window.__editNotes?.notes.find((n) => n.ref === window.__editNotes.sel[0])?.bar }));
+  check('Fix lyrics: the check panel gives way to Edit notes in Lyrics mode, verse 1, bar 2', !(await page.$('.cb-panel')) && lm.v === '1' && lm.bar === 1, JSON.stringify(lm));
+  // made-up words from bar 2 on, through Paste text…
+  await page.click('.ly-bar [data-ly="paste"]'); await page.waitForSelector('#ly-paste');
+  await page.$eval('#ly-paste', (e) => { e.value = 'Sun-ny sun-ny we a-dore the lit-tle cloud of blue'; });
+  await page.click('.modal [data-ok]'); await sleep(2500);
+  await page.click('.ly-bar [data-ly="save"]'); await page.waitForSelector('.modal [data-mode="this"]');
+  await page.click('.modal [data-mode="this"]'); await sleep(3000);
   const x = await xmlOf(sc.id);
-  check('saved: words in the score', (x.match(/<lyric/g) || []).length >= 12, (x.match(/<lyric/g) || []).length);
+  check('saved: words in the score (one per note from bar 2 on: 9)', (x.match(/<lyric/g) || []).length === 9, (x.match(/<lyric/g) || []).length);
   check('bars 2 + 3 checked with the save, bar 4 still to check', marked(x) === '4', marked(x));
   check('the review is back on bar 4', !!(await page.$('.cb-panel')) && (await page.$eval('#cb-count', (e) => e.textContent)) === 'Bar 4 · 1 of 1', await page.$eval('#cb-count', (e) => e.textContent).catch(() => 'none'));
   // one bar left: no Mark all; open a second look with two bars to try it

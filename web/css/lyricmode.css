@@ -1,0 +1,56 @@
+/* ===== Edit notes → Lyrics (js/views/lyricmode.js) and the Lyrics text panel (js/views/lyricspanel.js) ===== */
+.np-mode { flex: none; }
+.np-lt.on { background: var(--acc-soft); border-color: var(--acc); }
+/* Lyrics mode: the note tools rest, the lyrics bar takes their place; the panel rides above the on-screen keyboard */
+.notes-panel.lyrics .np-body > .np-help, .notes-panel.lyrics .np-body > .np-acts { display: none; }
+.notes-panel.lyrics { transform: translateY(calc(-1 * var(--kb, 0px))); }
+.ly-bar { display: flex; flex-direction: column; gap: 6px; }
+.ly-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ly-row .grow { flex: 1; }
+.ly-row button { min-height: 42px; padding: 0 14px; }
+.ly-row button.on { background: var(--acc-soft); border-color: var(--acc); }
+.ly-where { font-size: 14px; white-space: nowrap; }
+.ly-text { flex: 1 1 160px; min-width: 0; min-height: 44px; padding: 0 12px; border: 2px solid var(--acc); border-radius: 10px; background: var(--card); color: var(--ink); font-size: 18px; font-weight: 700; }
+.ly-text:disabled { border-color: var(--line2); }
+.ly-row .ly-step { min-width: 44px; padding: 0 8px; font-size: 22px; }
+.ly-tools { flex-wrap: nowrap; overflow-x: auto; }
+.ly-tools button { flex: none; }
+.ly-help { margin: 0; font-size: 13px; }
+:root[data-device="tablet"] .ly-row button, :root[data-device="phone"] .ly-row button { min-height: 46px; }
+:root[data-device="phone"] .ly-row { gap: 6px; }
+:root[data-device="phone"] .ly-type button { padding: 0 10px; }
+:root[data-device="phone"] .ly-text { flex-basis: 100px; }
+:root[data-device="phone"] .notes-panel.lyrics .np-title { display: none; }
+
+/* on the score: the verse being edited stands out, the note being typed and words not sent yet are drawn over it */
+.viewer.lyricing svg .lyrics.ly-other { opacity: .28; }
+.viewer.lyricing svg .ly-hidden { visibility: hidden; }
+.ly-live { pointer-events: none; }
+.ly-live text { fill: #1a4fd0; font-family: 'Times New Roman', Times, serif; font-weight: 700; paint-order: stroke; stroke: #fff; stroke-width: 3px; }
+.ly-live.ly-cur rect { fill: rgba(26, 79, 208, .12); stroke: #1a4fd0; stroke-width: 1.5px; }
+
+/* the Lyrics text panel: on the right (Mac, iPad sideways), a drawer above the edit bar (iPad upright, iPhone) */
+.viewer.lt-on .viewer-body > .scroll-host { flex: 1 1 auto; min-width: 0; min-height: 0; }
+.lt-panel { flex: none; display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--card); border-left: 1px solid var(--line2); }
+.viewer.lt-side .lt-panel { width: min(360px, 34vw); }
+.viewer.lt-drawer .viewer-body { flex-direction: column; }
+.viewer.lt-drawer .lt-panel { height: 30dvh; border-left: 0; border-top: 1px solid var(--line2); border-radius: 14px 14px 0 0; box-shadow: 0 -4px 16px rgba(0, 0, 0, .08); }
+.viewer.lt-drawer .lt-panel.min { height: auto; }
+.lt-panel.min > :not(.lt-head) { display: none; }
+.lt-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: none; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.lt-head .grow { flex: 1; }
+.lt-head button { min-height: 36px; }
+.lt-head button.on { background: var(--acc-soft); border-color: var(--acc); }
+.lt-head .stepper { display: inline-flex; }
+.lt-title { border: 0; background: none; padding: 0 4px; }
+.lt-pick { max-width: 180px; min-height: 36px; border: 1px solid var(--line2); border-radius: 10px; background: var(--card); padding: 0 6px; }
+.lt-use { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+.lt-use button { min-height: 40px; }
+.lt-text.chart { flex: 1; min-height: 0; overflow: auto; max-width: none; margin: 0; padding: 10px 14px 24px; font-size: var(--lt-size, 16px); -webkit-user-select: text; user-select: text; }
+.lt-text.nochords .ch, .lt-text.nochords .ln.co { display: none; }
+.lt-none { padding: 10px; overflow: auto; }
+.lt-none p { margin: 0 0 8px; }
+.lt-q { width: 100%; min-height: 40px; }
+.lt-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.lt-list button { min-height: 40px; text-align: left; }
+:root[data-device="tablet"] .lt-head button, :root[data-device="phone"] .lt-head button { min-height: 42px; }

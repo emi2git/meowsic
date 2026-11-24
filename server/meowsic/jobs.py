@@ -137,13 +137,13 @@ def start_job(app, kind, title, source, outputs, params, jid=None, runner=None, 
 
 @router.post('/jobs', status_code=201)
 def create_job(request: Request, body: dict = Body(...)):
-    """{kind: transcribe|version|omr|lyrics, title, source, outputs: [...], url?, fromItemId?, sheetId?, artist?, tags?} -> queued, then runs on a thread."""
+    """{kind: transcribe|version|omr|lyrics|sing, title, source, outputs: [...], url?, fromItemId?, sheetId?, artist?, tags?, voice?, octave? (sing)} -> queued, then runs on a thread."""
     kind = body.get('kind') or ('version' if body.get('gen') else 'transcribe')
     if kind == 'sing':  # Make it sing (beta): checks the score has lyrics, then queues it
         from .voice import make_it_sing
         if not body.get('fromItemId'): raise HTTPException(400, 'fromItemId is required')
         c = request.app.state.connect()
-        try: return make_it_sing(body['fromItemId'], request, c, request.app.state.cfg)
+        try: return make_it_sing(body['fromItemId'], request, {k: body[k] for k in ('voice', 'octave') if k in body}, c=c, cf=request.app.state.cfg)
         finally: c.close()
     if kind not in ('transcribe', 'version', 'omr', 'lyrics') or not body.get('title'):
         raise HTTPException(400, 'kind (transcribe|version|omr|lyrics|sing) and title are required')
