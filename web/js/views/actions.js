@@ -27,7 +27,7 @@ export function metaText(it) {
 // Scores: what the notes are (the server counts the MusicXML's staves into `staves`):
 //   duet → Duet; lead, or one staff (a melody line) → Lead; a grand staff (right + left hand) → Piano.
 //   Voice + piano ('vocal') shows as Piano ("Piano · vocals" under Info).
-export const SHEET_VERSIONS = { lead: 'Lead', piano: 'Piano', duet: 'Duet' };
+export const SHEET_VERSIONS = { lead: 'Lead', piano: 'Piano', duet: 'Duet', accomp: 'Accomp.' };  // accomp: the piano part only, no melody
 export function verLabel(it) {
   if (it.kind === 'sheet' || it.kind === 'chords') return SHEET_VERSIONS[it.version] || '';
   if (it.kind === 'score') return it.version === 'duet' ? 'Duet' : it.version === 'lead' || it.staves === 1 ? 'Lead' : 'Piano';

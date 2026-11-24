@@ -1,0 +1,80 @@
+/* Manage library → Complete info (views/completeinfo.js): page 1 big, then Key and Version as single taps.
+   Landscape (Mac, iPad across): the page left, the buttons right. Portrait (iPad upright, iPhone): the top of
+   page 1 across the whole width, the buttons under it, the actions kept at the bottom. */
+.cu.info { display: block; overflow-y: auto; -webkit-overflow-scrolling: touch; scroll-padding-bottom: 150px; }
+body[data-view="cleanup"] #main:has(.cu.info) { scroll-padding-bottom: 150px; }
+.ci { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(360px, 1fr); gap: 20px; padding: 16px 22px 20px; height: 100%; min-height: 0; transition: background .2s; }
+.ci.ci-done { background: color-mix(in srgb, var(--ok) 7%, transparent); }
+.ci-pic { position: relative; margin: 0; min-height: 0; overflow: auto; -webkit-overflow-scrolling: touch; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--shadow); cursor: zoom-in; }
+.ci-pic img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.ci-zoomhint { position: sticky; float: right; top: 8px; margin: 8px 8px -36px 0; z-index: 1; font-size: 12px; font-weight: 650; padding: 4px 10px; border-radius: 999px; background: rgba(0, 0, 0, .6); color: #fff; pointer-events: auto; }
+.ci-nopic { padding: 40px 20px; text-align: center; color: var(--mute); }
+.ci.zoomed .ci-pic { position: fixed; inset: 0; z-index: 60; border-radius: 0; border: 0; cursor: zoom-out; padding-top: env(safe-area-inset-top); }
+.ci.zoomed .ci-pic img { width: max(100%, 1000px); max-width: none; }
+.ci-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; overflow-y: auto; padding-bottom: 4px; }
+.ci-head h2 { margin: 2px 0 0; font-size: 24px; line-height: 1.2; overflow-wrap: anywhere; }
+.ci-head p { margin: 4px 0 0; font-size: 14px; }
+.ci-head a, .ci-nopic a { color: var(--acc-text); font-weight: 600; text-decoration: none; }
+.ci-count { font-size: 13px; font-weight: 650; color: var(--mute); }
+.ci-field { display: flex; flex-direction: column; gap: 8px; }
+.ci-lab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.ci-lab > b { font-size: 17px; }
+.ci-ok { color: var(--ok); font-weight: 650; font-size: 14px; }
+.ci-sug { font-size: 13px; color: var(--mute); }
+.ci-sug b { color: var(--ink); }
+.ci-keys { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.ci-keys.minor { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.ci-key, .ci-ver { flex-direction: column; gap: 0; min-height: 54px; padding: 4px 6px; border-radius: 12px; line-height: 1.15; }
+.ci-key b { font-size: 19px; font-weight: 700; }
+.ci-key small, .ci-ver small { font-size: 11px; font-weight: 500; color: var(--mute); white-space: normal; text-align: center; }
+.ci-vers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ci-ver { min-height: 64px; position: relative; }
+.ci-ver b { font-size: 17px; }
+.ci-ver kbd { position: absolute; top: 5px; right: 8px; font: 600 10px var(--font); color: var(--mute); }
+.ci-key.on, .ci-ver.on { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
+.ci-key.on small, .ci-ver.on small, .ci-ver.on kbd { color: var(--acc-ink); opacity: .85; }
+/* the AI's guess: picked for you, not saved yet (dashed until a tap or Save & next) */
+.ci-key.on.ai, .ci-ver.on.ai { background: var(--acc-soft); color: var(--ink); border: 2px dashed var(--acc); }
+.ci-key.on.ai small, .ci-ver.on.ai small, .ci-ver.on.ai kbd { color: var(--mute); }
+.ci-otherrow { display: flex; gap: 6px; margin: 0; }
+.ci-otherrow input { flex: 1; min-width: 0; min-height: 44px; padding: 0 12px; border: 1px solid var(--line2); border-radius: 12px; background: var(--card); font-size: 16px; }
+.ci-otherrow input.on { border: 2px solid var(--acc); font-weight: 700; }
+.ci-err { margin: 0; color: var(--danger); font-size: 13px; }
+.ci-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 4px; }
+.ci-acts button { min-height: 48px; }
+.ci-acts .primary { flex: 1; min-width: 150px; font-size: 16px; }
+.ci-foot { margin: 0; font-size: 12px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.ci-foot .link { font-size: 12px; }
+.ci-empty { text-align: center; padding: 60px 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.ci-empty h2 { margin: 0; }
+.ci-empty p { margin: 0; }
+@media (min-width: 1800px) { .ci-vers { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+/* upright: the top of page 1 across the width, the buttons below */
+@media (orientation: portrait), (max-width: 760px) {
+  .ci { display: flex; flex-direction: column; height: auto; gap: 14px; padding: 12px 16px 0; }
+  .ci-pic { height: 44vh; height: 44dvh; flex: none; }
+  .ci-side { display: contents; }  /* its parts become rows of the card: the title above the page */
+  .ci-head { order: -1; }
+  .ci-acts { position: sticky; bottom: 0; margin: 0 -16px; padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-top: 1px solid var(--line); z-index: 5; }
+  .ci-foot { padding-bottom: 12px; }
+}
+@media (max-width: 760px) {
+  .ci { gap: 10px; }
+  .ci-pic { height: 30vh; height: 30dvh; }
+  .ci-head p { font-size: 13px; margin-top: 2px; }
+  .ci-head h2 { font-size: 20px; }
+  .ci-key { min-height: 50px; padding: 4px 2px; }
+  .ci-key b { font-size: 17px; }
+  .ci-acts { flex-wrap: nowrap; gap: 6px; }
+  .ci-acts button { flex: 0 1 auto; padding: 0 10px; min-height: 46px; font-size: 14px; }
+  .ci-acts .primary { flex: 1 1 auto; min-width: 0; font-size: 15px; }
+  .ci-ver { min-height: 56px; }
+  /* iPhone: the tab bar is under the page */
+  :root[data-device="phone"] .ci-acts { padding-bottom: 10px; }
+}
+/* phone: the three tabs get their own row under the title (Undo / ? stay up by the title) */
+@media (max-width: 760px) {
+  body[data-view="cleanup"] .cu-top .cu-tabs { order: 9; flex: 1 0 100%; flex-wrap: nowrap; }
+  body[data-view="cleanup"] .cu-top > button { min-height: 30px; padding-top: 0; padding-bottom: 0; }
+  body[data-view="cleanup"] .cu-top { row-gap: 4px; }
+}

@@ -1,4 +1,4 @@
-// Manage library: two tabs — Organize pages (#/manage; #/cleanup and #/organize go here too) and Trash
+// Manage library: three tabs — Complete info (#/manage/info, views/completeinfo.js), Organize pages (#/manage; #/cleanup and #/organize go here too) and Trash
 // (#/manage/trash; #/bin and #/trash go there). Organize pages: any sheet or book, its pages in a grid —
 //  · split   tap the page where a new song starts (the Mac reads its title); "Make N new sheets…" moves each
 //            song into its own sheet (books: pages before the first start stay in the book)
@@ -16,6 +16,7 @@ import { store } from '../store.js';
 import { isDesktop, isNarrow, isTouch } from '../device.js';
 import { $, esc, toast, ago, sheet as modal, confirmSheet } from '../ui.js';
 import { binView } from './organize.js';
+import { completeInfoView, infoBadge } from './completeinfo.js';  // Manage library → Complete info
 import { cropStage, framesBar, boxOf, isFull, full } from '../cropbox.js';
 
 const KEYS = [
@@ -49,10 +50,16 @@ const head = (tab, right = '', back = null) => `<header class="top cu-top">
       <h1>Manage library</h1>
       <nav class="cu-tabs" aria-label="Manage library">
         <a href="#/manage" data-tab="organize" class="${tab === 'organize' ? 'on' : ''}" ${tab === 'organize' ? 'aria-current="page"' : ''}>Organize pages</a>
+        <a href="#/manage/info" data-tab="info" class="${tab === 'info' ? 'on' : ''}" ${tab === 'info' ? 'aria-current="page"' : ''}>Complete info <i id="cu-ninfo"></i></a>
         <a href="#/manage/trash" data-tab="trash" class="${tab === 'trash' ? 'on' : ''}" ${tab === 'trash' ? 'aria-current="page"' : ''}>Trash <i id="cu-ntrash">${store.items({ deleted: true }).length || ''}</i></a></nav>
       <span class="grow"></span>${right}</header>`;
 
 export function cleanupView(main, { parts = [], q } = {}) {
+  setTimeout(() => infoBadge(main), 0);  // the Complete info tab's count
+  if (parts[1] === 'info') {  // Manage library → Complete info: Key + Version, one sheet at a time (views/completeinfo.js)
+    main.innerHTML = head('info') + '<div class="cu info" id="cu"></div>';
+    return completeInfoView($('#cu', main));
+  }
   if (parts[1] === 'trash') {  // Manage library → Trash: restore, delete for good, Empty Trash (views/organize.js)
     main.innerHTML = head('trash') + '<div class="cu trash" id="cu"></div>';
     const off1 = binView($('#cu', main), { embedded: true });

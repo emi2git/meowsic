@@ -114,7 +114,7 @@ def create_item(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
 
 
 def check_version(kind, v):
-    """Sheets and chord charts: 'lead' | 'piano' | 'duet' | '' (any case, 'Lead' too). Scores: their own versions."""
+    """Sheets and chord charts: 'lead' | 'piano' | 'duet' | 'accomp' | '' (any case, 'Lead' too). Scores: their own versions."""
     v = (v or '').strip().lower() if isinstance(v, str) or v is None else v
     allowed = {'sheet': SHEET_VERSIONS, 'chords': SHEET_VERSIONS, 'score': SCORE_VERSIONS}.get(kind, ())
     if v not in allowed:
