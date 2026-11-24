@@ -11,6 +11,7 @@ Updated: 2026-11-24
 ## In progress
 | # | Task | Status |
 |---|------|--------|
+| 0 | DATA SAFETY: Edit notes never loses edits — drafts in the browser + on the Mac (restore after reload / crash / restart), Save merges onto a score changed meanwhile (else keeps "<title> (my edits)"), no dead-end 409, edit-session lock (423 for other writers), "Saved ✓ hh:mm" / sticky errors (e2e editsafe) | ✅ Pushed, deploying |
 | 1 | Edit notes: rest length, Fill next rest, Remove rest, re-spelling (½+⅛ → ⅛+½), incomplete-bar highlight + "Change time for this bar" | ✅ Live (cc127a3) |
 | 2 | Edit notes: Lyrics mode (Notes \| Lyrics), paste verse, verses, lyrics-text side panel from chord chart; remove Fit lyrics / Add lyrics from sheet menu | ✅ Live (a5f7384) |
 | 3 | Edit notes: Bar ▾ (clear/add LH or RH bar, insert/delete bar), add/remove staff, vocal + piano (3 staves); remove "Make another version" | ✅ Live (584ef94) |

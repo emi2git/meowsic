@@ -24,20 +24,25 @@ refs = indexes among the part's <note> elements (as notes() gives them). ops = [
 (the refs of an op are in the score as the ops before it left it).
 
 POST /api/items/{id}/editnotes/preview  {ops} -> {xml, notes, moved, part, sha, changed}  (nothing saved)
-POST /api/items/{id}/editnotes          {ops, mode: 'this'|'new', sha?} -> saved like Fit lyrics (lyricsedit.py):
+     (with sha: the ops replay on the score as the editor opened it — editsafe.py keeps that copy)
+POST /api/items/{id}/editnotes          {ops, mode: 'this'|'new', sha?, session?, xml?} -> saved like Fit lyrics (lyricsedit.py):
      'this' keeps the file before in items/<folder>/.history/notes-<ms>-<name> + an Activities 'musicxml' step;
      'new' makes a new score in the same group, tagged "Hands moved" / "Notes edited" (Undo moves it to the Trash).
+     Never a dead-end 409: the score changed since the editor opened it (sha) -> the ops are merged onto the file
+     now (editsafe.rebase); what can't merge is kept with the full edit as a new version "<title> (my edits)".
+     The edit session's draft (editsafe.py) goes once saved.
 """
 import copy
 import hashlib
 import json
+import re
 import shutil
 import threading
 from collections import OrderedDict
 import xml.etree.ElementTree as ET
 from fractions import Fraction as Fr
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
 from .autofill import fill_from_library, log_fill, recredit
 from .db import folder_path, get_item, now_ms, uid, write_item
@@ -45,6 +50,7 @@ from .easerests import _beam, _beat, _put, fits, pieces
 from .items import cfg, conn, item_dir, must_item
 from .sheetversion import refresh_staves
 from .undolog import _q, record_undo
+from . import editsafe
 
 router = APIRouter(prefix='/api')
 TAG = 'Hands moved'      # a new version where notes only changed hands
@@ -1409,10 +1415,23 @@ def _sha(text):
     return sha(text)
 
 
+def _text_for(cf, it, body):
+    """The text the editor's ops are made on: the score as it opened it (body.sha; editsafe keeps a copy), so an
+    edit by another client meanwhile never shifts the notes under the user's edits. No sha: the file now."""
+    text = _xml_path(cf, it).read_text(encoding='utf-8')
+    want = body.get('sha')
+    if not want or want == _sha(text):
+        if not body.get('ops'): editsafe.keep_base(cf, it['id'], text)
+        return text
+    old = editsafe.base_text(cf, it, want)
+    if old is None: raise HTTPException(409, 'The score as the editor opened it is no longer on the Mac — your edits are kept as a draft; open Edit notes again to restore them')
+    return old
+
+
 @router.post('/items/{item_id}/editnotes/preview')
 def preview(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
     it = must_item(c, item_id)
-    text = _xml_path(cf, it).read_text(encoding='utf-8')
+    text = _text_for(cf, it, body)
     root = ET.fromstring(text.encode('utf-8'))
     k, part, hands = edit_part(root)
     if part is None: raise HTTPException(400, 'This score has no notes')
@@ -1433,7 +1452,7 @@ def clip(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg))
     """Copy: {ops, start, end, staves} -> {clip} (rangeops.clip_of) from the score as the edits so far leave it."""
     from .rangeops import clip_of
     it = must_item(c, item_id)
-    text = _xml_path(cf, it).read_text(encoding='utf-8')
+    text = _text_for(cf, it, body)
     out, _ = apply_ops(text, body.get('ops') or [])
     return {'clip': clip_of(out, body.get('start'), body.get('end'), body.get('staves'))}
 
@@ -1485,37 +1504,30 @@ def _tag(ops):
     return TAG if all((o.get('op') or 'move') == 'move' for o in ops) else TAG_EDIT
 
 
-@router.post('/items/{item_id}/editnotes')
-def save(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
-    it = must_item(c, item_id)
-    p = _xml_path(cf, it)
-    text = p.read_text(encoding='utf-8')
-    if body.get('sha') and body['sha'] != _sha(text):
-        raise HTTPException(409, 'This score was changed since the editor opened it — close the editor and open it again')
-    ops = body.get('ops') or []
-    if not ops: raise HTTPException(422, 'Nothing was changed')
-    out, _ = apply_ops(text, ops)
-    what = _what(ops)
-    if body.get('mode') == 'new':
-        t = now_ms()
-        new = {'id': uid('m'), 'kind': 'score', 'title': it['title'], 'artist': it.get('artist') or '',
-               'tags': [*[x for x in it.get('tags', []) if x not in (TAG, TAG_EDIT)], _tag(ops)], 'createdAt': t, 'updatedAt': t, 'originAt': t,
-               'version': it.get('version') or 'original', 'source': f'From the score {_q(it["title"])}, notes edited',
-               'groupId': it.get('groupId') or uid('g'), 'key': it.get('key') or '', 'bpm': it.get('bpm'), 'ai': it.get('ai') or 0,
-               'sourceUrl': it.get('sourceUrl') or ''}
-        if not it.get('groupId'): c.execute('UPDATE score SET group_id=? WHERE item_id=?', (new['groupId'], it['id']))
-        filled = fill_from_library(c, new)  # Album (and an empty Artist) from the library; never the key
-        if filled.get('artist'): out = recredit(out, new['artist'])
-        write_item(c, new, new=True)
-        log_fill(c, [(new, filled)])
-        d = folder_path(cf, new['folder'])
-        d.mkdir(parents=True, exist_ok=True)
-        (d / f'{new["folder"]}.musicxml').write_text(out, encoding='utf-8')
-        c.execute('UPDATE score SET musicxml=? WHERE item_id=?', (f'{new["folder"]}.musicxml', new['id']))
-        refresh_staves(c, cf, new['id'])
-        aid = record_undo(c, 'edit-notes', {'op': 'created', 'ids': [new['id']], 'titles': [new['title']]},
-                          f'Edited notes: {it["title"]}', f'New score, {what} (the score it came from is untouched)')
-        return {'ok': True, 'mode': 'new', 'item': get_item(c, new['id']), 'activity': aid, 'incomplete': incomplete_bars(ET.fromstring(out.encode('utf-8')))}
+def _save_new(c, cf, it, out, ops, what, title=None, source=None, detail=None):
+    """A new score in the same group as `it` -> (item, activity id)."""
+    t = now_ms()
+    new = {'id': uid('m'), 'kind': 'score', 'title': title or it['title'], 'artist': it.get('artist') or '',
+           'tags': [*[x for x in it.get('tags', []) if x not in (TAG, TAG_EDIT)], _tag(ops)], 'createdAt': t, 'updatedAt': t, 'originAt': t,
+           'version': it.get('version') or 'original', 'source': source or f'From the score {_q(it["title"])}, notes edited',
+           'groupId': it.get('groupId') or uid('g'), 'key': it.get('key') or '', 'bpm': it.get('bpm'), 'ai': it.get('ai') or 0,
+           'sourceUrl': it.get('sourceUrl') or ''}
+    if not it.get('groupId'): c.execute('UPDATE score SET group_id=? WHERE item_id=?', (new['groupId'], it['id']))
+    filled = fill_from_library(c, new)  # Album (and an empty Artist) from the library; never the key
+    if filled.get('artist'): out = recredit(out, new['artist'])
+    write_item(c, new, new=True)
+    log_fill(c, [(new, filled)])
+    d = folder_path(cf, new['folder'])
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f'{new["folder"]}.musicxml').write_text(out, encoding='utf-8')
+    c.execute('UPDATE score SET musicxml=? WHERE item_id=?', (f'{new["folder"]}.musicxml', new['id']))
+    refresh_staves(c, cf, new['id'])
+    aid = record_undo(c, 'edit-notes', {'op': 'created', 'ids': [new['id']], 'titles': [new['title']]},
+                      f'Edited notes: {new["title"]}', detail or f'New score, {what} (the score it came from is untouched)')
+    return get_item(c, new['id']), aid
+
+
+def _save_this(c, cf, it, p, text, out, what):
     d = p.parent
     hist = keep(d, p.name)
     orig = it.get('musicxmlOriginal')
@@ -1529,4 +1541,51 @@ def save(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg))
     aid = record_undo(c, 'edit-notes', {'op': 'musicxml', 'id': it['id'], 'title': it['title'], 'file': p.name, 'before': hist,
                                         'beforeSha': _sha(text), 'afterSha': _sha(out), 'what': 'notes were edited'},
                       f'Edited notes: {it["title"]}', f'{what}; the score before is kept in {hist}')
-    return {'ok': True, 'mode': 'this', 'item': get_item(c, it['id']), 'activity': aid, 'history': hist, 'sha': _sha(out), 'check': check_bars(out), 'incomplete': incomplete_bars(ET.fromstring(out.encode('utf-8')))}
+    return hist, aid
+
+
+@router.post('/items/{item_id}/editnotes')
+def save(item_id: str, request: Request, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
+    """{ops, mode, sha?, session?, xml?}. When the file changed since the editor opened it (sha), nothing is refused:
+    the ops are replayed on the file as it is now (editsafe.rebase) and saved ("merged with a newer change"); ops
+    that can't apply are left out there, and the whole edited score is kept as a new version "<title> (my edits)"."""
+    it = must_item(c, item_id)
+    p = _xml_path(cf, it)
+    text = p.read_text(encoding='utf-8')
+    ops = body.get('ops') or []
+    if not ops: raise HTTPException(422, 'Nothing was changed')
+    session = body.get('session') or request.headers.get(editsafe.HEADER)
+    stale = bool(body.get('sha')) and body['sha'] != _sha(text)
+    base = text
+    if stale:
+        base = editsafe.base_text(cf, it, body['sha'])
+    if base is not None: full, _ = apply_ops(base, ops)  # the score exactly as the user saw it in the editor
+    elif isinstance(body.get('xml'), str) and body['xml'].lstrip().startswith('<'): full = body['xml']
+    else: raise HTTPException(409, 'The score as the editor opened it is no longer on the Mac, so the edits could not be replayed. Nothing was lost: they are kept as a draft in this browser — open Edit notes again to restore them')
+    what = _what(ops)
+    done = lambda j: (editsafe.drop_draft(cf, it['id'], session) if session and re.match(r'^[A-Za-z0-9_-]{4,64}$', session) else None, j)[1]
+    if body.get('mode') == 'new':
+        item, aid = _save_new(c, cf, it, full, ops, what, detail=f'New score, {what} (the score it came from is untouched)' + (' · made from the score as the editor opened it (it was changed meanwhile)' if stale else ''))
+        return done({'ok': True, 'mode': 'new', 'item': item, 'activity': aid, 'incomplete': incomplete_bars(ET.fromstring(full.encode('utf-8')))})
+    if not stale:
+        hist, aid = _save_this(c, cf, it, p, text, full, what)
+        return done({'ok': True, 'mode': 'this', 'item': get_item(c, it['id']), 'activity': aid, 'history': hist, 'sha': _sha(full), 'check': check_bars(full),
+                     'incomplete': incomplete_bars(ET.fromstring(full.encode('utf-8')))})
+    # changed meanwhile: merge
+    merged, applied, failed = editsafe.rebase(base, text, ops) if base is not None else (text, [], [(i, 'the score before is gone') for i in range(len(ops))])
+    out = {'ok': True, 'mode': 'this', 'merged': True, 'applied': len(applied), 'failed': len(failed)}
+    if applied:
+        hist, aid = _save_this(c, cf, it, p, text, merged, f'{_what([ops[i] for i in applied])} (merged with a newer change)')
+        out.update(activity=aid, history=hist)
+    final = merged if applied else text
+    if failed:
+        copy_item, caid = _save_new(c, cf, it, full, ops, what, title=f'{it["title"]} (my edits)',
+                                    source=f'From the score {_q(it["title"])}: your edits in full (that score was changed meanwhile)',
+                                    detail=f'Your edits in full ({what}), kept as a new version because the score was changed meanwhile and {len(failed)} of {len(ops)} edits could not be merged')
+        out.update(copy=copy_item, copyActivity=caid)
+        out['message'] = (f'This score was changed meanwhile. {len(applied)} of {len(ops)} edits were merged into it; '
+                          f'all your edits are also kept in full as "{copy_item["title"]}".') if applied else \
+                         (f'This score was changed meanwhile and your edits could not be merged into it — they are kept in full as "{copy_item["title"]}". This score is unchanged.')
+    else: out['message'] = 'Saved — merged with a newer change to this score.'
+    out.update(item=get_item(c, it['id']), sha=_sha(final), check=check_bars(final), incomplete=incomplete_bars(ET.fromstring(final.encode('utf-8'))))
+    return done(out)

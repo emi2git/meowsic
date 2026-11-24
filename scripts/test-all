@@ -42,7 +42,7 @@ SUITES = {
     'textinput': 'server', 'touchfill': 'server', 'touchlib': 'server', 'touchpages': 'server', 'touchview': 'server',
     'verified': 'server', 'voice': 'server',
     'omr': 'server', 'printscore': 'server',
-    'offline': 'restart', 'storage': 'restart',
+    'offline': 'restart', 'storage': 'restart', 'editsafe': 'restart',
 }
 # not run here: reallib (read-only look at the LIVE library), renderall (every score of a library: point BASE at a
 # copy), shots (screenshots for a human to look at).
@@ -157,6 +157,6 @@ def main():
 MAIN = ['flows', 'keycolumn', 'playback', 'scorezoom', 'topcast', 'touchseek', 'betakeyboard',
         'activities', 'chordplay', 'hands', 'addmusic', 'booksplit', 'completeinfo', 'cuedrag', 'dailycleanup', 'dragnote', 'editnotes', 'editperf', 'feedback', 'jobs', 'langtoggle',
         'lyricmode', 'manage', 'menus', 'midiedit', 'organizepages', 'photoimport', 'quickfeedback', 'renameopen',
-        'swipeclose', 'textinput', 'verified', 'offline', 'storage']
+        'swipeclose', 'textinput', 'verified', 'offline', 'storage', 'editsafe']
 if __name__ == '__main__':
     sys.exit(main())

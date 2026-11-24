@@ -4,6 +4,17 @@
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
 
+-- Edit notes open on an item (editsafe.py): a presence lock kept alive by the editor's heartbeat. While a row's
+-- beat_at is recent, other API writes to that item are refused (423) unless they carry that session id.
+CREATE TABLE IF NOT EXISTS edit_session (
+  id         TEXT PRIMARY KEY,
+  item_id    TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  beat_at    INTEGER NOT NULL,
+  base_sha   TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS edit_session_item ON edit_session(item_id);
+
 CREATE TABLE IF NOT EXISTS item (
   id          TEXT PRIMARY KEY,               -- 's-…' sheet, 'c-…' chords, 'm-…' score
   kind        TEXT NOT NULL CHECK (kind IN ('sheet','chords','score')),

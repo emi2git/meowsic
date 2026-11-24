@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import Body, Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from . import ai, backup, barcheck, booksplit, chords, cleanup, dailycleanup, items, jobs, lyricsedit, organize, pages, photoimport, runners, scorechords, simplepiano, staffmove, titles, undo, versions, voice
+from . import ai, backup, editsafe, barcheck, booksplit, chords, cleanup, dailycleanup, items, jobs, lyricsedit, organize, pages, photoimport, runners, scorechords, simplepiano, staffmove, titles, undo, versions, voice
 from .db import WEB_DIR, Config, connect, init_db, log_event
 from .items import conn
 from . import feedback  # Utilities → Feedback
@@ -42,7 +42,9 @@ def create_app(data=None, background=True) -> FastAPI:
         if 'cache-control' not in resp.headers: resp.headers['Cache-Control'] = 'no-store'  # page images set their own (no-cache + ETag)
         return resp
 
-    for r in (items.router, jobs.router, backup.router, chords.router, ai.router, cleanup.router, pages.router, booksplit.router, titles.router, versions.router, photoimport.router, undo.router, voice.router, lyricsedit.router, barcheck.router, simplepiano.router, scorechords.router, dailycleanup.router, organize.router, staffmove.router):
+    app.middleware('http')(editsafe.lock_middleware)  # 423 while Edit notes is open on the item (editsafe.py)
+
+    for r in (editsafe.router, items.router, jobs.router, backup.router, chords.router, ai.router, cleanup.router, pages.router, booksplit.router, titles.router, versions.router, photoimport.router, undo.router, voice.router, lyricsedit.router, barcheck.router, simplepiano.router, scorechords.router, dailycleanup.router, organize.router, staffmove.router):
         app.include_router(r)
     app.include_router(feedback.router)
     app.include_router(completeinfo.router)

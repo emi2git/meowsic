@@ -32,6 +32,10 @@
 // The Mac rebuilds the bars (server/meowsic/staffmove.py: every voice of both staves stays full, chords together,
 // rests where a hand has nothing to play) and the score draws again at once. Undo / redo inside the editor;
 // Save into this score (the file before stays in .history, Activities can undo it) or as a new version.
+// Never lost (editdraft.js + server editsafe.py): the edits are a draft in this browser after every edit and on the
+// Mac every ~30 s / when the page hides; reopening offers "Restore unsaved edits". While open, an edit session locks
+// the score against other API writes (423). Previews replay on the score as it opened (sha); a Save after another
+// client changed the score merges onto it (or keeps the full edit as "<title> (my edits)"), never a dead end.
 import { iconOn, toast, sheet as modal, confirmSheet, menu } from '../ui.js';
 import { store } from '../store.js';
 import { go } from '../app.js';
@@ -41,8 +45,10 @@ import { lyricMode } from './lyricmode.js'; // [lyrics]
 import { attachMidi } from '../midiedit.js';
 import { barMarks } from '../musicxml.js';
 import { handsHtml, handsClick } from '../hands.js';
+import { newSession, findDraft, dropDrafts, dropLocal, editGuard, saveNote } from '../editdraft.js';
 
-export const post = (path, body) => fetch('/api' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+let EDIT_SESSION = null; // the open editor's session (editdraft.js): its own writes pass the Mac's lock
+export const post = (path, body) => fetch('/api' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(EDIT_SESSION ? { 'X-Edit-Session': EDIT_SESSION } : {}) }, body: JSON.stringify(body) })
   .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : j.detail?.message || `Failed (${r.status})`); return j; });
 
 export const hasPiano = (xml) => /<staves>\s*[2-9]\s*<\/staves>/.test(xml || '');
@@ -77,6 +83,24 @@ export async function editNotes(view, it, host, opts = {}) {
   const url = `/items/${encodeURIComponent(it.id)}/editnotes`;
   let base;
   try { base = await post(`${url}/preview`, { ops: [] }); } catch (e) { toast(e.message); opts.onDone?.(null); return; }
+  // unsaved edits of this score from before (a reload, a crash, the Mac restarted, another device): offer them back
+  let session = newSession(), restored = null;
+  const draft = await findDraft(it.id);
+  if (draft) {
+    if (await restoreSheet(draft)) {
+      try {
+        const b0 = draft.sha && draft.sha !== base.sha ? await post(`${url}/preview`, { ops: [], sha: draft.sha }) : base; // the score as that editor saw it
+        const j = await post(`${url}/preview`, { ops: draft.ops, sha: b0.sha });
+        base = b0; restored = { ops: draft.ops, xml: j.xml, notes: j.notes };
+        if (draft.session) session = draft.session;
+      } catch (e) {
+        saveNote(`Could not restore the unsaved edits (${e.message}). They are still kept: open Edit notes again to try once more.`, { error: true, action: { label: 'Discard them', run: () => dropDrafts(it.id) } });
+        opts.onDone?.(null); return;
+      }
+    } else await dropDrafts(it.id);
+  }
+  if (host.querySelector('.notes-panel')) return;
+  EDIT_SESSION = session;
   const paper = host.querySelector('#paper');
   const panel = document.createElement('div');
   panel.className = 'notes-panel';
@@ -91,6 +115,10 @@ export async function editNotes(view, it, host, opts = {}) {
   host.classList.add('noting');
   // steps[0] = the score as saved; each edit adds one (its ops = every edit so far, replayed by the Mac)
   let steps = [{ ops: [], xml: base.xml, notes: base.notes }], at = 0;
+  if (restored) { steps.push({ ops: restored.ops, xml: restored.xml, notes: restored.notes, sel: [], bar: null }); at = 1; }
+  // the edit session (the Mac's lock) and the drafts: this browser after every edit, the Mac every ~30 s
+  const guard = editGuard(it, session, () => ({ sha: base.sha, ops: cur().ops, n: at, xml: cur().xml }), () => panel.isConnected && !closed);
+  guard.start(base.sha);
   let sel = new Set(), anchor = null, several = false, busy = false, shown = false, closed = false, cueAt = null, took = new Set();
   let dropped = false; // the orange line was dragged since the last pick: ▶ From here plays from it, not the picked notes
   let barPick = null; // a bar picked by tapping its empty space: { bar (0-based), staff }
@@ -627,11 +655,12 @@ export async function editNotes(view, it, host, opts = {}) {
       const from = replace ? at - 1 : at;
       const ops = [...steps[from].ops, op];
       const bar = atBar ?? (op.bar != null ? op.bar : firstBar(op.refs, steps[from].notes));
-      const j = await post(`${url}/preview`, { ops });
+      const j = await post(`${url}/preview`, { ops, sha: base.sha });
       const prevSel = replace ? steps[at].sel : [...sel], prevPick = replace ? steps[at].barPick : barPick, prevRng = replace ? steps[at].rng : rng;
       steps = steps.slice(0, from + 1);
       steps.push({ ops, xml: j.xml, notes: j.notes, sel: prevSel, bar: bar ?? firstBar(j.moved, j.notes), barPick: prevPick, rng: prevRng });
       at = from + 1;
+      guard.changed();
       if (op.op !== 'lyrics') { // [lyrics] words: the picked note stays
         sel = new Set(op.op === 'addstaff' ? [] : j.moved);
         // a range stays a range through the tools; a paste / repeat picks what it wrote
@@ -1048,7 +1077,7 @@ export async function editNotes(view, it, host, opts = {}) {
   };
   // ---- copy / cut / paste / repeat (rangeops.py) ----
   const takeClip = async (w) => {
-    const j = await post(`${url}/clip`, { ops: cur().ops, start: w.start, end: w.end, staves: [w.s0, w.s1] });
+    const j = await post(`${url}/clip`, { ops: cur().ops, sha: base.sha, start: w.start, end: w.end, staves: [w.s0, w.s1] });
     return j.clip;
   };
   const keepClip = (c) => { clip = c; try { localStorage.setItem(CLIP_KEY, JSON.stringify(c)); } catch {} };
@@ -1145,6 +1174,7 @@ export async function editNotes(view, it, host, opts = {}) {
     took = new Set();
     const bar = steps[Math.max(at, k)].bar;
     at = k;
+    guard.changed();
     draw();
     try {
       if (queue.length) stale = true; // another undo / edit waits: draw only the last
@@ -1164,24 +1194,34 @@ export async function editNotes(view, it, host, opts = {}) {
       const bs = steps.slice(1, at + 1).map((x) => x.bar).filter((b) => b != null);
       const edited = bs.length ? Math.min(...bs) : null;
       try {
-        const j = await post(url, { ops: [...cur().ops, ...(mode === 'this' ? opts.extraOps?.() || [] : [])], mode, sha: base.sha });
+        await guard.hold();
+        const j = await post(url, { ops: [...cur().ops, ...(mode === 'this' ? opts.extraOps?.() || [] : [])], mode, sha: base.sha, session, xml: cur().xml });
+        await dropLocal(it.id); // saved: the draft goes (the Mac drops its copy itself)
         s.close();
         await close(true);
         const short = j.incomplete?.length || 0;
+        const notDone = short ? ` · ${plural(short, 'bar')} not complete` : '';
+        if (j.copy) store.putItem(j.copy);
+        const acts = { label: 'Activities', run: () => go('#/activity') };
         if (mode === 'new') {
           store.putItem(j.item);
           if (edited != null) window.__meowsicCue = { id: j.item.id, bar: edited }; // the new score opens cued there
-          toast(`Saved as a new version — this score is unchanged${short ? ` · ${plural(short, 'bar')} not complete` : ''}`, { label: 'Activities', run: () => go('#/activity') });
+          saveNote(`Saved as a new version — this score is unchanged${notDone}`, { action: acts });
           go(`#/item/${encodeURIComponent(j.item.id)}`);
         } else {
           const was = store.get(it.id);
           if (was) Object.assign(was, { updatedAt: j.item.updatedAt, musicxmlOriginal: j.item.musicxmlOriginal });
           await view.reload();
-          if (edited != null) view.cueBar(edited);
-          toast(short ? `Notes saved · ${short} bar${short === 1 ? '' : 's'} not complete` : 'Notes saved — Activities can undo it', { label: 'Activities', run: () => go('#/activity') });
+          if (edited != null && !j.failed) view.cueBar(edited);
+          if (j.copy) saveNote(`${j.message}${notDone}`, { stay: true, action: { label: 'Open my edits', run: () => go(`#/item/${encodeURIComponent(j.copy.id)}`) } });
+          else saveNote(`${j.merged ? j.message : 'Notes saved — Activities can undo it'}${notDone}`, { action: acts });
         }
         opts.onDone?.(j);
-      } catch (e) { s.close(); toast(e.message); } finally { busy = false; }
+      } catch (e) {
+        s.close();
+        guard.release(); guard.flush();
+        saveNote(`Not saved: ${e instanceof TypeError ? 'the Mac could not be reached' : e.message}. Your edits are still here (and kept as a draft) — try Save again.`, { error: true });
+      } finally { busy = false; }
     }));
   };
   const close = async (saved) => {
@@ -1189,6 +1229,9 @@ export async function editNotes(view, it, host, opts = {}) {
     if (saved !== true) await lyr?.flush(); // [lyrics]
     if (saved !== true && at > 0 && !(await confirmSheet({ title: 'Close without saving?', body: 'The notes you changed here are not saved yet.', ok: 'Close', danger: true }))) return;
     closed = true;
+    guard.stop();
+    if (EDIT_SESSION === session) EDIT_SESSION = null;
+    if (saved !== true) dropDrafts(it.id); // closed without saving, on purpose: no draft to offer back
     midiCtl?.destroy();
     host.removeEventListener('scoredrawn', tag);
     host.removeEventListener('scoredrawn', markBar);
@@ -1286,6 +1329,21 @@ export async function editNotes(view, it, host, opts = {}) {
     save, draw, close, steps: () => at + 1, goStep: (d) => goStep(at + d) });
   draw();
   tag();
+  if (restored) { guard.changed(); await show(cur().xml); draw(); toast(`Unsaved edits restored (${plural(restored.ops.length, 'change')}) — Save to keep them`); }
   if (opts.mode === 'lyrics') lyr.set(true); // [lyrics]
   return api;
+}
+
+// "Restore unsaved edits (N changes, 14:05)" / "Discard" -> true: restore (closing the sheet restores too: never lost)
+function restoreSheet(d) {
+  return new Promise((resolve) => {
+    let said = null;
+    const when = new Date(d.savedAt || Date.now());
+    const hm = when.toTimeString().slice(0, 5), day = when.toDateString() === new Date().toDateString() ? hm : `${when.toLocaleDateString()} ${hm}`;
+    const n = d.ops.length;
+    const s = modal(`<h2>Unsaved edits</h2><p class="muted">This score has edits from ${day} that were never saved (${n} change${n === 1 ? '' : 's'}).</p>
+      <div class="modal-actions np-restore"><button class="danger" data-k="discard">Discard</button><button class="primary" data-k="restore">Restore unsaved edits (${n} change${n === 1 ? '' : 's'}, ${day})</button></div>`,
+    { onClose: () => resolve(said !== 'discard') });
+    s.el.querySelectorAll('[data-k]').forEach((b) => (b.onclick = () => { said = b.dataset.k; s.close(); }));
+  });
 }

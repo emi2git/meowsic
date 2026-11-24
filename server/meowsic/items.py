@@ -213,7 +213,10 @@ def move_folder(c, cf, it, new):
 
 
 @router.post('/items/trash')
-def trash(body: dict = Body(...), c=Depends(conn)):
+def trash(body: dict = Body(...), c=Depends(conn), request: Request = None):
+    from .editsafe import HEADER, check
+    if request is not None:  # an API call (Undo calls this too)
+        for i in ids_of(body): check(c, i, request.headers.get(HEADER))  # not while Edit notes is open on it
     titles, done = [], []
     for i in ids_of(body):
         r = c.execute('UPDATE item SET deleted_at=? WHERE id=? AND deleted_at IS NULL RETURNING title', (now_ms(), i)).fetchone()

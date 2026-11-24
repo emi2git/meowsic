@@ -26,6 +26,7 @@ Server (`server/meowsic/`; each file's docstring explains it, and most list thei
 - `jobs.py` + `runners.py`: background jobs (transcribe, omr, lyrics, sing, version) and their runners.
 - `undo.py` + `undolog.py`: Activities rows and their 24 h Undo. `dailycleanup.py`: the daily Final + clean-up.
 - `staffmove.py`: the Edit notes API (`POST /api/items/{id}/editnotes`). It uses `barops`, `rangeops`, `structops`, `noteset`, `barnorm`, `easerests`.
+- `editsafe.py`: Edit notes never loses edits: edit sessions (the 423 lock), drafts on disk (`<data>/drafts/<item>/`), and the rebase that merges a Save onto a score changed meanwhile.
 - `lyricsedit.py`: lyrics by hand and Edit notes → Lyrics. `lyricsfit.py`: a sheet's words placed on a score.
 - `simplepiano.py` + `smoothrhythm.py` + `arrange.py`: the Simple piano versions. `chordfind.py`: chords from notes.
 - `organize.py`, `pages.py`, `booksplit.py`, `cleanup.py` + `cleanstate.py` + `trim.py`: Manage library (Fix pages, split / join, books, crops).
@@ -36,7 +37,7 @@ Server (`server/meowsic/`; each file's docstring explains it, and most list thei
 Web (`web/js/`): `app.js` is the shell and hash router, `store.js` the library store (server / offline / mock modes), `ui.js` the shared helpers, `audio.js` playback (`chordplay.js`: Play chords), `device.js` the device class, `easyscore.js` kids note names and no tempo marks.
 Views (`web/js/views/`):
 - `library.js`: lists. `item.js`: the viewer frame. `sheet.js`, `chordsview.js`, `score.js`: the three viewers. `info.js`: the one edit popup.
-- `scoreeditor.js` is the ✎ entry: real scores open `editnotes.js` (+ `lyricmode.js`, `lyricspanel.js`, `../midiedit.js`), and preview samples open the old one-line bar (`../scoremodel.js`). `checkbars.js`: Check bars.
+- `scoreeditor.js` is the ✎ entry: real scores open `editnotes.js` (+ `lyricmode.js`, `lyricspanel.js`, `../midiedit.js`, `../editdraft.js`: drafts, session, the Save note), and preview samples open the old one-line bar (`../scoremodel.js`). `checkbars.js`: Check bars.
 - `simplepiano.js`, `print.js`, `annotate.js` (ink), `actions.js` (⋯ menus), `add.js` + `photoimport.js` (Add music).
 - `manage.js` hub + `managekit.js`, `review.js`, `pageeditor.js`, `completeinfo.js`, `organize.js` (Tags, Trash).
 - `activity.js` (Activities + Undo), `more.js` (Stats, Settings, Developer), `feedback.js`, `help.js`, `beta-keyboard.js`, `autotag.js`, `maketags.js`, `verified.js`.
@@ -73,6 +74,9 @@ Views (`web/js/views/`):
 - Deleting moves items to the Trash (Manage → Trash: Restore, Delete for good, Empty). Only Trash deletes for good.
 - Back up the DB before any restart or one-off script (`scripts/deploy` does it). One-off scripts go in `server/scripts/`; each needs an undo or a backup.
 - Old apps' data is read-only: `Meowsic.store*` in the data folder, `~/Documents/Emi Songbook`, `~/Documents/Emi Music Note`.
+
+- **Never write to an item someone is editing.** While Edit notes is open on a score it holds an edit session (`GET /api/items/{id}/editsession` → `active`); every other API write to that item (edit notes, lyrics, chords, check bars, simple piano, MusicXML, pages, PATCH, Trash, a lyrics job) gets **423 Locked**. Agents and scripts must check first, wait, and retry later — never work around it. The lock lets go 2 min after the editor's last heartbeat.
+- Edit notes keeps drafts in the browser (localStorage / IndexedDB) and on disk (`<data>/drafts/`, pruned after 30 days); a Save on a score changed meanwhile merges, or keeps the full edit as "<title> (my edits)". Never bring back a dead-end 409.
 
 ## Product rules
 - Publisher content (scans, lyrics text, even the names) stays on this Mac. Nothing goes to external services or GitHub: `items/` and the DB never enter git. All AI runs offline.

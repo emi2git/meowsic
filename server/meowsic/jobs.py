@@ -150,6 +150,11 @@ def create_job(request: Request, body: dict = Body(...)):
         raise HTTPException(400, 'kind (transcribe|version|omr|lyrics|sing) and title are required')
     if kind == 'lyrics' and not (body.get('fromItemId') and body.get('sheetId')):
         raise HTTPException(400, 'fromItemId (the score) and sheetId (the sheet with the words) are required')
+    if kind == 'lyrics':  # it writes the score: not while Edit notes is open on it (editsafe.py)
+        from .editsafe import HEADER, check
+        c = request.app.state.connect()
+        try: check(c, body['fromItemId'], request.headers.get(HEADER))
+        finally: c.close()
     params, source = {k: body[k] for k in PARAMS if body.get(k) not in (None, '')}, body.get('source', '')
     if kind == 'transcribe':  # keep the full original link; the source shown is just the platform ('YouTube' / 'Facebook')
         from .runners import link_of

@@ -1338,3 +1338,9 @@ body:has(.viewer.noting) .toast { bottom: auto; top: calc(64px + env(safe-area-i
 .tc-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 150px; overflow-y: auto; }
 .tc-opt { min-height: 34px; border-radius: 99px; padding: 0 12px; font-size: 14px; max-width: 100%; white-space: normal; text-align: left; }
 .tc-new { border-style: dashed; color: var(--acc-text); }
+/* the answer to an Edit notes Save (editdraft.js saveNote): stays on screen; an error until ✕ */
+.save-note { position: fixed; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 131; display: flex; gap: 12px; align-items: center;
+  background: var(--card); color: var(--ink); border: 2px solid var(--ok); padding: 10px 10px 10px 16px; border-radius: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, .25); max-width: calc(100vw - 32px); font-size: 15px; }
+.save-note b { color: var(--ok); }
+.save-note.err { border-color: var(--danger); }
+.save-note .sn-x { flex: none; min-width: 36px; min-height: 36px; }
