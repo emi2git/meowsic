@@ -10,7 +10,7 @@ import re
 
 from .db import now_ms, quiet_now, uid
 
-FIELDS = ('title', 'artist', 'album', 'key', 'version', 'tags')
+FIELDS = ('title', 'artist', 'album', 'key', 'version', 'tags', 'text')  # text: a chord chart's ChordPro (never echoed in a detail)
 GRACE_MS = 24 * 3600 * 1000  # Undo is open for 24 hours; then the activity is Final (dailycleanup.py)
 
 
@@ -128,6 +128,7 @@ def edit_detail(steps):
                 add, rem = [t for t in v if t not in (o or [])], [t for t in (o or []) if t not in v]
                 bits.append(' '.join([*(f'+{t}' for t in add), *(f'−{t}' for t in rem)]) or 'tags')
             elif k == 'title': bits.append(f'was {_q(o)}')
+            elif k == 'text': bits.append('chord chart text' + (' refilled' if not o else ' changed'))
             else: bits.append(f'{k} {_q(o) if o else "—"} → {_q(v) if v else "—"}')
         parts.append((f'{s["title"]}: ' if len(steps) > 1 else '') + ', '.join(bits))
     return '; '.join(parts) + (f'; and {len(steps) - 6} more' if len(steps) > 6 else '')

@@ -124,9 +124,17 @@ def parse_hac_song(html, url):
 # ---------- ultimate-guitar.com (English) ----------
 
 def ug_store(html):
-    m = re.search(r'class="js-store" data-content="([^"]*)"', html)
-    if not m: raise RuntimeError('Ultimate Guitar page layout not recognised')
-    return json.loads(decode(m[1]))['store']['page']['data']
+    """The page's JSON store: <div class="js-store" data-content="…"> (attributes in either order), or the newer
+    window.UGAPP.store.page = {…}; script."""
+    m = re.search(r'<div[^>]*\bclass="js-store[^"]*"[^>]*\bdata-content="([^"]*)"', html) or \
+        re.search(r'<div[^>]*\bdata-content="([^"]*)"[^>]*\bclass="js-store', html)
+    try:
+        if m: return json.loads(decode(m[1]))['store']['page']['data']
+        m = re.search(r'window\.UGAPP\.store\.page\s*=\s*(\{.*?\});\s*(?:window\.|</script>)', html, re.S)
+        if m: return json.loads(m[1])['data']
+    except (ValueError, KeyError, TypeError):
+        pass
+    raise RuntimeError('Ultimate Guitar page layout not recognised')
 
 
 def parse_ug_search(html):
@@ -204,17 +212,34 @@ def parse_ug_content(content):
     return tidy(lines)
 
 
+NO_TEXT_TYPES = ('Official', 'Pro', 'Power', 'Guitar Pro', 'Video', 'Drums', 'Bass')  # played in UG's app: no chord text in the page
+
+
+def first_chord(lines):
+    """Key fallback when the tab gives none: the first chord's root (+ m), as for a pasted chart."""
+    for l in lines:
+        for p in l.get('parts') or []:
+            m = re.match(r'([A-G][#b]?)(m(?!aj))?', p.get('chord') or '')
+            if m: return m[1] + (m[2] or '')
+    return ''
+
+
 def parse_ug_song(html, url):
     data = ug_store(html)
     tab, view = data.get('tab') or {}, data.get('tab_view') or {}
-    content = (view.get('wiki_tab') or {}).get('content')
-    if not content: raise RuntimeError('This Ultimate Guitar tab has no readable chord sheet')
+    content = (view.get('wiki_tab') or {}).get('content') or ''
+    kind = str(tab.get('type') or tab.get('type_name') or '')
+    if not str(content).strip():
+        if kind in NO_TEXT_TYPES or str(tab.get('tab_access_type') or '').lower() in ('official', 'pro'):
+            raise RuntimeError(f'This is an Ultimate Guitar “{kind or "Official"}” tab: it only plays in their app and has no chord text. Pick a “Chords” result instead.')
+        raise RuntimeError('This Ultimate Guitar tab has no readable chord sheet')
     meta = view.get('meta') or {}
     try: capo = int(meta.get('capo') or 0)
     except (TypeError, ValueError): capo = 0
+    lines = parse_ug_content(content)
     return {'id': f'ug-{tab.get("id")}', 'source': 'ultimate-guitar', 'url': url, 'title': decode(tab.get('song_name') or ''),
-            'artist': decode(tab.get('artist_name') or ''), 'key': meta.get('tonality') or tab.get('tonality_name') or '',
-            'capo': capo, 'lines': parse_ug_content(content)}
+            'artist': decode(tab.get('artist_name') or ''), 'key': meta.get('tonality') or tab.get('tonality_name') or first_chord(lines),
+            'capo': capo, 'lines': lines}
 
 
 # ---------- public API ----------
@@ -249,7 +274,12 @@ def fetch_song(url):
     if urlparse(url).scheme != 'https' or host not in ALLOWED_HOSTS: raise ValueError('Unsupported site: ' + host)
     html = get(url)
     song = parse_hac_song(html, url) if host == 'hopamchuan.com' else parse_ug_song(html, url)
-    song['text'] = to_chordpro(song.pop('lines'))
+    lines = song.pop('lines')
+    song['text'] = to_chordpro(lines)
+    song['lineCount'] = sum(1 for l in lines if l['t'] == 'line')
+    song['chordCount'] = sum(1 for l in lines for p in l.get('parts') or [] if p.get('chord'))
+    if not song['text'].strip() or not song['chordCount']:  # never hand back an empty chart
+        raise RuntimeError('No chords found on this page. Try another result.')
     return song
 
 
