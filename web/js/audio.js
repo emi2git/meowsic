@@ -103,9 +103,12 @@ function pianoVoice(out, pitch, vel, when, held) {
 }
 
 // ---------- score player: notes in quarter-note time; tempo, loop, transpose ----------
+// segments: [[fromQ, toQ], …] in the order they are played (repeats and endings, musicxml.js playOrder), or null:
+// at the end of each the clock jumps to the next (the playhead with it); A–B loop mode ignores them.
 export class ScorePlayer {
-  constructor({ notes, bpm, beats, onTick, onEnd }) {
-    Object.assign(this, { notes, bpm, beats, onTick, onEnd });
+  constructor({ notes, bpm, beats, onTick, onEnd, segments = null }) {
+    Object.assign(this, { notes, bpm, beats, onTick, onEnd, segments });
+    this.seg = 0; this.played = []; this.heard = []; // played: [segment index, …] as they start (for tests)
     this.rate = 1; this.shift = 0;
     this.loop = null; // [startQ, endQ]
     this.posQ = 0; this.playing = false;
@@ -138,6 +141,12 @@ export class ScorePlayer {
     this.out = c.createGain(); this.out.gain.value = 0.85;
     const comp = c.createDynamicsCompressor();
     this.out.connect(comp); comp.connect(c.destination);
+    if (this.segments) { // the first time through the bar where it starts
+      const k = this.segments.findIndex(([a, z]) => this.posQ >= a - 1e-6 && this.posQ < z - 1e-6);
+      this.seg = k < 0 ? this.segments.length - 1 : k;
+      this.played = [this.seg];
+    }
+    this.heard = [];
     this.q0 = this.posQ; this.t0 = c.currentTime + 0.12;
     this.anchors = [{ q0: this.q0, t0: this.t0 }];
     this.scheduledTo = this.posQ;
@@ -148,24 +157,30 @@ export class ScorePlayer {
     tick();
   }
   pump() {
-    const horizonQ = this.now() + 0.4 * this.qps;
-    const stopQ = this.loop ? this.loop[1] : this.endQ;
-    while (this.scheduledTo < horizonQ) {
+    // up to 0.4 s ahead, in the clock of the latest jump (a loop / a repeat moves it)
+    const horizonT = this.ctx.currentTime + 0.4;
+    const segs = !this.loop && this.segments;
+    for (let guard = 0; guard < 1000; guard++) {
+      const horizonQ = this.q0 + (horizonT - this.t0) * this.qps;
+      if (this.scheduledTo >= horizonQ) break;
+      const stopQ = this.loop ? this.loop[1] : segs ? segs[this.seg][1] : this.endQ;
       const a = this.scheduledTo, b = Math.min(horizonQ, stopQ);
       for (const n of this.notes) if (n.q >= a && n.q < b) {
         const when = this.t0 + (n.q - this.q0) / this.qps;
         pianoVoice(this.out, n.n + this.shift, n.v, Math.max(this.ctx.currentTime, when), Math.max(0.08, n.d / this.qps));
+        if (this.heard.length < 4000) this.heard.push([n.q, n.n]); // what was played, in order (for tests)
       }
       this.scheduledTo = b;
-      if (b >= stopQ) {
-        if (this.loop) { // jump back: re-anchor the clock at the loop start
-          const tEnd = this.t0 + (stopQ - this.q0) / this.qps;
-          this.q0 = this.loop[0]; this.t0 = tEnd; this.scheduledTo = this.loop[0];
-          this.anchors = [...this.anchors.slice(-1), { q0: this.q0, t0: this.t0 }];
-        } else break;
-      }
+      if (b < stopQ) break;
+      const tEnd = this.t0 + (stopQ - this.q0) / this.qps;
+      if (this.loop) this.q0 = this.loop[0]; // jump back: re-anchor the clock at the loop start
+      else if (segs && this.seg + 1 < segs.length) { this.seg++; this.played.push(this.seg); this.q0 = segs[this.seg][0]; } // a repeat / an ending
+      else break;
+      this.t0 = tEnd; this.scheduledTo = this.q0;
+      this.anchors = [...this.anchors.slice(-1), { q0: this.q0, t0: this.t0 }];
     }
-    if (!this.loop && this.now() >= this.endQ + 0.5) { this.pause(); this.posQ = 0; this.onEnd?.(); }
+    const last = !segs || this.seg === segs.length - 1;
+    if (!this.loop && last && this.now() >= (segs ? segs.at(-1)[1] : this.endQ) + 0.5) { this.pause(); this.posQ = 0; this.onEnd?.(); }
   }
   pause() {
     if (!this.playing) return;
@@ -184,8 +199,10 @@ export class ScorePlayer {
 // rate stays 1 (the toolbar switches back to the piano for tempo / transpose changes).
 // iPad / iPhone: el.play() runs straight from the Play tap (nothing awaited before it), which Safari needs.
 export class VoicePlayer {
-  constructor({ url, bpm, beats, endQ, onTick, onEnd }) {
-    Object.assign(this, { bpm, beats, endQ, onTick, onEnd });
+  // segments (repeats, as ScorePlayer): the sung audio runs through them in order (singscore.py unrolls the repeats),
+  // so its clock is mapped to the score's bars for the playhead and back for a seek
+  constructor({ url, bpm, beats, endQ, onTick, onEnd, segments = null }) {
+    Object.assign(this, { bpm, beats, endQ, onTick, onEnd, segments });
     this.rate = 1; this.shift = 0; this.loop = null; this.posQ = 0; this.playing = false; this.want = null;
     const el = (this.el = new Audio());
     el.preload = 'auto'; el.setAttribute('playsinline', ''); el.src = url;
@@ -194,11 +211,13 @@ export class VoicePlayer {
     el.addEventListener('error', () => { this.failed = true; if (this.playing) { this.stopClock(); this.onEnd?.(); } });
   }
   get qps() { return this.bpm / 60; }
+  toScore(pq) { if (!this.segments) return pq; let acc = 0; for (const [a, z] of this.segments) { if (pq < acc + z - a) return a + pq - acc; acc += z - a; } return this.segments.at(-1)[1]; }
+  toPlay(sq) { if (!this.segments) return sq; let acc = 0; for (const [a, z] of this.segments) { if (sq >= a && sq < z) return acc + sq - a; acc += z - a; } return acc; }
   setTime(q) {
-    if (this.el.readyState >= 1) { try { this.el.currentTime = q / this.qps; return; } catch {} }
+    if (this.el.readyState >= 1) { try { this.el.currentTime = this.toPlay(q) / this.qps; return; } catch {} }
     this.want = q; // before the metadata is in (iOS): applied on loadedmetadata
   }
-  now() { return this.playing ? (this.want != null ? this.want : this.el.currentTime * this.qps) : this.posQ; }
+  now() { return this.playing ? (this.want != null ? this.want : this.toScore(this.el.currentTime * this.qps)) : this.posQ; }
   play() {
     if (this.playing) return Promise.resolve();
     if (this.posQ >= (this.loop ? this.loop[1] : this.endQ)) this.posQ = this.loop ? this.loop[0] : 0;

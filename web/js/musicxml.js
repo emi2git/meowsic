@@ -142,8 +142,10 @@ export function xmlInfo(text) {
   const notes = [];
   let bpm = 0, beats = 4, end = 0;
   const barQ = []; // where each bar of the first part starts, in quarters
+  const marks = []; // repeats and endings of each bar of the first part (playOrder)
   for (const part of doc.querySelectorAll('part')) {
     const first = !barQ.length;
+    if (first) marks.push(...barMarks(part));
     let div = 1, t = 0; // t in divisions
     const tied = new Map(); // MIDI note → the sounding note a tie carries on
     for (const m of part.querySelectorAll(':scope > measure')) {
@@ -180,5 +182,70 @@ export function xmlInfo(text) {
       }
     }
   }
-  return { notes: notes.sort((a, b) => a.q - b.q), bpm: bpm || 100, beats, totalQ: end, barQ };
+  // the bars as they are played (repeats, 1st / 2nd endings): [[from, to] in quarters] for the player, or null
+  const order = playOrder(marks);
+  let segments = null;
+  if (marks.some((m) => m.start || m.end || m.ending)) {
+    segments = [];
+    const barEnd = (i) => (i + 1 < barQ.length ? barQ[i + 1] : Math.max(end, barQ[i] || 0));
+    for (const [i] of order) {
+      const a = barQ[i], z = barEnd(i), last = segments.at(-1);
+      if (last && Math.abs(last[1] - a) < 1e-6) last[1] = z; else segments.push([a, z]);
+    }
+  }
+  return { notes: notes.sort((a, b) => a.q - b.q), bpm: bpm || 100, beats, totalQ: end, barQ, order, segments };
+}
+
+// ---- repeats and endings (the same rules as server/meowsic/structops.py play_order) ----
+const nums = (s) => { const out = []; for (const x of String(s || '1').replace(/[\s.]/g, '').split(',')) { const r = x.split('-'); if (r.length === 2 && +r[0] && +r[1]) for (let k = +r[0]; k <= +r[1]; k++) out.push(k); else if (+x) out.push(+x); } return out.length ? out : [1]; };
+export function barMarks(part) {
+  const ms = [...part.querySelectorAll(':scope > measure')];
+  const out = ms.map(() => ({ start: false, end: false, times: 2, ending: null }));
+  let cur = null;
+  const brackets = [];
+  ms.forEach((m, i) => {
+    for (const b of m.querySelectorAll(':scope > barline')) {
+      const r = b.querySelector('repeat');
+      if (r?.getAttribute('direction') === 'forward') out[i].start = true;
+      else if (r) { out[i].end = true; out[i].times = Math.max(2, +(r.getAttribute('times') || 2) || 2); }
+      const e = b.querySelector('ending');
+      if (!e) continue;
+      if (e.getAttribute('type') === 'start') cur = { a: i, nums: nums(e.getAttribute('number')) };
+      else if (cur) { brackets.push({ ...cur, z: i }); cur = null; }
+    }
+  });
+  if (cur) brackets.push({ ...cur, z: ms.length - 1 });
+  for (const br of brackets) for (let i = br.a; i <= br.z; i++) out[i].ending = br;
+  return out;
+}
+// [[bar index, time through]] in the order they are played
+export function playOrder(marks) {
+  const brackets = [...new Set(marks.map((m) => m.ending).filter(Boolean))].sort((x, y) => x.a - y.a);
+  const out = [], count = new Map();
+  let i = 0, start = 0, pass = 1, guard = 0;
+  while (i < marks.length && guard++ < 10000) {
+    const mk = marks[i], e = mk.ending;
+    if (mk.start && i !== start) { start = i; pass = 1; }
+    if (e && e.a === i && !e.nums.includes(pass)) {
+      const chain = [e];
+      let k = brackets.indexOf(e);
+      while (k + 1 < brackets.length && brackets[k + 1].a === chain.at(-1).z + 1) chain.push(brackets[++k]);
+      const nx = chain.slice(1).find((c) => c.nums.includes(pass));
+      if (nx) i = nx.a; else { i = chain.at(-1).z + 1; start = i; pass = 1; }
+      continue;
+    }
+    out.push([i, pass]);
+    if (mk.end) {
+      const c = count.get(i) || 0;
+      if (c < mk.times - 1) { count.set(i, c + 1); pass++; i = start; continue; }
+      count.set(i, 0);
+      if (!e) { start = i + 1; pass = 1; }
+    }
+    if (e && e.z === i && !mk.end) {
+      const k = brackets.indexOf(e);
+      if (!(k + 1 < brackets.length && brackets[k + 1].a === i + 1)) { start = i + 1; pass = 1; }
+    }
+    i++;
+  }
+  return out;
 }

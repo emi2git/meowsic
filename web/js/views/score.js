@@ -329,12 +329,12 @@ export function scoreBody(root, it, { perform = false } = {}) {
   const makeVoice = () => {
     voice?.destroy();
     voice = new VoicePlayer({ url: `/api/items/${encodeURIComponent(it.id)}/vocal?v=${encodeURIComponent(it.vocalAudio)}-${it.updatedAt || 0}`,
-      bpm: it.vocalBpm || tune.bpm, beats: tune.beats, endQ: midi.endQ, onTick: place, onEnd: onEnded });
+      bpm: it.vocalBpm || tune.bpm, beats: tune.beats, endQ: midi.endQ, onTick: place, onEnd: onEnded, segments: midi.segments });
   };
   const makePlayer = () => {
     const was = midi;
     player?.pause();
-    midi = new ScorePlayer({ notes: real ? info.notes : tuneNotes(tune, version), bpm: tune.bpm, beats: tune.beats, onTick: place, onEnd: onEnded });
+    midi = new ScorePlayer({ notes: real ? info.notes : tuneNotes(tune, version), bpm: tune.bpm, beats: tune.beats, onTick: place, onEnd: onEnded, segments: real ? info.segments : null });
     if (was) { midi.rate = was.rate; midi.loop = was.loop; }
     midi.shift = it.transpose || 0;
     if (!was && it.rate) midi.rate = it.rate;

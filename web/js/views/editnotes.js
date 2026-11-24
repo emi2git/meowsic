@@ -35,6 +35,7 @@ import { isTouch } from '../device.js';
 import { barFixSheet, fixBarOp } from '../incomplete.js';
 import { lyricMode } from './lyricmode.js'; // [lyrics]
 import { attachMidi } from '../midiedit.js';
+import { barMarks } from '../musicxml.js';
 
 export const post = (path, body) => fetch('/api' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : j.detail?.message || `Failed (${r.status})`); return j; });
@@ -493,6 +494,68 @@ export async function editNotes(view, it, host, opts = {}) {
     at.onchange = () => { clef.value = +at.value === 1 && n > 1 ? 'treble' : +at.value > n ? 'bass' : clef.value; };
     s.el.querySelector('[data-ok]').onclick = () => { s.close(); run({ op: 'addstaff', at: +at.value, clef: clef.value }); };
   };
+  // ---- bar structure (structops.py): pickup, key / time from here, repeats, endings ----
+  const KEYS = [['C♭', 'a♭'], ['G♭', 'e♭'], ['D♭', 'b♭'], ['A♭', 'f'], ['E♭', 'c'], ['B♭', 'g'], ['F', 'd'], ['C', 'a'], ['G', 'e'], ['D', 'b'], ['A', 'f♯'], ['E', 'c♯'], ['B', 'g♯'], ['F♯', 'd♯'], ['C♯', 'a♯']];
+  // what is in force at bar b (0-based) of the edited part: key, time, repeat signs, the ending over it
+  const barState = (b) => {
+    const doc = new DOMParser().parseFromString(cur().xml, 'application/xml');
+    const part = doc.querySelectorAll('part')[base.part] || doc.querySelector('part');
+    const ms = [...part.querySelectorAll(':scope > measure')];
+    let fifths = 0, time = [4, 4];
+    ms.slice(0, b + 1).forEach((m) => {
+      const k = m.querySelector('attributes key fifths'); if (k) fifths = +k.textContent;
+      const t = m.querySelector('attributes time'); if (t) time = [+t.querySelector('beats').textContent, +t.querySelector('beat-type').textContent];
+    });
+    return { fifths, time, mark: barMarks(part)[b] || {}, pickup: ms[0]?.getAttribute('implicit') === 'yes', bars: ms.length };
+  };
+  const pickupSheet = () => {
+    const st = barState(0), n = st.time[0];
+    const s = modal(`<h2>Pickup</h2><p class="muted">The first bar becomes a short bar (an upbeat) of this many beats: its last beats stay. Full bar puts it back.</p>
+      <div class="np-choices">${Array.from({ length: n }, (_, k) => k).map((k) => `<button data-b="${k}">${k ? plural(k, 'beat') : 'Full bar'}</button>`).join('')}</div>
+      <div class="modal-actions"><button data-close>Cancel</button></div>`);
+    s.el.querySelectorAll('[data-b]').forEach((x) => (x.onclick = () => { s.close(); run({ op: 'pickup', beats: +x.dataset.b }, null, { bar: 0 }); }));
+  };
+  const keySheet = (b) => {
+    const st = barState(b);
+    // the circle of fifths: C on top, sharps clockwise, flats anticlockwise; 6–7 sharps / flats on an inner ring
+    const pos = (f) => { const a = ((f + 12) % 12) * (Math.PI / 6) - Math.PI / 2, r = Math.abs(f) >= 6 && f !== 6 ? 21 : 42; return [50 + r * Math.cos(a), 50 + r * Math.sin(a)]; };
+    const s = modal(`<h2>Key from bar ${b + 1}</h2><p class="muted">The notes keep their pitch; accidentals are written for the new key.</p>
+      <div class="np-fifths" role="group" aria-label="Circle of fifths">${KEYS.map(([maj, min], k) => { const f = k - 7, [x, y] = pos(f); return `<button data-f="${f}" class="${f === st.fifths ? 'on' : ''}" style="left:${x}%;top:${y}%" title="${maj} major / ${min} minor · ${f ? `${Math.abs(f)} ${f > 0 ? 'sharp' : 'flat'}${Math.abs(f) > 1 ? 's' : ''}` : 'no sharps or flats'}" aria-label="${maj} major">${maj}<small>${min}</small></button>`; }).join('')}</div>
+      <div class="modal-actions"><button data-close>Cancel</button></div>`);
+    s.el.querySelectorAll('[data-f]').forEach((x) => (x.onclick = () => { s.close(); run({ op: 'keysig', bar: b, fifths: +x.dataset.f }, null, { bar: b }); }));
+  };
+  const timeSheet = (b) => {
+    const st = barState(b), now = st.time.join('/');
+    const common = ['2/4', '3/4', '4/4', '2/2', '3/8', '6/8', '9/8', '12/8', '5/4'];
+    const s = modal(`<h2>Time from bar ${b + 1}</h2><p class="muted">Now ${now}. The music from here to the next time change is barred again (notes over a new bar line are tied).</p>
+      <div class="np-choices">${common.map((t) => `<button data-t="${t}" class="${t === now ? 'on' : ''}">${t}</button>`).join('')}</div>
+      <div class="np-addstaff"><label>Other <input id="np-tb" type="number" min="1" max="32" value="${st.time[0]}" inputmode="numeric"> / <select id="np-tt">${[2, 4, 8, 16].map((x) => `<option ${x === st.time[1] ? 'selected' : ''}>${x}</option>`).join('')}</select></label></div>
+      <div class="modal-actions"><button data-close>Cancel</button><button class="primary" data-ok>Use</button></div>`);
+    const use = (t) => { const [n, d] = t.split('/').map(Number); s.close(); run({ op: 'timesig', bar: b, beats: n, beatType: d }, null, { bar: b }); };
+    s.el.querySelectorAll('[data-t]').forEach((x) => (x.onclick = () => use(x.dataset.t)));
+    s.el.querySelector('[data-ok]').onclick = () => use(`${s.el.querySelector('#np-tb').value}/${s.el.querySelector('#np-tt').value}`);
+  };
+  // the bars the structure tools take: the range's, else the picked notes' bars, else the bar picked
+  const barsPicked = (t) => {
+    if (rng) { const s = starts(); return [placeOf(rng.a, s)[0], placeOf(Math.max(rng.a, rng.b - 1e-3), s)[0]]; }
+    if (sel.size > 1) { const bs = picked().map((n) => n.bar); return [Math.min(...bs), Math.max(...bs)]; }
+    return t ? [t.bar, t.bar] : null;
+  };
+  const structEntries = (t) => {
+    const bs = barsPicked(t);
+    if (!t || !bs) return [];
+    const b = t.bar, st = barState(b), [b0, b1] = bs, first = barState(b0);
+    const span = b0 === b1 ? `bar ${b0 + 1}` : `bars ${b0 + 1}–${b1 + 1}`;
+    const endingOn = (k) => { const e = first.mark.ending; return !!e && e.a === b0 && e.z === b1 && e.nums.includes(k); };
+    const out = [];
+    if (b === 0) out.push({ label: st.pickup ? 'Pickup: change or remove…' : 'Pickup: n beats…', run: pickupSheet });
+    out.push({ label: `Key from bar ${b + 1}…`, run: () => keySheet(b) }, { label: `Time from bar ${b + 1}…`, run: () => timeSheet(b) }, '-',
+      { label: `Start repeat at bar ${b0 + 1}`, checked: !!first.mark.start, run: () => run({ op: 'repeat', bar: b0, kind: 'start' }, null, { bar: b0 }) },
+      { label: `End repeat after bar ${b1 + 1}`, checked: !!barState(b1).mark.end, run: () => run({ op: 'repeat', bar: b1, kind: 'end' }, null, { bar: b1 }) },
+      { label: `Ending 1 over ${span}`, checked: endingOn(1), run: () => run({ op: 'ending', bars: [b0, b1], number: '1' }, null, { bar: b0 }) },
+      { label: `Ending 2 over ${span}`, checked: endingOn(2), run: () => run({ op: 'ending', bars: [b0, b1], number: '2' }, null, { bar: b0 }) }, '-');
+    return out;
+  };
   const barMenu = (anchor) => {
     const t = target(), n = nStaves(), entries = [];
     if (sel.size) entries.push({ label: 'Whole bar: pick every note of these bars (B)', run: wholeBar }, '-');
@@ -509,7 +572,7 @@ export async function editNotes(view, it, host, opts = {}) {
         } });
       }
       if (n === 1) entries.push({ label: 'Add a left-hand staff', run: () => run({ op: 'addstaff', at: 2, clef: 'bass' }) });
-      entries.push('-',
+      entries.push('-', ...structEntries(t),
         { label: `Insert an empty bar before ${label}`, run: () => run({ op: 'insbar', bar: b, after: false }) },
         { label: `Insert an empty bar after ${label}`, run: () => run({ op: 'insbar', bar: b, after: true }) },
         { label: `Delete ${label}`, danger: true, run: async () => {

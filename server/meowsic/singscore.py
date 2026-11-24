@@ -51,6 +51,9 @@ def read(xml: str, verse=None) -> dict:
     root = _strip_ns(ET.fromstring(xml.encode('utf-8') if isinstance(xml, str) else xml))
     part = root.find('part')
     if part is None: raise ValueError('No part in this MusicXML')
+    if verse is None:  # repeats and endings: sung as played, verse 1 the first time through, verse 2 the second …
+        from .structops import has_repeats, unroll
+        if has_repeats(part): root = unroll(root); part = root.find('part')
     notes, chords = [], []
     div, beats, beat_type, bpm, t, end = 1.0, 4, 4, None, 0.0, 0.0
     first_voice, multi, lyrics = None, False, {}

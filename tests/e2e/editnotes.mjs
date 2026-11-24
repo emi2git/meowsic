@@ -893,6 +893,108 @@ async function rangeTools(name, vp) {
   await page.close();
 }
 if (process.env.ONLY === 'range') { await rangeTools('Mac', MAC); await rangeTools('iPad', IPAD); await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
+// ---- bar structure in Bar ▾: pickup, key / time from here, repeat signs, 1st / 2nd endings — and playback follows
+// the repeats (the player's stretches and the notes it actually plays, in order) ----
+async function structure(name, vp) {
+  console.log(`\nBar structure ${name}`);
+  const touch = !!vp.hasTouch;
+  const title = `Structure ${name} ${stamp}`;
+  const sc = await send('POST', '/items', { kind: 'score', title, musicxmlText: scoreXml(title) });
+  const page = await b.newPage(); await page.setViewport(vp);
+  page.on('pageerror', (e) => errs.push(`structure ${name}: ${e.message}`));
+  page.on('console', (m) => m.type() === 'error' && !/404|409|favicon/.test(m.text()) && errs.push(`structure ${name}: ${m.text()}`));
+  const EN = (f, ...a) => page.evaluate(f, ...a);
+  const idle = async () => { for (let i = 0; i < 60; i++) { await sleep(150); if (!(await EN(() => window.__editNotes?.busy))) break; } await sleep(700); };
+  const act = async (a) => { if (touch) await page.tap(`.notes-panel [data-a="${a}"]`); else await page.click(`.notes-panel [data-a="${a}"]`); await sleep(200); };
+  const pickIn = (bar) => EN((bar) => window.__editNotes.select([window.__editNotes.notes.find((n) => n.bar === bar && n.staff === 1 && !n.rest).ref]), bar);
+  const menuItems = () => page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
+  const choose = async (re) => {
+    const i = await page.$$eval('.menu button', (e, src) => e.findIndex((x) => new RegExp(src).test(x.textContent.trim())), re.source);
+    if (i < 0) return false;
+    const sel = `.menu button:nth-of-type(${i + 1})`;
+    const h = (await page.$$('.menu button'))[i];
+    if (touch) await h.tap(); else await h.click();
+    await sleep(250);
+    return true;
+  };
+  const sheetBtn = async (sel) => { const h = await page.$(`.modal ${sel}`); if (touch) await h.tap(); else await h.click(); await sleep(200); };
+  const xml = () => EN(() => window.__editNotes.xml);
+  const bars = (x) => x.split('<measure').length - 1;
+  await page.goto(`${BASE}#/item/${sc.id}`, { waitUntil: 'networkidle0' });
+  await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(600);
+  await page.evaluate(() => document.querySelector('#it-more').click()); await sleep(200);
+  await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Edit notes…').click());
+  await page.waitForSelector('.notes-panel', { timeout: 8000 }); await sleep(600);
+
+  // 1. pickup (first bar only): 1 beat — the bar is short but not "incomplete"
+  await pickIn(0); await act('barmenu');
+  check('Bar ▾ on bar 1: Pickup, Key, Time, repeats, endings', (await menuItems()).some((t) => /^Pickup/.test(t)) && (await menuItems()).some((t) => /^Key from bar 1/.test(t)) && (await menuItems()).some((t) => /^Time from bar 1/.test(t)) && (await menuItems()).some((t) => /^Ending 2 over bar 1/.test(t)), (await menuItems()).join('|'));
+  await choose(/^Pickup/);
+  await sheetBtn('[data-b="1"]'); await idle();
+  let x = await xml();
+  check('Pickup 1 beat: bar 1 is a short (implicit) bar with its last beat', /<measure[^>]*implicit="yes"/.test(x) && (await EN(() => window.__editNotes.notes.filter((n) => n.bar === 0 && n.staff === 1 && !n.rest).map((n) => n.midi).join())) === '67');
+  check('…not shown as incomplete', !(await page.$('.ib-badge')));
+  await pickIn(1); await act('barmenu');
+  check('Pickup is offered on the first bar only', !(await menuItems()).some((t) => /^Pickup/.test(t)));
+  await page.keyboard.press('Escape'); await page.evaluate(() => document.querySelector('.menu')?.remove());
+  await act('undo'); await idle();
+
+  // 2. key from bar 2: the circle of fifths
+  await pickIn(1); await act('barmenu'); await choose(/^Key from bar 2/);
+  check('Key from here: a circle of fifths of 15 keys, C on', (await page.$$eval('.np-fifths button', (e) => e.length)) === 15 && (await page.$eval('.np-fifths button.on', (e) => e.dataset.f)) === '0');
+  if (name === 'Mac') await page.screenshot({ path: `${SHOTS}/Structure-key-${name}.png` });
+  await sheetBtn('[data-f="2"]'); await idle();
+  x = await xml();
+  check('D major from bar 2: a key change there, pitches the same', /<measure number="2">[\s\S]*?<fifths>2<\/fifths>/.test(x.split('<measure number="3"')[0]));
+  check('…F♯ and C♯ need naturals now: written', (x.split('<measure number="3"')[0].split('<measure number="2"')[1].match(/<accidental>natural<\/accidental>/g) || []).length >= 1);
+
+  // 3. time from bar 3: 3/4 — barred again
+  await pickIn(2); await act('barmenu'); await choose(/^Time from bar 3/);
+  await sheetBtn('[data-t="3/4"]'); await idle();
+  x = await xml();
+  check('3/4 from bar 3: bars 3–4 (8 beats) barred again as 3 bars of 3/4, all full', bars(x) === 5 && barsFull(x), `${bars(x)} bars`);
+  await act('undo'); await idle(); await act('undo'); await idle();
+  check('Undo twice: 4 bars in 4/4 again', bars(await xml()) === 4 && !/<fifths>2/.test(await xml()));
+
+  // 4. repeats and endings: start repeat at bar 1, ending 1 over bar 3 (an end repeat comes with it), ending 2 over bar 4
+  await pickIn(0); await act('barmenu'); await choose(/^Start repeat at bar 1/); await idle();
+  await pickIn(2); await act('barmenu'); await choose(/^Ending 1 over bar 3/); await idle();
+  await pickIn(3); await act('barmenu'); await choose(/^Ending 2 over bar 4/); await idle();
+  x = await xml();
+  check('repeat sign, ending 1 with its end repeat, ending 2', /<repeat direction="forward"/.test(x) && /<repeat direction="backward"/.test(x) && /<ending number="1" type="start"/.test(x) && /<ending number="2" type="start"/.test(x));
+  await pickIn(2); await act('barmenu');
+  check('Bar ▾ shows them ticked', (await page.$$eval('.menu button[aria-checked="true"]', (e) => e.map((x) => x.textContent.trim()))).some((t) => /^Ending 1/.test(t)));
+  await page.evaluate(() => document.querySelector('.menu')?.remove());
+  if (name === 'Mac') await page.screenshot({ path: `${SHOTS}/Structure-repeats-${name}.png` });
+  check('the score draws the volta brackets', (await page.$$eval('#osmd svg text', (e) => e.map((t) => t.textContent))).some((t) => /^1\.?$/.test(t.trim())));
+  const segs = await EN(() => window.__score.player.segments);
+  check('the player plays bars 1 2 3 · 1 2 · 4', JSON.stringify(segs) === JSON.stringify([[0, 12], [0, 8], [12, 16]]), JSON.stringify(segs));
+  // play it fast and listen: the notes come in repeat order
+  await EN(() => window.__editNotes.select([])); await sleep(200);
+  await EN(() => { const p = window.__score.player; p.stop?.(); p.rate = 6; });
+  await act('playhere'); // nothing picked → from where the player is (the start)
+  for (let i = 0; i < 40 && !(await EN(() => window.__score.player.playing)); i++) await sleep(100); // the sound starts
+  for (let i = 0; i < 80 && (await EN(() => window.__score.player.playing)); i++) await sleep(250);
+  const heard = await EN(() => window.__score.player.heard.map(([q]) => q));
+  const seq = []; for (const q of heard) { const bar = Math.floor(q / 4) + 1; if (seq.at(-1) !== bar) seq.push(bar); }
+  check('played in order: bars 1 2 3 1 2 4', seq.join(' ') === '1 2 3 1 2 4', seq.join(' '));
+  check('…it ended, the player went back to the start', !(await EN(() => window.__score.player.playing)) && (await EN(() => window.__score.player.played.join())) === '0,1,2');
+  await EN(() => { window.__score.player.rate = 1; });
+
+  // 5. save: the score (not editing) plays the repeats too
+  if (!touch) {
+    await act('save'); await sleep(300);
+    await page.evaluate(() => document.querySelector('.np-save [data-mode="this"]').click()); await sleep(2500);
+    check('saved: the player follows the repeats', JSON.stringify(await EN(() => window.__score.player.segments)) === JSON.stringify([[0, 12], [0, 8], [12, 16]]));
+  } else {
+    await EN(() => { window.__editNotes.close(); }); await sleep(300);
+    await page.evaluate(() => [...document.querySelectorAll('.modal-wrap button')].find((x) => x.textContent.trim() === 'Close')?.click()); await sleep(800);
+    check('closed without saving: no repeats', !(await EN(() => window.__score.player.segments)));
+  }
+  await send('POST', '/items/trash', { ids: [sc.id] }).catch(() => {});
+  await page.close();
+}
+if (process.env.ONLY === 'structure') { await structure('Mac', MAC); await structure('iPad', IPAD); await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
 if (process.env.ONLY === 'fits') { await editBarFits(); await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
 if (process.env.ONLY === 'bar') { await barTools('Mac', MAC); await barTools('iPad', IPAD); await b.close(); console.log(`\n${pass} passed, ${fail} failed`); if (errs.length) errs.forEach((e) => console.log('  ', e)); process.exit(fail || errs.length ? 1 : 0); }
 // ---- rests: pick one in either hand (whole-bar rests too), change its length, Undo; Fill next rest ----
@@ -1106,6 +1208,8 @@ await barTools('Mac', MAC);
 await barTools('iPad', IPAD);
 await rangeTools('Mac', MAC);
 await rangeTools('iPad', IPAD);
+await structure('Mac', MAC);
+await structure('iPad', IPAD);
 await editBarFits();
 await b.close();
 if (errs.length) { console.log('\nconsole errors:'); errs.forEach((e) => console.log('  ', e)); }

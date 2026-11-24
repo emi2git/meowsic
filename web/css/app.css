@@ -1230,6 +1230,12 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .viewer .nh-on path, .viewer .nh-on ellipse, .viewer .nh-on rect { fill: var(--acc) !important; stroke: var(--acc) !important; }
 .np-barpick { fill: var(--acc); fill-opacity: .06; pointer-events: none; }
 .np-barpick.on { fill-opacity: .16; }
+.np-choices { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.np-choices button { min-height: 44px; min-width: 64px; }
+.np-choices button.on, .np-fifths button.on { background: var(--acc-soft); border-color: var(--acc); color: var(--acc-text); }
+.np-fifths { position: relative; width: min(360px, 84vw); aspect-ratio: 1; margin: 8px auto 4px; border-radius: 50%; background: var(--bg2); }
+.np-fifths button { position: absolute; transform: translate(-50%, -50%); min-width: 50px; min-height: 44px; padding: 2px 6px; border-radius: 22px; display: flex; flex-direction: column; align-items: center; line-height: 1.05; font-weight: 600; }
+.np-fifths button small { font-weight: 400; font-size: 11px; opacity: .7; }
 .np-range { fill: #2f7de1; fill-opacity: .10; stroke: #2f7de1; stroke-width: 2.5; stroke-opacity: .75; pointer-events: none; }
 .np-acts .np-clip button { min-width: 40px; padding: 0 9px; display: inline-flex; align-items: center; justify-content: center; }
 .np-clip .ic { width: 19px; height: 19px; }
