@@ -64,12 +64,12 @@ for (const [dev, vp] of DEVICES) {
   check(`${dev}: Add score fits`, await noHScroll());
   await p.screenshot({ path: `${SHOTS}/${dev}-4-score.png` });
 
-  // Help: not in the menu, a link on the Settings page (iPhone: More → Settings)
+  // Help: not in the menu, a link on the App page (was Settings; iPhone: More → App)
   if (phone) {
     await p.click('#tab-more'); await sleep(250);
     const util = await p.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
-    check(`${dev}: More menu has Settings and Keyboard, no Help`, util.includes('Settings') && util.includes('Keyboard') && !util.includes('Help'), util.join('|'));
-    await p.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'Settings').click()); await sleep(400);
+    check(`${dev}: More menu has App and Keyboard, no Help`, util.includes('App') && util.includes('Keyboard') && !util.includes('Help'), util.join('|'));
+    await p.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.trim() === 'App').click()); await sleep(400);
   } else {
     check(`${dev}: no Help in the left bar`, !(await p.$('#side a[href="#/help"]')));
     await p.click('#side a[href="#/settings"]'); await sleep(400);
