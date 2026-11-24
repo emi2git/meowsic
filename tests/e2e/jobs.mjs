@@ -26,7 +26,7 @@ console.log('   version job took', Math.round((Date.now() - t0) / 1000), 's');
 const all = await api('/items?kind=score'); const items = (done?.result || []).map((id) => all.find((x) => x.id === id));
 check('lead + clear became two new score items', items.map((x) => x?.version).sort().join() === 'clear,lead', items.map((x) => x?.version).join());
 await page.goto(BASE + '#/add-score', { waitUntil: 'networkidle0' }); await sleep(1500);
-check('UI lists the new versions', (await page.$eval('#sf-jobs', (e) => e.textContent)).includes('Open Lead sheet'));
+check('finished jobs are not listed on Add score (they live in Activities)', !(await page.$eval('#sf-jobs', (e) => e.textContent)).includes('Memory'));
 await page.goto(BASE + '#/library?kind=score', { waitUntil: 'networkidle0' }); await sleep(800);
 check('library shows them', (await page.$$eval('#lib-rows tr.row', (e) => e.length)) === Math.min(50, scoresBefore + 2));
 const lead = items.find((x) => x.version === 'lead');
@@ -41,7 +41,7 @@ let tj = null; const t1 = Date.now();
 for (let i = 0; i < 300 && !(tj && ['done', 'failed'].includes(tj.status)); i++) { await sleep(2000); tj = (await api('/jobs')).find((j) => !oldJobs.has(j.id) && j.kind === 'transcribe'); }
 check('transcription job finishes', tj?.status === 'done', JSON.stringify(tj?.log?.slice(-3)));
 console.log('   transcription took', Math.round((Date.now() - t1) / 1000), 's');
-await sleep(3000);
-check('UI shows Open for the transcription', (await page.$eval('#sf-jobs', (e) => e.textContent)).includes('Open Original'));
+let gone = false; for (let i = 0; i < 20 && !gone; i++) { await sleep(500); gone = await page.$eval('#sf-jobs', (e) => e.hidden && !e.textContent.trim()); }
+check('finished transcription leaves Add score', gone, await page.$eval('#sf-jobs', (e) => e.textContent));
 console.log(`\n${pass} passed, ${fail} failed`); console.log(errs.length ? 'errors:\n' + errs.join('\n') : 'no page errors');
 await b.close();

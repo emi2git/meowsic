@@ -370,11 +370,20 @@ check('no version picker on Add score (a recording always makes the Original)', 
 console.log('   at Start:', await page.$eval('#sf-go', (b) => { b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); const e = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return e.tagName + '#' + e.id + '.' + e.className + ' disabled:' + b.disabled; }));
 await page.click('#sf-go'); await sleep(400);
 check('job listed', (await text('#sf-jobs')).includes('Test Song'), (await page.evaluate(() => location.hash + ' | toast:' + (document.querySelector('.toast')?.textContent || '') + ' | url:' + document.querySelector('#sf-url')?.value + ' | title:' + document.querySelector('#sf-title')?.value + ' | on:' + [...document.querySelectorAll('#sf-out .card-opt.on')].map((x) => x.textContent.slice(0, 12)) + ' | ' + document.querySelector('#main').textContent.replace(/\s+/g, ' ').slice(0, 300))));
+check('in-progress list sits below the Start form', await page.evaluate(() => document.querySelector('#sf').getBoundingClientRect().bottom <= document.querySelector('#sf-jobs').getBoundingClientRect().top + 1 && !!(document.querySelector('#sf').compareDocumentPosition(document.querySelector('#sf-jobs')) & Node.DOCUMENT_POSITION_FOLLOWING)));
+check('running job is one compact card (no stage list)', (await count('#sf-jobs .job.compact')) === 1 && (await count('#sf-jobs .stages')) === 0 && (await count('#sf-jobs progress')) === 1);
+for (const [w, h] of [[390, 844], [820, 1180]]) {
+  await page.setViewport({ width: w, height: h }); await sleep(150);
+  check(`Add score in-progress fits at ${w}px`, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll('#sf-jobs .job')].every((e) => e.getBoundingClientRect().right <= innerWidth)));
+}
+await page.setViewport({ width: 1366, height: 1024 }); await sleep(150);
 let done = false;
 for (let i = 0; i < 60 && !done; i++) { await sleep(1000); done = (await db()).items.filter((x) => x.title === 'Test Song' && x.kind === 'score').length === 1; }
 check('one entry: the Original', done && (await db()).items.filter((x) => x.title === 'Test Song').map((x) => x.version).join() === 'original');
 check('new entry tagged Original', (await db()).items.filter((x) => x.title === 'Test Song').map((x) => x.tags.join()).join('|') === 'Original');
-check('Open Original button', (await text('#sf-jobs')).includes('Open Original'));
+await sleep(800);
+check('finished job leaves Add score (it is in Activities)', !(await text('#sf-jobs')).includes('Test Song') && (await page.$eval('#sf-jobs', (e) => e.hidden)));
+check('no done or failed jobs on Add score', (await count('#sf-jobs .job.done, #sf-jobs .job.failed, #sf-jobs .job.cancelled, #sf-jobs [data-dismiss]')) === 0);
 
 console.log('Collections, tags, bin, print');
 await go('#/library?tags=Ukulele%20club');

@@ -1,4 +1,4 @@
-"""Make it sing (beta): a score with English or Chinese lyrics -> a sung vocal + soft piano, saved with the score.
+"""Make it sing (beta): a score with English, Vietnamese or Chinese lyrics -> a sung vocal + soft piano, saved with the score.
 
 POST /api/items/{id}/sing   -> a 'sing' job (sing/sing.py in SoulX-Singer's own venv, in a subprocess);
                                optional body {voice, octave}: the singer (default zh_target, a low male voice, for
