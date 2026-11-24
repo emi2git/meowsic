@@ -10,6 +10,11 @@ export function backToLibrary() {
   if (history.length > 1) history.back(); else location.hash = '#/library?kind=sheet';
 }
 
+// a tool or editor is open (Fit lyrics, Edit notes, pen, Simple piano, Check bars, ukulele chords,
+// Info or any sheet / menu, crop): swipe up / down then never closes the view — only plain viewing does
+const TOOLS = '.modal-wrap, .menu, .fitly, .fitting, .editbar, .notes-panel, .editing, .inkbar, .inking, .sp-panel, .simplifying, .cb-panel, .uke-panel, .cu-frames';
+export const toolOpen = () => !!document.querySelector(TOOLS);
+
 export function attachSwipe(el, { onLeft, onRight, onUp = backToLibrary, onDown, canStart = () => true, scroller = null, upAtEnd = false }) {
   if (!isTouch()) return () => {};
   let ts = null;
@@ -27,6 +32,7 @@ export function attachSwipe(el, { onLeft, onRight, onUp = backToLibrary, onDown,
     const t = e.changedTouches[0], dx = t.clientX - s.x, dy = t.clientY - s.y;
     if (Date.now() - s.t > 800) return;
     if (Math.abs(dx) > 60 && Math.abs(dx) > 1.5 * Math.abs(dy) && !wide()) return dx < 0 ? onLeft?.() : onRight?.();
+    if (toolOpen()) return;
     if (dy < -90 && Math.abs(dy) > 2 * Math.abs(dx) && (!upAtEnd || s.end)) return onUp?.();
     if (dy > 90 && Math.abs(dy) > 2 * Math.abs(dx)) onDown?.();
   };
