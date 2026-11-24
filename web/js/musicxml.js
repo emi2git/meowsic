@@ -117,18 +117,18 @@ export function musicXml(tune, version) {
   return head(tune.title, ['Piano']) + `<part id="P1">${pianoPart(tune, { melody: true, harmony: true })}</part></score-partwise>`;
 }
 
-// playback notes in quarter-note time: [{q, d, n, v}]
+// playback notes in quarter-note time: [{q, d, n, v, s}] (s: 0 = the top staff, 1 = the bass staff)
 export function tuneNotes(tune, version) {
   const out = [];
   let q0 = 0;
   tune.measures.forEach((m) => {
     const mb = barBeats(tune, m);
     let q = q0;
-    if (version !== 'accomp') for (const [p, d] of m.mel) { if (p !== 'r') out.push({ q, d, n: midiOf(p) + (version === 'duet' ? 12 : 0), v: 96 }); q += d; }
+    if (version !== 'accomp') for (const [p, d] of m.mel) { if (p !== 'r') out.push({ q, d, n: midiOf(p) + (version === 'duet' ? 12 : 0), v: 96, s: 0 }); q += d; }
     const { bass, rh } = voicing(m.chord);
-    if (version === 'easy' || version === 'clear' || mb !== 4) out.push({ q: q0, d: mb, n: midiOf(bass), v: 70 });
-    else { out.push({ q: q0, d: 2, n: midiOf(bass), v: 70 }); out.push({ q: q0 + 2, d: 2, n: midiOf(bass) + 7, v: 62 }); }
-    if (['vocal', 'duet', 'accomp', 'pro'].includes(version)) rh.forEach((p) => out.push({ q: q0, d: mb, n: midiOf(p), v: 52 }));
+    if (version === 'easy' || version === 'clear' || mb !== 4) out.push({ q: q0, d: mb, n: midiOf(bass), v: 70, s: 1 });
+    else { out.push({ q: q0, d: 2, n: midiOf(bass), v: 70, s: 1 }); out.push({ q: q0 + 2, d: 2, n: midiOf(bass) + 7, v: 62, s: 1 }); }
+    if (['vocal', 'duet', 'accomp', 'pro'].includes(version)) rh.forEach((p) => out.push({ q: q0, d: mb, n: midiOf(p), v: 52, s: 0 }));
     q0 += mb;
   });
   return out.sort((a, b) => a.q - b.q);
@@ -143,8 +143,11 @@ export function xmlInfo(text) {
   const barQ = []; // where each bar of the first part starts, in quarters
   const marks = []; // repeats and endings of each bar of the first part (playOrder)
   let chords = null; // the chord names (<harmony>) of the first part that has any: [{q, name}]
+  const partStaves = []; // how many staves each part has; a note's s = its staff counted over all parts (0 = the top one)
+  let sBase = 0;
   for (const part of doc.querySelectorAll('part')) {
     const first = !barQ.length;
+    let nst = 1;
     const hs = [];
     if (first) marks.push(...barMarks(part));
     let div = 1, t = 0; // t in divisions
@@ -155,6 +158,7 @@ export function xmlInfo(text) {
       for (const el of m.children) {
         if (el.tagName === 'attributes') {
           div = +(el.querySelector('divisions')?.textContent || div);
+          nst = Math.max(nst, +(el.querySelector('staves')?.textContent || 1) || 1);
           const b = el.querySelector('time > beats');
           if (b && !notes.length) beats = +b.textContent || beats;
         } else if (el.tagName === 'sound' || el.tagName === 'direction') {
@@ -173,13 +177,15 @@ export function xmlInfo(text) {
           const chord = !!el.querySelector('chord');
           const start = chord ? last : t;
           const p = el.querySelector('pitch');
+          const sk = Math.max(1, +(el.querySelector(':scope > staff')?.textContent || 1) || 1);
+          nst = Math.max(nst, sk);
           if (p && !el.querySelector('rest')) {
             const midi = 12 * (+p.querySelector('octave').textContent + 1) + STEP_PC[p.querySelector('step').textContent] + +(p.querySelector('alter')?.textContent || 0);
             const tieOf = (k) => el.querySelector(`tie[type="${k}"], notations > tied[type="${k}"]`);
             // a tie joins the sound: the tied-to note lengthens the one it is tied from (no new attack)
             const held = tieOf('stop') && tied.get(midi);
             if (held) held.d = start / div + d / div - held.q;
-            else if (!tieOf('stop')) { const nt = { q: start / div, d: d / div, n: midi, v: 90 }; notes.push(nt); if (tieOf('start')) tied.set(midi, nt); }
+            else if (!tieOf('stop')) { const nt = { q: start / div, d: d / div, n: midi, v: 90, s: sBase + sk - 1 }; notes.push(nt); if (tieOf('start')) tied.set(midi, nt); }
             if (held && !tieOf('start')) tied.delete(midi);
             else if (held) tied.set(midi, held);
           }
@@ -188,6 +194,7 @@ export function xmlInfo(text) {
         }
       }
     }
+    partStaves.push(nst); sBase += nst;
     if (!chords && hs.length) chords = hs.sort((a, b) => a.q - b.q).filter((h, i, a) => !i || Math.abs(h.q - a[i - 1].q) > 1e-6);
   }
   // the bars as they are played (repeats, 1st / 2nd endings): [[from, to] in quarters] for the player, or null
@@ -201,7 +208,25 @@ export function xmlInfo(text) {
       if (last && Math.abs(last[1] - a) < 1e-6) last[1] = z; else segments.push([a, z]);
     }
   }
-  return { notes: notes.sort((a, b) => a.q - b.q), bpm: bpm || 100, beats, totalQ: end, barQ, order, segments, chords: chords || [] };
+  return { notes: notes.sort((a, b) => a.q - b.q), bpm: bpm || 100, beats, totalQ: end, barQ, order, segments, chords: chords || [], staves: staffLabels(partStaves) };
+}
+
+// the staves' names for the hand picker (hands.js): a two-staff part is a piano (R over L); a one-staff part beside
+// a piano is a voice (V); anything else is numbered. partStaves: [staves of each part, in score order]
+export function staffLabels(partStaves) {
+  const total = partStaves.reduce((a, b) => a + b, 0);
+  if (total === 2) return ['R', 'L']; // two staves: the top one is the right hand
+  const pianos = partStaves.filter((k) => k === 2).length, voices = partStaves.filter((k) => k === 1).length;
+  const out = []; let pn = 0, vn = 0, i = 0;
+  for (const k of partStaves) {
+    for (let j = 0; j < k; j++) {
+      i++;
+      if (k === 2) { pn++; const suf = pianos > 1 ? String(Math.ceil(pn / 2)) : ''; out.push((j ? 'L' : 'R') + suf); }
+      else if (k === 1 && total > 1 && pianos) { vn++; out.push(voices > 1 ? `V${vn}` : 'V'); }
+      else out.push(String(i));
+    }
+  }
+  return out;
 }
 
 // ---- repeats and endings (the same rules as server/meowsic/structops.py play_order) ----

@@ -41,6 +41,7 @@ Updated: 2026-11-24
 - Record your own singing/talking voice (future beta, in Feedback)
 
 ## Done today (live)
+- Hands: L · Both · R beside Play (score view + Edit notes); 3+ staves = a toggle per staff (V R L); plays only the chosen staves, at once while playing; chords follow the left hand; remembered per device (e2e hands)
 - Edit notes: drag the orange play line by its grip (touch + mouse), snaps to notes, across lines; hold at the page edge turns the page; dropping sets Play / ▶ From here start; dragging while playing seeks (e2e cuedrag)
 - Play chords: score toolbar toggle plays the chord names above the bars as piano chords with the score (repeats, from here, tempo, stop; remembered per device)
 - Add score: only running/queued jobs, compact, below the form; done/failed live in Activities

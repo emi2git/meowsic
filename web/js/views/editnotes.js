@@ -36,6 +36,7 @@ import { barFixSheet, fixBarOp } from '../incomplete.js';
 import { lyricMode } from './lyricmode.js'; // [lyrics]
 import { attachMidi } from '../midiedit.js';
 import { barMarks } from '../musicxml.js';
+import { handsHtml, handsClick } from '../hands.js';
 
 export const post = (path, body) => fetch('/api' + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   .then(async (r) => { const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : j.detail?.message || `Failed (${r.status})`); return j; });
@@ -262,6 +263,7 @@ export async function editNotes(view, it, host, opts = {}) {
     npBody.innerHTML = `<div class="np-row"><b class="np-title">${opts.title || 'Edit notes'}</b>
       <span class="np-count" id="np-count">${p.length ? `${plural(ns.length, 'note')}${rs.length ? ` · ${plural(rs.length, 'rest')}` : ''} ${rng ? 'in the range' : 'picked'}` : barPick ? `Bar ${barPick.bar + 1} picked (${staffName(barPick.staff, nst)})` : 'Pick notes on the score'}</span>
       ${midiCtl ? '<span class="np-midi-slot"></span>' : ''}<span class="grow"></span>
+      ${view.voice ? '' : handsHtml(view.staves || [], view.muted || [], { id: 'np-hands' })}
       <button data-a="playhere" class="np-play ${view.player?.playing ? 'on' : ''}" title="${view.player?.playing ? 'Pause (space)' : 'Play from the bar before the picked notes, as edited (space)'}" aria-label="${view.player?.playing ? 'Pause' : 'Play from here'}">${view.player?.playing ? '❚❚ Pause' : '▶ From here'}</button>
       ${pages ? `<span class="np-pages"><button class="icon-btn" data-a="prev" title="Page before (Shift ←)" aria-label="Page before" ${off(view.page > 1)}>${iconOn('left')}</button><span class="np-pageno" id="np-pageno">${view.page}/${view.pages}</span><button class="icon-btn" data-a="next" title="Next page (Shift →)" aria-label="Next page" ${off(view.page < view.pages)}>${iconOn('right')}</button></span>` : ''}
       <button class="icon-btn" data-a="undo" ${off(at > 0)} title="Undo (⌘Z)" aria-label="Undo">${iconOn('undo')}</button>
@@ -818,6 +820,7 @@ export async function editNotes(view, it, host, opts = {}) {
   // the orange line dragged (score.js): Play / ▶ From here start where it was dropped
   const onCueDrag = (e) => { if (closed) return; cueAt = e.detail.bar + 1; dropped = true; draw(); };
   host.addEventListener('cuedrag', onCueDrag);
+  host.addEventListener('handschange', onEnded); // Hands changed (here or on the toolbar): the picker draws again
   view.keepBar?.(true);
   const add = () => need([...sel], (refs) => run({ op: 'add', refs, by: 4 }));
   // ---- copy / cut / paste / repeat (rangeops.py) ----
@@ -974,7 +977,7 @@ export async function editNotes(view, it, host, opts = {}) {
     for (const t of ['touchstart', 'touchmove', 'touchend', 'click']) host.removeEventListener(t, stop, true);
     host.removeEventListener('contextmenu', noMenu, true);
     document.removeEventListener('keydown', onKey, true);
-    host.removeEventListener('ended', onEnded);
+    host.removeEventListener('ended', onEnded); host.removeEventListener('handschange', onEnded);
     host.removeEventListener('cuedrag', onCueDrag); view.keepBar?.(false);
     lyr?.destroy(); // [lyrics]
     box?.remove(); untag(); panel.remove();
@@ -985,6 +988,7 @@ export async function editNotes(view, it, host, opts = {}) {
   };
 
   panel.addEventListener('click', (e) => {
+    if (e.target.closest('#np-hands')) { const m = handsClick(e, view.staves, view.muted); if (m) view.setMuted(m); return; } // Hands (hands.js): at once, playing or not
     const l = e.target.closest('[data-len]');
     if (l) return act(() => setLen(+l.dataset.len));
     const a = e.target.closest('[data-a]')?.dataset.a;
