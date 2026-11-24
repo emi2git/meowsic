@@ -1,4 +1,4 @@
-// Feedback, on the Developer page (Utilities → Developer, #/developer; old #/feedback lands there): write or speak a note about the app (the text box gets the
+// Feedback, on the Developer page (App → Developer; iPhone More → Developer, #/developer; old #/feedback lands there): write or speak a note about the app (the text box gets the
 // mic from textinput.js), Submit saves it on the Mac (server/meowsic/feedback.py). Below: every note, newest
 // first, each one a collapsible row (time, status, first line); open: the full text, Edit / Remove.
 // Claude sets the status (New → In progress → Fixed / Won't fix); Fixed and Won't fix can't be edited or removed.
