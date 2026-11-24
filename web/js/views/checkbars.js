@@ -15,7 +15,8 @@ import { store } from '../store.js';
 import { go } from '../app.js';
 import { pageSrc } from './sheet.js';
 import { editNotes, post } from './editnotes.js';
-const LYRICS = 'lyrics unsure — use Fit lyrics';
+const LYRICS = 'lyrics unsure — fix in the score editor (Lyrics)';
+const OLD_LYRICS = 'lyrics unsure — use Fit lyrics'; // what older check.json files say (Fit lyrics is gone): shown as LYRICS
 
 const WHY = 'The two ways of reading the sheet did not agree here, or the bar was changed so its notes add up. Compare it with the printed bar.';
 const REASONS = { disagree: 'The two readers disagree about this bar.', filled: 'This bar did not add up, so notes or rests were changed to fill it.',
@@ -40,7 +41,7 @@ export async function checkList(it, xml) {
   } catch {}
   const why = (x) => {
     const r = x.reasons ?? x.reason ?? x.why;
-    const list = (Array.isArray(r) ? r : r ? [r] : []).map((s) => REASONS[s] || String(s));
+    const list = (Array.isArray(r) ? r : r ? [r] : []).map((s) => (s === OLD_LYRICS ? LYRICS : REASONS[s] || String(s)));
     return list.length ? list.map((s) => s[0].toUpperCase() + s.slice(1).replace(/\.?$/, '.')).join(' ') : WHY;
   };
   const pages = new Map((j?.pages || []).map((p) => [p.page, p]));
@@ -50,7 +51,7 @@ export async function checkList(it, xml) {
     bar: +x.bar, reason: why(x), page: x.page ?? null, box: box(x.box), image: pages.get(x.page)?.url || null, sheetId: j?.sheetId || null,
     alts: (x.alternatives || []).map((a, k) => ({ id: a.id, label: a.label || `Reading ${k + 2}`, measure: a.musicxml })).filter((a) => a.measure),
     lyrics: x.lyrics?.verse != null ? { verse: String(x.lyrics.verse), bars: (x.lyrics.bars || [x.bar]).map(Number) } : null,
-    lyricsOnly: (x.reasons || []).length > 0 && (x.reasons || []).every((r) => r === LYRICS),
+    lyricsOnly: (x.reasons || []).length > 0 && (x.reasons || []).every((r) => r === LYRICS || r === OLD_LYRICS),
   })).filter((x) => x.bar > 0 && marked.includes(x.bar)); // the score says which bars are left
   if (j) for (const bar of marked) if (!out.some((x) => x.bar === bar)) out.push({ bar, reason: WHY, alts: [], page: null, box: null, image: null, sheetId: j.sheetId || null });
   out = out.sort((a, b) => a.bar - b.bar);

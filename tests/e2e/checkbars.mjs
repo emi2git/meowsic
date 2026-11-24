@@ -154,10 +154,10 @@ async function lyricsRun() {
   console.log('\nMac: lyrics unsure + Mark all');
   const title = `Ode lyrics ${stamp}`;
   const sc = await send('POST', '/items', { kind: 'score', title, artist: 'Beethoven', musicxmlText: scoreXml(title).replace('>2 3<', '>2 3 4<'), source: 'From the sheet “Ode” (photo → score, beta)' });
-  const LY = 'lyrics unsure — use Fit lyrics';
+  const LY = 'lyrics unsure — fix in the score editor (Lyrics)', OLD = 'lyrics unsure — use Fit lyrics'; // bar 2: an older check.json
   const d = `${DATA}/items/${sc.folder}`;
   fs.writeFileSync(`${d}/${sc.folder} check.json`, JSON.stringify({ ...SIDECAR, bars: [
-    { bar: 2, page: 1, box: [148, 580, 738, 735], reasons: [LY], alternatives: [], lyrics: { verse: 1, bars: [2, 3] } },
+    { bar: 2, page: 1, box: [148, 580, 738, 735], reasons: [OLD], alternatives: [], lyrics: { verse: 1, bars: [2, 3] } },
     { bar: 3, page: 1, box: [738, 580, 1330, 735], reasons: [LY], alternatives: [], lyrics: { verse: 1, bars: [2, 3] } },
     { bar: 4, page: 1, box: [148, 735, 738, 900], reasons: ['rest added to fill the bar'], alternatives: [] }] }));
   fs.copyFileSync(PAGE, `${d}/${sc.folder} check p1.jpg`);
@@ -169,6 +169,8 @@ async function lyricsRun() {
   await page.waitForSelector('#osmd svg', { timeout: 15000 }); await sleep(1200);
   await page.click('#sc-check'); await page.waitForSelector('.cb-panel', { timeout: 5000 }); await sleep(600);
   const btns = await page.$$eval('.cb-panel .cb-acts button', (e) => e.map((x) => x.textContent.trim()));
+  const why = await page.$eval('.cb-panel .cb-why', (e) => e.textContent.trim());
+  check('an old "use Fit lyrics" hint reads as the score editor one', why.includes('fix in the score editor (Lyrics)') && !why.includes('Fit lyrics'), why);
   check('a "lyrics unsure" bar offers Fix lyrics and Mark all', btns.includes('Fix lyrics') && btns.includes('Mark all as looks right'), btns.join('|'));
   await page.click('.cb-panel [data-a="lyrics"]');
   await page.waitForSelector('.notes-panel.lyrics .ly-bar', { timeout: 8000 }); await sleep(800);

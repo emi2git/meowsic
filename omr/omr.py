@@ -1182,11 +1182,11 @@ def is_direction(toks):
 def lyric_words(png, xml_path, first_verse=False, unsure=None):
     """[(measure index, offset, text, syllabic, verse)] read under each top staff with Apple Vision.
     Each line of words under a staff is a verse (lyric number 1, 2, ...); with first_verse only the top line
-    under each staff (the words of the main tune, for "Add lyrics from a sheet").
+    under each staff (the words of the main tune, for the lyrics job, lyricsfit.py).
     Every syllable read is written on its note: a word sung across notes ("beau-ti-ful") is no misreading.
     Every line is checked (real Vietnamese / English words, syllables joined into their words): a poorly read
     line, or doubtful words in it, is listed in `unsure` ({'verse', 'bars': [measure indices], 'staff'}) so
-    the bars get "lyrics unsure — use Fit lyrics" — a hint only, the words stay."""
+    the bars get "lyrics unsure — fix in the score editor (Lyrics)" — a hint only, the words stay."""
     import re
     from PIL import Image, ImageOps
     import lyriccheck as L
@@ -1901,7 +1901,7 @@ def alt_xml(meas, number, want):
     return ET.tostring(x, encoding='unicode')
 
 
-LYRICS_UNSURE = 'lyrics unsure — use Fit lyrics'
+LYRICS_UNSURE = 'lyrics unsure — fix in the score editor (Lyrics)'
 
 
 def _pitches(meas):
@@ -1973,7 +1973,7 @@ def bar_reasons(score, report):
 def check_sheet(score, report, merged, pngs, reasons=None):
     """check.json: for every bar to check, why (plain words), where it is printed (page + box in image pixels) and
     the other reader's notes for it (a MusicXML <measure> the app can put in instead). A bar whose words were
-    read too poorly to write gets 'lyrics': {verse, bars} — the line, for the Fit lyrics editor."""
+    read too poorly to write gets 'lyrics': {verse, bars} — the line, for Fix lyrics (the score editor in Lyrics mode)."""
     from PIL import Image
     reasons = bar_reasons(score, report) if reasons is None else reasons
     bars = list(score.parts[0].getElementsByClass(m21.stream.Measure))
