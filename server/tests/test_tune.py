@@ -51,11 +51,23 @@ def test_strength_is_gentle_and_rests_untouched():
     assert np.all(out[tgt == 0] == 0)
 
 
-def test_octave_off_and_wild_frames_left_alone():
+def test_wrong_octave_and_wrong_notes_are_moved_whole_and_slips_left_alone():
     t, tgt, f0, _ = sung(-30, vib_c=0)
-    f0_oct = f0 * 2  # sung an octave up: tuned within that octave
-    out = tune.retune_f0(f0_oct, t, tgt, strength=1.0)
     mid = (t > 2.3) & (t < 3.7)
-    assert abs(np.median(cents(out[mid], tgt[mid])) - 1200) < 5
-    wild = f0 * 2 ** (500 / 1200)  # 5 semitones off: a tracking slip, not touched
-    assert np.allclose(tune.retune_f0(wild, t, tgt, strength=1.0), wild)
+    for off in (2.0, 0.5, 2 ** (500 / 1200)):  # an octave up / down, 5 semitones off: wrong notes, put on the score
+        out = tune.retune_f0(f0 * off, t, tgt, strength=0.5)
+        assert abs(np.median(cents(out[mid], tgt[mid]))) <= 16  # right octave; the gentle 30-cent drift half pulled in
+    slip = f0.copy()
+    i = int(3.0 / FP); slip[i:i + 4] *= 2 ** (500 / 1200)  # a 20 ms tracking slip inside a good note: untouched
+    out = tune.retune_f0(slip, t, tgt, strength=1.0)
+    assert np.allclose(out[i:i + 4], slip[i:i + 4])
+
+
+def test_short_notes_are_pulled_in():
+    t = np.arange(int(1 / FP)) * FP
+    notes = [{'q': 0, 'd': 0.2, 'midi': 67}, {'q': 0.2, 'd': 0.2, 'midi': 69}, {'q': 0.4, 'd': 0.6, 'midi': 71}]
+    tgt = tune.target_curve(notes, 60, 0, t)
+    f0 = hz(tgt) * 2 ** (80 / 1200)  # 80 cents sharp: the model smears fast notes
+    out = tune.retune_f0(f0, t, tgt)
+    sel = (t > 0.25) & (t < 0.35)  # the middle of the short second note
+    assert abs(np.median(cents(out[sel], tgt[sel]))) < 15
