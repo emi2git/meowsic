@@ -24,7 +24,7 @@ Updated: 2026-11-24
 | 5 | Manage library on iPad: fix layout, no suggested starts, no hint text, Help button, search-only picker, no "Show hidden", ✓ icon, small Undo, declutter | ✅ Pushed 290e665, deploying |
 | 6 | flows.mjs 1 failing check after the Manage library merge | ✅ Test-setup bug, fixed (0b3f98b) |
 | 7 | Sidebar: Developer → Feedback; sections Manage (Library, Tags, App) + Developer (Stats, Activities, Feedback, Keyboard); no Beta | ✅ Live (e1ca1d3) |
-| 13 | Old UI in Meowsic.app (stale shell): page updates itself (health vs built-in shell+sha on start / back in view → SW update → one reload, loop guard, pill while Edit notes is open); sw.js deletes old caches, page loads network-first (4 s) then saved shell; App + Help show running sha + shell (e2e swupdate, shell v42) | ✅ Pushed, deploying |
+| 13 | Old UI in Meowsic.app (stale shell): page updates itself (health vs built-in shell+sha on start / back in view → SW update → one reload, loop guard, pill while Edit notes is open); sw.js deletes old caches, page loads network-first (4 s) then saved shell; App + Help show running sha + shell (e2e swupdate, shell v43) | ✅ Pushed, deploying |
 
 ## Next (queued)
 | # | Task |
@@ -63,3 +63,4 @@ Updated: 2026-11-24
 - Left menu regrouped; Help moved to Settings
 - Score ⋯: Edit notes removed (it is the toolbar ✎, on screen at every width); menus/editnotes tests updated
 - Score tempo control (− BPM +, steps of 5, hold repeats, tap to type / Tap / ↺ score tempo; 30–240; per score on the entry's rate; live change without restart; Edit notes and Voice follow it, the voice time-stretched with pitch kept); tests/e2e/tempo.mjs
+- Edit notes: Even out (= button / key Q): 2+ notes or rests one after the other in one voice and bar get one length each, same total (dotted 8th + 16th or Scotch snap → two 8ths; quarter + 8th → two dotted 8ths); pitches, ties, slurs, lyrics kept; triplet-only splits refused (pytest test_evenout, e2e evenout)

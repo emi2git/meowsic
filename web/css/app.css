@@ -57,6 +57,8 @@ small, .muted { color: var(--mute); }
 .ic { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 /* note / rest value glyphs (notevalue.js): one size and baseline, in text or on a button */
 .nv { width: 1.1em; height: 1.32em; flex: none; vertical-align: -.3em; }
+.nv.nv-even { width: 2.2em; }
+.np-acts .np-even { min-width: 42px; padding: 0 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 17px; }
 .help-len { white-space: nowrap; margin-right: 4px; }
 .np-len button { display: inline-flex; align-items: center; justify-content: center; font-size: 17px; }
 
