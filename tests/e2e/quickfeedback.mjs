@@ -38,10 +38,21 @@ const score = await post('/items', { kind: 'score', title: `QF score ${stamp}`, 
 const chords = await post('/items', { kind: 'chords', title: `QF chords ${stamp}`, text: 'A[G]mazing [C]grace how [G]sweet the sound', key: 'G', source: 'pasted' });
 check('test items made', !!(sheet.id && score.id && chords.id), JSON.stringify({ sheet, score, chords }).slice(0, 300));
 
-// stand-in speech recognition: start() is counted; __say(text) delivers a final result and ends
+// stand-in speech recognition, WebKit-like: start() is counted, comes on (onstart) a moment later and throws
+// InvalidStateError while running; __say(text) delivers a final result and ends; __deadNext = n: the next n starts
+// never come on (no onstart, no onend)
 const FAKE_SR = () => {
-  window.__recStarts = 0;
-  class FakeSR { start() { window.__recStarts++; window.__rec = this; } stop() { setTimeout(() => this.onend?.(), 0); } abort() { this.stop(); } }
+  window.__recStarts = 0; window.__deadNext = 0;
+  class FakeSR {
+    start() {
+      if (this.running) throw new DOMException('already started', 'InvalidStateError');
+      this.running = true; window.__recStarts++; window.__rec = this;
+      if (window.__deadNext > 0) { window.__deadNext--; this.dead = true; return; }
+      this.dead = false; setTimeout(() => this.running && this.onstart?.(), 20);
+    }
+    stop() { if (this.dead || !this.running) return; this.running = false; setTimeout(() => this.onend?.(), 0); }
+    abort() { if (this.dead) { this.running = false; return; } this.stop(); }
+  }
   window.SpeechRecognition = window.webkitSpeechRecognition = FakeSR;
   window.__say = (t) => { const r = window.__rec; const res = [{ transcript: t, confidence: 0.9 }]; res.isFinal = true; r.onresult({ resultIndex: 0, results: [res] }); r.stop(); };
 };
@@ -84,6 +95,14 @@ async function run(name, vp, short) {
       for (let i = 1; i <= 5; i++) await page.touchscreen.touchMove(r.x + 2, r.y - 40 * i);
       await page.touchscreen.touchEnd(); await sleep(600);
       check(`${k}: swipe up with the popover open keeps the view`, (await page.evaluate(() => location.hash)).startsWith('#/item/'), await page.evaluate(() => location.hash));
+    }
+    if (k === 'score') { // a recognizer that never comes on: no pulse, then a retry on a fresh one that does
+      await tap('.qfb [data-a="cancel"]'); await sleep(300);
+      const s1 = await page.evaluate(() => { window.__deadNext = 1; return window.__recStarts; });
+      await tap('#it-feedback'); await sleep(400);
+      check('score: mic that never starts does not pulse', !(await page.evaluate(() => !!document.querySelector('.qfb .ti-mic.on'))));
+      await sleep(3400);
+      check('score: retried once, now listening', (await page.evaluate(() => window.__recStarts)) === s1 + 2 && await page.evaluate(() => !!document.querySelector('.qfb .ti-mic.on')), `${await page.evaluate(() => window.__recStarts) - s1} starts`);
     }
     const said = `Quick ${k} ${short} ${stamp}`;
     await page.evaluate((t) => window.__say(t), said); await sleep(200);
