@@ -117,6 +117,110 @@ def bar_len(meas):
 # ---------- chord names: Apple Vision reads the strip above each top staff ----------
 CHORD = __import__('re').compile(r"^(N\.?C\.?|[A-G][#b♯♭]?(maj|min|m|M|dim|aug|sus|add|°|ø|\+)?[0-9]{0,2}(\(?(b|#|♭|♯|add|sus|maj)?[0-9]{1,2}\)?)*(sus[24]?)?(/[A-G][#b♯♭]?)?)$")
 
+# the chord grammar: root, accidental, quality, extension, alterations / added notes, bass
+_CHORD_RE = __import__('re').compile(r"""^(?P<root>[A-G])(?P<acc>[#b]?)
+    (?P<qual>maj|ma|M|Δ|min|mi|m|dim|°|o|aug|\+|ø|sus)?
+    (?P<ext>6/9|69|13|11|9|7|6|5|4|2)?
+    (?P<alt>(?:\(?(?:add|sus|maj|M|b|\#|\+)?(?:13|11|9|7|6|5|4|2)\)?|sus)*)
+    (?:/(?P<bass>[A-G][#b]?))?$""", __import__('re').X)
+_QUAL = {'maj': 'maj', 'ma': 'maj', 'M': 'maj', 'Δ': 'maj', 'min': 'm', 'mi': 'm', 'm': 'm', 'dim': 'dim', '°': 'dim',
+         'o': 'dim', 'aug': 'aug', '+': 'aug', 'ø': 'm7b5', 'sus': 'sus'}
+
+
+def chord_parse(tok):
+    """A chord name in the grammar → its plain spelling ('Bbm7', 'C/E', 'Fmaj7', 'N.C.'); None if it is not one."""
+    import re
+    t = (tok or '').replace('♭', 'b').replace('♯', '#').replace(' ', '')
+    if re.fullmatch(r'N\.?C\.?', t): return 'N.C.'
+    m = _CHORD_RE.match(t)
+    if not m: return None
+    q, ext, alt = _QUAL.get(m['qual'] or '', ''), (m['ext'] or '').replace('6/9', '69'), m['alt'] or ''
+    alt = alt.replace('(', '').replace(')', '').replace('+', '#')
+    if q == 'maj' and not ext and not alt: q = ''  # "CM" / "Cmaj" = C
+    if q == 'm7b5': q, ext = 'm7b5', '' if ext == '7' else ext
+    if q == 'aug' and ext: q, ext = '', ext + '#5'  # C+7 → C7#5
+    if q == 'sus' and ext in ('2', '4'): q, ext = 'sus' + ext, ''  # Csus4
+    if q == 'sus' and ext and not alt.startswith('sus'): q, ext, alt = '', ext, 'sus4' + alt  # Csus7 → C7sus4
+    if ext == '5' and not q and not alt: return None  # a power chord is not printed on lead sheets: a misread ♭
+    return m['root'] + m['acc'] + q + ext + alt + ('/' + m['bass'] if m['bass'] else '')
+
+
+# what Vision reads instead of a chord name's letters (first: the root; then: anywhere after it)
+_SNAP_ROOT = {'8': 'B', '6': 'G', '0': 'D', 'O': 'D', 'Q': 'D'}
+_LONE = {'b': 'B', 'c': 'C', 'd': 'D', 'e': 'E', 'f': 'F', 'g': 'G'}  # a lone letter read small (not "a": a word)
+_SNAP_REST = {'?': '7', 'T': '7', '1': '7', 'h': 'b', 'n': 'm', 'rn': 'm', 'M': 'm', '5': 'b', 's': '5', 'S': '5', 'O': '9', 'g': '9',
+              '-': 'm', "'": '', '.': '', ',': ''}
+
+
+def chord_symbol(text):
+    """What OCR read above the staff → the nearest valid chord name (at most two letters changed), else None.
+    '86' → 'Bb', 'Am?' → 'Am7', 'c' → 'C', '2.G7' (a volta number in front) → 'G7', 'B5' → 'Bb' … """
+    return chord_snap(text)[0]
+
+
+def chord_snap(text):
+    """(chord name, read just so): False when letters had to be swapped to make it one (chord_symbol)."""
+    import re
+    t = (text or '').strip().replace('♭', 'b').replace('♯', '#').replace(' ', '')
+    t = re.sub(r'^\d+[.•·,](?=\D)', '', t)  # volta "1." / "2." just before the chord
+    if re.fullmatch(r'\(?N\.?C\.?\)?', t): return 'N.C.', True
+    t = t.strip('.,;:!\'"|`’‘[]{}_~•·')
+    if t.startswith('(') and (t.endswith(')') or t.count('(') > t.count(')')): t = t[1:]  # "(C)" — a chord in brackets
+    if t.endswith(')') and t.count(')') > t.count('('): t = t[:-1]
+    t = re.sub(r'^[|Il\[(]+(?=[A-Ga-g])', '', t)
+    if not t or len(t) > 10: return None, False
+    if re.fullmatch(r'8[6b]', t): return 'Bb', False  # a B♭ read as "86"
+    if t in _LONE: return _LONE[t], True
+    t = re.sub(r'^([A-G])5(?=$|/|m)', r'\1b', t)  # a raised ♭ read as 5
+    got = chord_parse(t)
+    if got: return got, True
+    # one, then two letters swapped for what they are usually misread as
+    def swaps(s):
+        for i in range(len(s)):
+            table = _SNAP_ROOT if i == 0 else _SNAP_REST
+            for k in (s[i:i + 2], s[i]):
+                if k in table and (i > 0 or len(k) == 1): yield s[:i] + table[k] + s[i + len(k):]
+    seen = {t}
+    one = [s for s in swaps(t) if s not in seen and not seen.add(s)]
+    for s in one:
+        if chord_parse(s): return chord_parse(s), False
+    for s0 in one:
+        for s in swaps(s0):
+            if s not in seen and not seen.add(s) and chord_parse(s): return chord_parse(s), False
+    return None, False
+
+
+def to_m21_figure(tok):
+    """A plain chord name (chord_symbol) → a figure music21 understands ('Bbmaj9' → 'B-M9', 'Cm7b5' → 'Cø7')."""
+    import re
+    tok = tok.replace('♭', 'b').replace('♯', '#')
+    t = re.sub(r'(^|/)([A-G])b', r'\1\2-', tok)
+    t = re.sub(r'm7b5', 'ø7', t)
+    t = re.sub(r'mmaj7', 'mM7', t)
+    t = re.sub(r'maj(9|11|13)', r'M\1', t)
+    t = re.sub(r'(?<![0-9])69', '6add9', t)
+    t = re.sub(r'(9|11|13)sus4', r'7sus4', t)
+    return t
+
+
+def chord_m21(tok):
+    """A music21 ChordSymbol for a chord name; what music21 can't spell loses its extras (a right root beats none)."""
+    import re
+    fig = to_m21_figure(tok)
+    tries = [fig]
+    root, bass = re.match(r'^([A-G]-?#?)(.*?)(/[A-G]-?#?)?$', fig).group(1, 3) if re.match(r'^[A-G]', fig) else (None, None)
+    if root:
+        body = fig[len(root):len(fig) - len(bass or '')]
+        simple = re.match(r'^(m(?!aj)|dim|aug|sus[24]|ø7|mM7|maj7|M\d+)?(\d+)?', body).group(0)
+        tries += [root + simple + (bass or ''), root + ('m' if body.startswith('m') and not body.startswith('maj') else '') + (bass or ''), root]
+    for f in tries:
+        try:
+            cs = m21.harmony.ChordSymbol(f)
+            if cs.pitches: cs.writeAsChord = False; return cs
+        except Exception:
+            continue
+    raise ValueError(f'chord name “{tok}” not understood')
+
 
 def note_positions(xml_path):
     """[(measure index, offset in quarters, staff, x, y)] for every homr note, from its imgpos comment."""
@@ -446,31 +550,6 @@ def audiveris_arcs(hm, am, pairs, part):
     return added
 
 
-def ocr(img):
-    import Vision
-    from Foundation import NSData
-    import io
-    b = io.BytesIO(); img.save(b, 'PNG')
-    data = NSData.dataWithBytes_length_(b.getvalue(), len(b.getvalue()))
-    req = Vision.VNRecognizeTextRequest.alloc().init()
-    req.setRecognitionLevel_(0); req.setUsesLanguageCorrection_(False)
-    req.setRecognitionLanguages_(['vi-VT', 'en-US'])
-    hd = Vision.VNImageRequestHandler.alloc().initWithData_options_(data, None)
-    hd.performRequests_error_([req], None)
-    import re
-    from Foundation import NSMakeRange
-    out = []
-    for o in req.results() or []:
-        c = o.topCandidates_(1)[0]
-        text = str(c.string())
-        for m in re.finditer(r'\S+', text):  # one box per word
-            box, _ = c.boundingBoxForRange_error_(NSMakeRange(m.start(), m.end() - m.start()), None)
-            if box is None: continue
-            bb = box.boundingBox()
-            out.append((m.group(), bb.origin.x, bb.size.width))
-    return out
-
-
 _TPL = []
 
 
@@ -572,50 +651,332 @@ def letter(a):
     return {'♭': L + 'b', '♯': L + '#'}.get(sup, L + sup if sup else None)
 
 
-def chord_names(png, xml_path):
-    """[(measure index, offset, figure)] read from the page image, placed on the nearest upper-staff note."""
+def _vision(img, level=0, langs=('en-US',)):
+    """Apple Vision on img: [(text, x0, x1, y centre)] in img pixels, a word each. level 0 = accurate, 1 = fast
+    (fast reads a lone capital letter that accurate often skips)."""
+    import io, re
+    import Vision
+    from Foundation import NSData, NSMakeRange
+    b = io.BytesIO(); img.save(b, 'PNG')
+    data = NSData.dataWithBytes_length_(b.getvalue(), len(b.getvalue()))
+    req = Vision.VNRecognizeTextRequest.alloc().init()
+    req.setRecognitionLevel_(level); req.setUsesLanguageCorrection_(False)
+    req.setRecognitionLanguages_(list(langs))
+    hd = Vision.VNImageRequestHandler.alloc().initWithData_options_(data, None)
+    hd.performRequests_error_([req], None)
+    out = []
+    for o in req.results() or []:
+        c = o.topCandidates_(1)[0]
+        text = str(c.string())
+        for m in re.finditer(r'\S+', text):
+            box, _ = c.boundingBoxForRange_error_(NSMakeRange(m.start(), m.end() - m.start()), None)
+            if box is None: continue
+            bb = box.boundingBox()
+            out.append((m.group(), bb.origin.x * img.width, (bb.origin.x + bb.size.width) * img.width,
+                        (1 - bb.origin.y - bb.size.height / 2) * img.height))
+    return out
+
+
+def chord_tokens(strip, gap):
+    """Ink groups in the strip above a staff that could be chord names: [{x0, x1, y0, y1, comps}] (strip pixels;
+    comps: the group's shapes [(x0, x1, y0, y1, mask)] left to right). Left out: whatever the strip's edge cuts
+    (stems, high notes, the line of words above) and long lines (brackets, slurs)."""
+    import numpy as np
+    ink = (np.asarray(strip) < 140).astype(np.uint8)
+    H = ink.shape[0]
+    keep = []
+    for c in _components_fast(ink):
+        x0, x1, y0, y1, _ = c
+        if y0 <= 0 or y1 >= H: continue
+        if x1 - x0 > 6 * gap and y1 - y0 < 0.6 * gap: continue  # a bracket / slur / extender line
+        keep.append(c)
+    keep.sort(key=lambda c: c[0])
+    toks = []
+    for c in keep:
+        def fits(t):  # letters of one name: side by side, on one line (a dot: just below its line or above a letter)
+            if c[0] - t['x1'] > 0.55 * gap: return -1
+            h = t['y1'] - t['y0']
+            ov = min(c[3], t['y1']) - max(c[2], t['y0'])
+            if ov > 0.3 * min(h, c[3] - c[2]): return ov
+            small = c[3] - c[2] < 0.35 * gap and c[1] - c[0] < 0.35 * gap
+            if small and (-0.2 * h <= c[2] - t['y1'] + (c[3] - c[2]) <= 0.3 * gap or 0 <= t['y0'] - c[3] <= 0.4 * gap): return 0
+            return -1
+        best = max(toks[-6:], key=fits, default=None)
+        if best is not None and fits(best) >= 0:
+            best.update(x0=min(best['x0'], c[0]), x1=max(best['x1'], c[1]), y0=min(best['y0'], c[2]), y1=max(best['y1'], c[3]))
+            best['comps'].append(c)
+        else:
+            toks.append({'x0': c[0], 'x1': c[1], 'y0': c[2], 'y1': c[3], 'comps': [c]})
+    return [t for t in toks if t['y1'] - t['y0'] >= 0.6 * gap and t['y1'] - t['y0'] <= 3.5 * gap]
+
+
+def _glyph(mask):
+    """A shape scaled to 16 × 20 (for comparing letters of one font) and its width / height."""
+    import numpy as np
+    from PIL import Image
+    ys, xs = np.flatnonzero(mask.any(1)), np.flatnonzero(mask.any(0))
+    a = mask[ys[0]:ys[-1] + 1, xs[0]:xs[-1] + 1]
+    return np.asarray(Image.fromarray((a * 255).astype('uint8')).resize((16, 20), Image.BILINEAR)) > 127, a.shape[1] / a.shape[0]
+
+
+def _chars(name):
+    """A chord name's printed glyphs, one per shape: 'Bb7' → ['B', '♭', '7'] ('m', 'maj', 'sus' are one shape a letter)."""
+    import re
+    return re.findall(r'[A-G]|b|#|\d|[a-z]|/|\.|\+|°|ø', name.replace('♭', 'b').replace('♯', '#'))
+
+
+def _shapes(tok):
+    """A token's shapes, the dots and specks left out."""
+    h = tok['y1'] - tok['y0']
+    return [c for c in tok['comps'] if (c[3] - c[2]) >= 0.25 * h or (c[1] - c[0]) >= 0.4 * h]
+
+
+class _PageFont:
+    """The page's own chord letters, learnt from the names read clearly (several readings agree): a name only
+    one reading or none could make out is then read shape by shape against them."""
+    def __init__(self):
+        self.seen = []  # (char, glyph, aspect, height)
+
+    def learn(self, tok, name):
+        sh, ch = _shapes(tok), _chars(name)
+        if len(sh) != len(ch): return
+        for char, c in zip(ch, sh):
+            g, ar = _glyph(c[4])
+            self.seen.append((char, g, ar, c[3] - c[2]))
+
+    def read(self, tok):
+        """(name, how sure 0–1) or (None, 0)."""
+        import numpy as np
+        if not self.seen: return None, 0.0
+        h0 = np.median([q[3] for q in self.seen if q[0] in 'ABCDEFG'] or [q[3] for q in self.seen])
+        out, worst = '', 1.0
+        for k, c in enumerate(_shapes(tok)):
+            g, ar = _glyph(c[4])
+            hh = c[3] - c[2]
+            if k == 0 and not (0.75 * h0 <= hh <= 1.3 * h0): return None, 0.0  # not a letter of this font's size
+            best = {}
+            for ch, tg, tar, th in self.seen:
+                if k == 0 and ch not in 'ABCDEFGN': continue
+                s = np.logical_and(g, tg).sum() / max(1, np.logical_or(g, tg).sum()) - 0.4 * abs(ar - tar) - 0.5 * abs(hh - th) / max(th, 1)
+                best[ch] = max(best.get(ch, -1), s)
+            if not best: return None, 0.0
+            ranked = sorted(best.items(), key=lambda q: -q[1])
+            ch, s = ranked[0]
+            margin = s - (ranked[1][1] if len(ranked) > 1 else 0)
+            if s < 0.55 or margin < 0.08: return None, 0.0
+            out += ch; worst = min(worst, s)
+        name = chord_symbol(out)
+        return (name, worst) if name else (None, 0.0)
+
+
+def _tile(crops, scale, rows=True):
+    """Crops pasted onto one white page, one per line (rows) or side by side, far apart → (image, boxes)."""
+    from PIL import Image
+    hs = max(c.height for c in crops)
+    pad = 2 * hs
+    if rows:
+        W = max(c.width for c in crops) + 2 * pad
+        H = pad + len(crops) * (hs + pad)
+        page = Image.new('L', (W, H), 255)
+        boxes = []
+        for i, c in enumerate(crops):
+            x, y = pad, pad + i * (hs + pad) + hs - c.height
+            page.paste(c, (x, y)); boxes.append((x, y - hs, x + c.width, y + c.height + hs // 2))
+    else:
+        W = sum(c.width for c in crops) + 4 * hs * (len(crops) + 1)
+        page = Image.new('L', (W, 3 * hs), 255)
+        boxes, x = [], 4 * hs
+        for c in crops:
+            page.paste(c, (x, hs + hs - c.height)); boxes.append((x - 2 * hs, 0, x + c.width + 2 * hs, 3 * hs)); x += c.width + 4 * hs
+    return page.resize((page.width * scale, page.height * scale), Image.LANCZOS), boxes
+
+
+def _assign(words, boxes, scale=1, by='x'):
+    """Words read on a tiled page → the text of each box."""
+    got = [[] for _ in boxes]
+    for t, x0, x1, yc in words:
+        cx, cy = (x0 + x1) / 2 / scale, yc / scale
+        k = next((i for i, (a, b, c, d) in enumerate(boxes) if a <= cx <= c and b <= cy <= d), None)
+        if k is not None: got[k].append((x0, t))
+    return [''.join(t for _, t in sorted(g)) for g in got]
+
+
+def read_chord_tokens(im, found):
+    """found: [(strip, top, tokens)] for every staff of a page. Each token gets 'reads' (what every reading made
+    of it, as chord names), 'name' (the vote; printed glyphs checked against the page's own font) and 'words'
+    (text that is no chord name: a tempo word, a lyric line …)."""
+    from PIL import Image, ImageOps
+    from collections import Counter
+    alltoks = [t for _, _, ts in found for t in ts]
+    if not alltoks: return
+    for t in alltoks: t['reads'], t['text'] = [], []
+    hs = max(1, sorted(t['y1'] - t['y0'] for t in alltoks)[len(alltoks) // 2])
+    sc = max(2, min(5, round(48 / hs)))
+    # 1. each strip as printed (2×)
+    for strip, top, toks in found:
+        if not toks: continue
+        big = ImageOps.expand(strip.resize((strip.width * 2, strip.height * 2), Image.LANCZOS), 30, 255)
+        for t_, x0, x1, yc in _vision(big):
+            cx, cy = ((x0 + x1) / 2 - 30) / 2, (yc - 30) / 2
+            k = min(toks, key=lambda t: max(0, t['x0'] - cx, cx - t['x1']) + max(0, t['y0'] - cy, cy - t['y1']))
+            if max(0, k['x0'] - cx, cx - k['x1']) <= 2 and k['y0'] - hs <= cy <= k['y1'] + hs: k.setdefault('_w', []).append((x0, t_))
+        for t in toks:
+            if t.get('_w'): t['reads'].append(''.join(w for _, w in sorted(t.pop('_w'))))
+    crops = [strip.crop((t['x0'], t['y0'], t['x1'], t['y1'])) for strip, _, ts in found for t in ts]
+    # 2. all of the page's tokens, one per line; 3. side by side, far apart (in groups of 10)
+    page, boxes = _tile(crops, sc, rows=True)
+    for t, r in zip(alltoks, _assign(_vision(page), boxes, sc)): t['reads'].append(r)
+    for i in range(0, len(crops), 10):
+        page, boxes = _tile(crops[i:i + 10], sc, rows=False)
+        for t, r in zip(alltoks[i:i + 10], _assign(_vision(page), boxes, sc)): t['reads'].append(r)
+    # 4. each token alone, the fast reader
+    for t, c in zip(alltoks, crops):
+        big = ImageOps.expand(c.resize((c.width * sc, c.height * sc), Image.LANCZOS), 2 * hs * sc, 255)
+        t['reads'].append(''.join(w[0] for w in sorted(_vision(big, level=1), key=lambda q: q[1])))
+    font = _PageFont()
+    for t in alltoks:
+        votes, order = Counter(), []
+        for r in t['reads']:
+            n, exact = chord_snap(r) if r else (None, False)
+            if n:  # read just so: a vote; only after snapping to the grammar: half a vote
+                votes[n] += 1.0 if exact else 0.5
+                order.append(n)
+        # a small raised 7 / ♭ one reading saw and the others missed: "G7" is "G" and more, when the shapes are there
+        nsh = len(_shapes(t))
+        for n in list(votes):
+            more = sum(v for m, v in votes.items() if m != n and n.startswith(m) and m != 'N.C.')
+            if more and len(_chars(n)) <= nsh: votes[n] += more
+        # words: text that is no chord name ("Coda", "Moderately", a lyric); "LL" or "11" is just a misreading
+        t['words'] = [r for r in t['reads'] if r and not chord_symbol(r) and sum(ch.isalpha() for ch in r) >= 2 and any(ch.islower() for ch in r)]
+        t['votes'] = max(votes.values()) if votes else 0
+        t['name'] = next((n for n in order if votes[n] == t['votes']), None)  # a tie: the printed strip's reading first
+        if t['votes'] >= 1: font.learn(t, t['name'])  # read just so at least once
+    for t in alltoks:
+        if t['votes'] >= 2: continue
+        name, sure = font.read(t)
+        t['font'] = name
+        if t['words']: t['name'] = None  # a word ("Coda", a lyric) that one reading took for a chord name
+        elif t['votes'] >= 1: pass  # read as it is printed: kept
+        elif name: t['name'] = name  # misread or not read: the page's own letters decide
+        elif font.seen: t['name'] = None
+        elif not t['name'] and len(_shapes(t)) <= 3:  # no letters learnt on this page: the shapes of common fonts
+            import numpy as np
+            a = np.zeros((t['y1'] - t['y0'], t['x1'] - t['x0']), dtype=bool)
+            for c in t['comps']: a[c[2] - t['y0']:c[3] - t['y0'], c[0] - t['x0']:c[1] - t['x0']] |= c[4]
+            L = letter(a)
+            t['name'] = chord_symbol(L) if L else None
+
+
+def _bar_times(xml_path):
+    """{measure index: (bar length in quarters, beat in quarters)} from homr's MusicXML time signatures."""
+    import xml.etree.ElementTree as ET
+    out, cur = {}, (4.0, 1.0)
+    try: root = ET.parse(xml_path).getroot()
+    except Exception: return out
+    part = root.find('part')
+    for mi, m in enumerate(part.iter('measure') if part is not None else []):
+        t = m.find('attributes/time')
+        if t is not None and t.findtext('beats') and t.findtext('beat-type'):
+            try:
+                n, d = int(t.findtext('beats').split('+')[0]), int(t.findtext('beat-type'))
+                beat = 4 / d * (3 if d == 8 and n % 3 == 0 and n > 3 else 1)
+                cur = (n * 4 / d, beat)
+            except ValueError: pass
+        out[mi] = cur
+    return out
+
+
+def chord_beat(x, onsets, x_end, length, beat, gap, taken=()):
+    """Where in its bar a chord name printed at x goes: the onset of the note / rest under it (within 2.5 staff
+    gaps), else the beat its place between the notes and the bar line says (a chord over the middle of a long
+    note). onsets: [(x, offset)] of the bar's notes and rests; x_end: the bar line after it; taken: offsets that
+    already have a chord name."""
+    pts = sorted(onsets, key=lambda q: q[1])
+    near = sorted(pts, key=lambda q: abs(q[0] - x))
+    if near and abs(near[0][0] - x) <= 2.5 * gap and near[0][1] not in taken: return float(near[0][1])
+    line = [(xx, o) for xx, o in pts]
+    if x_end is not None: line.append((x_end, length))
+    mono = []
+    for xx, o in line:  # keep the points that go left → right with time
+        if not mono or (xx > mono[-1][0] and o > mono[-1][1]): mono.append((xx, o))
+    if not mono: return 0.0
+    if x <= mono[0][0]: t = mono[0][1]
+    elif x >= mono[-1][0]: t = mono[-1][1]
+    else:
+        (xa, oa), (xb, ob) = next((a, b) for a, b in zip(mono, mono[1:]) if a[0] <= x <= b[0])
+        t = oa + (ob - oa) * (x - xa) / (xb - xa)
+    # over a held note: on the half bar (4/4: beat 1 or 3), else on a beat (3/4, 6/8)
+    grid = length / 2 if round(length / beat) % 2 == 0 else beat
+    t = round(t / grid) * grid
+    return float(max(0.0, min(t, length - beat)))
+
+
+def chord_names(png, xml_path, unread=None, debug=None):
+    """[(measure index, offset, chord name)] read from the page image: the names printed above each top staff,
+    each read four ways (Apple Vision on the strip, on all names tiled two ways, the fast reader on each alone),
+    snapped to the chord grammar and voted; names only one reading made out are checked against the page's own
+    letters. Each goes in the bar under it (bar lines), on the note under it or the beat its place says.
+    unread: filled with (measure index, offset) of names seen but not made out (a second reader may fill those)."""
+    import re
     from PIL import Image
     notes = [n for n in note_positions(xml_path) if n[2] == '1']
     if not notes: return []
     st = staves(png)
     im = Image.open(png).convert('L')
     W = im.width
-    found = []
-    for top, bot, gap in st:
+    found, per = [], []
+    for k, (top, bot, gap) in enumerate(st):
         mine = [n for n in notes if top - 6 * gap <= n[4] <= bot + 6 * gap]
         if not mine: continue  # a lower (bass) staff, or not a staff homr used
         y0, y1 = max(0, int(top - 5.5 * gap)), int(top - 0.6 * gap)
+        prev = [s for s in st[:k] if s[1] < top]
+        if prev: y0 = max(y0, int(prev[-1][1] + 1.0 * gap))
+        if y1 - y0 < 1.5 * gap: continue
         strip = im.crop((0, y0, W, y1))
-        strip = strip.resize((strip.width * 2, strip.height * 2))
-        words = ocr(strip)
-        # lone letters Vision skipped: ink clusters not covered by a word, letter-sized
-        import numpy as np
-        ink = np.asarray(strip) < 128
-        sw = strip.width
-        cols = np.flatnonzero(ink.any(0))
-        groups = []
-        for c in cols:
-            if groups and c - groups[-1][1] <= gap: groups[-1][1] = c
-            else: groups.append([c, c])
-        for c0, c1 in groups:
-            sub = ink[:, c0:c1 + 1]
-            rows = np.flatnonzero(sub.any(1))
-            hgt, wid = rows[-1] - rows[0] + 1, c1 - c0 + 1
-            if hgt < 1.6 * gap or wid > 2.2 * hgt: continue  # (strip is 2× size)
-            if any(x * sw - 4 <= c1 and c0 <= (x + w) * sw + 4 for _, x, w in words): continue
-            L = letter(sub)
-            if L: words.append((L, c0 / sw, wid / sw))
-        for tok, x, w in words:
-                tok = tok.strip(',.;:')
-                tok = __import__('re').sub(r'^([A-G])5(?=$|/)', r'\\1b', tok)  # a raised ♭ reads as 5
-                if not CHORD.match(tok): continue
-                tx = x * W
-                if len(tok) == 1 and tx < min(q[3] for q in mine) - 1.5 * gap: continue  # the top of a clef reads as a letter
-                n = min(mine, key=lambda q: abs(q[3] - (tx + 0.5 * gap)))
-                if abs(n[3] - tx) > 8 * gap: continue
-                found.append((n[0], n[1], tok))
-    return sorted(set(found))
-
+        toks = chord_tokens(strip, gap)
+        found.append((strip, top, toks)); per.append((k, top, bot, gap, y0, mine))
+    read_chord_tokens(im, found)
+    try: boxes = bar_boxes(png, xml_path, 10 ** 6)
+    except Exception: boxes = {}
+    times = _bar_times(xml_path)
+    out = []
+    for (strip, top, toks), (k, _, bot, gap, y0, mine) in zip(found, per):
+        # a line of words (a tempo mark, lyrics of the line above, credits) is not chord names
+        lines = []
+        for t in sorted(toks, key=lambda t: (t['y0'] + t['y1']) / 2):
+            cy = (t['y0'] + t['y1']) / 2
+            if lines and abs(lines[-1][-1]['cy'] - cy) < 0.6 * gap: lines[-1].append(t)
+            else: lines.append([t])
+            t['cy'] = cy
+        ok = []
+        for l in lines:
+            names = [t for t in l if t['name']]
+            wordy = [t for t in l if not t['name'] and t['words']]
+            if len(wordy) >= 2 and len(wordy) >= len(names): continue
+            ok += [t for t in l if t not in wordy]
+        bars = sorted({n[0] for n in mine})
+        taken = {}
+        for t in sorted(ok, key=lambda t: t['x0']):
+            sh = _shapes(t)
+            x = (sh[0][0] + sh[0][1]) / 2 if sh else (t['x0'] + t['x1']) / 2  # the root letter's middle
+            if x < min(n[3] for n in mine) - 2.5 * gap and len(sh) == 1: continue  # left of the first note: a clef's top
+            inbar = [b for b in bars if b in boxes and boxes[b][0] - 0.2 * gap <= x <= boxes[b][2]]
+            mi = inbar[0] if inbar else min(bars, key=lambda b: min(abs(n[3] - x) for n in mine if n[0] == b))
+            ons = [(n[3], n[1]) for n in mine if n[0] == mi]
+            length, beat = times.get(mi, (4.0, 1.0))
+            x_end = boxes[mi][2] if mi in boxes else None
+            if t['name'] is None:
+                if unread is not None and ons and not t['words'] and all(re.fullmatch(r'[A-Za-z0-9#()+/]*', r) and not r.isdigit() for r in t['reads']):
+                    unread.append((mi, chord_beat(x, ons, x_end, length, beat, gap)))  # seen, not made out
+                continue
+            off = chord_beat(x, ons, x_end, length, beat, gap, taken.get(mi, ()))
+            if off in taken.get(mi, ()): continue  # the same name read twice
+            taken.setdefault(mi, set()).add(off)
+            out.append((mi, off, t['name']))
+        if debug is not None:
+            debug.append({'staff': k, 'tokens': [{'x': t['x0'], 'reads': t['reads'], 'name': t['name'], 'votes': t['votes'],
+                                                  'font': t.get('font')} for t in toks]})
+    return sorted(set(out))
 
 
 def text_scale(gap):
@@ -1071,12 +1432,6 @@ def _components_fast(a):
     return out
 
 
-def to_m21_figure(tok):
-    import re
-    tok = tok.replace('♭', 'b').replace('♯', '#')
-    return re.sub(r'(^|/)([A-G])b', r'\1\2-', tok)
-
-
 def layers_full(meas):
     want = bar_len(meas)
     ls = _layers(meas)
@@ -1095,7 +1450,7 @@ def take_bar(dst, src):
             dst.insert(float(e.offset), x)
 
 
-def merge_page(h, a, page_no, report, chords=None, words=None, empty=None, png=None, carry=None, lyr_unsure=None):
+def merge_page(h, a, page_no, report, chords=None, words=None, empty=None, png=None, carry=None, lyr_unsure=None, unread=None):
     """Copy lyrics + chord names from Audiveris (a) onto homr (h); mark bars that disagree. Ties and slurs: homr's,
     Audiveris', and the arcs seen on the page image (png). carry['tie_out']: a note tied over to the next page."""
     hp = top_part(h)
@@ -1160,19 +1515,19 @@ def merge_page(h, a, page_no, report, chords=None, words=None, empty=None, png=N
             hmel, amel = melody(meas), melody(ameas)
             if hmel != amel:
                 flags.append('the two readers disagree')
-            # chord names from Audiveris fill in what the page image reading missed
+            # chord names from Audiveris fill in what the page image reading missed: only where a name is printed
+            # that the image reading saw but could not make out (unread; None: not known, so anywhere free)
             mine = [(o, t) for mi, o, t in chords or [] if mi == i]
+            gaps = None if unread is None else [o for mi, o in unread if mi == i]
             for hs in ameas.recurse().getElementsByClass(m21.harmony.ChordSymbol):
                 off = float(hs.getOffsetInHierarchy(ameas))
-                fig = __import__('re').sub(r'^([A-G])5(?=$|/)', r'\1-', hs.figure or '')
-                if not CHORD.match(fig.replace('-', 'b')): continue
+                name = chord_symbol((hs.figure or '').replace('-', 'b'))
+                if not name or name == 'N.C.': continue
                 if any(abs(o - off) <= 0.75 for o, _ in mine): continue
-                try:
-                    cs = m21.harmony.ChordSymbol(fig)
-                    cs.writeAsChord = False
-                    meas.insert(off, cs)
-                except Exception:
-                    pass
+                if gaps is not None and not any(abs(o - off) <= 1.0 for o in gaps): continue
+                try: meas.insert(off, chord_m21(name))
+                except Exception: pass
+                report.setdefault('chordsAudiveris', []).append({'page': page_no, 'bar': i + 1, 'chord': name})
             # lyrics, by onset
             lyr = {}
             for n in real_notes(ameas):
@@ -1190,9 +1545,10 @@ def merge_page(h, a, page_no, report, chords=None, words=None, empty=None, png=N
             report['check'].append({'page': page_no, 'bar': i + 1, 'why': flags})
     for mi, off, tok in chords or []:
         if mi < len(hm):
-            try:
-                cs = m21.harmony.ChordSymbol(to_m21_figure(tok)); cs.writeAsChord = False
-                hm[mi].insert(off, cs)
+            if tok == 'N.C.':
+                cs = m21.harmony.NoChord(); cs.writeAsChord = False
+                hm[mi].insert(off, cs); continue
+            try: hm[mi].insert(off, chord_m21(tok))
             except Exception:
                 report['notes'].append(f'page {page_no}: chord name “{tok}” not understood')
     # ties and slurs (connection arcs): homr's, then Audiveris', then what the page image shows
@@ -1392,6 +1748,33 @@ def pickup_len(score):
     if not lens or firsts[0] is None: return None
     have = max(lens)
     return have if 0 < have < bar_len(firsts[0]) - 0.01 else None
+
+
+def chords_on_notes(score):
+    """A chord name printed over the middle of a held note (B♭ … G7 over one whole note) stays on its beat: the note
+    (or rest) under it is split there — tied, so it plays the same — since a score viewer draws a chord name only
+    where a note starts. [{bar, beat, chord}] of the splits."""
+    done = []
+    for part in score.parts:
+        for meas in part.getElementsByClass(m21.stream.Measure):
+            for cs in list(meas.getElementsByClass(m21.harmony.ChordSymbol)):
+                off = float(cs.offset)
+                layers = list(meas.voices) or [meas]
+                starts = {round(float(n.offset), 4) for L in layers for n in L.notesAndRests if not isinstance(n, m21.harmony.ChordSymbol)}
+                if round(off, 4) in starts or off <= 0: continue
+                L = layers[0]
+                n = next((n for n in L.notesAndRests if not isinstance(n, m21.harmony.ChordSymbol) and not n.duration.isGrace
+                          and float(n.offset) < off < float(n.offset) + float(n.quarterLength)), None)
+                if n is None or n.duration.tuplets: continue
+                cut = off - float(n.offset)
+                try: a, b = n.splitAtQuarterLength(cut)
+                except Exception: continue
+                if 'complex' in (a.duration.type, b.duration.type) or 'inexpressible' in (a.duration.type, b.duration.type): continue
+                if isinstance(b, m21.note.NotRest): b.lyrics = []
+                start = float(n.offset)
+                L.remove(n); L.insert(start, a); L.insert(start + cut, b)
+                done.append({'bar': meas.number, 'beat': off + 1, 'chord': cs.figure})
+    return done
 
 
 def fill_bars(score):
@@ -1704,10 +2087,12 @@ def main():
     aud = run_audiveris(pngs, out / 'aud')
     say('check', 'Checking every bar')
     say('chords', 'Reading chord names')
-    chords = []
+    chords, unread = [], []
     for p in pngs:
-        try: chords.append(chord_names(p, p.with_suffix('.musicxml')))
-        except Exception as e: chords.append([]); report['notes'].append(f'chord names: {e}')
+        u = []
+        try: chords.append(chord_names(p, p.with_suffix('.musicxml'), unread=u)); unread.append(u)
+        except Exception as e: chords.append([]); unread.append(None); report['notes'].append(f'chord names: {e}')
+    report['chords'] = sum(len(c) for c in chords)
     say('words', 'Reading the words')
     words, lunsure = [], []
     for p in pngs:
@@ -1717,8 +2102,8 @@ def main():
         lunsure.append(u)
     report['lyricsUnsure'] = [{'page': k, **x} for k, u in enumerate(lunsure, 1) for x in u]
     carries = [{} for _ in pngs]
-    merged = [merge_page(h, aud.get(p.stem), k, report, ch, wd, empty_bars(p.with_suffix('.musicxml')), p, cr, lu)
-              for k, (h, p, ch, wd, cr, lu) in enumerate(zip(homr, pngs, chords, words, carries, lunsure), 1)]
+    merged = [merge_page(h, aud.get(p.stem), k, report, ch, wd, empty_bars(p.with_suffix('.musicxml')), p, cr, lu, ur)
+              for k, (h, p, ch, wd, cr, lu, ur) in enumerate(zip(homr, pngs, chords, words, carries, lunsure, unread), 1)]
     for k, cr in enumerate(carries[:-1]):  # a tie running off a page ends on the next page's first note
         n1 = cr.get('tie_out')
         nxt = merged[k + 1].parts
@@ -1730,6 +2115,7 @@ def main():
     report['filled'] = fill_bars(score)  # every bar adds up to its time signature (the check marks stay)
     if score.meowsicPickup: report['pickup'] = score.meowsicPickup
     report['notFull'] = bars_full(score)
+    report['chordSplits'] = chords_on_notes(score)  # a chord name over the middle of a long note gets a note to sit on
     reasons = bar_reasons(score, report)
     report['flaggedBefore'] = len(unsure_bars(report, [len(top_part(m).getElementsByClass(m21.stream.Measure)) for m in merged]))
     report['unsure'] = sorted(reasons)
