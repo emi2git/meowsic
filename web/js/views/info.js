@@ -46,7 +46,7 @@ export function openInfo(id) {
       <dt>Type</dt><dd>${badge(it)} ${metaText(it)}</dd>
       ${it.kind === 'sheet' ? `<dt>Pages</dt><dd>${it.pages || 0}</dd><dt>File</dt><dd>${it.source === 'pdf' ? 'PDF' : 'Photos (images)'}</dd>` : ''}
       ${it.kind === 'chords' ? `<dt>Source</dt><dd id="dt-source">${it.url ? `<a class="src-link" href="${esc(it.url)}" target="_blank" rel="noopener">${it.source === 'hopamchuan' ? 'Hợp Âm Chuẩn' : it.source === 'pasted' ? 'Pasted' : 'Ultimate Guitar'}</a>` : esc(it.source === 'pasted' ? 'Pasted' : it.source || '—')}${it.capo ? `<br><small>Capo ${it.capo}</small>` : ''}</dd>` : ''}
-      ${src ? `<dt>Source</dt><dd id="dt-source"><span class="src-name">${esc(src.name || '—')}</span>${src.url ? `<br><a class="src-link" href="${esc(src.url)}" target="_blank" rel="noopener">${esc(src.url)}</a><br><button type="button" class="link" id="dt-copy">Copy link</button>` : ''}${it.bpm ? `<br><small>${it.bpm} bpm</small>` : ''}</dd>` : ''}
+      ${src ? `<dt>Source</dt><dd id="dt-source"><span class="src-name">${esc(src.name || '—')}</span>${src.url ? `<br><a class="src-link" href="${esc(src.url)}" target="_blank" rel="noopener">${esc(src.url)}</a><br><button type="button" class="link" id="dt-copy">Copy link</button>` : ''}</dd>` : ''}
       <dt>Practice</dt><dd>${plays.length} session${plays.length === 1 ? '' : 's'} · ${mins(total)}<br><small>Last played ${ago(store.lastPlayed(it.id))}</small></dd>
       ${originRow(it)}
       <dt>Added</dt><dd>${fmtDate(it.createdAt)}</dd>

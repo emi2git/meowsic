@@ -10,8 +10,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0; const check = (n, c, x = '') => { c ? pass++ : fail++; console.log(c ? '  ok  ' : '  FAIL', n, c ? '' : x); };
 const api = (p, o) => fetch(BASE + 'api' + p, o).then((r) => r.json());
 const errs = [];
-// every Audio the page makes is kept so the test can read its clock
-const spy = () => { const A = window.Audio; window.__audios = []; window.Audio = function (...a) { const x = new A(...a); window.__audios.push(x); return x; }; };
+// every Audio the page makes is kept so the test can read its clock (not the piano's silent unlock clip: audio.js mediaUnlock)
+const spy = () => { const A = window.Audio; window.__audios = []; window.Audio = function (...a) { const x = new A(...a); if (!new Error().stack.includes('mediaUnlock')) window.__audios.push(x); return x; }; };
 const newPage = async (vp) => { const p = await b.newPage(); await p.setViewport(vp); await p.evaluateOnNewDocument(spy); p.on('pageerror', (e) => errs.push(e.message)); return p; };
 
 const XML = `<?xml version="1.0" encoding="utf-8"?><score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Melody</part-name></score-part></part-list><part id="P1">
@@ -56,7 +56,7 @@ let a = await audio(), q = await pos();
 check('Play plays the sung audio', a && !a.paused && /\/api\/items\/.+\/vocal/.test(a.src) && a.t > 1, JSON.stringify(a));
 check('button says Pause', (await page.$eval('#sc-play', (e) => e.getAttribute('aria-label'))) === 'Pause');
 check('playhead follows the audio (q = t × bpm / 60)', Math.abs(q - a.t * qps) < 0.35, `${q} vs ${a.t * qps}`);
-check('tempo shows the voice tempo', (await page.$eval('#sc-rate', (e) => e.textContent)) === '72 bpm');
+check('speed shows 100% with the voice (no bpm)', (await page.$eval('#sc-rate', (e) => e.textContent)) === '100%');
 
 await page.evaluate(() => window.__score.seek(6)); await sleep(400);
 a = await audio();
@@ -96,7 +96,7 @@ check('Play after Stop: the voice from the start', !a.paused && a.t > 0.3 && a.t
 // a tempo change goes back to the piano
 await page.click('#sc-fast'); await sleep(300);
 a = await audio();
-check('tempo + turns Voice off (piano at the new tempo)', a.paused && !(await page.$eval('#sc-voice', (e) => e.classList.contains('on'))) && (await page.$eval('#sc-rate', (e) => e.textContent)) === '75 bpm', await page.$eval('#sc-rate', (e) => e.textContent));
+check('tempo + turns Voice off (piano at the new tempo)', a.paused && !(await page.$eval('#sc-voice', (e) => e.classList.contains('on'))) && (await page.$eval('#sc-rate', (e) => e.textContent)) === '105%', await page.$eval('#sc-rate', (e) => e.textContent));
 check('…and says why', /back to the piano/.test(await page.$eval('#toast', (e) => e.textContent)));
 await page.click('#sc-play'); await sleep(200);
 await page.click('#sc-slow'); await sleep(100);

@@ -2,7 +2,8 @@
 // samples load, Pause stops the clock, no page errors. Mac (click), iPad and iPhone (tap). No autoplay flag:
 // the tap itself must unlock audio, as on iOS. Runs on the preview (mock data): PREVIEW=http://localhost:5181
 // Also: nothing covers Play (elementFromPoint at its centre is the button, with the Home Screen app's status-bar
-// inset emulated), a real touch at that point plays, a stuck AudioContext (iOS 'interrupted' / a resume that never
+// inset emulated), a real touch at that point plays, a 'running' but frozen context (iOS 26 Home Screen app back from
+// the background) is replaced, a frozen clock says so, no tempo mark is drawn and the toolbar shows no bpm, a stuck AudioContext (iOS 'interrupted' / a resume that never
 // wakes) is replaced on the next tap, and a Play that gets no running audio says so instead of a frozen Pause.
 import puppeteer from 'puppeteer-core';
 const ORIGIN = process.env.PREVIEW || 'http://localhost:5181';
@@ -68,6 +69,53 @@ for (const [name, vp] of DEVICES) {
   const q5 = await now(); await sleep(500);
   check('…and the clock moves again', (await now()) > q5 && q5 >= q4, `${q4} → ${q5}`);
   await p.click('#sc-stop'); await sleep(200);
+  // iOS 26 Home Screen app: back from the background the context says 'running' but is silent / its clock is frozen
+  // (WebKit 291892). The first Play after the app was hidden must make a fresh context, not trust 'running'.
+  const zombie = () => p.evaluate(async () => {
+    const { audioCtx } = await import('/js/audio.js'); const c = audioCtx();
+    await c.suspend(); Object.defineProperty(c, 'state', { configurable: true, get: () => 'running' }); c.resume = () => Promise.resolve();
+    window.__zombie = c;
+  });
+  await zombie();
+  await p.evaluate(() => { // the app goes to the background and comes back
+    for (const v of ['hidden', 'visible']) { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => v }); document.dispatchEvent(new Event('visibilitychange')); }
+    delete document.visibilityState;
+  });
+  if (vp.hasTouch) await p.touchscreen.tap(ctr.x, ctr.y); else await p.mouse.click(ctr.x, ctr.y);
+  await sleep(1200);
+  const z1 = await p.evaluate(async () => { const { audioCtx } = await import('/js/audio.js'); return audioCtx() !== window.__zombie; });
+  const q6 = await now(); await sleep(500);
+  check("back from the background: a 'running' but frozen context is replaced on Play", z1 && (await now()) > q6 + 0.2, `fresh=${z1} ${q6} → ${await now()}`);
+  await p.click('#sc-stop'); await sleep(200);
+  // the same frozen 'running' context without a trip to the background (another app took the audio): Play says so,
+  // stays Play, and the next tap makes a fresh context that plays
+  await zombie();
+  if (vp.hasTouch) await p.touchscreen.tap(ctr.x, ctr.y); else await p.mouse.click(ctr.x, ctr.y);
+  await sleep(1500);
+  const zl = await p.$eval('#sc-play', (e) => e.getAttribute('aria-label'));
+  const zt = await p.evaluate(() => [...document.querySelectorAll('#toast:not([hidden])')].map((t) => t.textContent).join(' | '));
+  check('frozen clock: Play stays Play and a toast says so', zl === 'Play' && /tap Play again/.test(zt), `${zl} ${zt}`);
+  if (vp.hasTouch) await p.touchscreen.tap(ctr.x, ctr.y); else await p.mouse.click(ctr.x, ctr.y);
+  await sleep(1200);
+  const q7 = await now(); await sleep(500);
+  check('…and the next Play makes a fresh context that plays', (await now()) > q7 + 0.2 && (await p.evaluate(async () => (await import('/js/audio.js')).audioCtx() !== window.__zombie)), `${q7} → ${await now()}`);
+  await p.click('#sc-stop'); await sleep(200);
+  // no tempo on the score: the file has one (the player uses it), the drawn score and the toolbar do not
+  const tempo = await p.evaluate(async () => {
+    const v = window.__score;
+    if (v.real && !/<metronome\b/.test(v.xml())) { // give it one: ♩ = 72, "Moderato" and a <sound tempo>
+      await v.showXml(v.xml().replace(/(<measure\b[^>]*>)/, '$1<direction placement="above"><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>72</per-minute></metronome></direction-type><sound tempo="72"/></direction><direction placement="above"><direction-type><words>Moderato</words></direction-type></direction>'));
+      await new Promise((ok) => setTimeout(ok, 500));
+    }
+    const svg = document.querySelector('#osmd svg'), txt = [...(svg?.querySelectorAll('text') || [])].map((t) => t.textContent).join(' ');
+    const { noTempoXml } = await import('/js/easyscore.js');
+    const shown = noTempoXml('<measure number="1"><direction><direction-type><metronome><beat-unit>quarter</beat-unit><per-minute>72</per-minute></metronome></direction-type><sound tempo="72"/></direction><direction><direction-type><words>Moderato</words></direction-type></direction><direction><direction-type><words>Chorus</words></direction-type></direction><sound tempo="80" dynamics="70"/></measure>');
+    return { strip: !/metronome|Moderato|tempo=/.test(shown) && /Chorus/.test(shown) && /dynamics="70"/.test(shown), file: !v.real || /<metronome\b/.test(v.xml()), svg: !!svg, mark: /=\s*\d{2,3}|\bbpm\b|\b(moderato|allegro|andante|adagio|largo|presto)\b/i.test(txt), bar: /bpm/i.test(document.querySelector('#sc-play').parentElement.parentElement.textContent), rate: document.querySelector('#sc-rate')?.textContent };
+  });
+  check('the score file keeps its tempo (the player reads it)', tempo.file, JSON.stringify(tempo));
+  check('the drawn XML drops ♩ = N, tempo words and <sound tempo>, keeps other words and dynamics', tempo.strip, JSON.stringify(tempo));
+  check('no tempo mark drawn on the score (no ♩ = N, no tempo words)', tempo.svg && !tempo.mark, JSON.stringify(tempo));
+  check('no bpm in the score toolbar (speed is a %)', !tempo.bar && /^\d+%$/.test(tempo.rate || ''), JSON.stringify(tempo));
   // audio that never starts: the button goes back to Play and says so (no frozen Pause)
   await p.evaluate(() => { const P = (window.AudioContext || window.webkitAudioContext).prototype; window.__res = P.resume; P.resume = function () { return new Promise(() => {}); }; });
   await p.evaluate(async () => { const { audioCtx } = await import('/js/audio.js'); await audioCtx().suspend(); });

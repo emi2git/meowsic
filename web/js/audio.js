@@ -8,14 +8,36 @@
 // - Play never trusts a context that is not running: an 'interrupted' or 'suspended' one (iOS: a call, Siri,
 //   another app, the Home Screen app sent to the background) often never wakes, so Play makes a fresh one,
 //   inside the tap. A Play that still gets no running audio says so (the button goes back to Play).
-let ctx, unlocked = false, session = 'playback';
+// - a context that has been in the background is never trusted either, even when it says 'running': on iOS 26 the
+//   Home Screen app's context comes back 'running' but silent, with a clock that may not move (WebKit 291892 /
+//   283419). The first Play after the app was hidden makes a fresh one inside the tap, and a Play whose clock does
+//   not move is treated as no audio (the next tap makes a fresh one).
+// - each Play also starts a silent <audio> element inside the tap (fresh src each time, WebKit 295518): iOS then
+//   gives the page a media playback session, so the Web Audio piano is heard (Silent switch too)
+let ctx, unlocked = false, session = 'playback', stale = false;
+const markStale = () => { if (ctx) stale = true; };
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') markStale(); });
+addEventListener('pagehide', markStale);
+document.addEventListener('freeze', markStale);
+// 0.05 s of silence (8 kHz mono WAV)
+const SILENT = (() => { const n = 400, b = new Uint8Array(44 + n), v = new DataView(b.buffer), w = (o, t) => [...t].forEach((ch, i) => (b[o + i] = ch.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36, 'data'); v.setUint32(40, n, true); b.fill(128, 44);
+  let s = ''; b.forEach((x) => (s += String.fromCharCode(x))); return 'data:audio/wav;base64,' + btoa(s); })();
+let silentEl = null;
+export function mediaUnlock() { // synchronous, inside the tap
+  try {
+    if (!silentEl) { silentEl = new Audio(); silentEl.setAttribute('playsinline', ''); silentEl.preload = 'auto'; silentEl.volume = 0; }
+    silentEl.src = SILENT; silentEl.play()?.catch?.(() => {});
+  } catch {}
+}
 const setSession = () => { try { if (navigator.audioSession && navigator.audioSession.type !== session) navigator.audioSession.type = session; } catch {} };
 export function audioCtx({ fresh = false } = {}) {
-  if (ctx && (ctx.state === 'closed' || (fresh && ctx.state !== 'running'))) { const old = ctx; ctx = null; try { old.onstatechange = null; old.close()?.catch?.(() => {}); } catch {} }
+  if (ctx && (ctx.state === 'closed' || (fresh && (stale || ctx.state !== 'running')))) { const old = ctx; ctx = null; try { old.onstatechange = null; old.close()?.catch?.(() => {}); } catch {} }
   if (!ctx) {
     setSession();
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-    unlocked = false;
+    unlocked = false; stale = false;
     const c = ctx;
     c.onstatechange = () => { if (c === ctx && c.state === 'interrupted') unlocked = false; };
   }
@@ -31,7 +53,10 @@ export function audioCtx({ fresh = false } = {}) {
   return ctx;
 }
 // a context that would not run: the next one starts under the default audio session (still heard, Silent off)
-const gaveUp = () => { session = 'auto'; };
+const gaveUp = () => { session = 'auto'; stale = true; };
+// the context's clock really moves (a 'running' context on iOS can be frozen)
+const clockMoves = (c) => new Promise((ok) => { const t0 = c.currentTime, s = performance.now();
+  const look = () => (c.currentTime > t0 ? ok(true) : performance.now() - s > 700 ? ok(false) : setTimeout(look, 40)); look(); });
 export const audioState = () => (ctx ? ctx.state : 'none'); // for tests
 // the next tap anywhere wakes a suspended context (iOS), so the orange line and sound carry on
 for (const ev of ['touchend', 'pointerup', 'keydown']) {
@@ -95,11 +120,16 @@ export class ScorePlayer {
     return a.q0 + (t - a.t0) * this.qps;
   }
   async play() {
-    if (this.playing) return;
-    const c = audioCtx({ fresh: true }); // synchronous, inside the tap; a stuck context is replaced
+    if (this.playing || this.starting) return;
+    this.starting = true;
+    try { await this.start(); } finally { this.starting = false; }
+  }
+  async start() {
+    mediaUnlock();
+    const c = audioCtx({ fresh: true }); // synchronous, inside the tap; a stuck or backgrounded context is replaced
     await loadPiano();
     if (c.state !== 'running') { try { await Promise.race([c.resume(), new Promise((ok) => setTimeout(ok, 2000))]); } catch {} }
-    if (c.state !== 'running' || c !== ctx) { gaveUp(); throw new Error('audio did not start'); }
+    if (c.state !== 'running' || c !== ctx || !(await clockMoves(c)) || c !== ctx) { gaveUp(); throw new Error('audio did not start'); }
     this.ctx = c;
     if (this.posQ >= (this.loop ? this.loop[1] : this.endQ)) this.posQ = this.loop ? this.loop[0] : 0;
     // from the very start: no waiting through rests before the first note (a score read from a sheet can open with them)

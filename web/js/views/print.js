@@ -8,7 +8,7 @@ import { linesHtml, diagramsHtml } from '../chordchart.js';
 import { loadOsmd } from './score.js';
 import { TUNES } from '../mock.js';
 import { musicXml } from '../musicxml.js';
-import { easyOn, classicXml, decoratePrintPage, kidsRules } from '../easyscore.js';
+import { easyOn, classicXml, decoratePrintPage, kidsRules, noTempoXml } from '../easyscore.js';
 
 // scores print as real notation: OSMD lays the MusicXML out on A4 pages; each page is an SVG
 const scorePagesCache = new Map(); // item id (+ easy look) → [svg markup per page]
@@ -25,9 +25,9 @@ async function scorePages(it) {
   try {
     // kids note names (the score's kitten toggle): big noteheads with their letters; classic engraving otherwise
     const easy = easyOn(it);
-    const osmd = new window.opensheetmusicdisplay.OpenSheetMusicDisplay(box, { backend: 'svg', autoResize: false, drawTitle: true, drawSubtitle: true, drawPartNames: true, drawComposer: true, drawMetronomeMarks: true, pageFormat: 'A4_P', pageBackgroundColor: '#FFFFFF' });
+    const osmd = new window.opensheetmusicdisplay.OpenSheetMusicDisplay(box, { backend: 'svg', autoResize: false, drawTitle: true, drawSubtitle: true, drawPartNames: true, drawComposer: true, drawMetronomeMarks: false, pageFormat: 'A4_P', pageBackgroundColor: '#FFFFFF' });
     if (easy) kidsRules(osmd.EngravingRules); // big noteheads need wider spacing
-    await osmd.load(xml);
+    await osmd.load(noTempoXml(xml)); // no tempo drawn (♩ = 72, Moderato…)
     if (it.transpose) { osmd.TransposeCalculator = new window.opensheetmusicdisplay.TransposeCalculator(); osmd.Sheet.Transpose = it.transpose; osmd.updateGraphic(); }
     osmd.render();
     if (easy) decoratePrintPage(osmd);

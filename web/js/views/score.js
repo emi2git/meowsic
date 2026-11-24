@@ -1,5 +1,5 @@
 // Score viewer: OpenSheetMusicDisplay notation, piano playback with a moving bar,
-// tempo, transpose, zoom; export lives in the More menu. Each version is its own entry.
+// speed (%), transpose, zoom; export lives in the More menu. Each version is its own entry.
 import { store } from '../store.js';
 import { $, esc, icon, iconOn, toast, menu, sheet as modal, confirmSheet } from '../ui.js';
 import { pageSrc } from './sheet.js';
@@ -15,7 +15,7 @@ import { checkBadge } from './checkbars.js';
 import { InkLayer } from './annotate.js';
 import { attachSwipe, flipBy } from '../swipe.js';
 import { isTouch, isNarrow } from '../device.js';
-import { easyOn, setEasy, classicXml, drawNoteLetters, kidsRules } from '../easyscore.js';
+import { easyOn, setEasy, classicXml, drawNoteLetters, kidsRules, noTempoXml } from '../easyscore.js';
 import { chordsMode, setChordsMode, nextMode, MODE_LABEL, ukePanel } from '../ukepanel.js';
 const CHORD_ICON = { piano: 'piano', uke: 'ukulele', off: 'chordgrid' }; // the chords button shows its state
 import { simplePiano } from './simplepiano.js';
@@ -223,7 +223,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     drawn = false;
     $('#osmd', root).innerHTML = '';
     osmd = new O.OpenSheetMusicDisplay($('#osmd', root), {
-      autoResize: false, backend: 'svg', drawTitle: true, drawMetronomeMarks: true, drawSubtitle: false, drawComposer: true, drawPartNames: version === 'vocal',
+      autoResize: false, backend: 'svg', drawTitle: true, drawMetronomeMarks: false, drawSubtitle: false, drawComposer: true, drawPartNames: version === 'vocal',
       drawPartAbbreviations: false, drawMeasureNumbersOnlyAtSystemStart: true, followCursor: false,
     });
     const r = osmd.EngravingRules;
@@ -243,7 +243,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
       if (/<identification>/.test(x)) return x.replace(/<identification>/, '<identification>' + c);
       return x.replace(/(<part-list>)/, '<identification>' + c + '</identification>$1');
     };
-    const xml = credit(tidyXml(real ? xmlText : musicXml({ ...tune, title: it.title }, version)));
+    const xml = credit(noTempoXml(tidyXml(real ? xmlText : musicXml({ ...tune, title: it.title }, version))));
     if (easy) kidsRules(r); // big noteheads: wider spacing
     await osmd.load(xml);
     osmd.zoom = zoom * Z_BASE;
@@ -485,8 +485,8 @@ export function midiFile(notes, bpm = 100, shift = 0) {
 }
 
 export function scoreToolbar(bar, it, view) {
-  const t = view.tune;
-  const bpmNow = () => Math.round((view.player.bpm || t.bpm) * view.player.rate);
+  // speed as a percentage of the score's own tempo: no tempo (bpm) is shown anywhere on the score
+  const speedNow = () => `${Math.round((view.voice ? 1 : view.player.rate || 1) * 100)}%`;
   window.__score = view; // for automated tests (the orange line shows where it is; there is no position bar)
   bar.innerHTML = `${view.pageLabel ? `<span class="pageno" id="pageno">${view.pageLabel}</span>` : ''}
     <div class="transport">
@@ -494,7 +494,7 @@ export function scoreToolbar(bar, it, view) {
       <button class="play" id="sc-play" aria-label="Play" title="Play (space)">${iconOn('play')}</button>
     </div>
     <button class="check-badge" id="sc-check" hidden></button>
-    <div class="stepper" aria-label="Tempo" title="Tempo"><button id="sc-slow" aria-label="Slower">−</button><span id="sc-rate">${bpmNow()} bpm</span><button id="sc-fast" aria-label="Faster">+</button></div>
+    <div class="stepper" aria-label="Speed" title="Speed"><button id="sc-slow" aria-label="Slower">−</button><span id="sc-rate">${speedNow()}</span><button id="sc-fast" aria-label="Faster">+</button></div>
     <div class="stepper" aria-label="Transpose"><button id="sc-tdown" aria-label="Transpose down">♭</button><span id="sc-tval">${it.transpose ? (it.transpose > 0 ? '+' : '') + it.transpose : '0'}</span><button id="sc-tup" aria-label="Transpose up">♯</button></div>
     <div class="stepper zoom" aria-label="Zoom"><button id="sc-zout" aria-label="Zoom out" title="Zoom out (−)">${iconOn('zoomout')}</button><button id="sc-zreset" class="zreset" title="Reset zoom (0)">${Math.round(view.zoom * 100)}%</button><button id="sc-zin" aria-label="Zoom in" title="Zoom in (+)">${iconOn('zoomin')}</button></div>
     <button class="icon-btn" id="sc-edit" title="Edit notes" aria-label="Edit notes">${iconOn('edit')}</button>
@@ -517,10 +517,10 @@ export function scoreToolbar(bar, it, view) {
   const host = bar.closest('.viewer') || document;
   const onEnd = () => setPlay();
   host.addEventListener('ended', onEnd);
-  // tempo in beats per minute, 5 at a time; the score's own tempo is the starting point
+  // speed, 5% at a time; 100% = the score's own tempo (never shown)
   // Voice: the sung audio has its own tempo and key — a tempo or key change goes back to the piano
   const voiceBtn = $('#sc-voice', bar);
-  const vl = () => { voiceBtn.hidden = !view.hasVoice; voiceBtn.classList.toggle('on', view.voice); voiceBtn.setAttribute('aria-pressed', String(view.voice)); $('#sc-rate', bar).textContent = `${bpmNow()} bpm`; setPlay(); };
+  const vl = () => { voiceBtn.hidden = !view.hasVoice; voiceBtn.classList.toggle('on', view.voice); voiceBtn.setAttribute('aria-pressed', String(view.voice)); $('#sc-rate', bar).textContent = speedNow(); setPlay(); };
   voiceBtn.onclick = async () => { const pr = view.setVoice(!view.voice); vl(); await pr; vl(); };
   const toPiano = (why) => { if (!view.voice) return; view.setVoice(false); vl(); toast(`${why} — back to the piano (the voice sings at its own tempo and key)`); };
   const onSung = (e) => { // "Make it sing" finished for this score: Voice turns on
@@ -530,10 +530,10 @@ export function scoreToolbar(bar, it, view) {
   addEventListener('meowsic-new-items', onSung);
   const rate = (d) => {
     toPiano('Tempo changed');
-    const bpm = Math.max(30, Math.min(220, Math.round(t.bpm * p().rate / 5) * 5 + d * 5));
-    p().setRate(bpm / t.bpm);
-    store.update(it.id, { rate: bpm / t.bpm });
-    $('#sc-rate', bar).textContent = `${bpm} bpm`;
+    const r = Math.max(0.25, Math.min(2, (Math.round((p().rate || 1) * 20) + d) / 20)); // 5% at a time
+    p().setRate(r);
+    store.update(it.id, { rate: r });
+    $('#sc-rate', bar).textContent = speedNow();
   };
   $('#sc-slow', bar).onclick = () => rate(-1);
   $('#sc-fast', bar).onclick = () => rate(1);

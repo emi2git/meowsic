@@ -88,6 +88,25 @@ export function byline(it) {
     : it.ai || /^Meowsic( AI)?$/.test(src) ? 'Made by Meowsic' : 'Transcribed by Meowsic';
 }
 
+// no tempo on a drawn score (screen and print): metronome marks (♩ = 72), tempo words (Moderato, Slowly, rit.,
+// "a tempo", "= 72", "bpm"…) and <sound tempo> go. Only what is drawn: the player reads the tempo from the file.
+const TEMPO_WORDS = /^\s*[(\[]?\s*(?:(?:molto|poco|un poco|più|piu|meno|very|quite|a little|fairly|not too|not)\s+)*(?:larghissimo|largo|larghetto|lento|grave|adagio|adagietto|andante|andantino|moderato|allegretto|allegro|vivace|vivacissimo|presto|prestissimo|tempo(?:\s+(?:i|1|primo|di\s+\w+))?|a\s+tempo|rubato|ad\s+lib\.?|rit\.?|ritard\.?|ritardando|ritenuto|riten\.?|rall\.?|rallentando|accel\.?|accelerando|stringendo|allargando|slowly|slow|fast|quickly|briskly|brightly|moderately|moderate|lively|freely|steadily|steady|gently|leisurely)\b/i;
+const tempoText = (t) => { const s = t.replace(/<[^>]+>/g, '').replace(/&[a-z#0-9]+;/gi, ' ').trim(); return !!s && (TEMPO_WORDS.test(s) || /=\s*(?:c\.\s*|ca\.\s*)?\d{2,3}\b|\b\d{2,3}\s*bpm\b|[♩♪𝅘𝅥𝅗𝅥]/i.test(s)); };
+export function noTempoXml(xml) {
+  if (!xml) return xml;
+  const dropTempo = (sound) => { const s = sound.replace(/\s+tempo\s*=\s*"[^"]*"/g, ''); return /^<sound\s*\/?>(?:<\/sound>)?$/.test(s.replace(/\s+(?=\/?>)/g, '')) ? '' : s; };
+  return xml
+    .replace(/<direction\b[^>]*>[\s\S]*?<\/direction>/g, (d) => {
+      const types = d.match(/<direction-type\b[^>]*>[\s\S]*?<\/direction-type>/g) || [];
+      const keep = types.filter((t) => !/<metronome\b/.test(t) && !((t.match(/<words\b[^>]*>([\s\S]*?)<\/words>/g) || []).some(tempoText) && !/<(?:dynamics|segno|coda|rehearsal|wedge|pedal|octave-shift|bracket|dashes)\b/.test(t)));
+      const out = d.replace(/<sound\b[^>]*\/>|<sound\b[^>]*>[\s\S]*?<\/sound>/g, (s) => dropTempo(s));
+      if (keep.length === types.length) return out;
+      if (keep.length) return out.replace(/<direction-type\b[^>]*>[\s\S]*?<\/direction-type>/g, (t) => (keep.includes(t) ? t : ''));
+      return (out.match(/<sound\b[^>]*\/>|<sound\b[^>]*>[\s\S]*?<\/sound>/g) || []).join(''); // a <sound> with other settings stays, as a measure child
+    })
+    .replace(/<sound\b[^>]*\btempo\s*=[^>]*\/>/g, (s) => dropTempo(s));
+}
+
 // the MusicXML as OSMD should draw it: music21's stand-in title ("Music21 Fragment") becomes the item's title, its
 // "Music21" stamp goes; the credits are the item's real Artist (composer) + what Meowsic did (byline)
 export function classicXml(xml, it) {
