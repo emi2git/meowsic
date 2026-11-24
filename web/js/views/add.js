@@ -6,6 +6,7 @@ import { CHORD_CHARTS, SEARCH_EXTRA, TUNES } from '../mock.js';
 import { parseChordPro, linesHtml, diagramsHtml } from '../chordchart.js';
 import { VERSIONS } from '../musicxml.js';
 import { autoTag } from './autotag.js';
+import { suggestTags, tagChips } from '../tagchips.js';
 import { keySelect } from './chordsview.js';
 import { sheetUrl } from '../sheet-art.js';
 import { isTouch, isDesktop } from '../device.js';
@@ -169,23 +170,28 @@ async function uploadSheets(main, groups) {
 const toChordPro = (lines) => lines.map((l) => (l.t === 'blank' ? '' : l.t === 'section' ? `{c: ${l.text}}` : (l.parts || []).map((p) => (p.chord ? `[${p.chord}]` : '') + (p.text || '')).join(''))).join('\n');
 
 // ================= chords =================
+// Search (left) and preview (right); on a narrow screen one at a time, with "‹ Results" back.
+// Save opens a sheet: title, artist and the tags picked for you (chips; "+ Tag" adds more).
 const chordState = { q: '', src: 'auto', picked: null };
+const siteName = (s) => (s === 'hopamchuan' ? 'Hợp Âm Chuẩn' : 'Ultimate Guitar');
 
 export function addChordsView(main) {
   main.innerHTML = `
-    <header class="top"><a class="icon-btn back" href="#/library?kind=sheet" aria-label="Back">‹ Back</a><h1>Add chords</h1></header>
-    <div class="split-pane">
-      <div class="pane-l">
-        <form class="pad" id="cs-form">
-          <label class="search big">${icon('search')}<input type="search" id="cs-q" placeholder="Song name, e.g. Amazing Grace or Cò lả" value="${esc(chordState.q)}" aria-label="Song name"></label>
+    <div class="addch" id="addch">
+    <header class="top"><a class="icon-btn back" href="#/library?kind=sheet" aria-label="Back" id="ac-back">‹ Back</a><h1>Add chords</h1></header>
+    <div class="ac-body">
+      <div class="ac-list">
+        <form class="ac-form" id="cs-form">
+          <label class="search big">${icon('search')}<input type="search" id="cs-q" placeholder="Song name, e.g. Amazing Grace or Cò lả" value="${esc(chordState.q)}" aria-label="Song name" enterkeyhint="search"></label>
           <div class="seg small" id="cs-src">${[['auto', 'Auto'], ['en', 'English'], ['vi', 'Vietnamese']].map(([k, l]) =>
             `<button type="button" data-s="${k}" class="${chordState.src === k ? 'on' : ''}">${l}</button>`).join('')}</div>
         </form>
         <ul class="rows compact" id="cs-results"></ul>
-        <p class="pad center"><button class="src-btn" id="cs-paste">${icon('text')}<b>Paste</b></button> <a class="link small" href="#/help">Help</a></p>
+        <p class="ac-more"><button class="src-btn" id="cs-paste">${icon('text')}<b>Paste</b></button> <a class="link small" href="#/help">Help</a></p>
       </div>
-      <div class="pane-r" id="cs-preview"><div class="empty">${CAT}<p>Search for a song, then pick a result to preview it.</p></div></div>
-    </div>`;
+      <div class="ac-preview" id="cs-preview"><div class="empty">${CAT}<p>Search for a song, then pick a result to preview it.</p></div></div>
+    </div></div>`;
+  const root = $('#addch', main);
   let all = store.mode === 'mock' ? [...CHORD_CHARTS, ...SEARCH_EXTRA] : [];
   const inLib = new Set(store.items().filter((x) => x.kind === 'chords').map((x) => fold(x.title)));
   const results = () => {
@@ -213,50 +219,107 @@ export function addChordsView(main) {
     const r = store.mode === 'mock' ? results() : all;
     const ul = $('#cs-results', main);
     if (!chordState.q.trim()) { ul.innerHTML = `<li class="muted pad">Try “grace”, “danny”, “cò lả” or “clementine”.</li>`; return; }
-    ul.innerHTML = r.length ? r.map((c, i) => `<li class="row" data-i="${all.indexOf(c)}">
+    ul.innerHTML = r.length ? r.map((c) => `<li class="row" data-i="${all.indexOf(c)}">
         <span class="thumb t-chords">${esc(c.key)}</span>
         <div class="row-main"><div class="row-title">${esc(c.title)}</div>
-        <div class="row-sub"><span>${esc(c.artist)}</span><span class="dot">·</span><span>${c.source === 'hopamchuan' ? 'Hợp Âm Chuẩn' : 'Ultimate Guitar'}</span><span class="dot">·</span><span>Key ${c.key}</span></div></div>
+        <div class="row-sub"><span>${esc(c.artist)}</span><span class="dot">·</span><span>${siteName(c.source)}</span>${c.key ? `<span class="dot">·</span><span>Key ${esc(c.key)}</span>` : ''}</div></div>
         ${inLib.has(fold(c.title)) ? '<span class="pill">In library</span>' : ''}</li>`).join('')
       : `<li class="muted pad">No results for “${esc(chordState.q)}”.</li>`;
   };
   let t;
   $('#cs-q', main).oninput = (e) => { chordState.q = e.target.value; clearTimeout(t); t = setTimeout(drawResults, store.mode === 'mock' ? 200 : 450); };
-  $('#cs-form', main).onsubmit = (e) => { e.preventDefault(); drawResults(); };
+  $('#cs-form', main).onsubmit = (e) => { e.preventDefault(); $('#cs-q', main).blur(); drawResults(); };
   $('#cs-src', main).onclick = (e) => { const b = e.target.closest('[data-s]'); if (!b) return; chordState.src = b.dataset.s; main.querySelectorAll('#cs-src button').forEach((x) => x.classList.toggle('on', x === b)); drawResults(); };
-  $('#cs-results', main).onclick = (e) => { const li = e.target.closest('[data-i]'); if (!li) return; main.querySelectorAll('#cs-results .row').forEach((x) => x.classList.toggle('sel', x === li)); preview(main, all[+li.dataset.i]); };
+  $('#cs-results', main).onclick = (e) => {
+    const li = e.target.closest('[data-i]'); if (!li) return;
+    main.querySelectorAll('#cs-results .row').forEach((x) => x.classList.toggle('sel', x === li));
+    root.classList.add('picked');
+    preview(main, all[+li.dataset.i]);
+  };
   $('#cs-paste', main).onclick = () => pasteChart();
   drawResults();
 }
 
+// the chords of one search result, from the Mac: {text, key, capo, …} or {error}. Never an empty chart.
+async function fetchChart(c) {
+  try {
+    const r = await fetch(`/api/chords/fetch?url=${encodeURIComponent(c.url)}`);
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok) return { error: body.detail || `The Mac could not fetch this song (${r.status}).` };
+    const text = body.text ?? (body.lines ? toChordPro(body.lines) : '');
+    if (!String(text).trim()) return { error: 'No chords came back for this song.' };
+    return { ...body, text };
+  } catch { return { error: 'Chord search needs the Mac.' }; }
+}
+
+const hasChart = (c) => String(c?.text || '').trim().length > 0;
+
 async function preview(main, c) {
-  if (!c.text && store.mode !== 'mock') { // fetch the chords for this result
-    $('#cs-preview', main).innerHTML = '<p class="pad muted">Fetching chords…</p>';
-    const song = await store.api('GET', `/chords/fetch?url=${encodeURIComponent(c.url)}`, undefined, { queue: false });
-    if (!song) { $('#cs-preview', main).innerHTML = '<p class="pad muted">Couldn’t fetch this song.</p>'; return; }
-    c = { ...c, ...song, text: toChordPro(song.lines || []), key: song.key || c.key || '', capo: +song.capo || 0 };
+  const pane = $('#cs-preview', main), root = $('#addch', main);
+  const backRow = `<button type="button" class="ac-back link" id="pv-back">‹ Results</button>`;
+  const failed = (msg) => {
+    pane.innerHTML = `<div class="ac-pad">${backRow}<div class="ac-error" role="alert"><p><b>${esc(c.title)}</b></p><p>${esc(msg)}</p>
+      <button class="primary" id="pv-retry">Try again</button></div></div>`;
+    $('#pv-retry', pane).onclick = () => preview(main, c);
+    $('#pv-back', pane).onclick = () => root.classList.remove('picked');
+  };
+  if (!hasChart(c) && store.mode !== 'mock') { // fetch the chords for this result
+    pane.innerHTML = `<div class="ac-pad">${backRow}<p class="muted">Fetching chords…</p></div>`;
+    $('#pv-back', pane).onclick = () => root.classList.remove('picked');
+    const song = await fetchChart(c);
+    if (song.error) return failed(song.error);
+    c = { ...c, ...song, key: song.key || c.key || '', capo: +song.capo || 0 };
   }
+  if (!hasChart(c)) return failed('No chords came back for this song.');
   const chart = { ...c, lines: parseChordPro(c.text), transpose: null, tags: c.tags ? [...c.tags] : [] };
-  const pane = $('#cs-preview', main);
   const draw = () => {
-    pane.innerHTML = `<div class="pad">
-      <div class="pv-head"><div><h2>${esc(chart.title)}</h2><p class="muted">${esc(chart.artist)} · ${chart.source === 'hopamchuan' ? 'Hợp Âm Chuẩn' : 'Ultimate Guitar'} · original key ${chart.key}</p></div>
-      <button class="primary" id="pv-save">${icon('plus')}Save to library</button></div>
-      <div class="toolbar flat">${keySelect(chart)}</div>
-      <div class="pv-tags"><span class="muted">Tags</span> <span id="pv-tagslot"></span></div>
-      <div class="chart" style="--chart-size:16px"><div class="diagrams">${diagramsHtml(chart)}</div><div class="lyrics">${linesHtml(chart)}</div></div></div>`;
-    $('#pv-tagslot', pane).append(tagPicker([...store.db.tags], chart.tags, (v) => (chart.tags = v)));
+    pane.innerHTML = `<div class="ac-pad">${backRow}
+      <div class="pv-head"><h2>${esc(chart.title)}</h2><p class="muted small">${[chart.artist, siteName(chart.source), chart.key ? `original key ${chart.key}` : ''].filter(Boolean).map(esc).join(' · ')}</p></div>
+      <div class="pv-bar">${keySelect(chart)}<span class="grow"></span><button class="primary" id="pv-save">Save to library</button></div>
+      <div class="chart pv-chart"><div class="diagrams">${diagramsHtml(chart)}</div><div class="lyrics">${linesHtml(chart)}</div></div></div>`;
     $('#cv-key', pane).onchange = (e) => { chart.transpose = +e.target.value; draw(); };
-    $('#pv-save', pane).onclick = () => {
-      const it = store.add({ kind: 'chords', title: chart.title, artist: chart.artist, tags: chart.tags, source: chart.source, key: chart.key, capo: chart.capo || 0,
-        url: chart.url || `https://${chart.source === 'hopamchuan' ? 'hopamchuan.com' : 'tabs.ultimate-guitar.com'}/mock/${encodeURIComponent(chart.title)}`, originAt: Date.now(), text: chart.text, transpose: chart.transpose });
-      store.logEvent('add-chords', it.title, `${chart.source === 'hopamchuan' ? 'Hợp Âm Chuẩn' : 'Ultimate Guitar'} · key ${chart.key}`);
-      toast(`Saved “${it.title}”`, { label: 'Open', run: () => go(`#/item/${it.id}`) });
-      setTimeout(() => autoTag([it.id], { quiet: true }), 1500);
-    };
+    $('#pv-back', pane).onclick = () => root.classList.remove('picked');
+    $('#pv-save', pane).onclick = () => saveSheet(main, chart, () => preview(main, c));
   };
   draw();
-  if (innerWidth < 800) pane.scrollIntoView({ behavior: 'smooth' });
+  pane.scrollTop = 0;
+  $('#main').scrollTop = 0;
+}
+
+// the save step: title / artist, the tags picked for you, Save. Refuses a chart with no text (Try again refetches).
+function saveSheet(main, chart, retry) {
+  const counts = store.tagCounts();
+  const vocab = [...store.db.tags].sort((a, b) => (counts.get(b) || 0) - (counts.get(a) || 0) || a.localeCompare(b));
+  let tags = suggestTags({ title: chart.title, artist: chart.artist, album: chart.album, source: chart.source }, store.items(), vocab, counts);
+  const s = modal(`<h2>Save to library</h2>
+    <form id="sv-form" class="sv-form">
+      <label class="field">Title <input id="sv-title" value="${esc(chart.title)}" required autocomplete="off"></label>
+      <label class="field">Artist <input id="sv-artist" value="${esc(chart.artist || '')}" autocomplete="off"></label>
+      <div class="field"><span>Tags</span><div id="sv-tags"></div></div>
+      <div class="ac-error" id="sv-err" hidden role="alert"><p>This song has no chords or words, so it was not saved.</p><button type="button" class="primary" id="sv-retry">Try again</button></div>
+      <div class="modal-actions"><button type="button" data-close>Cancel</button><button class="primary" id="sv-save">Save</button></div>
+    </form>`, { wide: true });
+  if (isTouch()) setTimeout(() => s.el.contains(document.activeElement) && document.activeElement.blur(), 60); // no keyboard popping up over the tags
+  s.el.closest('.modal-wrap').classList.add('sv-wrap');
+  s.el.classList.add('sv-sheet');
+  $('#sv-tags', s.el).append(tagChips(vocab, tags, (v) => (tags = v)));
+  // the on-screen keyboard: keep the sheet above it
+  const vv = window.visualViewport, wrap = s.el.closest('.modal-wrap');
+  const fit = () => { if (vv) wrap.style.setProperty('--kb', `${Math.max(0, innerHeight - vv.height - vv.offsetTop)}px`); };
+  vv?.addEventListener('resize', fit); vv?.addEventListener('scroll', fit); fit();
+  const done = () => { vv?.removeEventListener('resize', fit); vv?.removeEventListener('scroll', fit); s.close(); };
+  $('#sv-retry', s.el).onclick = () => { done(); retry(); };
+  $('#sv-form', s.el).onsubmit = (e) => {
+    e.preventDefault();
+    if (!hasChart(chart)) { $('#sv-err', s.el).hidden = false; $('#sv-save', s.el).disabled = true; return; }
+    const title = $('#sv-title', s.el).value.trim() || chart.title, artist = $('#sv-artist', s.el).value.trim();
+    for (const t of tags) if (!store.db.tags.includes(t)) store.addTag(t);
+    const it = store.add({ kind: 'chords', title, artist, tags, source: chart.source, key: chart.key, capo: chart.capo || 0,
+      url: chart.url || `https://${chart.source === 'hopamchuan' ? 'hopamchuan.com' : 'tabs.ultimate-guitar.com'}/mock/${encodeURIComponent(chart.title)}`, originAt: Date.now(), text: chart.text, transpose: chart.transpose });
+    store.logEvent('add-chords', it.title, `${siteName(chart.source)}${chart.key ? ` · key ${chart.key}` : ''}`);
+    done();
+    toast(`Saved “${it.title}”`, { label: 'Open', run: () => go(`#/item/${it.id}`) });
+  };
 }
 
 function pasteChart() {
