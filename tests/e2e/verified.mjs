@@ -81,13 +81,13 @@ for (const [name, vp, dev] of [['Mac', MAC, 'mac'], ['iPad Pro 13', IPAD, 'ipad'
   t = await waitTags(sc.id, (x) => !x.includes('Verified'));
   check('tap again → off, tag removed', !(await badge(page))?.on && !t.includes('Verified'), JSON.stringify(t));
 
-  // Tags lives under App
+  // Tags lives under Manage
   if (vp === PHONE) {
     check('tab bar has no Tags', !(await page.$('#tabbar a[href="#/tags"]')));
     await page.goto(BASE + '#/library', { waitUntil: 'networkidle0' }); await sleep(500);
     await tap('#tab-more');
-    const util = await page.$$eval('.menu button', (e) => e.map((x) => x.textContent.trim()));
-    check('More menu: Activities, Manage library, Tags, Settings, Developer, Keyboard (no Help)', util.join('|') === 'Activities|Manage library|Tags|Settings|Developer|Keyboard', util.join('|'));
+    const util = await page.$$eval('.menu > *', (e) => e.map((x) => x.textContent.trim()));
+    check('More menu: MANAGE Library, Tags, App / DEVELOPER Activities, Feedback, Keyboard (no Help; Stats is a tab)', util.join('|') === 'Manage|Library|Tags|App|Developer|Activities|Feedback|Keyboard', util.join('|'));
     await page.screenshot({ path: `${SHOTS}/${dev}-more.png` });
     await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x) => x.textContent.includes('Tags')).click()); await sleep(500);
     check('Tags opens the tags page; More tab lit', (await page.evaluate(() => location.hash)) === '#/tags' && (await page.$eval('#tab-more', (e) => e.classList.contains('on'))));
@@ -97,9 +97,7 @@ for (const [name, vp, dev] of [['Mac', MAC, 'mac'], ['iPad Pro 13', IPAD, 'ipad'
       const nav = [...document.querySelectorAll('#side nav > *')].map((e) => e.textContent.trim().replace(/\d+$/, '').trim());
       return { nav, on: document.querySelector('#side a[href="#/tags"]')?.classList.contains('on') };
     });
-    const u = side.nav.indexOf('App');
-    check('left bar: Tags under App, after Manage library, before Settings', u > 0 && side.nav.indexOf('Tags') === side.nav.indexOf('Manage library') + 1 && side.nav.indexOf('Tags') > u && side.nav.indexOf('Tags') < side.nav.indexOf('Settings'), side.nav.join('|'));
-    check('left bar order: Library (+ kinds) / App / Beta', side.nav.join('|') === 'Library|Sheets|Scores|Chords|Books|App|Stats|Activities|Manage library|Tags|Settings|Developer|Beta|Keyboard', side.nav.join('|'));
+    check('left bar order: Library (+ kinds) / Manage / Developer', side.nav.join('|') === 'Library|Sheets|Scores|Chords|Books|Manage|Library|Tags|App|Developer|Stats|Activities|Feedback|Keyboard', side.nav.join('|'));
     check('Tags link lit on the tags page', side.on);
     if (vp === MAC) await page.screenshot({ path: `${SHOTS}/${dev}-sidebar.png` });
   }

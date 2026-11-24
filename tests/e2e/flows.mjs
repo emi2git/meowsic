@@ -418,15 +418,15 @@ check('filter to jobs only', !(await text('#ac')).includes('Moved to Trash'));
 await go('#/settings'); await sleep(200);
 check('Settings has no old-app import or mock reset', !/Bring in the old apps|Reset mock data/.test(await text('#main')));
 await go('#/developer'); await sleep(200);
-check('Developer page is the feedback box (old-app note gone), no mock data card', (await count('#fb-text')) === 1 && !/Bring in the old apps/.test(await text('#main')) && !/mock/i.test(await text('#main')));
-check('Developer in the left bar', (await text('#side')).includes('Developer'));
+check('Feedback page is the feedback box (old-app note gone), no mock data card', (await count('#fb-text')) === 1 && !/Bring in the old apps/.test(await text('#main')) && !/mock/i.test(await text('#main')));
+check('Feedback in the left bar (was Developer)', (await text('#side a[href="#/developer"]')) === 'Feedback');
 await go('#/settings'); await sleep(200);
 check('Settings has no old-app import or mock reset', !/Bring in the old apps|Reset mock data/.test(await text('#main')));
 await go('#/developer'); await sleep(200);
-check('Developer page is the feedback box (old-app note gone), no mock data card', (await count('#fb-text')) === 1 && !/Bring in the old apps/.test(await text('#main')) && !/mock/i.test(await text('#main')));
-check('Developer in the left bar', (await text('#side')).includes('Developer'));
-check('left bar: Manage library, no Trash of its own (it is a Manage library tab)', /Manage library/.test(await text('#side')) && !/Trash/.test(await text('#side')) && !/Utilities/i.test(await text('#side')) && !/Organize/i.test(await text('#side')) && !/\bBin\b/.test(await text('#side')));
-{ // every left-bar item has the same font, size and weight (Library, the top entry, may be bolder); small section headers: App, Beta
+check('Feedback page is the feedback box (old-app note gone), no mock data card', (await count('#fb-text')) === 1 && !/Bring in the old apps/.test(await text('#main')) && !/mock/i.test(await text('#main')));
+check('Feedback in the left bar (was Developer)', (await text('#side a[href="#/developer"]')) === 'Feedback');
+check('left bar: Manage library is "Library" under Manage, no Trash of its own (it is a Manage library tab)', (await text('#side a[href="#/manage"]')) === 'Library' && !/Trash/.test(await text('#side')) && !/Utilities/i.test(await text('#side')) && !/Organize/i.test(await text('#side')) && !/\bBin\b/.test(await text('#side')));
+{ // every left-bar item has the same font, size and weight (Library, the top entry, may be bolder); small section headers: Manage, Developer
   const f = await page.evaluate(() => {
     const st = (e) => { const c = getComputedStyle(e); return [c.fontFamily, c.fontSize, c.fontWeight].join('/'); };
     const r = (e) => e.getBoundingClientRect();
@@ -442,7 +442,7 @@ check('left bar: Manage library, no Trash of its own (it is a Manage library tab
   });
   const total = (await db()).items.filter((x) => !x.deleted).length;
   check('left bar: all nav labels share one font/size/weight', f.nav.length === 1, f.nav.join(' ; '));
-  check('left bar: section headers App then Beta, one style', f.h.length === 1 && f.heads.join('|') === 'App|Beta', f.heads.join('|') + ' ' + f.h.join(' ; '));
+  check('left bar: section headers Manage then Developer, one style', f.h.length === 1 && f.heads.join('|') === 'Manage|Developer', f.heads.join('|') + ' ' + f.h.join(' ; '));
   check('left bar: no All music row', !/All music/.test(await text('#side')));
   check('left bar: Library is the top entry and opens All music', f.lib.first && f.lib.text === 'Library' && f.lib.href === '#/library', JSON.stringify(f.lib));
   check('left bar: Library shows the total count, right-aligned', +f.lib.count === total && f.lib.right, JSON.stringify(f.lib) + ' total ' + total);
@@ -452,11 +452,13 @@ check('left bar: Manage library, no Trash of its own (it is a Manage library tab
   await go('#/library');
   check('on All music, Library is highlighted', (await count('#side .nav.on')) === 1 && (await page.$eval('#side .nav.on', (e) => e.classList.contains('lib'))));
   await go('#/settings');
-  check('Settings has a Help link', (await count('#main .top a[href="#/help"]')) === 1);
+  check('App page (was Settings) is titled App, has a Help link', (await text('#main h1')) === 'App' && (await count('#main .top a[href="#/help"]')) === 1);
   await page.click('#main .top a[href="#/help"]'); await sleep(400);
-  check('Help page still opens from Settings', (await page.evaluate(() => location.hash)) === '#/help' && /Help/.test(await text('#main h1')));
-  const beta = await page.evaluate(() => { const h = [...document.querySelectorAll('#side nav > *')]; const i = h.findIndex((e) => e.tagName === 'H3' && e.textContent === 'Beta'); return { last: i === h.length - 2, item: h[i + 1]?.textContent.trim(), href: h[i + 1]?.getAttribute('href'), afterApp: i > h.findIndex((e) => e.textContent === 'App') }; });
-  check('left bar: Beta section last, after App, with Keyboard → #/beta/keyboard', beta.last && beta.afterApp && beta.item === 'Keyboard' && beta.href === '#/beta/keyboard', JSON.stringify(beta));
+  check('Help page still opens from App', (await page.evaluate(() => location.hash)) === '#/help' && /Help/.test(await text('#main h1')));
+  const secs = await page.evaluate(() => { const out = {}; let cur = null; for (const e of document.querySelectorAll('#side nav > *')) { if (e.tagName === 'H3') out[cur = e.textContent] = []; else if (cur) out[cur].push(e.querySelector('span').textContent + '>' + e.getAttribute('href')); } return out; });
+  check('left bar: Manage = Library, Tags, App', (secs.Manage || []).join('|') === 'Library>#/manage|Tags>#/tags|App>#/settings', JSON.stringify(secs));
+  check('left bar: Developer (last) = Stats, Activities, Feedback, Keyboard', Object.keys(secs).join('|') === 'Manage|Developer' && (secs.Developer || []).join('|') === 'Stats>#/stats|Activities>#/activity|Feedback>#/developer|Keyboard>#/beta/keyboard', JSON.stringify(secs));
+  check('left bar: no App or Beta section header', !(await page.$$eval('#side h3', (e) => e.some((x) => /^(App|Beta)$/.test(x.textContent)))));
   await page.click('#side a[href="#/beta/keyboard"]'); await sleep(800);
   const kb = await page.evaluate(() => ({ hash: location.hash, h1: document.querySelector('#main h1')?.textContent, on: document.querySelector('#side .nav.on')?.getAttribute('href'), body: document.querySelector('#main').textContent }));
   check('Keyboard opens #/beta/keyboard (page or coming soon), Keyboard lit', kb.hash === '#/beta/keyboard' && kb.on === '#/beta/keyboard' && (/Coming soon/.test(kb.body) || kb.body.trim().length > 20), JSON.stringify(kb).slice(0, 300));
