@@ -54,9 +54,20 @@ export function scoreBody(root, it, { perform = false } = {}) {
   // each score reopens the way you left it: key (transpose), tempo and zoom are saved on the entry
   // iPad / iPhone keep their own zoom (this device only): a Mac zoom would overflow an iPhone
   const zDef = () => (perform ? 1.25 : 1) * (isNarrow() ? 0.62 : 1);
-  const zLocal = isTouch(), zKey = `meowsic-zoom-${it.id}`;
+  // the label is the user's zoom; OSMD draws at zoom × Z_BASE, so "100%" is the old 75% size
+  // saved zooms from before (old scale: device key meowsic-zoom-<id>, a number on the entry) are read as old / Z_BASE
+  // so they look the same; the new scale is kept under meowsic-scorezoom-<id> and as a string on the entry
+  const Z_BASE = 0.75, zClamp = (z) => Math.max(0.6, Math.min(2, Math.round(z * 100) / 100));
+  const zLocal = isTouch(), zKey = `meowsic-scorezoom-${it.id}`, zOld = `meowsic-zoom-${it.id}`;
   let zoom = zDef();
-  if (zLocal) { try { zoom = +localStorage.getItem(zKey) || zoom; } catch {} } else zoom = it.zoom || zoom;
+  if (zLocal) {
+    try {
+      const n = +localStorage.getItem(zKey), o = +localStorage.getItem(zOld);
+      if (n) zoom = n;
+      else if (o) { zoom = zClamp(o / Z_BASE); localStorage.setItem(zKey, zoom); localStorage.removeItem(zOld); }
+    } catch {}
+  } else if (typeof it.zoom === 'string') zoom = +it.zoom || zoom;
+  else if (typeof it.zoom === 'number' && it.zoom > 0) zoom = zClamp(it.zoom / Z_BASE);
   let osmd, player, stops = [], bar, ink = null, inkTool = null;
   let drawn = false; // OSMD has loaded and drawn the score (a resize / zoom before that must not render: "Before render, please load…")
 
@@ -158,7 +169,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     if (!svg) return [];
     const sr = sheet.getBoundingClientRect(), vr = svg.getBoundingClientRect();
     const vb = (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number);
-    const unit = (vb[2] ? vr.width / vb[2] : zoom) * 10; // px per OSMD unit
+    const unit = (vb[2] ? vr.width / vb[2] : zoom * Z_BASE) * 10; // px per OSMD unit
     const off = vr.top - sr.top;
     const sys = [];
     for (const pg of osmd.GraphicSheet?.MusicPages || []) for (const ms of pg.MusicSystems || []) {
@@ -234,7 +245,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     const xml = credit(tidyXml(real ? xmlText : musicXml({ ...tune, title: it.title }, version)));
     if (easy) kidsRules(r); // big noteheads: wider spacing
     await osmd.load(xml);
-    osmd.zoom = zoom;
+    osmd.zoom = zoom * Z_BASE;
     if (it.transpose) {
       osmd.TransposeCalculator = new O.TransposeCalculator();
       osmd.Sheet.Transpose = it.transpose;
@@ -410,7 +421,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get hasVoice() { return hasVoice(); }, get voice() { return player === voice && !!voice; }, setVoice,
     voiceReady(v) { Object.assign(it, v); voice?.destroy(); voice = null; if (voiceOn) setVoice(true); },
     zoomReset() { this.setZoom(zDef()); },
-    setZoom(z) { zoom = Math.max(0.6, Math.min(2, Math.round(z * 100) / 100)); if (zLocal) { try { localStorage.setItem(zKey, zoom); } catch {} } else store.update(it.id, { zoom }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zoom; relayout(); },
+    setZoom(z) { zoom = zClamp(z); if (zLocal) { try { localStorage.setItem(zKey, zoom); } catch {} } else store.update(it.id, { zoom: String(zoom) }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zoom * Z_BASE; relayout(); },
     get easy() { return easy; },
     async setEasy(on) { easy = !!on; setEasy(it, easy); root.dispatchEvent(new CustomEvent('easychange', { bubbles: true })); await render(); },
     get zoom() { return zoom; },
