@@ -1,17 +1,25 @@
 // Web Audio: sampled piano playback (from Meowsic 1's score reader).
 // iPad / iPhone: call audioCtx() straight from the tap, before any await.
 // - audioSession 'playback' (Safari 16.4+): Web Audio is heard with the Silent switch on (the default
-//   'ambient' session mutes it, while <audio> elements still play)
-// - a 1-sample silent buffer on the first tap unlocks output on older iOS
-// - 'suspended' and 'interrupted' (iOS: a call, Siri, another app) are resumed on the next tap
-let ctx, unlocked = false;
-export function audioCtx() {
-  try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch {}
+//   'ambient' session mutes it, while <audio> elements still play). Set once, before the first context:
+//   changing it while a context exists can interrupt that context on iOS. If a context still will not run
+//   under it, the next Play goes back to the default session.
+// - a 1-sample silent buffer on each new context unlocks output on older iOS
+// - Play never trusts a context that is not running: an 'interrupted' or 'suspended' one (iOS: a call, Siri,
+//   another app, the Home Screen app sent to the background) often never wakes, so Play makes a fresh one,
+//   inside the tap. A Play that still gets no running audio says so (the button goes back to Play).
+let ctx, unlocked = false, session = 'playback';
+const setSession = () => { try { if (navigator.audioSession && navigator.audioSession.type !== session) navigator.audioSession.type = session; } catch {} };
+export function audioCtx({ fresh = false } = {}) {
+  if (ctx && (ctx.state === 'closed' || (fresh && ctx.state !== 'running'))) { const old = ctx; ctx = null; try { old.onstatechange = null; old.close()?.catch?.(() => {}); } catch {} }
   if (!ctx) {
+    setSession();
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-    ctx.onstatechange = () => { if (ctx.state === 'interrupted') unlocked = false; };
+    unlocked = false;
+    const c = ctx;
+    c.onstatechange = () => { if (c === ctx && c.state === 'interrupted') unlocked = false; };
   }
-  if (ctx.state !== 'running' && ctx.state !== 'closed') { try { const p = ctx.resume(); p?.catch?.(() => {}); } catch {} }
+  if (ctx.state !== 'running') { try { const p = ctx.resume(); p?.catch?.(() => {}); } catch {} }
   if (!unlocked) {
     try {
       const src = ctx.createBufferSource();
@@ -22,8 +30,10 @@ export function audioCtx() {
   }
   return ctx;
 }
+// a context that would not run: the next one starts under the default audio session (still heard, Silent off)
+const gaveUp = () => { session = 'auto'; };
 export const audioState = () => (ctx ? ctx.state : 'none'); // for tests
-// the next tap anywhere wakes an interrupted / suspended context (iOS), so Play works first time after a call
+// the next tap anywhere wakes a suspended context (iOS), so the orange line and sound carry on
 for (const ev of ['touchend', 'pointerup', 'keydown']) {
   addEventListener(ev, () => { if (ctx && ctx.state !== 'running' && ctx.state !== 'closed') audioCtx(); }, { capture: true, passive: true });
 }
@@ -43,7 +53,7 @@ export function loadPiano() {
 }
 
 function pianoVoice(out, pitch, vel, when, held) {
-  const c = ctx, env = c.createGain();
+  const c = out.context, env = c.createGain();
   let src, tail;
   if (piano.length) {
     const s = piano.reduce((b, x) => (Math.abs(x.note - pitch) < Math.abs(b.note - pitch) ? x : b));
@@ -80,23 +90,25 @@ export class ScorePlayer {
   get qps() { return (this.bpm * this.rate) / 60; } // quarters per second
   now() {
     if (!this.playing) return this.posQ;
-    const t = ctx.currentTime;
+    const t = this.ctx.currentTime;
     const a = this.anchors.filter((x) => x.t0 <= t).pop() || this.anchors[0];
     return a.q0 + (t - a.t0) * this.qps;
   }
   async play() {
     if (this.playing) return;
-    const c = audioCtx(); // synchronous, inside the tap
+    const c = audioCtx({ fresh: true }); // synchronous, inside the tap; a stuck context is replaced
     await loadPiano();
-    if (c.state !== 'running') { try { await Promise.race([c.resume(), new Promise((ok) => setTimeout(ok, 500))]); } catch {} }
+    if (c.state !== 'running') { try { await Promise.race([c.resume(), new Promise((ok) => setTimeout(ok, 2000))]); } catch {} }
+    if (c.state !== 'running' || c !== ctx) { gaveUp(); throw new Error('audio did not start'); }
+    this.ctx = c;
     if (this.posQ >= (this.loop ? this.loop[1] : this.endQ)) this.posQ = this.loop ? this.loop[0] : 0;
     // from the very start: no waiting through rests before the first note (a score read from a sheet can open with them)
     const first = this.notes.reduce((m, n) => Math.min(m, n.q), Infinity);
     if (this.posQ <= 1e-3 && !this.loop && first > 0.01 && first < Infinity) this.posQ = first;
-    this.out = ctx.createGain(); this.out.gain.value = 0.85;
-    const comp = ctx.createDynamicsCompressor();
-    this.out.connect(comp); comp.connect(ctx.destination);
-    this.q0 = this.posQ; this.t0 = ctx.currentTime + 0.12;
+    this.out = c.createGain(); this.out.gain.value = 0.85;
+    const comp = c.createDynamicsCompressor();
+    this.out.connect(comp); comp.connect(c.destination);
+    this.q0 = this.posQ; this.t0 = c.currentTime + 0.12;
     this.anchors = [{ q0: this.q0, t0: this.t0 }];
     this.scheduledTo = this.posQ;
     this.playing = true;
@@ -112,7 +124,7 @@ export class ScorePlayer {
       const a = this.scheduledTo, b = Math.min(horizonQ, stopQ);
       for (const n of this.notes) if (n.q >= a && n.q < b) {
         const when = this.t0 + (n.q - this.q0) / this.qps;
-        pianoVoice(this.out, n.n + this.shift, n.v, Math.max(ctx.currentTime, when), Math.max(0.08, n.d / this.qps));
+        pianoVoice(this.out, n.n + this.shift, n.v, Math.max(this.ctx.currentTime, when), Math.max(0.08, n.d / this.qps));
       }
       this.scheduledTo = b;
       if (b >= stopQ) {
@@ -130,10 +142,10 @@ export class ScorePlayer {
     this.posQ = this.now();
     this.playing = false;
     clearInterval(this.timer); cancelAnimationFrame(this.raf);
-    const o = this.out; o.gain.setTargetAtTime(0, ctx.currentTime, 0.03); setTimeout(() => o.disconnect(), 300);
+    const o = this.out; o.gain.setTargetAtTime(0, this.ctx.currentTime, 0.03); setTimeout(() => o.disconnect(), 300);
   }
-  seek(q) { const was = this.playing; if (was) this.pause(); this.posQ = Math.max(0, Math.min(q, this.endQ)); this.onTick?.(this.posQ); if (was) this.play(); }
-  setRate(r) { const was = this.playing; if (was) this.pause(); this.rate = r; if (was) this.play(); }
+  seek(q) { const was = this.playing; if (was) this.pause(); this.posQ = Math.max(0, Math.min(q, this.endQ)); this.onTick?.(this.posQ); if (was) this.play().catch(() => {}); }
+  setRate(r) { const was = this.playing; if (was) this.pause(); this.rate = r; if (was) this.play().catch(() => {}); }
   stop() { this.pause(); this.posQ = 0; }
 }
 

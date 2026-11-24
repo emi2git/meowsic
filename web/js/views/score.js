@@ -345,7 +345,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     if (drag && e.pointerId === drag.id) {
       const was = drag.was; drag = null; dragEnd = Date.now();
       bar?.classList.remove('dragging');
-      if (was) player.play();
+      if (was) player.play().catch(() => {});
       return;
     }
     const t = tap; tap = null;
@@ -474,7 +474,7 @@ export function scoreToolbar(bar, it, view) {
   const setPlay = () => { const on = p().playing; playBtn.innerHTML = iconOn(on ? 'pause' : 'play'); playBtn.setAttribute('aria-label', on ? 'Pause' : 'Play'); playBtn.title = on ? 'Pause (space)' : 'Play (space)'; };
   playBtn.onclick = async () => {
     if (p().playing) p().pause();
-    else { const pr = p().play(); setPlay(); try { await pr; } catch { toast(view.voice ? 'Could not play the voice — tap Play again, or turn Voice off.' : 'Could not start playback.'); } }
+    else { const pr = p().play(); setPlay(); try { await pr; } catch { toast(view.voice ? 'Could not play the voice — tap Play again, or turn Voice off.' : 'No sound yet — tap Play again.'); } }
     setPlay();
   };
   $('#sc-stop', bar).onclick = () => { view.stop(); setPlay(); };
