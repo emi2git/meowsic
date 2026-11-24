@@ -4,7 +4,8 @@
 // the picker shows only for two staves and more, fits, Both at first; Play schedules notes only from the chosen staff
 // (window.__score.player.heard = [q, midi, staff]); the repeat still plays; chords follow the left hand (none for
 // right hand only); a change while playing takes effect at once; remembered on this device after a reload; three
-// staves: per-staff toggles, the last one on stays on; Edit notes has the same picker, in step with the toolbar, and
+// staves: per-staff toggles, the last one on stays on; in Edit notes the toolbar's picker stays on show (iPhone, where the
+// toolbar is hidden: the edit bar has one, without adding a row), in step, and
 // ▶ From here plays only the chosen hand.
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5371/';
@@ -118,18 +119,21 @@ for (const [name, vp] of DEVICES) {
   // Edit notes: the same picker, in step; ▶ From here plays the chosen hand only
   await tap('#sc-edit');
   await page.waitForSelector('.notes-panel #np-hands', { timeout: 8000 }); await sleep(600);
-  check('Edit notes: the picker is there, L on', await page.$eval('#np-hands [data-hand="L"]', (e) => e.classList.contains('on')));
-  check('Edit notes: it fits', await fits('#np-hands'));
-  await tap('#np-hands [data-hand="R"]');
-  check('Edit notes: R → the toolbar follows', (await page.$eval('#np-hands [data-hand="R"]', (e) => e.classList.contains('on'))) && (await page.$eval('#sc-hands [data-hand="R"]', (e) => e.classList.contains('on'))));
+  // iPhone: the toolbar is hidden while editing, so the edit bar has the picker; Mac / iPad: the toolbar's stays on show
+  const phone = name === 'iPhone', ep = phone ? '#np-hands' : '#sc-hands';
+  check(`Edit notes: one picker on show (${phone ? 'in the edit bar' : 'on the toolbar'}), L on`, (await page.$eval(`${ep} [data-hand="L"]`, (e) => e.classList.contains('on'))) && (await E(() => [...document.querySelectorAll('#np-hands, #sc-hands .hands')].filter((e) => e.getBoundingClientRect().width > 0).length)) === 1);
+  check('Edit notes: it fits', await fits(phone ? '#np-hands' : '#sc-hands .hands'));
+  check('Edit notes: the edit bar is no taller for it (iPhone: three rows)', !phone || (await E(() => [...document.querySelector('.notes-panel .np-row').children].filter((k) => k.getBoundingClientRect().width > 0).map((k) => k.getBoundingClientRect().top).sort((x, y) => x - y).filter((t, i, ts) => !i || t - ts[i - 1] > 20).length)) <= 3);
+  await tap(`${ep} [data-hand="R"]`);
+  check('Edit notes: R → the other picker follows', (await page.$eval('#np-hands [data-hand="R"]', (e) => e.classList.contains('on'))) && (await page.$eval('#sc-hands [data-hand="R"]', (e) => e.classList.contains('on'))));
   await E(() => { window.__score.player.rate = 2; });
   await tap('.notes-panel [data-a="playhere"]');
   for (let i = 0; i < 60 && (await E(() => window.__score.player.playing)); i++) await sleep(150);
   check('Edit notes ▶ From here, R only: only the top staff', (await staffSet()) === '0', await staffSet());
-  await tap('#np-hands [data-hand="L"]');
+  await tap(`${ep} [data-hand="L"]`);
   await tap('.notes-panel [data-a="playhere"]'); await sleep(700);
   const ke = await E(() => window.__score.player.heard.length);
-  await tap('#np-hands [data-hand="both"]'); await sleep(700);
+  await tap(`${ep} [data-hand="both"]`); await sleep(700);
   const ae = await E((k) => [...new Set(window.__score.player.heard.slice(k).map((h) => h[2]))].sort().join(), ke);
   check('Edit notes: L, then Both while playing', (await E((k) => window.__score.player.heard.slice(0, k).every((h) => h[2] === 1), ke)) && ae === '0,1', ae);
   await tap('.notes-panel [data-a="playhere"]'); await sleep(200);
