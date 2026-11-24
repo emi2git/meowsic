@@ -141,10 +141,14 @@ export function xmlInfo(text) {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   const notes = [];
   let bpm = 0, beats = 4, end = 0;
+  const barQ = []; // where each bar of the first part starts, in quarters
   for (const part of doc.querySelectorAll('part')) {
+    const first = !barQ.length;
     let div = 1, t = 0; // t in divisions
+    const tied = new Map(); // MIDI note → the sounding note a tie carries on
     for (const m of part.querySelectorAll(':scope > measure')) {
       let last = t;
+      if (first) barQ.push(t / div);
       for (const el of m.children) {
         if (el.tagName === 'attributes') {
           div = +(el.querySelector('divisions')?.textContent || div);
@@ -160,9 +164,15 @@ export function xmlInfo(text) {
           const chord = !!el.querySelector('chord');
           const start = chord ? last : t;
           const p = el.querySelector('pitch');
-          if (p && !el.querySelector('rest') && !el.querySelector('tie[type="stop"]')) {
+          if (p && !el.querySelector('rest')) {
             const midi = 12 * (+p.querySelector('octave').textContent + 1) + STEP_PC[p.querySelector('step').textContent] + +(p.querySelector('alter')?.textContent || 0);
-            notes.push({ q: start / div, d: d / div, n: midi, v: 90 });
+            const tieOf = (k) => el.querySelector(`tie[type="${k}"], notations > tied[type="${k}"]`);
+            // a tie joins the sound: the tied-to note lengthens the one it is tied from (no new attack)
+            const held = tieOf('stop') && tied.get(midi);
+            if (held) held.d = start / div + d / div - held.q;
+            else if (!tieOf('stop')) { const nt = { q: start / div, d: d / div, n: midi, v: 90 }; notes.push(nt); if (tieOf('start')) tied.set(midi, nt); }
+            if (held && !tieOf('start')) tied.delete(midi);
+            else if (held) tied.set(midi, held);
           }
           if (!chord) { last = t; t += d; }
           end = Math.max(end, t / div);
@@ -170,5 +180,5 @@ export function xmlInfo(text) {
       }
     }
   }
-  return { notes: notes.sort((a, b) => a.q - b.q), bpm: bpm || 100, beats, totalQ: end };
+  return { notes: notes.sort((a, b) => a.q - b.q), bpm: bpm || 100, beats, totalQ: end, barQ };
 }

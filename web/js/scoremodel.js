@@ -117,7 +117,7 @@ export class XmlModel {
     ty.textContent = type;
     if (dot) ty.after(this.el('dot'));
     if (trip) { const tm = this.el('time-modification'); tm.append(this.el('actual-notes', '3'), this.el('normal-notes', '2')); (n.querySelector('dot') || ty).after(tm); }
-    n.querySelectorAll('tie, notations > tied').forEach((e) => e.remove()); // a changed length breaks old ties
+    // ties and slurs stay (a changed length keeps the arc to the next note)
   }
   setLen(bi, ni, q) { for (const n of this.groups(bi)[ni].notes) this.writeLen(n, q); this.fix(bi); }
   toggleRest(bi, ni) {
@@ -134,7 +134,19 @@ export class XmlModel {
     g.notes[g.notes.length - 1].after(copy);
     this.fix(bi);
   }
-  del(bi, ni) { if (this.count(bi) <= 1) return; this.groups(bi)[ni].notes.forEach((e) => e.remove()); this.fix(bi); }
+  del(bi, ni) {
+    if (this.count(bi) <= 1) return;
+    const gs = this.groups(bi), g = gs[ni];
+    // a slur on the deleted note moves to its neighbour: a start to the next note, a stop to the one before
+    for (const sl of g.notes.flatMap((e) => [...e.querySelectorAll('notations > slur')])) {
+      const to = (sl.getAttribute('type') === 'start' ? gs[ni + 1] || gs[ni - 1] : gs[ni - 1] || gs[ni + 1])?.notes[0];
+      if (!to) continue;
+      let no = to.querySelector('notations');
+      if (!no) { no = this.el('notations'); to.insertBefore(no, to.querySelector('lyric') || null); }
+      no.append(sl);
+    }
+    g.notes.forEach((e) => e.remove()); this.fix(bi);
+  }
   triplet(bi, ni) {
     const [, d] = this.get(bi, ni);
     if (!isTriplet(d)) {
