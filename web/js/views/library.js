@@ -264,7 +264,7 @@ export function libraryView(main, { q }) {
   const offSwipe = attachSwipe(rowsEl, { onLeft: () => turn(1), onRight: () => turn(-1), onUp: null, canStart: () => fit() && !pressed });
   // rotation / resize: measure again (not while the keyboard is up; once it goes down instead)
   let rz = 0;
-  const onResize = () => { if (!fit()) return; cancelAnimationFrame(rz); rz = requestAnimationFrame(() => { if (!keyboardUp()) draw(); }); };
+  const onResize = () => { if (!fit()) return; cancelAnimationFrame(rz); rz = requestAnimationFrame(() => { if (rowsEl.isConnected && !keyboardUp()) draw(); }); };
   const onBlur = (e) => { if (e.target.id !== 'lib-q' || !fit()) return; main.scrollTop = 0; scrollTo(0, 0); setTimeout(onResize, 300); };
   // iOS Safari's toolbar growing / shrinking, rotation, an installed app's safe areas settling, the
   // header wrapping: any change of the room left for the rows. The ResizeObserver sees all of them

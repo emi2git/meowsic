@@ -93,6 +93,51 @@ export function itemView(main, { parts }) {
     const pf = filesKey();
     if (pf !== lastFiles) { lastFiles = pf; view?.redraw?.(); }
   });
+  const offFit = it.kind === 'sheet' ? null : fitBar($('.item-top', main), bar, $('.viewer', main));
   const opened = Date.now();
-  return () => { closeQuickFeedback(); document.removeEventListener('keydown', zoomKey); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); off(); offBar?.(); view.destroy(); store.logPlay(it.id, opened, Date.now()); };
+  return () => { offFit?.(); closeQuickFeedback(); document.removeEventListener('keydown', zoomKey); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); off(); offBar?.(); view.destroy(); store.logPlay(it.id, opened, Date.now()); };
+}
+
+// Score and chord chart toolbars never clip: their controls keep their natural size, and when the
+// header can't hold the title (at least TITLE_MIN), the toolbar and the header's buttons in one row,
+// the toolbar takes its own row under the title (.bar-row), wrapping there if even that is too narrow.
+// Measured from natural widths, so the answer is the same in either layout (no flip-flop).
+// Always their own row: phone width (any kind), and an iPad score below 1100px (portrait), as app.css has it.
+const TITLE_MIN = 140;
+const narrowQ = matchMedia('(max-width: 760px)'), tabletQ = matchMedia('(max-width: 1100px)');
+function fitBar(top, bar, viewer) {
+  const ownRow = () => narrowQ.matches || (viewer.classList.contains('k-score') && document.documentElement.dataset.device === 'tablet' && tabletQ.matches);
+  const gapOf = (el) => parseFloat(getComputedStyle(el).columnGap) || 0;
+  const shown = (el) => el.offsetParent !== null;
+  // first the normal spacing, then tighter (.bar-tight), then its own row
+  const measure = () => {
+    if (!top.isConnected) return;
+    const cl = viewer.classList;
+    cl.remove('bar-tight');
+    cl.toggle('bar-row', ownRow());
+    if (ownRow() || fits()) return;
+    cl.add('bar-tight');
+    if (fits()) return;
+    cl.remove('bar-tight');
+    cl.add('bar-row');
+  };
+  const fits = () => {
+    const kids = [...bar.children].filter(shown);
+    const need = kids.reduce((s, k) => s + k.offsetWidth, 0) + gapOf(bar) * Math.max(0, kids.length - 1);
+    const title = top.querySelector('.item-title');
+    const others = [...top.children].filter((k) => k !== bar && k !== title && shown(k));
+    const cs = getComputedStyle(top);
+    const room = top.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const used = others.reduce((s, k) => s + k.offsetWidth, 0) + gapOf(top) * (others.length + 1) + Math.min(title?.scrollWidth || 0, TITLE_MIN);
+    return need + used <= room;
+  };
+  let raf = 0;
+  const later = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(measure); };
+  const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(later) : null;
+  ro?.observe(top);
+  // the toolbar fills in after the score is drawn; buttons show and hide (hands, Play chords, Voice)
+  const mo = new MutationObserver(later);
+  mo.observe(bar, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
+  measure();
+  return () => { cancelAnimationFrame(raf); ro?.disconnect(); mo.disconnect(); };
 }

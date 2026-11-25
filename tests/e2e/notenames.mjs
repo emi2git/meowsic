@@ -1,4 +1,4 @@
-// The score toolbar's round toggles — chords (piano → ukulele → off), kids note names (baby), voice — against a test server (BASE, default :5190, a
+// The score toolbar's round toggles — chords (piano → ukulele → off), kids note names (baby), Play chords, voice — against a test server (BASE, default :5190, a
 // scratchpad copy of the data — never the real library). Per device (Mac, iPad, iPhone), on a two-staff transcription
 // (ID, default "Home NDP" m-b6xs990) and a made-up score without chord symbols:
 //  kids: off by default; on = a letter inside every notehead of every staff, heads grown (big), letter = the pitch,
@@ -6,7 +6,7 @@
 //        remembered on this device (all scores), off again = classic. Heads are big before layout (VexFlow), so every
 //        stem sits at its head's edge — right edge going up, left edge going down, never through the circle — at
 //        several zooms and in Dark theme too (iPad runs Dark).
-//  toolbar: exactly three round buttons, one icon each (no text); the chords icon shows its state.
+//  toolbar: exactly these round buttons (chords, kids, Play chords, voice), one icon each (no text); the chords icon shows its state.
 //  chords: off by default; piano = keyboards with the chord's keys shaded; ukulele = GCEA boxes; both as one compact row at the top of the
 //        score (under the toolbar, above the music, full width, scrolls sideways; no panel on the right); off = no strip, the score gets the
 //        full height back; the score below fits (pages + dots recomputed on iPad / iPhone). One box per
@@ -121,7 +121,7 @@ async function run(name, vp) {
   await page.goto(`${BASE}#/item/${ID}`, { waitUntil: 'networkidle0' }); await sleep(3500);
   let s = await state(page);
   check('classic by default: no letters, baby button off, chords off, no panel', s.letters === 0 && s.btn === false && s.kitten && !s.uke && s.ukeBtn === false && s.mode === 'off', JSON.stringify(s));
-  check('toolbar: chords + kids (+ voice when the score sings) as round icon-only buttons; no "A B C" / "Voice" text', s.toggles.map((x) => x.id).join() === 'sc-chords,sc-names,sc-voice' && s.toggles.every((x) => !x.text && x.icons === 1) && !s.abc, JSON.stringify(s.toggles));
+  check('toolbar: chords + kids + Play chords (+ voice when the score sings) as round icon-only buttons; no "A B C" / "Voice" text', s.toggles.map((x) => x.id).join() === 'sc-chords,sc-names,sc-chordplay,sc-voice' && s.toggles.every((x) => !x.text && x.icons === 1) && !s.abc, JSON.stringify(s.toggles));
   const dots0 = s.dots, h0 = s.plainH;
   await page.click('#sc-names'); await sleep(3500);
   s = await state(page);

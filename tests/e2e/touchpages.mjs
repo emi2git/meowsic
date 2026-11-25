@@ -146,12 +146,12 @@ for (const [name, w, h] of [['ipad-port', 1032, 1376], ['ipad-land', 1376, 1032]
   let s = await st();
   check('AI score: default zoom 100%', s.zoom === '100%', s.zoom);
   check('AI score: note names off by default (classic look)', s.on === false && s.letters === 0 && s.kbds === 0, JSON.stringify(s));
-  check('AI score: OSMD draws the title and "Made by Meowsic"', s.title.includes(ai.title) && s.title.includes('Meowsic') && !s.title.join(' ').includes('Meowsic AI'), s.title.slice(0, 5).join(' | '));
+  check('AI score: OSMD draws the title and "Made by Meowsic"', s.title.includes(ai.title) && s.title.includes('Made by Meowsic') && !s.title.join(' ').includes('Meowsic AI'), s.title.slice(0, 5).join(' | '));
   await p.screenshot({ path: `${OUT}/pages-mac-ai-classic.png` });
   await p.click('#sc-names'); await sleep(1500);
   s = await st();
   check('A B C button: on lights up, letters in the noteheads', s.on && s.pressed === 'true' && s.letters > 10, JSON.stringify({ ...s, title: 0 }));
-  check('A B C on: keyboard diagrams under the title', s.kbds > 0, s.kbds);
+  check('A B C on: no keyboard chord diagrams in the score (piano chords are the chords strip now)', s.kbds === 0, s.kbds);
   await p.screenshot({ path: `${OUT}/pages-mac-ai-names.png` });
   await open(p, ai.id, 3500);
   s = await st();

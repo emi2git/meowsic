@@ -463,6 +463,18 @@ legend { font-weight: 700; margin-bottom: 8px; }
 .toolbar.inline .transport .play { height: 34px; width: 48px; }
 .toolbar.inline .transport .stop { height: 34px; width: 36px; }
 .toolbar.inline .ctl { font-size: 13px; }
+/* score / chord chart: controls never shrink (a squeezed stepper clipped tempo and zoom); when the header
+   can't hold them beside the title, item.js fitBar sets .bar-row and they get their own row, wrapping if need be */
+:is(.k-score, .k-chords) .toolbar.inline > * { flex-shrink: 0; }
+.viewer:is(.k-score, .k-chords):not(.bar-row) .item-top { flex-wrap: nowrap; }
+.viewer:is(.k-score, .k-chords) .item-top > :not(.item-title) { flex-shrink: 0; white-space: nowrap; }
+.viewer:is(.k-score, .k-chords):not(.bar-row) .toolbar.inline { flex: 0 0 auto; margin-left: auto; }
+.viewer.bar-tight .item-top, .viewer.bar-tight .toolbar.inline, .viewer.bar-tight .tg-row { gap: 4px; }
+.viewer.bar-tight .toolbar.inline .stepper button, .viewer.bar-tight .seg.hands button { padding: 0 6px; }
+.viewer.bar-tight .stepper .zreset { min-width: 48px; }
+.viewer.bar-row .item-top { flex-wrap: wrap; row-gap: 6px; }
+.viewer.bar-row .toolbar.inline + * { margin-left: auto; }
+.viewer.bar-row .toolbar.inline { order: 20; flex-basis: 100%; justify-content: flex-start; flex-wrap: wrap; row-gap: 6px; }
 .lib-top { flex-wrap: wrap; row-gap: 8px; }
 .lib-top .search { max-width: 300px; margin-left: 0; }
 
