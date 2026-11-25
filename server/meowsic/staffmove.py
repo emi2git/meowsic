@@ -1490,7 +1490,7 @@ def _what(ops):
     for o in ops:
         k = o.get('op') or ('move' if 'to' in o else '')
         k = f'move{o.get("to")}' if k == 'move' else k
-        cnt[k] = cnt.get(k, 0) + (len(o.get('bars') or []) if k == 'unmark' else 1 if k in ('alt', 'delbar', 'fillbar', 'bartime', 'clearbar', 'addhand', 'insbar', 'addstaff', 'delstaff', 'clear', 'paste', 'pickup', 'keysig', 'timesig', 'repeat', 'ending', 'chord', 'realize', 'ottava') else len(o.get('refs') or []))
+        cnt[k] = cnt.get(k, 0) + (len(o.get('bars') or []) if k == 'unmark' else 1 if k in ('alt', 'delbar', 'fillbar', 'bartime', 'clearbar', 'addhand', 'insbar', 'addstaff', 'delstaff', 'clear', 'paste', 'pickup', 'keysig', 'timesig', 'repeat', 'ending', 'chord', 'realize', 'clef', 'ottava') else len(o.get('refs') or []))
     words = {'move1': lambda n: f'{s(n)} to the right hand', 'move2': lambda n: f'{s(n)} to the left hand', 'move3': lambda n: f'{s(n)} to staff 3',
              'pitch': lambda n: f'{s(n)} higher / lower', 'len': lambda n: f'{n} note{"s" if n != 1 else ""} / rest{"s" if n != 1 else ""} longer / shorter',
              'fill': lambda n: f'{s(n)} filled into the rest after', 'restdel': lambda n: f'{n} rest{"s" if n != 1 else ""} removed',
@@ -1510,7 +1510,7 @@ def _what(ops):
              'courtesy': lambda n: f'{n} courtesy accidental{"s" if n != 1 else ""} changed',
              'pickup': lambda n: 'the pickup changed', 'keysig': lambda n: f'{n} key change{"s" if n != 1 else ""}',
              'timesig': lambda n: f'{n} time change{"s" if n != 1 else ""}', 'repeat': lambda n: f'{n} repeat sign{"s" if n != 1 else ""} changed',
-             'ending': lambda n: f'{n} ending{"s" if n != 1 else ""} changed',
+             'ending': lambda n: f'{n} ending{"s" if n != 1 else ""} changed', 'clef': lambda n: f'{n} clef change{"s" if n != 1 else ""}',
              'ottava': lambda n: f'{n} octave line{"s" if n != 1 else ""} (8va / 8vb) changed',
              'chord': lambda n: f'{n} chord name{"s" if n != 1 else ""} changed', 'realize': lambda n: f'left hand written from the chords{f" ({n} times)" if n != 1 else ""}'}
     verses = sorted({str(o.get('verse') or '1') for o in ops if o.get('op') == 'lyrics'}, key=lambda v: (len(v), v))
