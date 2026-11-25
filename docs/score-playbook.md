@@ -123,6 +123,11 @@ instead of new notes: `{op:'ottava', staff, from_bar, to_bar, shift}` (bars 0-ba
 It writes `<octave-shift>` start / stop directions only. MusicXML `<pitch>` is the **sounding** pitch, so never
 transpose the notes yourself: playback, singing, chords and OMR tools read the same notes, and OSMD draws them an
 octave lower / higher under the dashed line.
+Part of a bar: add `from_beat` (1-based beat of `from_bar`; the line starts at the staff's first note from there) and/or
+`to_beat` (the line stops in `to_bar` before the notes from that beat on). E.g. bar 4 (1-based) up to, not including,
+pickup 8ths on beat 4, joining an 8va over bars 1–3: `{"op":"ottava","staff":1,"from_bar":3,"to_bar":3,"to_beat":4,"shift":8}`.
+`shift: 0` with beats takes the line off just there. Editor: pick 2+ notes (or a range) inside the bar → Bar ▾ →
+"8va over bar 4, before beat 4"; a single note or the whole bar's notes still give whole bars.
 
 ## 9. Reference songs (ids)
 | Song | Ids / notes |

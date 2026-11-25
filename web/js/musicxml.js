@@ -251,32 +251,45 @@ export function barMarks(part) {
   for (const br of brackets) for (let i = br.a; i <= br.z; i++) out[i].ending = br;
   return out;
 }
-// octave lines (8va / 8vb, octaveops.py) of a <part>: { staff: [shift of each bar] } (8, -8, 15, -15; 0 = none).
+// octave lines (8va / 8vb, octaveops.py) of a <part>: { staff: [{ a: [bar, q], z: [bar, q], shift }] } (shift 8, -8,
+// 15, -15; a / z: places, q in quarters from the bar's start, z exclusive; the end of a bar = [next bar, 0]).
 // Only the drawing: the <pitch> under one is still what sounds. A stop at the very start of a bar ends the line on
 // the bar before; a line never stopped runs to the end.
-export function ottavaBars(part) {
+export function ottavaLines(part) {
   const ms = [...part.querySelectorAll(':scope > measure')], out = {}, open = new Map();
-  const put = (o, z) => { const a = (out[o.staff] ||= ms.map(() => 0)); for (let i = o.a; i <= z; i++) a[i] = o.shift; };
+  const cmp = (x, y) => x[0] - y[0] || x[1] - y[1];
+  const put = (o, z) => (out[o.staff] ||= []).push({ a: o.a, z: cmp(z, o.a) < 0 ? o.a : z, shift: o.shift });
+  let div = 1;
   ms.forEach((m, bi) => {
-    let t = 0;
+    let t = 0, len = 0;
+    const rows = [];
     for (const el of m.children) {
-      if (el.tagName === 'backup') t -= +el.querySelector('duration').textContent;
-      else if (el.tagName === 'forward') t += +el.querySelector('duration').textContent;
-      else if (el.tagName === 'note') { if (!el.querySelector('grace') && !el.querySelector('chord')) t += +(el.querySelector('duration')?.textContent || 0); }
-      else if (el.tagName === 'direction') {
-        const staff = +(el.querySelector(':scope > staff')?.textContent || 1) || 1;
-        for (const o of el.querySelectorAll(':scope > direction-type > octave-shift')) {
-          const type = o.getAttribute('type'), key = `${staff}|${o.getAttribute('number') || 1}`;
-          if (type === 'up' || type === 'down') {
-            if (open.has(key)) put(open.get(key), bi);
-            open.set(key, { staff, a: bi, shift: (+o.getAttribute('size') === 15 ? 15 : 8) * (type === 'down' ? 1 : -1) });
-          } else if (type === 'stop' && open.has(key)) { const x = open.get(key); open.delete(key); put(x, t === 0 && bi > x.a ? bi - 1 : bi); }
-        }
+      const d = () => +(el.querySelector(':scope > duration')?.textContent || 0) / div;
+      if (el.tagName === 'attributes') { const x = el.querySelector('divisions'); if (x) div = +x.textContent || 1; }
+      else if (el.tagName === 'backup') t -= d();
+      else if (el.tagName === 'forward') { t += d(); len = Math.max(len, t); }
+      else if (el.tagName === 'note') { if (!el.querySelector('grace') && !el.querySelector('chord')) { t += d(); len = Math.max(len, t); } }
+      else if (el.tagName === 'direction') rows.push([el, t]);
+    }
+    const norm = (q) => (len && q >= len - 1e-6 ? [bi + 1, 0] : [bi, q]);
+    for (const [el, t] of rows) {
+      const staff = +(el.querySelector(':scope > staff')?.textContent || 1) || 1;
+      for (const o of el.querySelectorAll(':scope > direction-type > octave-shift')) {
+        const type = o.getAttribute('type'), key = `${staff}|${o.getAttribute('number') || 1}`;
+        if (type === 'up' || type === 'down') {
+          if (open.has(key)) put(open.get(key), norm(t));
+          open.set(key, { staff, a: norm(t), shift: (+o.getAttribute('size') === 15 ? 15 : 8) * (type === 'down' ? 1 : -1) });
+        } else if (type === 'stop' && open.has(key)) { const x = open.get(key); open.delete(key); put(x, t === 0 && bi > x.a[0] ? [bi, 0] : norm(t)); }
       }
     }
   });
-  for (const x of open.values()) put(x, ms.length - 1);
+  for (const x of open.values()) put(x, [ms.length, 0]);
   return out;
+}
+// the shift (8, -8, 15, -15; 0 = none) over the place [bar, q] of a staff, from ottavaLines
+export function ottavaAt(lines, staff, bar, q = 0) {
+  const at = (x) => x[0] < bar || (x[0] === bar && x[1] <= q + 1e-6);
+  return (lines[staff] || []).find((s) => at(s.a) && !at(s.z))?.shift || 0;
 }
 // [[bar index, time through]] in the order they are played
 export function playOrder(marks) {

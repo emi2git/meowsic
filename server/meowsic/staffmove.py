@@ -1071,8 +1071,8 @@ def edit(text: str, op: dict) -> tuple[str, list]:
                                       the same length) and `by` semitones (dragops.py)
       {op:'even', refs}               2+ notes / rests one after the other in one voice: one length each, the same
                                       total (dotted 8th + 16th → two 8ths); no plain / dotted value: refused (evenops.py)
-      {op:'ottava', staff, from_bar, to_bar, shift}  an 8va (8) / 8vb (-8) / 15ma / 15mb line over those bars of a
-                                      staff, 0: off (octaveops.py); the pitches stay (MusicXML pitch = what sounds)
+      {op:'ottava', staff, from_bar, to_bar, shift, from_beat?, to_beat?}  an 8va (8) / 8vb (-8) / 15ma / 15mb line over those bars of a
+                                      staff (from_beat / to_beat: from / before a beat inside the bar), 0: off (octaveops.py); the pitches stay (MusicXML pitch = what sounds)
     Every voice of every bar still fills it. Ties and slurs stay (fix_ties / fix_slurs)."""
     out, touched, _ = edit_ex(text, op)
     return out, touched
@@ -1173,7 +1173,7 @@ def edit_ex(text: str, op: dict, info=None):
                     if op.get('midi'): mid = int(op['midi'])
                     else:  # the middle of its staff as drawn (under an 8va line: an octave up)
                         from .octaveops import shift_at
-                        mid = (71 if _st(n) == '1' else 50) + shift_at(part, bi, _st(n))
+                        mid = (71 if _st(n) == "1" else 50) + shift_at(part, bi, _st(n), n)
                     _set_pitch(n, mid, flats[bi])
                     if (n.find('type') is None or n.findtext('type') == '') and len(pieces(q)) == 1: _set_type(n, q, div)
                     touched.append(n)
