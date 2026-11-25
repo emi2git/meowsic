@@ -6,7 +6,7 @@ Edit it in a worktree and push to v2 like any other change. The user's own reque
 Feedback (Developer → Feedback; ~/git/scripts/meowsic-feedback.py). Old phase 1–2 lists: docs/history/.
 
 
-Updated: 2026-11-24
+Updated: 2026-11-25
 
 ## In progress
 | # | Task | Status |
@@ -39,6 +39,11 @@ Updated: 2026-11-24
 - Re-add Home Screen icon (white top band)
 - Keyboard beta + Edit notes 🎹 on the Mac with the Yamaha (Calibrate first)
 - Approve voices: https://192.168.1.50:5180/takes/
+
+## Future (agreed, not started)
+| # | Task |
+|---|------|
+| F1 | Move production to the MacBook Pro server (ssh_server, 24/7, LaunchDaemon, single writer, backups to Synology); MacBook Air = dev only. Plan agreed 2026-11-25; the user starts it later. See [docs/server-plan.md](docs/server-plan.md) |
 
 ## Parked
 - Record your own singing/talking voice (future beta, in Feedback)
