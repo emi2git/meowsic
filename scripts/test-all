@@ -31,7 +31,7 @@ E2E = dev.REPO / 'tests' / 'e2e'
 # suite -> how it runs. 'preview' = serve.py (sample data, ?preview=1); 'server' = a fresh temp server;
 # 'restart' = the test stops / starts the server itself (gets SERVER = the shell command); env = extra env.
 SUITES = {
-    'flows': 'preview', 'keycolumn': 'preview', 'playback': 'preview', 'scorezoom': 'preview', 'topcast': 'preview',
+    'flows': 'preview', 'keycolumn': 'preview', 'libfit': 'preview', 'playback': 'preview', 'scorezoom': 'preview', 'topcast': 'preview',
     'touchseek': 'preview', 'betakeyboard': 'preview',
     'activities': 'server', 'chordplay': 'server', 'hands': 'server', 'tempo': 'server', 'addchords': 'server', 'addmusic': 'server', 'aimusic': 'server', 'books': 'server',
     'booksplit': 'server', 'checkbars': 'server', 'completeinfo': 'server', 'cuedrag': 'server', 'dailycleanup': 'server', 'easyscore': 'server',
@@ -154,7 +154,7 @@ def main():
 # the suites that pass on a fresh temp server / the preview. The others need songs a fresh server lacks (run them with
 # BASE pointing at a dev-server on a COPY of the library: scripts/dev-server --data <copy>), or are slow and heavy
 # (voice: loads the SoulX-Singer model; may time out while another sing job runs).
-MAIN = ['flows', 'keycolumn', 'playback', 'scorezoom', 'topcast', 'touchseek', 'betakeyboard',
+MAIN = ['flows', 'keycolumn', 'libfit', 'playback', 'scorezoom', 'topcast', 'touchseek', 'betakeyboard',
         'activities', 'chordplay', 'hands', 'tempo', 'addmusic', 'booksplit', 'completeinfo', 'cuedrag', 'dailycleanup', 'dragnote', 'editnotes', 'note32', 'evenout', 'editperf', 'feedback', 'jobs', 'langtoggle',
         'lyricmode', 'manage', 'menus', 'midiedit', 'organizepages', 'photoimport', 'quickfeedback', 'renameopen',
         'swipeclose', 'textinput', 'verified', 'offline', 'storage', 'swupdate', 'editsafe']

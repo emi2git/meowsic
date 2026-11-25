@@ -52,7 +52,7 @@ const LANG_ICON = {
 const LANG_TITLE = { world: 'All songs (tap: Vietnamese only)', vi: 'Vietnamese only (tap: all songs)' };
 // older devices stored 'all' (or 'world' = not Vietnamese): both are World now
 let lang = 'world'; try { lang = localStorage.getItem('meowsic-lang') === 'vi' ? 'vi' : 'world'; } catch {}
-const state = { q: '', sort: 'added', dir: 1, select: false, sel: new Set(), page: 1, anchor: null, per: 0, key: null };
+const state = { q: '', sort: 'added', dir: 1, select: false, sel: new Set(), page: 1, anchor: null, per: 0, key: null, top: 0 };
 try { const s = localStorage.getItem('meowsic-sort'); if (SORTS[s]) state.sort = s; state.dir = localStorage.getItem('meowsic-sort-dir') === '-1' ? -1 : 1; } catch {}
 const saveSort = () => { try { localStorage.setItem('meowsic-sort', state.sort); localStorage.setItem('meowsic-sort-dir', String(state.dir)); } catch {} };
 // No sort button: tap a column heading to sort by it (Title: A–Z ⇄ Z–A); the small ⌄ next to
@@ -133,6 +133,7 @@ export function libraryView(main, { q }) {
           const b = e.target.closest('[data-pg]');
           if (!b || b.disabled) return;
           state.page = b.dataset.pg === 'next' ? state.page + 1 : b.dataset.pg === 'prev' ? state.page - 1 : +b.dataset.pg;
+          state.top = (state.page - 1) * perPage(); // the row this page was turned to (kept through resizes)
           draw(); main.scrollTo({ top: 0 });
         });
         $('#lib-sort-menu', rows).onclick = (e) => menu(e.currentTarget, SORT_MENU.map(([k, d, l]) => ({
@@ -152,22 +153,30 @@ export function libraryView(main, { q }) {
     if (again && list.length && fit()) remeasure();
   };
 
-  // iPad / iPhone: how many rows fit between the header and the pager
+  // iPad / iPhone: how many whole rows fit between the header and the pager. Measured from the real
+  // DOM after drawing: #lib-rows is the flex box left under the header (search, tabs) and above the
+  // iPhone tab bar; take away the pager row, the table heading and the table's margins, divide by the
+  // real row height (book rows with covers are taller). Rows are never shrunk; the pager row sits at
+  // the bottom and the table has no bottom margin there (app.css), so what is left is under one row.
   const perPage = () => (fit() ? state.per || 8 : PAGE);
   const keyboardUp = () => document.activeElement?.id === 'lib-q';
   const remeasure = () => {
     if (keyboardUp() && state.per && perKind === kind) return; // the on-screen keyboard is up: keep the count
     const box = $('#lib-rows', main), table = box.querySelector('.lib-table'), rows = [...box.querySelectorAll('tr.row')];
     if (!table || !rows.length || !box.clientHeight) return;
-    const cs = getComputedStyle(table);
-    const room = box.clientHeight - box.querySelector('.pager-row').offsetHeight - table.tHead.offsetHeight - parseFloat(cs.marginTop) - parseFloat(cs.marginBottom);
+    const cs = getComputedStyle(table), pr = box.querySelector('.pager-row');
+    const room = box.getBoundingClientRect().height - pr.getBoundingClientRect().height - table.tHead.getBoundingClientRect().height - parseFloat(cs.marginTop) - parseFloat(cs.marginBottom);
     const rowH = Math.max(...rows.map((r) => r.getBoundingClientRect().height));
     const n = Math.max(1, Math.floor((room + 0.5) / rowH));
     perKind = kind;
     if (n === perPage()) return;
-    const first = (state.page - 1) * perPage(); // keep the first row on screen (rotation)
+    // keep the row the page was turned to on screen (rotation, Safari's toolbar), even after
+    // several sizes in a row; when it isn't on this page any more (search, sort), the first row
+    const first = (state.page - 1) * perPage();
+    const top = state.top >= first && state.top < first + perPage() ? state.top : first;
     state.per = n;
-    state.page = Math.floor(first / n) + 1;
+    state.page = Math.floor(top / n) + 1;
+    state.top = top;
     draw(false);
   };
   const turn = (d) => { const b = main.querySelector(`.pager [data-pg="${d > 0 ? 'next' : 'prev'}"]`); if (b && !b.disabled) b.click(); };
@@ -257,7 +266,15 @@ export function libraryView(main, { q }) {
   let rz = 0;
   const onResize = () => { if (!fit()) return; cancelAnimationFrame(rz); rz = requestAnimationFrame(() => { if (!keyboardUp()) draw(); }); };
   const onBlur = (e) => { if (e.target.id !== 'lib-q' || !fit()) return; main.scrollTop = 0; scrollTo(0, 0); setTimeout(onResize, 300); };
+  // iOS Safari's toolbar growing / shrinking, rotation, an installed app's safe areas settling, the
+  // header wrapping: any change of the room left for the rows. The ResizeObserver sees all of them
+  // (window and visualViewport resize may not fire for every one of them on iOS).
   addEventListener('resize', onResize);
+  addEventListener('orientationchange', onResize);
+  window.visualViewport?.addEventListener('resize', onResize);
+  let lastH = 0;
+  const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(([e]) => { const h = Math.round(e.contentRect.height); if (h !== lastH) { lastH = h; onResize(); } }) : null;
+  ro?.observe(rowsEl);
   main.addEventListener('focusout', onBlur);
   rowsEl.addEventListener('contextmenu', (e) => { if (e.target.closest('.row') && e.pointerType !== 'mouse' && isTouch()) e.preventDefault(); });
   const onKey = (e) => {
@@ -270,7 +287,7 @@ export function libraryView(main, { q }) {
   draw();
   const offDevice = onDeviceChange(() => draw());
   const off = store.on(() => draw());
-  return () => { off(); offDevice(); offSwipe(); removeEventListener('resize', onResize); main.removeEventListener('focusout', onBlur); document.removeEventListener('keydown', onKey); };
+  return () => { off(); offDevice(); offSwipe(); removeEventListener('resize', onResize); removeEventListener('orientationchange', onResize); window.visualViewport?.removeEventListener('resize', onResize); ro?.disconnect(); main.removeEventListener('focusout', onBlur); document.removeEventListener('keydown', onKey); };
 }
 
 // tag filter: a list of checkboxes that stays open while you tick; live counts; Clear all
