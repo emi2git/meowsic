@@ -53,9 +53,14 @@ const hookBrowser = (b) => {
   }
   return b;
 };
+// 3. Chrome gets a fake sound output: its audio clock always runs and nothing is heard. With the real output the
+// AudioContext clock can stand still (lid closed: the built-in speakers stop pulling; no device; a stuck CoreAudio),
+// so Play rightly gives up ("No sound yet") and the playback checks fail for a reason that is not the app's.
+const FAKE_AUDIO = '--disable-audio-output';
+const withFakeAudio = (o = {}) => ({ ...o, args: [...(o.args || []).filter((x) => x !== FAKE_AUDIO), FAKE_AUDIO] });
 for (const k of ['launch', 'connect']) {
   const f = puppeteer[k].bind(puppeteer);
-  puppeteer[k] = async (...a) => hookBrowser(await f(...a));
+  puppeteer[k] = async (o, ...a) => hookBrowser(await f(k === 'launch' ? withFakeAudio(o) : o, ...a));
 }
 const nodeFetch = globalThis.fetch;
 globalThis.fetch = (input, init = {}) => {

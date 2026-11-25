@@ -7,6 +7,7 @@
 //  4. a browser that never saved (another context, no localStorage) gets the draft back from the Mac;
 //  5. the server restarts mid-edit: the edits stay, a Save while it is down shows an error that stays, after it is
 //     back Save works.
+import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 import { spawn } from 'child_process';
