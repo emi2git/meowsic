@@ -117,7 +117,7 @@ check('old entry zoom (old scale) is ignored', (await text('#sv-zreset')) === '1
 await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('meowsic-mock-v6')); delete d.items.find((x) => x.id === 's-001').zoom; localStorage.setItem('meowsic-mock-v6', JSON.stringify(d)); });
 await page.reload({ waitUntil: 'networkidle0' }); await go('#/item/s-001');
 check('Mac shows two pages', (await shown()) === '1–2' && (await count('.page')) === 2, await shown());
-check('no "Page n of N" text in the top bar', !(await page.$('#pageno')));
+check('no "Page n of N" text in the top bar', !/Page \d+ of/.test(await page.$eval('#it-bar', (e) => e.textContent)));
 check('page dots: one per page, both shown pages filled', (await count('#sv-dots i')) === 3 && (await count('#sv-dots i.on')) === 2);
 check('page dots centered at the bottom of the frame', await page.$eval('#sv-dots', (d) => { const r = d.getBoundingClientRect(), f = d.closest('.sheet-frame').getBoundingClientRect(), dots = [...d.children].map((i) => i.getBoundingClientRect()); const mid = (dots[0].left + dots.at(-1).right) / 2; return Math.abs(mid - (f.left + f.width / 2)) <= 2 && f.bottom - r.bottom <= 6 && dots[0].width <= 6; }));
 check('opens at 100% = the spread fits the frame', (await text('#sv-zreset')) === '100%' && (await fits()));

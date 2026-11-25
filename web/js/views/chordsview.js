@@ -70,7 +70,6 @@ export function chordsBody(root, it, { perform = false } = {}) {
     setSpeed(s) { speed = s; cancelAnimationFrame(raf); last = 0; if (s) raf = requestAnimationFrame(tick); },
     get speed() { return speed; },
     get page() { return page + 1; }, get pages() { return pages.length; },
-    get pageLabel() { return paged && pages.length ? `Page ${page + 1} of ${pages.length}` : ''; },
     goTo(n) { goPage(n - 1); },
     destroy() { off(); offSwipe(); ro?.disconnect(); cancelAnimationFrame(raf); },
   };
@@ -87,8 +86,9 @@ export function keySelect(it) {
 }
 
 export function chordsToolbar(bar, it, view) {
+  window.__chords = view; // for automated tests (page / pages)
   const drawBar = () => {
-    bar.innerHTML = `${view.pageLabel ? `<span class="pageno" id="pageno">${view.pageLabel}</span>` : ''}${keySelect(it)}
+    bar.innerHTML = `${keySelect(it)}
       <div class="stepper" aria-label="Text size"><button id="cv-sm" aria-label="Smaller text" title="Smaller (−)">${iconOn('zoomout')}</button><button id="cv-reset" class="zreset" title="Reset size (0)">${Math.round(view.size / 18 * 100)}%</button><button id="cv-lg" aria-label="Larger text" title="Larger (+)">${iconOn('zoomin')}</button></div>`;
     $('#cv-key', bar).onchange = (e) => store.update(it.id, { transpose: +e.target.value });
     const sl = () => ($('#cv-reset', bar).textContent = `${Math.round(view.size / 18 * 100)}%`);

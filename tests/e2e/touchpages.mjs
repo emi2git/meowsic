@@ -1,5 +1,5 @@
 // iPad / iPhone: scores and chord charts never scroll; they are pages like a sheet (swipe / edge tap
-// turns, "Page n of N", swipe up / down = back), recomputed on rotation; playback turns the page.
+// turns, no "Page n of N" label, swipe up / down = back), recomputed on rotation; playback turns the page.
 // Note-names toggle (A B C) is off by default and remembered; default zoom 100%. Mac still scrolls.
 // Needs a server with a long score ("One Day More"), a Meowsic score and a chord chart long
 // enough for several pages: BASE=http://localhost:5224/ OUT=<dir for screenshots>
@@ -20,8 +20,9 @@ const chords = all.filter((x) => x.kind === 'chords').sort((a, c) => (c.text || 
 if (!long || !ai || !chords) { console.log('missing test items', !!long, !!ai, !!chords); process.exit(1); }
 
 const open = async (p, id, wait) => { await p.goto(BASE + '#/library', { waitUntil: 'networkidle0' }); await p.evaluate((i) => { location.hash = '#/item/' + i; }, id); await sleep(wait); };
-const label = (p) => p.$eval('#pageno', (e) => e.textContent).catch(() => '');
-const pg = async (p) => { const m = /Page (\d+) of (\d+)/.exec(await label(p)) || []; return { n: +m[1] || 0, of: +m[2] || 0 }; };
+// the page state (there is no "Page n of N" label): the viewer's page / pages
+const pg = (p) => p.evaluate(() => (() => { const v = document.querySelector('#chart') ? window.__chords : document.querySelector('.score-wrap') ? window.__score : null; return v && v.pages ? { n: v.page, of: v.pages } : { n: 0, of: 0 }; })());
+const label = async (p) => JSON.stringify(await pg(p));
 const noScroll = (p) => p.evaluate(() => {
   const els = [document.scrollingElement, document.querySelector('#main'), document.querySelector('#it-body')];
   return els.every((e) => !e || e.scrollHeight <= e.clientHeight + 1);
@@ -163,7 +164,7 @@ for (const [name, w, h] of [['ipad-port', 1032, 1376], ['ipad-land', 1376, 1032]
   await open(p, long.id, 4000);
   check('A B C button on a non-AI score too', !!(await p.$('#sc-names')));
   // Mac: still scrolls, no page number
-  check('Mac: the score scrolls (no pages)', await p.$eval('#it-body', (e) => e.scrollHeight > e.clientHeight + 100) && !(await p.$('#pageno')));
+  check('Mac: the score scrolls (no pages)', await p.$eval('#it-body', (e) => e.scrollHeight > e.clientHeight + 100) && (await pg(p)).of === 0 && !/Page \d+ of/.test(await p.$eval('#it-bar', (e) => e.textContent)));
   await p.close();
 }
 console.log(`\n${pass} passed, ${fail} failed`); console.log(errs.length ? 'errors:\n' + errs.join('\n') : 'no page errors');

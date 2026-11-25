@@ -69,7 +69,7 @@ await open(t, chords.id);
 // the sample charts are short: make this one long enough to scroll on a phone (preview data only)
 await t.evaluate(async (id) => { const { store } = await import('/js/store.js'); const it = store.get(id); store.update(id, { text: Array(8).fill(it.text).join('\n') }); }, chords.id); await sleep(500);
 const host = () => t.$eval('#it-body', (e) => ({ top: e.scrollTop, h: e.clientHeight, max: e.scrollHeight - e.clientHeight }));
-const pg = async () => { const m = /Page (\d+) of (\d+)/.exec(await t.$eval('#pageno', (e) => e.textContent).catch(() => '')) || []; return { n: +m[1] || 0, of: +m[2] || 0 }; };
+const pg = () => t.evaluate(() => (() => { const v = document.querySelector('#chart') ? window.__chords : document.querySelector('.score-wrap') ? window.__score : null; return v && v.pages ? { n: v.page, of: v.pages } : { n: 0, of: 0 }; })()); // the viewer's page / pages (no "Page n of N" label)
 // iPad / iPhone: chord charts and scores are pages (no scrolling); swipe left / right turns
 let h0 = await host(), p0 = await pg();
 check('chords: pages, nothing scrolls on a phone', h0.max <= 1 && p0.n === 1 && p0.of > 1, JSON.stringify([h0, p0]));

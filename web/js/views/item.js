@@ -36,12 +36,6 @@ export function itemView(main, { parts }) {
   let view, offBar;
   // Verified (scores): tag-backed toggle beside the title
   const drawVerified = $('#it-verified', main) ? wireVerified($('#it-verified', main), it.id) : null;
-  // "Page n of N": scores / chord charts shown as pages on iPad / iPhone (sheets show page dots instead)
-  $('.viewer', main).addEventListener('pagechange', (e) => {
-    const { show, pages } = e.detail;
-    const el = $('#pageno', main);
-    if (el) el.textContent = `Page ${show.join('–')} of ${pages}`;
-  });
   if (it.kind === 'sheet') {
     view = sheetBody(body, it);
     sheetToolbar(bar, it, view);

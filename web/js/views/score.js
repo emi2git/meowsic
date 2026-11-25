@@ -600,7 +600,6 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get zoom() { return zoom; },
     get osmd() { return drawn ? osmd : null; },
     get page() { return page + 1; }, get pages() { return pages.length; },
-    get pageLabel() { return paged && pages.length ? `Page ${page + 1} of ${pages.length}` : ''; },
     goTo(n) { goPage(n - 1); },
     setTool(t) { inkTool = t; ink?.setTool(t); },
     undo() { ink?.undo(); }, clear() { ink?.clear(); },
@@ -712,8 +711,7 @@ function tempoPop(anchor, view, setT) {
 export function scoreToolbar(bar, it, view) {
   // tempo in beats per minute, here only (no tempo mark is drawn on the score); the same for the voice
   window.__score = view; // for automated tests (the orange line shows where it is; there is no position bar)
-  bar.innerHTML = `${view.pageLabel ? `<span class="pageno" id="pageno">${view.pageLabel}</span>` : ''}
-    <div class="transport">
+  bar.innerHTML = `<div class="transport">
       <button class="icon-btn stop" id="sc-stop" aria-label="Stop" title="Stop: back to where you put the line; again: back to the beginning">${iconOn('stop')}</button>
       <button class="play" id="sc-play" aria-label="Play" title="Play (space)">${iconOn('play')}</button>
     </div>

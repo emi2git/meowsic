@@ -60,7 +60,7 @@ const state = (page) => page.evaluate(() => {
     boxes: [...document.querySelectorAll('.chord-strip .uk-chord')].map((x) => ({ c: x.dataset.chord, frets: x.querySelector('svg')?.dataset.frets, fingers: x.querySelector('svg')?.dataset.fingers, barre: x.querySelector('svg')?.dataset.barre })),
     none: document.querySelector('.chord-strip .uk-none')?.textContent || '',
     hits: document.querySelectorAll('#osmd .uke-hit').length,
-    page: document.querySelector('#pageno')?.textContent || '', dots: document.querySelectorAll('.score-dots i').length,
+    page: window.__score?.pages ? window.__score.page : 0, dots: document.querySelectorAll('.score-dots i').length,
     panelBox: (() => { const p = document.querySelector('.chord-strip'); if (!p) return null; const r = p.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, vw: innerWidth, vh: innerHeight }; })(),
     stripCheck: (() => {
       const p = document.querySelector('.chord-strip'), top = document.querySelector('.item-top'), body = document.querySelector('.viewer-body'), row = p?.querySelector('.uk-row');
@@ -140,7 +140,7 @@ async function run(name, vp) {
     await page.evaluate(() => document.querySelector('#sc-zreset').click()); await sleep(2000);
   }
   check('kids: no keyboard chord diagrams', s.kbds === 0);
-  if (touch) check('kids: pages + dots recomputed (more pages with the bigger notes)', s.dots >= dots0 && /Page 1 of/.test(s.page), `${dots0} → ${s.dots} ${s.page}`);
+  if (touch) check('kids: pages + dots recomputed (more pages with the bigger notes)', s.dots >= dots0 && s.page === 1, `${dots0} → ${s.dots} ${s.page}`);
   await page.screenshot({ path: `${SHOTS}/kids-${name}.png` });
   // the letter is the drawn pitch (first notes of staff 1 vs the MusicXML)
   const first = await page.evaluate(() => [...document.querySelectorAll('#osmd text.nl')].slice(0, 3).map((t) => t.textContent).join(''));
