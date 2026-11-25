@@ -13,7 +13,7 @@ Activities undo (the MusicXML before, from .history) opens it again by itself.
 
 GET  /api/items/{id}/check  → the above + open, url per page, sha of the score
 POST /api/items/{id}/check  {bar, action: "ok" | "use", alt?: id, sha?, act?} → the bar marked fine, or the other
-     reading put in (its notes; the bar keeps its chord names, words — by order — and marks). Logged with Undo.
+     reading put in (its notes; the bar keeps its chord names, words — by time, carry_lyrics — and marks). Logged with Undo.
      {bars: "all" | [n, ...], action: "ok"} → those bars (all still open) marked fine at once: one Undo.
 """
 import json
@@ -122,8 +122,85 @@ def _drop_from_field(root, bar):
                         if ident is not None: ident.remove(misc)
 
 
+def _sv(e):
+    return (e.findtext('staff') or '1').strip(), (e.findtext('voice') or '1').strip()
+
+
+def _tied(e, kind):
+    return any(x.get('type') == kind for x in e.findall('tie')) or any(x.get('type') == kind for x in e.findall('notations/tied'))
+
+
+def carry_lyrics(old, new, cur, unit):
+    """The bar's old words onto its new notes BY TIME, not by order (an inserted fill note must not shift them).
+
+    old: _timed(meas) of the bar before (onsets in the score's unit `cur`); new: the other reading's note / backup /
+    forward elements, durations already in `unit`. Each <lyric> (every verse line, with its syllabic and extend) moves
+    on its own, keyed by (staff, voice, onset, line number):
+      1. onto the new note of the same staff and voice that is struck at that onset (a chord: its first note);
+      2. else onto the struck note still sounding there (a tie chain sounds from the note that starts it to its
+         last note), if that line is free on it;
+      3. else (a rest covers the onset, or the sounding note has its own word on that line) onto the next struck
+         note after the onset in that voice whose line is free; else the word is dropped (no note is left for it).
+    A tied-into note is not struck, so it never gets a word of its own. When the new bar has no notes at all in a
+    staff/voice that had words, that staff's notes (any voice) stand in for it. New notes at onsets without an old
+    word get none. When the old bar had no words at all, the new notes keep their own; otherwise theirs go."""
+    ann = {}  # (staff, voice, onset in unit, number) -> <lyric>; a chord's notes share one onset: the first wins
+    for e, t in old:
+        if e.tag != 'note' or e.find('rest') is not None or e.find('grace') is not None: continue
+        st, vo = _sv(e)
+        for ly in e.findall('lyric'):
+            ann.setdefault((st, vo, t * unit // cur, ly.get('number') or '1'), ly)
+    if not ann: return
+    t = 0
+    struck, chain = [], {}  # struck: [{e, sv, on, end, got}]; chain: (staff, voice) -> the head a tie would go on from
+    for e in new:
+        if e.tag == 'backup': t -= int(e.findtext('duration') or 0); continue
+        if e.tag == 'forward': t += int(e.findtext('duration') or 0); continue
+        for ly in e.findall('lyric'): e.remove(ly)
+        if e.find('grace') is not None or e.find('chord') is not None: continue
+        on = t
+        t += int(e.findtext('duration') or 0)
+        sv = _sv(e)
+        if e.find('rest') is not None or e.find('pitch') is None and e.find('unpitched') is None:
+            chain.pop(sv, None); continue
+        h = chain.get(sv)
+        if _tied(e, 'stop') and h is not None and h['end'] == on and _tied(h['last'], 'start'):
+            h['end'], h['last'] = t, e  # held on: the chain's head sounds on
+            continue
+        h = {'e': e, 'sv': sv, 'on': on, 'end': t, 'last': e, 'got': set()}
+        chain[sv] = h
+        if not _tied(e, 'stop'): struck.append(h)  # tied in from the bar before: sounds, but is not struck here
+    have = {h['sv'] for h in struck}
+    staves = {h['sv'][0] for h in struck}
+
+    def mine(sv):
+        if sv in have: return [h for h in struck if h['sv'] == sv]
+        return [h for h in struck if h['sv'][0] == sv[0]]
+
+    def put(h, num, ly):
+        h['got'].add(num); h['e'].append(ly)
+
+    later = []
+    for (st, vo, on, num), ly in sorted(ann.items(), key=lambda kv: (kv[0][2], kv[0][3])):
+        hs = mine((st, vo)) if (st, vo) in have or st in staves else []
+        h = next((h for h in hs if h['on'] == on and num not in h['got']), None)
+        if h is not None: put(h, num, ly)
+        else: later.append((hs, on, num, ly))
+    for hs, on, num, ly in later:  # after every exact match, so a moved word never takes another word's note
+        h = next((h for h in hs if h['on'] < on < h['end'] and num not in h['got']), None)
+        if h is None: h = next((h for h in hs if h['on'] > on and num not in h['got']), None)
+        if h is not None: put(h, num, ly)
+    for h in struck:  # each note's lines in number order
+        lys = h['e'].findall('lyric')
+        if len(lys) > 1:
+            for ly in lys: h['e'].remove(ly)
+            lys.sort(key=lambda x: int(x.get('number')) if (x.get('number') or '').isdigit() else 1)
+            for ly in lys: h['e'].append(ly)
+
+
 def use_alternative(part, meas, alt_xml: str):
-    """Put the other reading's notes into meas; the bar keeps its attributes, chord names, marks and words."""
+    """Put the other reading's notes into meas; the bar keeps its attributes, chord names, marks and words (the
+    words by time: carry_lyrics)."""
     alt = ET.fromstring(alt_xml)
     cur = _divisions_at(part, meas)
     ad = next((int(a.findtext('divisions')) for a in alt.findall('attributes') if a.findtext('divisions')), cur)
@@ -134,7 +211,7 @@ def use_alternative(part, meas, alt_xml: str):
         unit = cur * ad // math.gcd(cur, ad)
     for d in durs: d.text = str(int(d.text) * unit // ad)
     old = _timed(meas)
-    words = [[ly for ly in e.findall('lyric')] for e, _ in old if e.tag == 'note' and e.find('rest') is None and e.find('chord') is None]
+    carry_lyrics(old, new, cur, unit)
     lead = [e for e, t in old if e.tag == 'attributes' and t == 0]
     others = [(e, t * unit // cur) for e, t in old if e.tag not in ('note', 'backup', 'forward') and e not in lead and e.tag != 'barline']
     bars = [e for e in meas if e.tag == 'barline']
@@ -155,17 +232,13 @@ def use_alternative(part, meas, alt_xml: str):
     left = [b for b in bars if b.get('location') == 'left']
     for e in left + lead: meas.append(e)
     # notes of the first voice in order, with the chord names / marks at their onsets put just before them
-    t, k, wi = 0, 0, 0
+    t = 0
     pending = sorted(others, key=lambda q: q[1])
     in_first = True
     for e in new:
         if e.tag == 'backup': in_first = False
         if in_first and e.tag == 'note' and e.find('chord') is None:
             while pending and pending[0][1] <= t: meas.append(pending.pop(0)[0])
-        if e.tag == 'note' and in_first and e.find('rest') is None and e.find('chord') is None and wi < len(words):
-            for ly in e.findall('lyric'): e.remove(ly)
-            for ly in words[wi]: e.append(ly)
-            wi += 1
         meas.append(e)
         if in_first and e.tag == 'note' and e.find('chord') is None and e.find('grace') is None: t += int(e.findtext('duration') or 0)
         if in_first and e.tag == 'forward': t += int(e.findtext('duration') or 0)
