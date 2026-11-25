@@ -50,6 +50,52 @@ for (const [dev, w, h, touch] of devices) for (const theme of ['light', 'dark'])
   check(`${dev} ${theme}: app fills the screen, title opaque`, Math.abs(r.appH - r.vh) <= 1 && r.brand === '1', JSON.stringify(r));
   await p.close();
 }
+// Score view on iPad, after tapping Verified (toast "Marked verified"): the header text is at full opacity,
+// nothing see-through overlaps the header, and a solid fixed strip touches the top edge (iOS 26 samples it
+// and draws a plain bar instead of its blurred white fade over the header). Portrait + landscape, light +
+// dark, Safari (inset 0) + home-screen app (status bar inset 24).
+for (const [orient, w, h] of [['portrait', 834, 1194], ['landscape', 1194, 834]]) for (const theme of ['light', 'dark']) for (const inset of [0, 24]) {
+  const p = await b.newPage();
+  await p.setViewport({ width: w, height: h, hasTouch: true, isMobile: true, deviceScaleFactor: 1 });
+  if (inset) { const cdp = await p.createCDPSession(); await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: inset } }).catch(() => {}); }
+  await p.goto(ORIGIN + '/?preview=1#/library', { waitUntil: 'networkidle0' });
+  await p.evaluate((t) => localStorage.setItem('meowsic-theme', t), theme);
+  await p.goto(ORIGIN + '/?preview=1#/item/m-02i', { waitUntil: 'networkidle0' }); await sleep(1000);
+  const tag = `ipad ${orient} ${theme} ${inset ? 'app' : 'safari'}`;
+  for (const step of ['open', 'verify', 'unverify']) {
+    if (step !== 'open') { await p.tap('#it-verified'); await sleep(250); }
+    const r = await p.evaluate((inset) => {
+      const out = [];
+      const top = document.querySelector('.item-top'); const tr = top.getBoundingClientRect();
+      const alpha = (c) => { const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return c === 'transparent' ? 0 : 1; const a = m[1].split(/[ ,/]+/).filter(Boolean); return a.length > 3 ? parseFloat(a[3]) : 1; };
+      const eff = (e) => { let o = 1; for (; e; e = e.parentElement) o *= parseFloat(getComputedStyle(e).opacity); return o; };
+      // header text: Back, the title
+      for (const sel of ['.back', '.item-title']) { const e = top.querySelector(sel); if (!e) out.push(`no ${sel}`); else if (eff(e) !== 1) out.push(`${sel} opacity ${eff(e)}`); else if (getComputedStyle(e).filter !== 'none') out.push(`${sel} filter`); }
+      // nothing see-through (or blurring) overlaps the header, the toast included
+      for (const e of document.body.querySelectorAll('*')) {
+        if (e.contains(top) || top.contains(e)) continue;
+        const s = getComputedStyle(e); if (s.display === 'none' || s.visibility === 'hidden') continue;
+        const er = e.getBoundingClientRect(); if (!er.width || !er.height) continue;
+        if (er.right <= tr.left || er.left >= tr.right || er.bottom <= tr.top || er.top >= tr.bottom) continue;
+        const a = alpha(s.backgroundColor), bf = (s.backdropFilter && s.backdropFilter !== 'none') || (s.webkitBackdropFilter && s.webkitBackdropFilter !== 'none');
+        if (bf || (a > 0 && a < 1) || (a > 0 && eff(e) < 1)) out.push(`over header: ${e.className || e.tagName} bg ${s.backgroundColor}${bf ? ' blur' : ''}`);
+      }
+      // the solid fixed strip at the top edge: page colour, full width, status bar high, no blur
+      const edge = document.querySelector('.topedge'); const es = edge && getComputedStyle(edge), er = edge?.getBoundingClientRect();
+      if (!edge) out.push('no .topedge');
+      else {
+        if (es.position !== 'fixed' || er.top !== 0 || er.width < innerWidth - 1 || Math.round(er.height) !== Math.max(1, inset)) out.push(`topedge box ${es.position} ${er.top} ${er.width} ${er.height}`);
+        if (alpha(es.backgroundColor) !== 1 || es.backgroundColor !== getComputedStyle(document.body).backgroundColor || eff(edge) !== 1) out.push(`topedge bg ${es.backgroundColor}`);
+        if (Math.round(er.bottom) > Math.round(top.querySelector('.back').getBoundingClientRect().top)) out.push('topedge covers Back');
+      }
+      return { out, toast: !document.getElementById('toast').hidden };
+    }, inset);
+    check(`${tag} ${step}: header crisp, nothing see-through over it, solid top edge`, r.out.length === 0 && (step === 'open' || r.toast), r.out.slice(0, 4).join(' | '));
+  }
+  if (process.env.SHOTS) await p.screenshot({ path: `${process.env.SHOTS}/topcast-${orient}-${theme}-${inset ? 'app' : 'safari'}.png`, clip: { x: 0, y: 0, width: w, height: 140 } });
+  await p.close();
+}
+
 // the page asks to run under the status bar, and the top bars / sidebar pad by the inset
 const p = await b.newPage(); await p.goto(ORIGIN + '/?preview=1#/library', { waitUntil: 'networkidle0' });
 const meta = await p.$eval('meta[name="apple-mobile-web-app-status-bar-style"]', (m) => m.content);
