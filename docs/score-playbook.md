@@ -102,7 +102,13 @@ Example: an accurate sheet as the base, plus an intro, fills, decorations or lef
 ## 8. Saving edits in place (summary)
 `POST /api/items/{id}/editnotes {sha, ops:[…], mode:'this'|'new'}`. The ops are listed in the `staffmove.py`
 `edit()` docstring: pitch, len, set, add, delete, tie, slur, alt (replace a bar with given `<measure>` XML),
-fillbar, bartime, pickup, keysig, timesig, chord, … Preview first with `POST …/editnotes/preview`.
+fillbar, bartime, pickup, keysig, timesig, chord, clef, … (struct ops, clef included: the `structops.py` docstring).
+Preview first with `POST …/editnotes/preview`.
+- **Clef change**: `{op:'clef', bar, staff, clef:'treble'|'bass', until?}` (bars 0-based, staff 1 = top). Without `until`
+  the clef holds from `bar` to the staff's next clef change; with `until` bars `bar…until` get it and the bar after gets
+  its old clef back. E.g. left hand treble in bars 1–4, bass again from bar 5:
+  `{"op":"clef","bar":0,"until":3,"staff":2,"clef":"treble"}`. Pitches stay. (Editor: Bar ▾ → Clef: Treble / Bass,
+  over the picked bars of the picked staff.)
 Each save = one Activities row with a 24 h Undo.
 
 ## 9. Reference songs (ids)

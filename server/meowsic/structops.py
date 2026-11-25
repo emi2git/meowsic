@@ -13,6 +13,11 @@ Every part of the score changes alike; bars are 0-based.
                                   default 2): on / off
   {op:'ending', bars: [b0, b1], number}  a volta bracket ("1." / "2." / "1, 2.") over those bars, on / off; ending 1
                                   gets an end repeat on its last bar when it has none
+  {op:'clef', bar, staff, clef, until?}  clef 'treble' | 'bass' on that staff (1 = the top one) of the edited part from
+                                  this bar on, up to the staff's next clef change (one already at the start of the bar
+                                  is replaced); until (0-based, >= bar): the bars bar … until get it (clef changes
+                                  inside them go) and the bar after gets back the clef it had — one op for "bars 1–4
+                                  treble, then bass again". Pitches stay; only how they are drawn changes
 Playback follows the repeats and endings (web/js/musicxml.js playOrder, the same as play_order here); a sung
 voice too (singscore.read: verse 1 on the first time through, verse 2 on the second …).
 """
@@ -28,7 +33,7 @@ except ImportError:  # sing/sing.py reads scores (singscore -> unroll) in SoulX-
         def __init__(self, status_code, detail=''):
             super().__init__(detail); self.status_code, self.detail = status_code, detail
 
-OPS = ('pickup', 'keysig', 'timesig', 'repeat', 'ending')
+OPS = ('pickup', 'keysig', 'timesig', 'repeat', 'ending', 'clef')
 
 
 def _int(x, what):
@@ -339,6 +344,68 @@ def _set_ending(root, b0, b1, number, info):
     return on
 
 
+# ---------- clef ----------
+
+def _clef_here(c, staff):
+    return (c.get('number') or '1').strip() == str(staff)
+
+
+def _clef_in_force(ms, upto, staff):
+    """The staff's <clef> in force at the end of bar `upto` (a copy), None when the score never says."""
+    have = None
+    for m in ms[:upto + 1]:
+        for a in m.findall('attributes'):
+            for c in a.findall('clef'):
+                if _clef_here(c, staff): have = c
+    if have is None: return None
+    c = copy.deepcopy(have)
+    for k in [k for k in c.attrib if k != 'number']: del c.attrib[k]
+    return c
+
+
+def _start_attrs(m):
+    """The bar's <attributes> before its first note, or None."""
+    for e in m:
+        if e.tag == 'attributes': return e
+        if e.tag in ('note', 'backup', 'forward', 'direction', 'harmony'): return None
+    return None
+
+
+def _put_clef(m, c, staff, numbered):
+    from .barops import _attr_put
+    a = _first_attrs(m)
+    for x in [x for x in a.findall('clef') if _clef_here(x, staff)]: a.remove(x)
+    if numbered: c.set('number', str(staff))
+    else: c.attrib.pop('number', None)
+    clefs = sorted(a.findall('clef') + [c], key=lambda x: int((x.get('number') or '1').strip() or 1))
+    for x in a.findall('clef'): a.remove(x)
+    for x in clefs: _attr_put(a, x)
+
+
+def _set_clef(part, bi, staff, name, until):
+    from .barops import CLEFS, staves as n_staves
+    ms = part.findall('measure')
+    nst = n_staves(part)
+    if not 1 <= staff <= nst: raise HTTPException(400, f'No staff {staff} in this score')
+    if name not in CLEFS: raise HTTPException(400, "clef: 'treble' or 'bass'")
+    numbered = nst > 1 or any(c.get('number') for c in part.iter('clef'))
+    back = None
+    if until is not None:
+        if not bi <= until < len(ms): raise HTTPException(400, 'until: a bar from this one on')
+        if until + 1 < len(ms):
+            back = _clef_in_force(ms, until, staff)
+            if back is None: back = ET.Element('clef'); ET.SubElement(back, 'sign').text, ET.SubElement(back, 'line').text = CLEFS['treble' if staff == 1 else 'bass']
+            a = _start_attrs(ms[until + 1])
+            if a is not None and any(_clef_here(x, staff) for x in a.findall('clef')): back = None  # it has its own already
+        for m in ms[bi:until + 1]:  # the range is all one clef: changes inside it go
+            for a in m.findall('attributes'):
+                for x in [x for x in a.findall('clef') if _clef_here(x, staff)]: a.remove(x)
+    c = ET.Element('clef')
+    ET.SubElement(c, 'sign').text, ET.SubElement(c, 'line').text = CLEFS[name]
+    _put_clef(ms[bi], c, staff, numbered)
+    if back is not None: _put_clef(ms[until + 1], back, staff, numbered)
+
+
 # ---------- what plays when ----------
 
 def bar_marks(part):
@@ -486,6 +553,10 @@ def struct_op(text, op, info=None):
         if not (0 <= b0 and b1 < n): raise HTTPException(400, 'No such bars')
         _set_ending(root, b0, b1, str(op.get('number') or '1'), info)
         if info.pop('repeatAdded', False): info.setdefault('said', []).append(f'An end repeat was put at the end of bar {b1 + 1}, where ending 1 goes back')
+    elif kind == 'clef':
+        bi = _bar(root, op)
+        until = op.get('until')
+        _set_clef(part, bi, _int(op.get('staff', 1), 'staff'), str(op.get('clef') or ''), None if until is None else _int(until, 'until'))
     else: raise HTTPException(400, f'Unknown edit: {kind}')
     if tidy:
         div, tsig = Fr(1), (4, 4)

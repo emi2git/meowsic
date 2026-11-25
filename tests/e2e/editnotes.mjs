@@ -957,6 +957,19 @@ async function structure(name, vp) {
   await act('undo'); await idle(); await act('undo'); await idle();
   check('Undo twice: 4 bars in 4/4 again', bars(await xml()) === 4 && !/<fifths>2/.test(await xml()));
 
+  // 3b. clef over bars 1–2 of the left hand: treble there, bass again at bar 3
+  const lhClefs = (x) => [...x.matchAll(/<measure number="(\d+)"[\s\S]*?(?=<measure|<\/part>)/g)].flatMap((m) => [...m[0].matchAll(/<clef number="2">\s*<sign>(\w)/g)].map((c) => `${m[1]}${c[1]}`)).join(' ');
+  await EN(() => { const e = window.__editNotes; e.select([0, 1].map((b) => e.notes.find((n) => n.bar === b && n.staff === 2).ref)); });
+  await act('barmenu');
+  check('Bar ▾ on the left hand, bars 1–2: Clef Treble / Bass, Bass ticked', (await menuItems()).some((t) => /^Clef: Treble \(left hand, bars 1–2\)/.test(t))
+    && (await page.$$eval('.menu button[aria-checked="true"]', (e) => e.map((x) => x.textContent.trim()))).some((t) => /^Clef: Bass/.test(t)), (await menuItems()).join('|'));
+  await choose(/^Clef: Treble/); await idle();
+  x = await xml();
+  check('treble clef for bars 1–2 of the left hand, bass back at bar 3', lhClefs(x) === '1G 3F', lhClefs(x));
+  check('…pitches the same', (await EN(() => window.__editNotes.notes.filter((n) => n.staff === 2 && !n.rest).length)) > 0);
+  await act('undo'); await idle();
+  check('Undo: the left hand is in bass clef all through', lhClefs(await xml()) === '1F', lhClefs(await xml()));
+
   // 4. repeats and endings: start repeat at bar 1, ending 1 over bar 3 (an end repeat comes with it), ending 2 over bar 4
   await pickIn(0); await act('barmenu'); await choose(/^Start repeat at bar 1/); await idle();
   await pickIn(2); await act('barmenu'); await choose(/^Ending 1 over bar 3/); await idle();

@@ -750,11 +750,18 @@ export async function editNotes(view, it, host, opts = {}) {
     const part = doc.querySelectorAll('part')[base.part] || doc.querySelector('part');
     const ms = [...part.querySelectorAll(':scope > measure')];
     let fifths = 0, time = [4, 4];
-    ms.slice(0, b + 1).forEach((m) => {
+    const clefs = {}; // staff → 'G' | 'F' | … at the start of bar b
+    ms.slice(0, b + 1).forEach((m, i) => {
       const k = m.querySelector('attributes key fifths'); if (k) fifths = +k.textContent;
       const t = m.querySelector('attributes time'); if (t) time = [+t.querySelector('beats').textContent, +t.querySelector('beat-type').textContent];
+      let notes = false;
+      for (const el of m.children) {
+        if (el.tagName === 'note') notes = true;
+        if (el.tagName !== 'attributes' || (i === b && notes)) continue;
+        el.querySelectorAll('clef').forEach((c) => (clefs[+(c.getAttribute('number') || 1)] = c.querySelector('sign')?.textContent));
+      }
     });
-    return { fifths, time, mark: barMarks(part)[b] || {}, pickup: ms[0]?.getAttribute('implicit') === 'yes', bars: ms.length };
+    return { fifths, time, clefs, mark: barMarks(part)[b] || {}, pickup: ms[0]?.getAttribute('implicit') === 'yes', bars: ms.length };
   };
   const pickupSheet = () => {
     const st = barState(0), n = st.time[0];
@@ -797,7 +804,12 @@ export async function editNotes(view, it, host, opts = {}) {
     const endingOn = (k) => { const e = first.mark.ending; return !!e && e.a === b0 && e.z === b1 && e.nums.includes(k); };
     const out = [];
     if (b === 0) out.push({ label: st.pickup ? 'Pickup: change or remove…' : 'Pickup: n beats…', run: pickupSheet });
-    out.push({ label: `Key from bar ${b + 1}…`, run: () => keySheet(b) }, { label: `Time from bar ${b + 1}…`, run: () => timeSheet(b) }, '-',
+    const sc = t.staff || 1, cl = first.clefs[sc] || (sc === 1 ? 'G' : 'F'), who = nStaves() > 1 ? `${staffName(sc, nStaves())}, ` : '';
+    // a clef over the picked bars of this staff; the bar after them keeps its clef (structops 'clef' until)
+    const clefOp = (clef) => run({ op: 'clef', bar: b0, until: b1, staff: sc, clef }, null, { bar: b0 });
+    out.push({ label: `Key from bar ${b + 1}…`, run: () => keySheet(b) }, { label: `Time from bar ${b + 1}…`, run: () => timeSheet(b) },
+      { label: `Clef: Treble (${who}${span})`, checked: cl === 'G', run: () => clefOp('treble') },
+      { label: `Clef: Bass (${who}${span})`, checked: cl === 'F', run: () => clefOp('bass') }, '-',
       { label: `Start repeat at bar ${b0 + 1}`, checked: !!first.mark.start, run: () => run({ op: 'repeat', bar: b0, kind: 'start' }, null, { bar: b0 }) },
       { label: `End repeat after bar ${b1 + 1}`, checked: !!barState(b1).mark.end, run: () => run({ op: 'repeat', bar: b1, kind: 'end' }, null, { bar: b1 }) },
       { label: `Ending 1 over ${span}`, checked: endingOn(1), run: () => run({ op: 'ending', bars: [b0, b1], number: '1' }, null, { bar: b0 }) },
