@@ -44,7 +44,7 @@ for (const [name, w, h] of devices) {
     const strips = await p.$$eval('.turn-strip', (e) => e.map((x) => getComputedStyle(x).display));
     check(`${tag}: no ‹ › turn strips`, strips.length === 2 && strips.every((d) => d === 'none'), strips.join());
     check(`${tag}: opens at 100% (fit)`, name === 'iphone' || (await p.$eval('#sv-zreset', (e) => e.textContent)) === '100%');
-    check(`${tag}: no "Page n of N" text`, !(await p.$('#pageno')));
+    check(`${tag}: no "Page n of N" text`, !/Page \d+ of/.test(await p.$eval('#it-bar', (e) => e.textContent)));
     const dots = await p.evaluate(() => { const d = document.querySelector('#sv-dots'), f = d.closest('.sheet-frame').getBoundingClientRect(), r = [...d.children].map((i) => i.getBoundingClientRect());
       return { n: r.length, on: d.querySelectorAll('i.on').length, mid: Math.round((r[0].left + r.at(-1).right) / 2 - (f.left + f.width / 2)), bottom: Math.round(f.bottom - r[0].bottom), size: r[0].width }; });
     check(`${tag}: thin page dots centered at the bottom, current one filled`, dots.n === it.pages && dots.on === 1 && Math.abs(dots.mid) <= 2 && dots.bottom >= 0 && dots.bottom <= 8 && dots.size <= 6, JSON.stringify(dots));

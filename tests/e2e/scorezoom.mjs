@@ -64,7 +64,8 @@ for (const [name, w, h] of [['ipad', 1032, 1376], ['iphone', 420, 912]]) {
   const s = await size(q);
   check(`${name}: default label 100%`, (await label(q)) === '100%', await label(q));
   check(`${name}: default drawn at ${base}`, s && Math.abs(s.z - base) < 0.01, JSON.stringify(s));
-  check(`${name}: paged, "Page 1 of N"`, /Page 1 of \d+/.test(await q.$eval('#pageno', (e) => e.textContent).catch(() => '')));
+  check(`${name}: paged, on page 1 of N`, await q.evaluate(() => window.__score.page === 1 && window.__score.pages >= 1));
+  check(`${name}: no "Page n of N" text in the bar`, !/Page \d+ of/.test(await q.$eval('#it-bar', (e) => e.textContent)));
   check(`${name}: no scrolling`, await q.evaluate(() => [document.scrollingElement, document.querySelector('#main'), document.querySelector('#it-body')].every((e) => !e || e.scrollHeight <= e.clientHeight + 1)));
   await q.screenshot({ path: `${OUT}/${name}-100.png` });
   const keys = () => q.evaluate((i) => [localStorage.getItem('meowsic-devzoom-' + i), localStorage.getItem('meowsic-scorezoom-' + i), localStorage.getItem('meowsic-zoom-' + i)], ID);
