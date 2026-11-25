@@ -103,6 +103,12 @@ Example: an accurate sheet as the base, plus an intro, fills, decorations or lef
 `POST /api/items/{id}/editnotes {sha, ops:[…], mode:'this'|'new'}`. The ops are listed in the `staffmove.py`
 `edit()` docstring: pitch, len, set, add, delete, tie, slur, alt (replace a bar with given `<measure>` XML),
 fillbar, bartime, pickup, keysig, timesig, chord, … Preview first with `POST …/editnotes/preview`.
+`alt` (and Check bars' "use") keeps the bar's words **by time**, not by note order (`barcheck.carry_lyrics`; fixed
+Nov 2026, so no need to rewrite the lyrics after adding a fill note any more). Each word, every verse with its syllabic
+and extend, goes to the new note of the same staff/voice struck at its onset; else to the note sounding there (a tie
+chain counts from its first note) if that line is free on it; else (a rest there, or that note has its own word) to
+the next free note in the voice; else it is dropped. Tied-into notes and new onsets with no old word get no word.
+Removing notes can therefore drop words: check the lyrics after an `alt` that thins a bar out.
 Each save = one Activities row with a 24 h Undo.
 
 ## 9. Reference songs (ids)
