@@ -1071,6 +1071,8 @@ def edit(text: str, op: dict) -> tuple[str, list]:
                                       the same length) and `by` semitones (dragops.py)
       {op:'even', refs}               2+ notes / rests one after the other in one voice: one length each, the same
                                       total (dotted 8th + 16th → two 8ths); no plain / dotted value: refused (evenops.py)
+      {op:'ottava', staff, from_bar, to_bar, shift}  an 8va (8) / 8vb (-8) / 15ma / 15mb line over those bars of a
+                                      staff, 0: off (octaveops.py); the pitches stay (MusicXML pitch = what sounds)
     Every voice of every bar still fills it. Ties and slurs stay (fix_ties / fix_slurs)."""
     out, touched, _ = edit_ex(text, op)
     return out, touched
@@ -1095,6 +1097,9 @@ def edit_ex(text: str, op: dict, info=None):
     if kind in STRUCT_OPS: return struct_op(text, op, info)  # pickup, key / time from here, repeats, endings
     from .chordops import OPS as CHORD_OPS, chord_op
     if kind in CHORD_OPS: return chord_op(text, op, info)  # chord names, Realize to left hand
+    if kind == 'ottava':  # an 8va / 8vb line over bars of a staff: only the drawing changes (octaveops.py)
+        from .octaveops import ottava_op
+        return ottava_op(text, op, info)
     if kind == 'shift':  # a note dragged to another beat (dragops.py)
         from .dragops import shift_op
         return shift_op(text, op, info)
@@ -1165,7 +1170,11 @@ def edit_ex(text: str, op: dict, info=None):
                     touched.append(n)
                 elif kind == 'add' and id(n) in rests:
                     q = _dur(n) / div
-                    _set_pitch(n, int(op.get('midi') or (71 if _st(n) == '1' else 50)), flats[bi])
+                    if op.get('midi'): mid = int(op['midi'])
+                    else:  # the middle of its staff as drawn (under an 8va line: an octave up)
+                        from .octaveops import shift_at
+                        mid = (71 if _st(n) == '1' else 50) + shift_at(part, bi, _st(n))
+                    _set_pitch(n, mid, flats[bi])
                     if (n.find('type') is None or n.findtext('type') == '') and len(pieces(q)) == 1: _set_type(n, q, div)
                     touched.append(n)
                 elif kind == 'add' and id(n) in want:  # a note `by` above it, in its chord (after the chord's last note)
@@ -1481,7 +1490,7 @@ def _what(ops):
     for o in ops:
         k = o.get('op') or ('move' if 'to' in o else '')
         k = f'move{o.get("to")}' if k == 'move' else k
-        cnt[k] = cnt.get(k, 0) + (len(o.get('bars') or []) if k == 'unmark' else 1 if k in ('alt', 'delbar', 'fillbar', 'bartime', 'clearbar', 'addhand', 'insbar', 'addstaff', 'delstaff', 'clear', 'paste', 'pickup', 'keysig', 'timesig', 'repeat', 'ending', 'chord', 'realize') else len(o.get('refs') or []))
+        cnt[k] = cnt.get(k, 0) + (len(o.get('bars') or []) if k == 'unmark' else 1 if k in ('alt', 'delbar', 'fillbar', 'bartime', 'clearbar', 'addhand', 'insbar', 'addstaff', 'delstaff', 'clear', 'paste', 'pickup', 'keysig', 'timesig', 'repeat', 'ending', 'chord', 'realize', 'ottava') else len(o.get('refs') or []))
     words = {'move1': lambda n: f'{s(n)} to the right hand', 'move2': lambda n: f'{s(n)} to the left hand', 'move3': lambda n: f'{s(n)} to staff 3',
              'pitch': lambda n: f'{s(n)} higher / lower', 'len': lambda n: f'{n} note{"s" if n != 1 else ""} / rest{"s" if n != 1 else ""} longer / shorter',
              'fill': lambda n: f'{s(n)} filled into the rest after', 'restdel': lambda n: f'{n} rest{"s" if n != 1 else ""} removed',
@@ -1502,6 +1511,7 @@ def _what(ops):
              'pickup': lambda n: 'the pickup changed', 'keysig': lambda n: f'{n} key change{"s" if n != 1 else ""}',
              'timesig': lambda n: f'{n} time change{"s" if n != 1 else ""}', 'repeat': lambda n: f'{n} repeat sign{"s" if n != 1 else ""} changed',
              'ending': lambda n: f'{n} ending{"s" if n != 1 else ""} changed',
+             'ottava': lambda n: f'{n} octave line{"s" if n != 1 else ""} (8va / 8vb) changed',
              'chord': lambda n: f'{n} chord name{"s" if n != 1 else ""} changed', 'realize': lambda n: f'left hand written from the chords{f" ({n} times)" if n != 1 else ""}'}
     verses = sorted({str(o.get('verse') or '1') for o in ops if o.get('op') == 'lyrics'}, key=lambda v: (len(v), v))
     out = [words[k](n) for k, n in cnt.items() if k in words and n] + ([f'lyrics of verse{"s" if len(verses) > 1 else ""} {", ".join(verses)}'] if verses else [])

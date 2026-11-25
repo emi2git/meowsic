@@ -44,7 +44,7 @@ import { isTouch } from '../device.js';
 import { barFixSheet, fixBarOp } from '../incomplete.js';
 import { lyricMode } from './lyricmode.js'; // [lyrics]
 import { attachMidi } from '../midiedit.js';
-import { barMarks } from '../musicxml.js';
+import { barMarks, ottavaBars } from '../musicxml.js';
 import { noteIcon, DOT_IC, EVEN_IC } from '../notevalue.js';
 import { handsHtml, handsClick } from '../hands.js';
 import { newSession, findDraft, dropDrafts, dropLocal, editGuard, saveNote } from '../editdraft.js';
@@ -754,7 +754,8 @@ export async function editNotes(view, it, host, opts = {}) {
       const k = m.querySelector('attributes key fifths'); if (k) fifths = +k.textContent;
       const t = m.querySelector('attributes time'); if (t) time = [+t.querySelector('beats').textContent, +t.querySelector('beat-type').textContent];
     });
-    return { fifths, time, mark: barMarks(part)[b] || {}, pickup: ms[0]?.getAttribute('implicit') === 'yes', bars: ms.length };
+    const ott = ottavaBars(part);
+    return { fifths, time, mark: barMarks(part)[b] || {}, pickup: ms[0]?.getAttribute('implicit') === 'yes', bars: ms.length, ott: (st) => ott[st]?.[b] || 0, ottAll: ott };
   };
   const pickupSheet = () => {
     const st = barState(0), n = st.time[0];
@@ -802,6 +803,11 @@ export async function editNotes(view, it, host, opts = {}) {
       { label: `End repeat after bar ${b1 + 1}`, checked: !!barState(b1).mark.end, run: () => run({ op: 'repeat', bar: b1, kind: 'end' }, null, { bar: b1 }) },
       { label: `Ending 1 over ${span}`, checked: endingOn(1), run: () => run({ op: 'ending', bars: [b0, b1], number: '1' }, null, { bar: b0 }) },
       { label: `Ending 2 over ${span}`, checked: endingOn(2), run: () => run({ op: 'ending', bars: [b0, b1], number: '2' }, null, { bar: b0 }) }, '-');
+    // 8va / 8vb lines (octaveops.py) over those bars of the staff: only the drawing moves, the sound stays
+    const os = t.staff || 1, ott = first.ottAll[os] || [], on = (v) => ott.slice(b0, b1 + 1).every((x) => x === v) && ott.length > b1;
+    const where = nStaves() > 1 ? ` (${staffName(os, nStaves())})` : '';
+    for (const [v, name] of [[8, '8va'], [-8, '8vb']]) out.push({ label: `${name} over ${span}${where}`, checked: on(v), run: () => run({ op: 'ottava', staff: os, from_bar: b0, to_bar: b1, shift: on(v) ? 0 : v }, null, { bar: b0 }) });
+    out.push('-');
     return out;
   };
   // ---- chord names (chordops.py): tap one above the top staff (or an empty beat there), or K on a picked note ----
@@ -1078,7 +1084,10 @@ export async function editNotes(view, it, host, opts = {}) {
     const fifths = barState(a.bar).fifths;
     const alter = fifths > 0 ? ('FCGDAEB'.indexOf(L) < fifths ? 1 : 0) : fifths < 0 ? ('BEADGCF'.indexOf(L) < -fifths ? -1 : 0) : 0;
     const before = cur().notes.filter((n) => !n.rest && n.staff === a.staff && key(n) < key(a)).sort((x, y) => key(y) - key(x))[0];
-    const near = a.rest ? before?.midi ?? (a.staff === nStaves() && nStaves() > 1 ? 50 : 71) : a.midi;
+    // a rest: the middle of its staff as drawn (an 8va line: the note sounds an octave up); a note: nearest to it (its
+    // sounding pitch, so under 8va the letter lands where it is seen)
+    const drawnUp = (n) => ({ 8: 12, '-8': -12, 15: 24, '-15': -24 })[barState(n.bar).ott(n.staff)] || 0;
+    const near = !a.rest ? a.midi : before ? before.midi + drawnUp(a) - drawnUp(before) : (a.staff === nStaves() && nStaves() > 1 ? 50 : 71) + drawnUp(a);
     const p = LETTER_PC[L] + alter;
     let m = p + 12 * Math.round((near - p) / 12);
     if (up) m += 12;

@@ -111,6 +111,13 @@ the next free note in the voice; else it is dropped. Tied-into notes and new ons
 Removing notes can therefore drop words: check the lyrics after an `alt` that thins a bar out.
 Each save = one Activities row with a 24 h Undo.
 
+**Octave lines (8va / 8vb)**: a passage full of ledger lines (a high intro, a very low last bass note) gets a line
+instead of new notes: `{op:'ottava', staff, from_bar, to_bar, shift}` (bars 0-based; shift `8` = 8va, `-8` = 8vb,
+`15` / `-15`; `0` takes the line off those bars). In the editor: pick the bars' notes → Bar ▾ → "8va over bars …".
+It writes `<octave-shift>` start / stop directions only. MusicXML `<pitch>` is the **sounding** pitch, so never
+transpose the notes yourself: playback, singing, chords and OMR tools read the same notes, and OSMD draws them an
+octave lower / higher under the dashed line.
+
 ## 9. Reference songs (ids)
 | Song | Ids / notes |
 |---|---|

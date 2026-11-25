@@ -251,6 +251,33 @@ export function barMarks(part) {
   for (const br of brackets) for (let i = br.a; i <= br.z; i++) out[i].ending = br;
   return out;
 }
+// octave lines (8va / 8vb, octaveops.py) of a <part>: { staff: [shift of each bar] } (8, -8, 15, -15; 0 = none).
+// Only the drawing: the <pitch> under one is still what sounds. A stop at the very start of a bar ends the line on
+// the bar before; a line never stopped runs to the end.
+export function ottavaBars(part) {
+  const ms = [...part.querySelectorAll(':scope > measure')], out = {}, open = new Map();
+  const put = (o, z) => { const a = (out[o.staff] ||= ms.map(() => 0)); for (let i = o.a; i <= z; i++) a[i] = o.shift; };
+  ms.forEach((m, bi) => {
+    let t = 0;
+    for (const el of m.children) {
+      if (el.tagName === 'backup') t -= +el.querySelector('duration').textContent;
+      else if (el.tagName === 'forward') t += +el.querySelector('duration').textContent;
+      else if (el.tagName === 'note') { if (!el.querySelector('grace') && !el.querySelector('chord')) t += +(el.querySelector('duration')?.textContent || 0); }
+      else if (el.tagName === 'direction') {
+        const staff = +(el.querySelector(':scope > staff')?.textContent || 1) || 1;
+        for (const o of el.querySelectorAll(':scope > direction-type > octave-shift')) {
+          const type = o.getAttribute('type'), key = `${staff}|${o.getAttribute('number') || 1}`;
+          if (type === 'up' || type === 'down') {
+            if (open.has(key)) put(open.get(key), bi);
+            open.set(key, { staff, a: bi, shift: (+o.getAttribute('size') === 15 ? 15 : 8) * (type === 'down' ? 1 : -1) });
+          } else if (type === 'stop' && open.has(key)) { const x = open.get(key); open.delete(key); put(x, t === 0 && bi > x.a ? bi - 1 : bi); }
+        }
+      }
+    }
+  });
+  for (const x of open.values()) put(x, ms.length - 1);
+  return out;
+}
 // [[bar index, time through]] in the order they are played
 export function playOrder(marks) {
   const brackets = [...new Set(marks.map((m) => m.ending).filter(Boolean))].sort((x, y) => x.a - y.a);
