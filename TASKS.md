@@ -44,6 +44,7 @@ Updated: 2026-11-24
 - Record your own singing/talking voice (future beta, in Feedback)
 
 ## Done today (live)
+- Remote access via Tailscale: https://meowsic-mac.tailf62bf.ts.net (tailnet only, `tailscale serve` → :5180, Funnel off; rootless LaunchAgent com.emi.tailscaled; CLAUDE.md "Remote access (Tailscale)")
 - Edit notes: 32nd notes and rests (button, key 1, dotted, MIDI key B, A–G after a length key, paste; divisions raised safely) and every length shown as a note / rest glyph instead of 1/16-style text, also in Help and the Keyboard beta (pytest test_note32, e2e note32)
 - Hands: L · Both · R beside Play (score view + Edit notes); 3+ staves = a toggle per staff (V R L); plays only the chosen staves, at once while playing; chords follow the left hand; remembered per device (e2e hands)
 - Edit notes: drag the orange play line by its grip (touch + mouse), snaps to notes, across lines; hold at the page edge turns the page; dropping sets Play / ▶ From here start; dragging while playing seeks (e2e cuedrag)

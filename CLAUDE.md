@@ -49,6 +49,13 @@ Views (`web/js/views/`):
 - **UI preview**: `scripts/dev-server --preview` (= `python3 serve.py <port>`), then open `/?preview=1`. It needs no server: the sample library lives in the browser (store mode `mock`), and `/api/health` says `{ok: false, mock: true}`. Without `?preview` it is an empty offline app.
 - **First setup in a new worktree**: symlink the ignored folders from the live checkout: `server/.venv`, `tests/e2e/node_modules`, `omr/.venv`.
 
+## Remote access (Tailscale)
+- https://meowsic-mac.tailf62bf.ts.net — tailnet only (`tailscale serve` → `https+insecure://localhost:5180`, Let's Encrypt cert from Tailscale). **Funnel is OFF; never enable it.** Devices: meowsic-mac, iphone184, ipad163.
+- Homebrew `tailscale`, rootless, userspace-networking. State, socket, log: `~/Library/Application Support/Tailscale-Meowsic/`. LaunchAgent `~/Library/LaunchAgents/com.emi.tailscaled.plist` (RunAtLoad, KeepAlive).
+- CLI: `tailscale --socket="$HOME/Library/Application Support/Tailscale-Meowsic/tailscaled.sock" …`. Stop: `launchctl bootout gui/$(id -u)/com.emi.tailscaled`. Proxy off: `tailscale --socket=… serve --https=443 off`.
+- No host/CORS change in the app. The ts.net origin is a separate PWA origin: its localStorage and per-device settings are separate from the LAN address.
+- Tailnet admin needs MagicDNS + HTTPS Certificates + Serve on.
+
 ## How to test
 - `scripts/test-smoke` runs pytest (~600 tests, ~2 min) plus `flows.mjs` (~200 checks on the UI preview). Run it before every push.
 - `scripts/test-all` runs pytest plus the main e2e suites (about 30, about 15 min). Each suite gets its own fresh server or preview on a free port with temp data; 4 run at a time, a failed suite gets one more go alone, and a summary comes at the end. `scripts/test-all menus editnotes` runs just those suites. `--list` shows each suite's kind; `--every` adds the extras.
