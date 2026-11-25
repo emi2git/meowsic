@@ -1,11 +1,16 @@
 """omr/omr.py: every bar of a read sheet adds up to its time signature; words on the notes are kept."""
 import importlib.util
+import sys
 from pathlib import Path
 
 import music21 as m21
 import pytest
 
-spec = importlib.util.spec_from_file_location('omr_main', Path(__file__).resolve().parents[2] / 'omr' / 'omr.py')
+OMR_DIR = Path(__file__).resolve().parents[2] / 'omr'
+# omr.py imports its neighbours (lyriccheck) the way it does when run as a script: from its own folder. On the path
+# for every test here, not only after the tests that add it, so the tests pass in any order.
+if str(OMR_DIR) not in sys.path: sys.path.insert(0, str(OMR_DIR))
+spec = importlib.util.spec_from_file_location('omr_main', OMR_DIR / 'omr.py')
 omr = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(omr)
 
@@ -228,8 +233,6 @@ def test_a_three_is_told_from_other_digits():
 
 
 def test_words_are_checked_vietnamese_and_english():
-    import sys
-    sys.path.insert(0, str(Path(omr.__file__).parent))
     import lyriccheck as L
     assert all(L.word_ok(w) for w in ['người', 'Này', 'yêu', 'khuya', 'giữa', 'quyên', 'friends', "don't", 'Beauty'])
     assert not any(L.word_ok(w) for w in ['V3n', 'muÂn', 'Nàu', 'hữi', 'nưiời', 'Wrng', 'tànNhững'])
@@ -244,8 +247,6 @@ def tok(words, hy=None, conf=1.0):
 
 
 def test_a_word_split_over_notes_is_a_real_word():
-    import sys
-    sys.path.insert(0, str(Path(omr.__file__).parent))
     import lyriccheck as L
     # hyphens read: syllables joined by them
     assert L.line_score(['so', 'beau-', 'ti-', 'ful', 'to', 'day']) == 1.0
