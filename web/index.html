@@ -6,7 +6,7 @@
 <meta name="meowsic-build" content="">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#161618" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#15181d" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Meowsic">
 <!-- black-translucent: the page draws under the status bar (each top bar pads by safe-area-inset-top); "default" let iPadOS 26 lay a white veil over the top of the app -->
@@ -28,6 +28,7 @@
   <main id="main" tabindex="-1"></main>
   <nav class="tabbar" id="tabbar" aria-label="Main"></nav>
 </div>
+<div class="topedge" aria-hidden="true"></div><!-- a solid fixed edge: no iOS 26 blur over the top bar (app.css .topedge) -->
 <div id="toast" class="toast" role="status" hidden></div>
 <div id="print-root" aria-hidden="true"></div>
 <script type="module" src="js/app.js"></script>
