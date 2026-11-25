@@ -44,7 +44,7 @@ import { isTouch } from '../device.js';
 import { barFixSheet, fixBarOp } from '../incomplete.js';
 import { lyricMode } from './lyricmode.js'; // [lyrics]
 import { attachMidi } from '../midiedit.js';
-import { barMarks, ottavaBars } from '../musicxml.js';
+import { barMarks, ottavaLines, ottavaAt } from '../musicxml.js';
 import { noteIcon, DOT_IC, EVEN_IC } from '../notevalue.js';
 import { handsHtml, handsClick } from '../hands.js';
 import { newSession, findDraft, dropDrafts, dropLocal, editGuard, saveNote } from '../editdraft.js';
@@ -761,8 +761,8 @@ export async function editNotes(view, it, host, opts = {}) {
         el.querySelectorAll('clef').forEach((c) => (clefs[+(c.getAttribute('number') || 1)] = c.querySelector('sign')?.textContent));
       }
     });
-    const ott = ottavaBars(part);
-    return { fifths, time, clefs, mark: barMarks(part)[b] || {}, pickup: ms[0]?.getAttribute('implicit') === 'yes', bars: ms.length, ott: (st) => ott[st]?.[b] || 0, ottAll: ott };
+    const ott = ottavaLines(part);
+    return { fifths, time, clefs, mark: barMarks(part)[b] || {}, pickup: ms[0]?.getAttribute('implicit') === 'yes', bars: ms.length, ott: (st, q = 0) => ottavaAt(ott, st, b, q), ottLines: ott };
   };
   const pickupSheet = () => {
     const st = barState(0), n = st.time[0];
@@ -815,10 +815,30 @@ export async function editNotes(view, it, host, opts = {}) {
       { label: `End repeat after bar ${b1 + 1}`, checked: !!barState(b1).mark.end, run: () => run({ op: 'repeat', bar: b1, kind: 'end' }, null, { bar: b1 }) },
       { label: `Ending 1 over ${span}`, checked: endingOn(1), run: () => run({ op: 'ending', bars: [b0, b1], number: '1' }, null, { bar: b0 }) },
       { label: `Ending 2 over ${span}`, checked: endingOn(2), run: () => run({ op: 'ending', bars: [b0, b1], number: '2' }, null, { bar: b0 }) }, '-');
-    // 8va / 8vb lines (octaveops.py) over those bars of the staff: only the drawing moves, the sound stays
-    const ott = first.ottAll[sc] || [], on = (v) => ott.slice(b0, b1 + 1).every((x) => x === v) && ott.length > b1;
+    // 8va / 8vb lines (octaveops.py) over those bars of the staff: only the drawing moves, the sound stays. Notes
+    // picked (2+) or a range inside a bar: the line covers just them (from_beat / to_beat), else whole bars.
+    const all = cur().notes.filter((n) => n.staff === sc);
+    let fromQ = null, toQ = null;
+    if (rng) {
+      const s = starts(), [ba, qa] = placeOf(rng.a, s), [bz, qz] = placeOf(rng.b, s);
+      if (ba === b0 && qa > 1e-6) fromQ = qa;
+      if (bz === b1 && qz > 1e-6 && qz < s[b1 + 1] - s[b1] - 1e-6) toQ = qz;
+    } else if (sel.size > 1) {
+      const mine = picked().filter((n) => n.staff === sc), ons = (b) => mine.filter((n) => n.bar === b).map((n) => n.on);
+      if (ons(b0).length) { const q = Math.min(...ons(b0)); if (all.some((n) => n.bar === b0 && n.on < q - 1e-6)) fromQ = q; }
+      if (ons(b1).length) { const q = Math.max(...ons(b1)), later = all.filter((n) => n.bar === b1 && n.on > q + 1e-6); if (later.length) toQ = Math.min(...later.map((n) => n.on)); }
+    }
+    const beatOf = (b, q) => Math.round((1 + (q * barState(b).time[1]) / 4) * 1e4) / 1e4;
+    const fromBeat = fromQ == null ? null : beatOf(b0, fromQ), toBeat = toQ == null ? null : beatOf(b1, toQ);
+    const inside = all.filter((n) => (n.bar > b0 || (n.bar === b0 && n.on >= (fromQ ?? 0) - 1e-6)) && (n.bar < b1 || (n.bar === b1 && (toQ == null || n.on < toQ - 1e-6))));
+    const on = (v) => (inside.length ? inside.every((n) => ottavaAt(first.ottLines, sc, n.bar, n.on) === v)
+      : Array.from({ length: b1 - b0 + 1 }, (_, k) => ottavaAt(first.ottLines, sc, b0 + k, 0)).every((x) => x === v));
     const where = nStaves() > 1 ? ` (${staffName(sc, nStaves())})` : '';
-    for (const [v, name] of [[8, '8va'], [-8, '8vb']]) out.push({ label: `${name} over ${span}${where}`, checked: on(v), run: () => run({ op: 'ottava', staff: sc, from_bar: b0, to_bar: b1, shift: on(v) ? 0 : v }, null, { bar: b0 }) });
+    const beatTxt = `${fromBeat != null ? `, from beat ${fromBeat}` : ''}${toBeat != null ? `, before beat ${toBeat}${b0 !== b1 ? ` of bar ${b1 + 1}` : ''}` : ''}`;
+    const beats = { ...(fromBeat != null ? { from_beat: fromBeat } : {}), ...(toBeat != null ? { to_beat: toBeat } : {}) };
+    for (const [v, name] of [[8, '8va'], [-8, '8vb']]) {
+      out.push({ label: `${name} over ${span}${beatTxt}${where}`, checked: on(v), run: () => run({ op: 'ottava', staff: sc, from_bar: b0, to_bar: b1, ...beats, shift: on(v) ? 0 : v }, null, { bar: b0 }) });
+    }
     out.push('-');
     return out;
   };
@@ -1098,7 +1118,7 @@ export async function editNotes(view, it, host, opts = {}) {
     const before = cur().notes.filter((n) => !n.rest && n.staff === a.staff && key(n) < key(a)).sort((x, y) => key(y) - key(x))[0];
     // a rest: the middle of its staff as drawn (an 8va line: the note sounds an octave up); a note: nearest to it (its
     // sounding pitch, so under 8va the letter lands where it is seen)
-    const drawnUp = (n) => ({ 8: 12, '-8': -12, 15: 24, '-15': -24 })[barState(n.bar).ott(n.staff)] || 0;
+    const drawnUp = (n) => ({ 8: 12, '-8': -12, 15: 24, '-15': -24 })[barState(n.bar).ott(n.staff, n.on)] || 0;
     const near = !a.rest ? a.midi : before ? before.midi + drawnUp(a) - drawnUp(before) : (a.staff === nStaves() && nStaves() > 1 ? 50 : 71) + drawnUp(a);
     const p = LETTER_PC[L] + alter;
     let m = p + 12 * Math.round((near - p) / 12);

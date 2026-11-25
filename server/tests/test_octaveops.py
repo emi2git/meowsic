@@ -2,6 +2,7 @@
 drawing changes: every reader of pitches (notes / play, singing, chords, music21, the OMR bar check) gets the same
 notes; a line can be taken off part of its bars, lines of one shift join; preview, Save, Activities and Undo."""
 import xml.etree.ElementTree as ET
+from fractions import Fraction as Fr
 
 import pytest
 from fastapi import HTTPException
@@ -126,3 +127,86 @@ def test_through_preview_save_and_undo(client, data):
     assert row['type'] == 'edit-notes' and '2 octave lines (8va / 8vb) changed' in row['detail']
     assert client.post(f'/api/activity/{sv["activity"]}/undo', json={}).status_code == 200
     assert f.read_text() == was
+
+
+# ---- part of a bar (from_beat / to_beat): One Day More, bar 4 = high intro notes, then two sung pickup 8ths on beat 4
+def intro():
+    rh = [[ev('C6', 4)], [ev('E6', 4)], [ev('G6', 4)], [ev('C6', 2), ev('D6', 1), ev('G4', 0.5), ev('A4', 0.5)], [ev('B4', 4)]]
+    lh = [[ev('C3', 4, 2)], [ev('C3', 4, 2)], [ev('C3', 4, 2)], [ev('G2', 4, 2)], [ev('C3', 4, 2)]]
+    return score(rh, lh)
+
+
+def places(text):
+    return [(s['staff'], s['start'], s['end'], s['shift']) for s in oo.spans(part(text))]
+
+
+def test_a_line_stops_before_the_pickups_and_joins_the_line_before():
+    x = op(intro(), op='ottava', staff=1, from_bar=0, to_bar=2, shift=8)
+    info = {}
+    out = sm.edit_ex(x, {'op': 'ottava', 'staff': 1, 'from_bar': 3, 'to_bar': 3, 'from_beat': 1, 'to_beat': 4, 'shift': 8}, info)[0]
+    assert lines(out) == [(1, 0, 3, 8)]  # one line, joined
+    assert places(out) == [(1, (0, Fr(0)), (3, Fr(3)), 8)]
+    assert out.count('<octave-shift') == 2 and info['said'] == ['8va over bar 4, before beat 4']
+    kids = list(part(out).findall('measure')[3])
+    k = next(i for i, e in enumerate(kids) if e.tag == 'direction')
+    assert kids[k].find('direction-type/octave-shift').get('type') == 'stop'
+    assert kids[k - 1].findtext('pitch/step') == 'D' and kids[k + 1].findtext('pitch/step') == 'G'  # after D6, before the pickups
+    assert sounds(out) == sounds(intro()) and sm.incomplete_bars(ET.fromstring(out.encode())) == []
+    p = part(out)
+    m4 = p.findall('measure')[3].findall('note')
+    assert [oo.shift_at(p, 3, 1, n) for n in m4[:4]] == [12, 12, 0, 0] and oo.shift_at(p, 3, 2, m4[4]) == 0  # C6, D6 under it; G4 A4 and the bass not
+
+
+def test_a_line_starts_mid_bar_before_its_note():
+    out = op(intro(), op='ottava', staff=1, from_bar=3, to_bar=4, from_beat=2, to_beat=1, shift=8)
+    assert places(out) == [(1, (3, Fr(2)), (4, Fr(0)), 8)]  # beat 2 is inside the C6: from the D6 on
+    out = op(intro(), op='ottava', staff=1, from_bar=3, to_bar=3, from_beat=3, to_beat=4, shift=8)
+    assert places(out) == [(1, (3, Fr(2)), (3, Fr(3)), 8)]
+    kids = list(part(out).findall('measure')[3])
+    i = [k for k, e in enumerate(kids) if e.tag == 'direction']
+    assert [kids[k].find('direction-type/octave-shift').get('type') for k in i] == ['down', 'stop']
+    assert kids[i[0] - 1].findtext('pitch/step') == 'C' and kids[i[0] + 1].findtext('pitch/step') == 'D' and kids[i[1] + 1].findtext('pitch/step') == 'G'
+    y = op(intro(), op='ottava', staff=1, from_bar=3, to_bar=3, from_beat=2.5, to_beat=4, shift=-8)
+    assert places(y) == [(1, (3, Fr(2)), (3, Fr(3)), -8)]
+    assert sounds(out) == sounds(y) == sounds(intro())
+    with pytest.raises(HTTPException): op(intro(), op='ottava', staff=1, from_bar=3, to_bar=3, from_beat=3, to_beat=3, shift=8)
+
+
+def test_take_a_line_off_part_of_a_bar():
+    x = op(intro(), op='ottava', staff=1, from_bar=0, to_bar=3, shift=8)
+    y = op(x, op='ottava', staff=1, from_bar=3, to_bar=3, from_beat=4, shift=0)  # the pickups out from under it
+    assert places(y) == [(1, (0, Fr(0)), (3, Fr(3)), 8)]
+    assert y == op(op(intro(), op='ottava', staff=1, from_bar=0, to_bar=2, shift=8), op='ottava', staff=1, from_bar=3, to_bar=3, to_beat=4, shift=8)
+    z = op(x, op='ottava', staff=1, from_bar=1, to_bar=3, from_beat=3, to_beat=3, shift=0)  # a hole in the middle (beat 3 of bar 2 is inside its whole note: the line keeps that note)
+    assert places(z) == [(1, (0, Fr(0)), (2, Fr(0)), 8), (1, (3, Fr(2)), (4, Fr(0)), 8)]
+    back = op(z, op='ottava', staff=1, from_bar=1, to_bar=3, from_beat=3, to_beat=3, shift=8)  # filled: one line again
+    assert places(back) == [(1, (0, Fr(0)), (4, Fr(0)), 8)] and back.count('<octave-shift') == 2
+    assert sounds(z) == sounds(back) == sounds(intro())
+    with pytest.raises(HTTPException): op(y, op='ottava', staff=1, from_bar=3, to_bar=3, from_beat=4, shift=0)  # nothing there
+
+
+def test_edits_under_a_partial_line_keep_it_and_a_rest_after_it_is_plain():
+    x = op(intro(), op='ottava', staff=1, from_bar=3, to_bar=3, to_beat=4, shift=8)
+    c6 = next(n['ref'] for n in sm.notes(ET.fromstring(x.encode())) if n['midi'] == 84 and n['bar'] == 3)
+    y = op(x, op='len', refs=[c6], q=1)  # C6 a quarter: a rest after it, the bar written again
+    assert places(y) == [(1, (3, Fr(0)), (3, Fr(3)), 8)]
+    r = next(n['ref'] for n in sm.notes(ET.fromstring(y.encode())) if n.get('rest') and n['bar'] == 3 and n['staff'] == 1)
+    z = op(y, op='add', refs=[r])  # + Note on the rest under 8va: the staff's middle as drawn (B5)
+    assert any(n['midi'] == 83 and n['bar'] == 3 for n in sm.notes(ET.fromstring(z.encode())))
+    w = op(intro(), op='ottava', staff=1, from_bar=3, to_bar=3, to_beat=3, shift=8)  # the line ends before D6
+    d6 = next(n['ref'] for n in sm.notes(ET.fromstring(w.encode())) if n['midi'] == 86)
+    w = op(w, op='delete', refs=[d6])
+    assert places(w) == [(1, (3, Fr(0)), (3, Fr(2)), 8)]
+    r = next(n['ref'] for n in sm.notes(ET.fromstring(w.encode())) if n.get('rest') and n['bar'] == 3 and n['staff'] == 1)
+    w2 = op(w, op='add', refs=[r])  # a rest after the line: B4 as usual
+    assert any(n['midi'] == 71 and n['bar'] == 3 for n in sm.notes(ET.fromstring(w2.encode())))
+
+
+def test_partial_line_pitch_readers_unchanged():
+    x = intro()
+    out = op(op(x, op='ottava', staff=1, from_bar=0, to_bar=2, shift=8), op='ottava', staff=1, from_bar=3, to_bar=3, to_beat=4, shift=8)
+    a, b = singscore.read(x), singscore.read(out)
+    assert [(n['midi'], n['q']) for n in a['notes']] == [(n['midi'], n['q']) for n in b['notes']]
+    from music21 import converter
+    p = lambda t: [p.midi for p in converter.parseData(t, format='musicxml').flatten().pitches]
+    assert p(out) == p(x)
