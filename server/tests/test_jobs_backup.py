@@ -52,21 +52,29 @@ def test_runner_done_and_patch(client, app):
     app.state.job_runner = lambda ctx: ctx.update(stage=3, progress=1, msg='Saved', status='done', result=['m-abc'])
     jid = client.post('/api/jobs', json={'title': 'Twinkle', 'outputs': ['lead']}).json()['id']
     assert wait(client, jid, 'done')['result'] == ['m-abc']
-    app.state.job_runner = lambda ctx: time.sleep(0.3)
+    gate = threading.Event()  # the job runs until the PATCH is in (a timed sleep could end first on a busy Mac)
+    app.state.job_runner = lambda ctx: gate.wait(5)
     jid = client.post('/api/jobs', json={'title': 'X'}).json()['id']
     wait(client, jid, 'running')
     assert client.patch(f'/api/jobs/{jid}', json={'stage': 2, 'msg': 'halfway'}).json()['stage'] == 2
+    gate.set()
     assert wait(client, jid, 'done')['log'][-2]['msg'] == 'halfway'
     assert client.post('/api/jobs', json={'kind': 'nope', 'title': 'x'}).status_code == 400
 
 
 def test_restart_marks_running_jobs_failed(client, app, data):
-    app.state.job_runner = lambda ctx: time.sleep(0.5)
+    gate = threading.Event()  # still running when recover() looks (a timed sleep could end first on a busy Mac)
+    app.state.job_runner = lambda ctx: gate.wait(5)
     jid = client.post('/api/jobs', json={'title': 'X'}).json()['id']
     wait(client, jid, 'running')
     from meowsic.jobs import recover
-    recover(Config(data))
-    assert client.get(f'/api/jobs/{jid}').json()['status'] == 'failed'
+    try:
+        recover(Config(data))
+        assert client.get(f'/api/jobs/{jid}').json()['status'] == 'failed'
+    finally:
+        gate.set()
+    time.sleep(0.05)
+    assert client.get(f'/api/jobs/{jid}').json()['status'] == 'failed'  # the runner ending later does not undo it
 
 
 def test_backup_round_trip(client, chord):
