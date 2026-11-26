@@ -43,7 +43,7 @@ const SEMIS = { 2: 2, 4: 5, 5: 7, 6: 9, 7: 10, 9: 14, 11: 17, 13: 21 };
 // (root pc, intervals above the root, bass pc) of a chord name; null for N.C. / not a chord (chordname.tones)
 export function tones(name) {
   if (!name || name === 'N.C.') return null;
-  const m = String(name).match(NAME_RE);
+  const m = String(name).replace(/sus(?!\d)/g, 'sus4').match(NAME_RE); // a bare "sus" is sus4 (Csus, C7sus)
   if (!m) return null;
   const g = m.groups;
   let key = (g.q || '') + (g.ext || '');

@@ -45,12 +45,13 @@ const COLS_BY = {
 // taller). The ‹ n / N › buttons turn pages; iPad / iPhone also swipe left / right. The Mac has no
 // swipes or scrolling at all (the user's choice, 2026-11-26): buttons, plus ← → / Page Up / Down. `per` is the last measured count;
 // `key` is the view (type + tags) the page number belongs to, so coming back from an item keeps it.
-// World (every song, the default) ⇄ Vietnamese only; remembered on this device
+// World (every song, the default) ⇄ Vietnamese only; remembered on this device. One toggle: globe (off) ⇄ "VI" (on,
+// tinted like the tag filter); off is full strength, never faded (the user's choice, 2026-11-26)
 const LANG_NEXT = { world: 'vi', vi: 'world' };
 const VI_CHARS = /[ăâđêôơưĂÂĐÊÔƠƯạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]/;
 const isVi = (it) => it.tags.includes('Vietnamese') || VI_CHARS.test(it.title || '');
 const LANG_ICON = {
-  vi: '<svg class="ic star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.2l2.2 5.1 5.5.4-4.2 3.6 1.3 5.4L12 15.8l-4.8 2.9 1.3-5.4-4.2-3.6 5.5-.4z"/></svg>',
+  vi: '<span class="lang-vi" aria-hidden="true">VI</span>',
   world: '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.5 7.5c2 .5 3 1.8 2.5 3.5s1 2.5 2.5 3-1 3.5.5 5M14 3.4c-.5 1.6.5 2.6 2 3s2 2 1.5 3.5 1.5 2.5 3.4 2.4"/></svg>',
 };
 const LANG_TITLE = { world: 'All songs (tap: Vietnamese only)', vi: 'Vietnamese only (tap: all songs)' };
@@ -98,7 +99,7 @@ export function libraryView(main, { q }) {
       ${tags.length ? `<a class="icon-btn btn" href="#/print?tags=${encodeURIComponent(tags.join(','))}">Print all</a>` : ''}
 
       <label class="search">${icon('search')}<input type="search" id="lib-q" placeholder="Search titles, artists, albums, tags" value="${esc(state.q)}" aria-label="Search" enterkeyhint="search"><button type="button" class="search-x" id="lib-q-x" aria-label="Clear search" title="Clear search" ${state.q ? '' : 'hidden'}>×</button></label>
-      <button class="icon-btn lang-btn ${lang === 'vi' ? 'on' : ''}" id="lib-lang" data-lang="${lang}" title="${LANG_TITLE[lang]}" aria-label="${LANG_TITLE[lang]}">${LANG_ICON[lang]}</button>
+      <button class="icon-btn lang-btn ${lang === 'vi' ? 'on' : ''}" id="lib-lang" data-lang="${lang}" aria-pressed="${lang === 'vi'}" title="${LANG_TITLE[lang]}" aria-label="${LANG_TITLE[lang]}">${LANG_ICON[lang]}</button>
       <button class="icon-btn tag-btn ${tags.length ? 'on' : ''}" id="lib-tag" title="Filter by tag" aria-label="Filter by tag">${iconOn('tag')}</button>
       <button class="icon-btn touch-only" id="lib-select">Select</button>
     </header>
@@ -239,7 +240,7 @@ export function libraryView(main, { q }) {
   $('#lib-tag', main).onclick = (e) => tagFilter(e.currentTarget, tags, setTags);
   $('#lib-lang', main).onclick = (e) => {
     lang = LANG_NEXT[lang]; try { localStorage.setItem('meowsic-lang', lang); } catch {}
-    const btn = e.currentTarget; btn.dataset.lang = lang; btn.classList.toggle('on', lang === 'vi');
+    const btn = e.currentTarget; btn.dataset.lang = lang; btn.classList.toggle('on', lang === 'vi'); btn.setAttribute('aria-pressed', String(lang === 'vi'));
     btn.title = btn.ariaLabel = LANG_TITLE[lang]; btn.innerHTML = LANG_ICON[lang];
     state.page = 1; draw();
   };

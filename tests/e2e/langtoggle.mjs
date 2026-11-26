@@ -1,4 +1,4 @@
-// Library: round World ⇄ Vietnamese toggle (two states, icon only), remembered on the device; old 'all' / 'world' values = World
+// Library: round World ⇄ Vietnamese toggle (two states: globe off ⇄ "VI" on, tinted; off never faded; aria-pressed), remembered on the device; old 'all' / 'world' values = World
 import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5190/';
@@ -17,21 +17,35 @@ for (const [name, vp] of [['mac', { width: 1440, height: 900 }], ['ipad', { widt
   const toAll = async () => { await p.evaluate(() => (location.hash = '#/library')); await sleep(400); }; // a fresh load opens Sheets
   await toAll();
   const count = () => p.evaluate(() => { if (document.querySelector('#lib-rows .empty')) return 0; const t = document.querySelector('.pager-row .muted, .lib-count, .pager-row')?.textContent || ''; const m = t.match(/(\d+)\s+item/); return m ? +m[1] : null; });
-  const st = () => p.$eval('#lib-lang', (e) => ({ lang: e.dataset.lang, on: e.classList.contains('on'), round: getComputedStyle(e).borderRadius, text: e.textContent.trim(), w: e.getBoundingClientRect().width,
-    bg: getComputedStyle(e).backgroundColor, star: !!e.querySelector('svg.star'), earth: !!e.querySelector('svg circle') }));
+  const st = async () => { await p.mouse.move(1, 1); return p.$eval('#lib-lang', (e) => { const cs = getComputedStyle(e), t = getComputedStyle(document.querySelector('#lib-tag'));
+    return { lang: e.dataset.lang, on: e.classList.contains('on'), pressed: e.getAttribute('aria-pressed'), round: cs.borderRadius, text: e.textContent.trim(), w: e.getBoundingClientRect().width, h: e.getBoundingClientRect().height,
+      bg: cs.backgroundColor, color: cs.color, op: cs.opacity, star: !!e.querySelector('svg.star'), earth: !!e.querySelector('svg circle'), tagColor: t.color, tagOp: t.opacity, tagBg: t.backgroundColor }; }); }; // mouse off the button: no :hover fill
   let s = await st();
-  check(`${name}: starts on World (earth, quiet), icon only, round`, s.lang === 'world' && !s.on && s.text === '' && s.round === '50%' && s.earth, JSON.stringify(s));
+  check(`${name}: starts on World (earth, icon only, round, aria-pressed=false)`, s.lang === 'world' && !s.on && s.pressed === 'false' && s.text === '' && s.round === '50%' && s.earth, JSON.stringify(s));
+  check(`${name}: World off-style = tag button off-style (same colour, full opacity, no fill)`, s.color === s.tagColor && s.op === '1' && s.op === s.tagOp && s.bg === s.tagBg, JSON.stringify(s));
+  const off = s;
   const c0 = await count();
   if (c0 != null) check(`${name}: World shows every song`, c0 === nAll, `${c0} vs ${nAll}`);
   await p.click('#lib-lang'); await sleep(400); s = await st();
   const c1 = await count();
-  check(`${name}: tap → Vietnamese (star, lit, no disc)`, s.lang === 'vi' && s.on && s.star && s.bg === 'rgba(0, 0, 0, 0)', JSON.stringify(s));
+  const tint = await p.evaluate(() => { const d = document.createElement('div'); d.style.background = 'var(--acc-soft)'; document.body.append(d); const c = getComputedStyle(d).backgroundColor; d.remove(); return c; });
+  check(`${name}: tap → Vietnamese ("VI" text, no star, aria-pressed=true)`, s.lang === 'vi' && s.on && s.pressed === 'true' && s.text === 'VI' && !s.star && !s.earth, JSON.stringify(s));
+  check(`${name}: VI on-style = tinted (acc-soft), same colour / size as off`, s.bg === tint && s.bg !== off.bg && s.color === off.color && s.op === '1' && s.w === off.w && s.h === off.h, JSON.stringify(s));
+  // dark theme: same rules
+  const theme = (t) => p.evaluate((t) => { document.documentElement.dataset.theme = t; }, t);
+  const theme0 = await p.evaluate(() => document.documentElement.dataset.theme || '');
+  await theme('dark'); await sleep(100);
+  { const d = await st(); const dt = await p.evaluate(() => { const d = document.createElement('div'); d.style.background = 'var(--acc-soft)'; document.body.append(d); const c = getComputedStyle(d).backgroundColor; d.remove(); return c; });
+    check(`${name}: dark: VI tinted, colour = tag button`, d.bg === dt && d.color === d.tagColor && d.op === '1', JSON.stringify(d)); }
+  await p.click('#lib-lang'); await sleep(300);
+  { const d = await st(); check(`${name}: dark: World off-style = tag button`, d.color === d.tagColor && d.op === '1' && d.bg === d.tagBg && d.pressed === 'false', JSON.stringify(d)); }
+  await p.click('#lib-lang'); await sleep(300); await p.evaluate((t) => { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; }, theme0);
   if (c0 != null) check(`${name}: Vietnamese shows only Vietnamese songs`, c1 === nVi, `${c1} vs ${nVi}`);
   await p.screenshot({ path: `${OUT}/lang-${name}-vi.png` });
   await p.reload({ waitUntil: 'networkidle0' }); await sleep(500); await toAll();
   check(`${name}: Vietnamese remembered after reload`, (await st()).lang === 'vi' && (await count()) === nVi);
   await p.click('#lib-lang'); await sleep(400); s = await st();
-  check(`${name}: tap → back to World (2 states only)`, s.lang === 'world' && !s.on && (await count()) === c0, JSON.stringify(s));
+  check(`${name}: tap → back to World (2 states only)`, s.lang === 'world' && !s.on && s.pressed === 'false' && s.earth && (await count()) === c0, JSON.stringify(s));
   await p.click('#lib-lang'); await sleep(300);
   check(`${name}: tap again → Vietnamese`, (await st()).lang === 'vi');
   await p.click('#lib-lang'); await sleep(300);

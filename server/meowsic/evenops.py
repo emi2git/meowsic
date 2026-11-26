@@ -98,8 +98,7 @@ def even_op(text, op, info=None):
             + ' + '.join(sm.value_name(x) for x in ps) + (' rests' if what == 'rest' else ' (tied)') + ' to keep the beat readable')
     tidy_score(root)
     sm.fix_slurs(part, snap)
-    sm.fix_ties(part)
-    gone = max(0, ties_before + nb.get('ties', 0) - sm._tie_count(part))
+    gone = sm.ties_gone(ties_before + nb.get('ties', 0), part, sm.fix_ties(part))
     ET.indent(root, space='  ')
     out = sm._head(text) + ET.tostring(root, encoding='unicode') + '\n'
     ref = {id(x): i for i, x in enumerate(part.iter('note'))}
