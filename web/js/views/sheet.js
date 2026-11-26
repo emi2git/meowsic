@@ -133,7 +133,7 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
 
   $('#strip', root)?.addEventListener('click', (e) => { const b = e.target.closest('[data-p]'); if (b) { page = +b.dataset.p; draw(); } });
 
-  // click / tap to turn: see below; swipe works too
+  // click / tap to turn: see below; swipe works too on iPad / iPhone (not on the Mac)
   // (when zoomed in, dragging moves around the page instead of turning it)
   let sx = null, sy = 0;
   let pan = null;
@@ -159,7 +159,8 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
     sx = null;
     if (e.target.closest('button')) return;
     const zoomed = pages.classList.contains('zoomed');
-    if (!zoomed && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) return dx < 0 ? next() : prev();
+    // a drag left / right turns on iPad / iPhone only; the Mac has no swipes (‹ › strips, a click, the keys)
+    if (!zoomed && !isDesktop() && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) return dx < 0 ? next() : prev();
     if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
       // one page: left half ← / right half →. Two pages: outer half of the left page ←, outer half of the right page →
       const shown = [...pages.querySelectorAll('.page')];

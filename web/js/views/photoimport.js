@@ -295,7 +295,8 @@ export function photoImportView(main, opts = {}) {
     addEventListener('keydown', key, true);
     let x0 = null;
     const big = $('.bs-large', m.el);
-    big.onpointerdown = (e) => { x0 = e.clientX; };
+    // iPad / iPhone: a swipe on the big photo steps too; the Mac uses the ‹ › buttons only (no swipes)
+    big.onpointerdown = (e) => { x0 = isDesktop() ? null : e.clientX; };
     big.onpointerup = (e) => { if (x0 != null && Math.abs(e.clientX - x0) > 50) step(e.clientX < x0 ? 1 : -1); x0 = null; };
     show();
   };

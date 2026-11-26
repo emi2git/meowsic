@@ -37,13 +37,15 @@ check('a fresh start opens Sheets', (await page.evaluate(() => location.hash)) =
 check('the logo goes to Sheets', (await page.$eval('#side .brand', (e) => e.getAttribute('href'))) === '#/library?kind=sheet');
 await page.click('#side a[href="#/library"]'); await sleep(300);
 check('All music is one tap away', (await text('#libhead h1')) === 'All music' && (await page.evaluate(() => location.hash)) === '#/library');
-check('first page shows 50 items', (await count('#lib-rows .row')) === 50, await count('#lib-rows .row'));
+// Mac: the list never scrolls; a page = the rows that fit, ‹ n / N › buttons (no swipes; Mac library rules: macnoswipe.mjs)
+const per0 = await count('#lib-rows .row'), pages0 = Math.ceil(88 / per0);
+check('first page shows the rows that fit (no scrolling)', per0 >= 8 && per0 < 50 && (await page.$eval('#main', (e) => e.scrollHeight <= e.clientHeight + 1)), per0);
 check('Version column on Scores', true);
 check('count says 88 items', (await text('.pager-row .muted')).startsWith('88'));
-check('pager: « ‹ 1 2 › » with page 1 current', (await page.$$eval('.pager button', (e) => e.map((b) => b.textContent).join(' '))) === '« ‹ 1 2 › »' && (await text('.pager button.on')) === '1');
-await page.click('.pager [data-pg="2"]'); await sleep(200);
-check('page 2 shows the last 38', (await count('#lib-rows .row')) === 38 && (await text('.pager button.on')) === '2');
-await page.click('.pager [title="First page"]'); await sleep(200);
+check('pager: ‹ 1 / N › with ‹ off', (await page.$$eval('.pager.mini button', (e) => e.map((b) => b.textContent).join(' '))) === '‹ ›' && (await text('.pager .pg-now')) === `1 / ${pages0}` && (await page.$eval('.pager [data-pg="prev"]', (e) => e.disabled)));
+await page.click('.pager [data-pg="next"]'); await sleep(200);
+check('› shows page 2', (await text('.pager .pg-now')) === `2 / ${pages0}` && (await count('#lib-rows .row')) === Math.min(per0, 88 - per0));
+await page.click('.pager [data-pg="prev"]'); await sleep(200);
 await page.type('#lib-q', 'memory');
 await sleep(200);
 check('search finds Memory', (await page.$$eval('#lib-rows .row-title', (e) => e.map((x) => x.textContent))).includes('Memory'));
@@ -52,7 +54,13 @@ check('no Add button and no kind tabs in the Mac header', !(await page.$('#lib-a
 console.log('Default order: Last modified, newest first');
 {
   const ticked = async () => { await page.click('#lib-sort-menu'); await sleep(200); const l = await page.$$eval('.menu button', (e) => e.find((x) => x.getAttribute('aria-checked') === 'true')?.querySelector('span').textContent); await closeMenu(); return l; };
-  const allIds = async () => { const out = []; for (const pg of [1, 2]) { await page.click(`.pager [data-pg="${pg}"]`); await sleep(200); out.push(...await page.$$eval('#lib-rows tr.row', (e) => e.map((x) => x.dataset.id))); } await page.click('.pager [data-pg="1"]'); await sleep(200); return out; };
+  const allIds = async () => {
+    const out = [], off = (k) => page.$eval(`.pager [data-pg="${k}"]`, (e) => e.disabled);
+    while (!(await off('prev'))) { await page.click('.pager [data-pg="prev"]'); await sleep(120); }
+    for (;;) { out.push(...await page.$$eval('#lib-rows tr.row', (e) => e.map((x) => x.dataset.id))); if (await off('next')) break; await page.click('.pager [data-pg="next"]'); await sleep(150); }
+    while (!(await off('prev'))) { await page.click('.pager [data-pg="prev"]'); await sleep(120); }
+    return out;
+  };
   const at = (it) => it.updatedAt || it.createdAt || 0;
   const now = await page.$eval('.th-now', (e) => e.textContent).catch(() => '');
   check('Modified ▼ named in the heading, ticked in the ⌄ menu', now === 'Modified ▼' && (await ticked()) === 'Last modified', now);
@@ -63,7 +71,7 @@ console.log('Default order: Last modified, newest first');
   await page.reload({ waitUntil: 'networkidle0' }); await go('#/library'); await sleep(300);
   let d = await db(), byId = Object.fromEntries(d.items.map((x) => [x.id, x]));
   let ids = await allIds();
-  check('both pages in Last modified order (newest first)', ids.length === 88 && ids.every((id, i) => !i || at(byId[ids[i - 1]]) >= at(byId[id])), ids.slice(0, 3).map((i) => byId[i].title).join(' | '));
+  check('every page in Last modified order (newest first)', ids.length === 88 && ids.every((id, i) => !i || at(byId[ids[i - 1]]) >= at(byId[id])), ids.slice(0, 3).map((i) => byId[i].title).join(' | '));
   const oldest = ids[ids.length - 1], mid = ids[10];
   await page.evaluate(async (a, b) => { const { store } = await import('./js/store.js'); store.update(b, { transpose: 2 }); store.update(a, { artist: 'Changed Now' }); }, oldest, mid);
   await sleep(300);

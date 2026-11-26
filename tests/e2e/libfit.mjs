@@ -2,7 +2,7 @@
 // pager — no empty gap of a row or more, nothing under the pager or the tab bar, rows not shrunk.
 // Every library tab (All / Sheets / Scores / Chords / Books), several screen sizes (iPhone Air with
 // and without Safari's toolbar, iPhone 15/16, iPad both ways), a resize in place keeps the first
-// row on screen, and the Mac keeps its scrolling 50-row pages.
+// row on screen, and the Mac fits its rows the same way (no scrolling, ‹ n / N › buttons).
 // Preview suite: PREVIEW=http://127.0.0.1:<port> (scripts/dev-server --preview). SHOTS=<dir> for screenshots.
 import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
@@ -105,15 +105,21 @@ for (const [name, w, h] of devices) {
   await p.close();
 }
 
-// Mac: 50 rows per page, the list scrolls
-{
+// Mac (no touch): the same fit as the iPad, no scrolling, the ‹ n / N › pager on every tab (also a narrow window)
+for (const [name, w, h] of [['mac', 1440, 900], ['mac-small', 1100, 700], ['mac-narrow', 700, 800]]) {
   const p = await b.newPage(); p.on('pageerror', (e) => errs.push(e.message));
-  await p.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
+  await p.setViewport({ width: w, height: h, deviceScaleFactor: 1 });
   await bigLibrary(p);
-  await openTab(p, 'sheet');
-  const n = await p.$$eval('#lib-rows tr.row', (r) => r.length);
-  results.push(`mac Sheets: ${n} rows (scrolls)`);
-  check(`mac: 50 rows per page, scrolling (${n})`, n === 50);
+  for (const [k, label] of KINDS) {
+    await openTab(p, k);
+    const m = await measure(p);
+    const scrolls = await p.$eval('#main', (e) => e.scrollHeight > e.clientHeight + 1 || document.scrollingElement.scrollHeight > innerHeight + 1);
+    results.push(`${name} ${label}: ${m.n} rows (row ${m.rowH}px, gap ${m.gap}px)`);
+    check(`${name} ${label}: gap under the rows < one row (${m.n} rows)`, m.gap >= -0.5 && m.gap < m.rowH, JSON.stringify(m));
+    check(`${name} ${label}: rows don't run under the pager, pager on screen`, m.overlap <= 0.5 && m.pagerBottom <= m.limit + 0.5, JSON.stringify(m));
+    check(`${name} ${label}: nothing scrolls`, !scrolls);
+    check(`${name} ${label}: ‹ 1 / N › pager`, /^1 \/ \d+$/.test(m.page) && !!(await p.$('.pager.mini [data-pg="next"]')), m.page);
+  }
   await p.close();
 }
 check('no page errors', !errs.length, errs.join('\n'));

@@ -40,10 +40,10 @@ const COLS_BY = {
   chords: [C.title, C.artist, C.album, C.key, C.version, C.added],
   score: [C.title, C.artist, C.album, C.key, C.version, C.added],
 };
-const PAGE = 50; // rows per page on the Mac (the list scrolls)
-// iPad / iPhone: the page never scrolls; a page of the list = as many rows as fit on the screen
+// Every device: the page never scrolls; a page of the list = as many rows as fit on the screen
 // (measured after drawing: header, table heading, pager, row height — book rows with covers are
-// taller), swipe left / right for the next / previous page. `per` is the last measured count;
+// taller). The ‹ n / N › buttons turn pages; iPad / iPhone also swipe left / right. The Mac has no
+// swipes or scrolling at all (the user's choice, 2026-11-26): buttons, plus ← → / Page Up / Down. `per` is the last measured count;
 // `key` is the view (type + tags) the page number belongs to, so coming back from an item keeps it.
 // World (every song, the default) ⇄ Vietnamese only; remembered on this device
 const LANG_NEXT = { world: 'vi', vi: 'world' };
@@ -85,7 +85,7 @@ export function libraryView(main, { q }) {
   state.select = false; state.sel.clear(); state.anchor = null;
   const viewKey = [kind, tags.join(',')].join('|');
   if (state.key !== viewKey) { state.key = viewKey; state.page = 1; }
-  const fit = () => isTouch(); // rows per page from the screen (no scrolling)
+  const fit = () => true; // rows per page from the screen (no scrolling), on every device
   let perKind = null; // what `state.per` was measured for (book rows are taller)
   main.innerHTML = `
     <header class="top lib-top selband" id="selband" hidden></header>
@@ -122,7 +122,7 @@ export function libraryView(main, { q }) {
       const pages = Math.max(1, Math.ceil(list.length / per));
       state.page = Math.min(Math.max(1, state.page), pages);
       shownList = list.slice((state.page - 1) * per, state.page * per);
-      const more = fit() ? miniPager(state.page, pages) : pager(state.page, pages);
+      const more = miniPager(state.page, pages, !isTouch()); // the Mac always shows it, even for one page
       const cnt = `${list.length} item${list.length === 1 ? '' : 's'}`;
       {
         // ▲ = A→Z / oldest first, ▼ = Z→A / newest first; Added / Last modified start newest first
@@ -171,7 +171,7 @@ export function libraryView(main, { q }) {
   // iPhone tab bar; take away the pager row, the table heading and the table's margins, divide by the
   // real row height (book rows with covers are taller). Rows are never shrunk; the pager row sits at
   // the bottom and the table has no bottom margin there (app.css), so what is left is under one row.
-  const perPage = () => (fit() ? state.per || 8 : PAGE);
+  const perPage = () => state.per || 8;
   const keyboardUp = () => document.activeElement?.id === 'lib-q';
   const remeasure = () => {
     if (keyboardUp() && state.per && perKind === kind) return; // the on-screen keyboard is up: keep the count
@@ -292,6 +292,9 @@ export function libraryView(main, { q }) {
   rowsEl.addEventListener('contextmenu', (e) => { if (e.target.closest('.row') && e.pointerType !== 'mouse' && isTouch()) e.preventDefault(); });
   const onKey = (e) => {
     if (e.key === '/' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); $('#lib-q', main)?.focus(); }
+    // Mac: ← → and Page Up / Down turn the library's pages (the buttons do the same)
+    const dir = { ArrowRight: 1, PageDown: 1, ArrowLeft: -1, PageUp: -1 }[e.key];
+    if (dir && !isTouch() && !e.metaKey && !e.ctrlKey && !e.altKey && !e.target.closest?.('input,textarea,select,[contenteditable]') && !document.querySelector('.menu, .tagpop, .modal-wrap')) { e.preventDefault(); turn(dir); }
     if (e.key === 'Escape' && selecting()) { state.select = false; state.sel.clear(); draw(); }
     else if (e.key === 'Escape' && state.q && !document.querySelector('.menu, .tagpop, .modal')) { const qIn = $('#lib-q', main); qIn.value = ''; qIn.blur(); qIn.oninput(); }
     if ((e.metaKey || e.ctrlKey) && e.key === 'a' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); shownList.forEach((x) => state.sel.add(x.id)); draw(); }
@@ -332,25 +335,9 @@ function tagFilter(anchor, current, apply) {
   pop.querySelector('.tagpop-q').focus();
 }
 
-// « ‹ 1 … 4 [5] 6 … 12 › »  — First, previous, a window of page numbers, next, Last
-function pager(page, pages) {
-  if (pages <= 1) return '';
-  const nums = new Set([1, pages, page - 1, page, page + 1].filter((n) => n >= 1 && n <= pages));
-  if (page <= 3) [2, 3, 4].forEach((n) => n <= pages && nums.add(n));
-  if (page >= pages - 2) [pages - 3, pages - 2, pages - 1].forEach((n) => n >= 1 && nums.add(n));
-  const sorted = [...nums].sort((a, b) => a - b);
-  let html = '', prev = 0;
-  for (const n of sorted) {
-    if (n - prev > 1) html += '<span class="pg-gap">…</span>';
-    html += `<button data-pg="${n}" class="${n === page ? 'on' : ''}" ${n === page ? 'aria-current="page"' : ''}>${n}</button>`;
-    prev = n;
-  }
-  return `<nav class="pager" aria-label="Pages"><button data-pg="1" ${page === 1 ? 'disabled' : ''} title="First page">«</button><button data-pg="${page - 1}" ${page === 1 ? 'disabled' : ''} title="Previous page">‹</button>${html}<button data-pg="${page + 1}" ${page === pages ? 'disabled' : ''} title="Next page">›</button><button data-pg="${pages}" ${page === pages ? 'disabled' : ''} title="Last page">»</button></nav>`;
-}
-
-
-// iPad / iPhone: ‹ 3 / 12 ›  (swipe left / right does the same)
-function miniPager(page, pages) {
-  if (pages <= 1) return '';
+// ‹ 3 / 12 ›  (iPad / iPhone: swipe left / right does the same; Mac: ← → / Page Up / Down). `always`: the Mac
+// shows it even for one page (both buttons off), so the page buttons are always where they are expected
+function miniPager(page, pages, always = false) {
+  if (pages <= 1 && !always) return '';
   return `<nav class="pager mini" aria-label="Pages"><button data-pg="prev" ${page === 1 ? 'disabled' : ''} aria-label="Previous page" title="Previous page">‹</button><span class="pg-now" aria-current="page">${page} / ${pages}</span><button data-pg="next" ${page === pages ? 'disabled' : ''} aria-label="Next page" title="Next page">›</button></nav>`;
 }

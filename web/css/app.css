@@ -873,21 +873,25 @@ kbd { font: 11px ui-monospace, monospace; opacity: .7; margin-left: 6px; border:
 :root:is([data-device="phone"], [data-device="tablet"]) body[data-view="item"] .sheet-frame .page-row { gap: 0; }
 :root:is([data-device="phone"], [data-device="tablet"]) body[data-view="item"] .sheet-frame .page { border-radius: 0; box-shadow: none; }
 :root:is([data-device="phone"], [data-device="tablet"]) body[data-view="item"] .turn-strip { display: none; }
-/* library: the page never scrolls. As many rows as fit (library.js measures), the pager sits at
-   the bottom (above the iPhone tab bar), swipe left / right for the next / previous page. */
-:root:is([data-device="phone"], [data-device="tablet"]) body[data-view="library"] #main { overflow: hidden; display: flex; flex-direction: column; overscroll-behavior: none; }
-:root:is([data-device="phone"], [data-device="tablet"]) body[data-view="library"] #main > .top { flex: none; position: relative; }
-:root:is([data-device="phone"], [data-device="tablet"]) body[data-view="library"] #lib-rows { flex: 1 1 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; touch-action: none; }
-:root:is([data-device="phone"], [data-device="tablet"]) body[data-view="library"] #lib-rows > * { flex: none; }
-:root:is([data-device="phone"], [data-device="tablet"]) body[data-view="library"] .lib-table thead th { position: static; }
-:root:is([data-device="phone"], [data-device="tablet"]) body[data-view="library"] .lib-table { margin-bottom: 0; } /* the pager row has its own padding: every px left can go to one more row */
-:root:is([data-device="phone"], [data-device="tablet"]) body[data-view="library"] .pager-row { margin-top: auto; min-height: 48px; padding: 4px 14px calc(4px + env(safe-area-inset-bottom)); flex-wrap: nowrap; }
+/* library (every device): the page never scrolls. As many rows as fit (library.js measures), the pager sits at
+   the bottom (above the iPhone tab bar); iPad / iPhone also swipe left / right, the Mac uses the buttons only. */
+body[data-view="library"] #main { overflow: hidden; display: flex; flex-direction: column; overscroll-behavior: none; }
+body[data-view="library"] #main > .top { flex: none; position: relative; }
+body[data-view="library"] #lib-rows { flex: 1 1 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; touch-action: none; }
+body[data-view="library"] #lib-rows > * { flex: none; }
+body[data-view="library"] .lib-table thead th { position: static; }
+body[data-view="library"] .lib-table { margin-bottom: 0; } /* the pager row has its own padding: every px left can go to one more row */
+body[data-view="library"] .pager-row { margin-top: auto; min-height: 48px; padding: 4px 14px calc(4px + env(safe-area-inset-bottom)); flex-wrap: nowrap; }
 :root[data-device="phone"] body[data-view="library"] .pager-row { padding-bottom: 4px; } /* #main already ends above the tab bar */
-:root:is([data-device="phone"], [data-device="tablet"]) body[data-view="library"] .pager-row > .muted { position: absolute; left: 22px; width: auto; text-align: left; font-size: 14px; }
+body[data-view="library"] .pager-row > .muted { position: absolute; left: 22px; width: auto; text-align: left; font-size: 14px; }
 :root[data-device="phone"] body[data-view="library"] .pager-row > .muted { left: 14px; }
 .pager.mini { gap: 6px; }
 .pager.mini button { min-width: 44px; min-height: 38px; font-size: 20px; line-height: 1; }
 .pager.mini .pg-now { min-width: 72px; text-align: center; font-weight: 650; font-variant-numeric: tabular-nums; color: var(--ink2); }
+
+/* Mac (desktop): no swipe gestures, buttons only. Chrome's two-finger trackpad swipe = history back / forward
+   (it would leave the view); overscroll-behavior-x: none on the root turns that off. */
+:root[data-device="desktop"], :root[data-device="desktop"] body { overscroll-behavior-x: none; }
 
 /* scores and chord charts as pages (iPad / iPhone; js/pager.js): nothing scrolls, the page is the
    whole area under the top bar, edge to edge like a sheet photo; a page = the long sheet moved up,

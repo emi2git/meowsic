@@ -15,7 +15,8 @@
 //   narrow (≤760px, any device, so also a narrow Mac window)  tab bar instead of the left bar,
 //                           smaller default score zoom, wrapped toolbars, one-column lists
 //   desktop (Mac)           left bar everywhere, keyboard shortcuts, two-page spreads in a wide
-//                           window, ‹ › side strips, score zoom saved on the entry
+//                           window, ‹ › side strips, score zoom saved on the entry; NO swipe / drag
+//                           gestures at all (buttons only; library ‹ n / N › pager, no scrolling)
 export const PHONE_MAX = 760;
 
 const coarse = matchMedia('(pointer: coarse)');

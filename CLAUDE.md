@@ -112,6 +112,7 @@ Views (`web/js/views/`):
 - Light theme, chosen per device (`meowsic-theme`). The library opens on **Sheets**.
 - Every library list (All, Sheets, Scores, Chords, Books) is sorted by **Last modified** (`updatedAt`), newest first, by default: "Modified ▼" sits after the Title ⌄ (tap: reverse), "Last modified" is first in the ⌄ menu. A pick is per device (`meowsic-sort2`; the old `meowsic-sort` is dropped once). `updatedAt` changes on edits to content or info only: viewing, playing, zoom, transpose and speed (`items.py` / `store.js` `VIEW_ONLY`) don't bump it.
 - Score zoom is per device: Mac / iPad 0.75, iPhone 0.62 (`score.js` `Z_BASE`).
+- **Mac (desktop): no swipe gestures, buttons only; library pager buttons.** No mouse-drag page turns (sheet, photo import), Chrome's trackpad history swipe is off (`overscroll-behavior-x: none` on the root), the library never scrolls: rows fit the window with the ‹ n / N › pager on every list and search (shown even for one page; ← → / Page Up / Down too). iPad / iPhone keep their swipes. `macnoswipe.mjs` checks it.
 - Buttons are single icons with an aria-label, not icon + text. No tags in library lists. No tempo marks drawn on scores (`noTempoXml`).
 
 ## Claude-only tools (server endpoints with no UI, kept on purpose)

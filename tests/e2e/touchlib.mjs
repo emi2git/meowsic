@@ -1,7 +1,7 @@
 // iPad / iPhone library: no scrolling, as many rows as fit, swipe left / right = next / previous page;
 // rotation measures again; back from an item keeps the page; sort / search go back to page 1;
 // the keyboard does not change the count. Sheets: swipe up or down = back to the library.
-// Mac: the list still scrolls, 50 rows a page.
+// Mac: no swipes, no scrolling either: rows fit the window, the ‹ n / N › pager (macnoswipe.mjs has the rest).
 // BASE=http://localhost:5211/ (a test server with 100+ items; never :5180) or BASE='http://localhost:5210/?preview=1'
 // OUT=dir for screenshots (default: no screenshots)
 import './live-guard.mjs'; // refuses the live app / library
@@ -147,13 +147,12 @@ for (const [name, w, h] of DEVICES) {
   await p.close();
 }
 
-// Mac: unchanged — the list scrolls, 50 rows a page, the full pager
+// Mac: rows fit the window (no scrolling), the same ‹ n / N › pager, always shown
 const m = await b.newPage(); m.on('pageerror', (e) => errs.push('mac: ' + e.message)); await m.setViewport({ width: 1440, height: 900 });
 await lib(m, '');
 const ms = await m.evaluate(() => ({ n: document.querySelectorAll('tr.row').length, total: parseInt(document.querySelector('.pager-row .muted').textContent), scroll: document.querySelector('#main').scrollHeight - document.querySelector('#main').clientHeight, mini: !!document.querySelector('.pager.mini') }));
-check('Mac: 50 rows a page (or all)', ms.n === Math.min(50, ms.total), JSON.stringify(ms));
-check('Mac: the list scrolls', ms.total < 15 || ms.scroll > 0, JSON.stringify(ms));
-check('Mac: full pager, not the touch one', !ms.mini);
+check('Mac: rows fit, nothing scrolls', ms.n >= 1 && ms.n < 50 && ms.scroll <= 1, JSON.stringify(ms));
+check('Mac: the ‹ n / N › pager', ms.mini);
 
 console.log('\nrows per page:', JSON.stringify(rowsPer));
 console.log(`\n${pass} passed, ${fail} failed`); console.log(errs.length ? 'errors:\n' + errs.join('\n') : 'no page errors');
