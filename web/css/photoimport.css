@@ -1,6 +1,6 @@
-/* Add music → From Photos (views/photoimport.js). Reuses Manage library's page grid (.bs-*) and crop stage (.cu-*). */
-body[data-view="add-photos"] #main { display: flex; flex-direction: column; height: var(--vh); overflow: hidden; }
-body[data-view="add-photos"] .pi-top { flex: none; }
+/* Add sheet music with the Mac = the Photos album (views/photoimport.js). Reuses Manage library's page grid (.bs-*) and crop stage (.cu-*). */
+body[data-view="add-sheets"] #main:has(> .pi) { display: flex; flex-direction: column; height: var(--vh); overflow: hidden; }
+body[data-view="add-sheets"] .pi-top { flex: none; }
 .pi-top .grow { flex: 1; }
 .pi { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .pi.album, .pi.done, .pi.reading { overflow-y: auto; }
@@ -36,10 +36,16 @@ body[data-view="add-photos"] .pi-top { flex: none; }
 .pi.crop .cu-stage { flex: 1; }
 .pi-strip { flex: none; }
 .pi-done { padding-top: 24px; } .pi-made { padding-left: 20px; } .pi-made li { margin: 6px 0; font-size: 16px; }
-.pi-from { margin-bottom: 14px; text-decoration: none; color: inherit; text-align: left; gap: 14px; }
-.pi-from b { font-size: 18px; }
+/* Or add from: Files / Camera, small, under the album (hidden while arranging photos) */
+.pi-more { flex: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 10px; padding: 10px 16px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); }
+.pi-more[hidden] { display: none; }
+.pi-more .src-btn { min-width: 0; }
+.pi-more.over { outline: 2.5px dashed var(--acc); outline-offset: -4px; background: var(--acc-soft); }
+.pi-none { margin: 0; font-size: 15px; }
+.pi-skipped summary { cursor: pointer; color: var(--ink2); font-size: 14px; }
+.pi-skipped ul { margin: 6px 0 0; padding-left: 20px; font-size: 14px; } .pi-skipped li { margin: 4px 0; overflow-wrap: anywhere; }
 @media (max-width: 760px) {
-  body[data-view="add-photos"] #main { height: calc(var(--vh) - 64px - env(safe-area-inset-bottom)); } /* above the tab bar */
+  body[data-view="add-sheets"] #main:has(> .pi) { height: calc(var(--vh) - 64px - env(safe-area-inset-bottom)); } /* above the tab bar */
   .pi-bar { padding: 6px 8px; gap: 6px; flex-wrap: wrap; }
   .pi-bar button, .pi-bar button.big { min-width: 0; flex: 1 1 0; padding: 0 8px; min-height: 40px; }
   .pi-bar .grow, .pi.preview .pi-sum small { display: none; }

@@ -42,13 +42,20 @@ for (const [dev, vp] of DEVICES) {
 
   await pick('Sheet');
   check(`${dev}: Sheet opens #/add-sheets`, (await hash()) === '#/add-sheets');
+  const server = !!(await p.$('#pi'));  // with the Mac: Add sheet music = the Photos album, Files / Camera below
+  if (server) {
+    await p.waitForSelector('.pi-err, .pi-count', { timeout: 15000 }).catch(() => {});
+    // test-all gives this server an empty fake Photos: no album → a clear message and the Files fallback
+    check(`${dev}: no album: says so`, /Album not found/.test(await p.$eval('.pi-err', (e) => e.textContent).catch(() => '')));
+    check(`${dev}: no album: Files / Camera on screen`, await p.$eval('#pi-more', (e) => { const r = e.getBoundingClientRect(); return !e.hidden && r.height > 0 && r.bottom <= innerHeight + 1; }));
+  }
   check(`${dev}: Sheet has the file chooser`, !!(await p.$('#files')));
   const src = await p.$$eval('.src-btn', (e) => e.map((x) => x.textContent.trim()));
-  check(`${dev}: sheet sources are one or two words`, src.length >= 2 && src.every((t) => words(t) <= 2), src.join('|'));
+  check(`${dev}: sheet sources are one or two words`, src.length >= (server && dev === 'mac' ? 1 : 2) && src.every((t) => words(t) <= 2), src.join('|'));
   const sb = await p.$$eval('.src-btn', (e) => e.map((x) => [Math.round(x.getBoundingClientRect().height), parseFloat(getComputedStyle(x.querySelector('b') || x).fontSize)]));
   check(`${dev}: source buttons: standard text, 44px, same height`, sb.every(([h, f]) => h >= 44 && h <= 46 && f <= 15), JSON.stringify(sb));
   check(`${dev}: Camera only on touch`, src.includes('Camera') === (dev !== 'mac'), src.join('|'));
-  check(`${dev}: no long explanations on Add sheet`, !(await p.$('.how')) && (await p.$eval('#main', (e) => e.innerText.length)) < 160, await p.$eval('#main', (e) => e.innerText));
+  check(`${dev}: no long explanations on Add sheet`, !(await p.$('.how')) && (await p.$eval('#main', (e) => e.innerText.length)) < (server ? 300 : 160), await p.$eval('#main', (e) => e.innerText));
   check(`${dev}: Add sheet fits (no sideways scroll)`, await noHScroll());
   await p.screenshot({ path: `${SHOTS}/${dev}-2-sheet.png` });
 
@@ -77,7 +84,7 @@ for (const [dev, vp] of DEVICES) {
   }
   await p.click('#main .top a[href="#/help"]'); await sleep(400);
   const help = await p.$eval('#main', (e) => e.innerText);
-  check(`${dev}: Help page explains every source`, (await hash()) === '#/help' && ['Sheet', 'Chords', 'Score', 'Photos', 'Camera', 'YouTube', 'Audio file', 'Paste', 'SHEET'].every((w) => help.includes(w)), help.slice(0, 200));
+  check(`${dev}: Help page explains every source`, (await hash()) === '#/help' && ['Sheet', 'Chords', 'Score', 'Photos', 'Camera', 'YouTube', 'Audio file', 'Paste', 'album', 'Skip'].every((w) => help.includes(w)), help.slice(0, 200));
   check(`${dev}: Help is plain bullets`, (await p.$$eval('.help-sec li', (e) => e.length)) >= 12);
   check(`${dev}: Help fits`, await noHScroll());
   check(`${dev}: Light theme by default`, (await p.evaluate(() => document.documentElement.dataset.theme)) === 'light');

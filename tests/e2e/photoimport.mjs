@@ -1,9 +1,11 @@
-// Add music → From Photos against a TEST server started with a fake album (never the real library / Photos):
+// Add sheet music (= the Photos album) against a TEST server started with a fake album (never the real library / Photos):
 //   python3 tests/e2e/make_fake_album.py /tmp/x   then   MEOWSIC_FAKE_PHOTOS=/tmp/x MEOWSIC_DATA=<copy> python -m meowsic --port 5234
 //   BASE=http://localhost:5234/ node photoimport.mjs      (SHOTS=<dir> for the screenshots)
-// Covers: album listing, reading + proposed songs, break toggles, reorder (‹ ›, ⇧→), exclude, title edit,
+// Covers: Add sheet music opens straight on the new photos (Files below the album), album listing + errors with the
+// Files fallback, reading + proposed songs, break toggles, reorder (‹ ›, ⇧→), ✕ Skip (remembered), title edit,
 // crop (box carry-over, whole page, later), add, undo (photos new again, same arrangement back), album name,
-// and the layout on Mac, iPad Pro and iPhone Air sizes.
+// the layout on Mac, iPad Pro and iPhone Air sizes, then "Nothing new" (added + skipped never offered again,
+// also after the sheets are deleted for good) and Show skipped → Restore.
 import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
 const BASE = process.env.BASE || 'http://localhost:5234/';
@@ -35,19 +37,29 @@ const until = async (page, fn, arg, ms = 60000) => { try { await page.waitForFun
 
 // ---- start clean: undo earlier imports of this album, album name back to SHEET ----
 for (const imp of await api('/photos/imports')) if (!imp.undoneAt) await post(`/photos/imports/${imp.id}/undo`, {});
+await post('/photos/unskip', { ids: (await api('/photos/skipped')).map((x) => x.id) });
 await fetch(BASE + 'api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ photosAlbum: 'SHEET' }) });
 const al0 = await api('/photos/album');
 check('fake album: 7 photos, all new', al0.photos.length === 7 && al0.new === 7 && al0.fake, JSON.stringify({ n: al0.photos.length, new: al0.new, e: al0.error }));
 
 const page = await newPage({ width: 1440, height: 900 });
-await page.goto(BASE + '#/add-sheets', { waitUntil: 'networkidle0' });
-check('Add sheet offers Photos', !!(await page.$('a.pi-from[href="#/add-photos"]')));
-await page.click('a.pi-from'); await sleep(800);
+await page.goto(BASE + '#/library?kind=sheet', { waitUntil: 'networkidle0' });
+await page.evaluate(() => { location.hash = '#/add-sheets'; });
+check('Add sheet music: no Photos button to tap — it reads the album at once', await until(page, () => document.querySelectorAll('#pi-grid figure').length === 7 || !!document.querySelector('#pi-prog'), null, 30000) && !(await page.$('a.pi-from')));
+check('…the 7 new photos, ready to add', await until(page, () => document.querySelectorAll('#pi-grid figure').length === 7, null, 90000) && !!(await page.$('#pi-add')));
+check('header: Add sheet music, Back to the library', (await page.$eval('.pi-top h1', (e) => e.textContent)) === 'Add sheet music' && (await page.$eval('.pi-top .back', (e) => e.getAttribute('href'))).startsWith('#/library'));
+check('Files / Camera hidden while arranging', await page.$eval('#pi-more', (e) => e.hidden));
+await page.click('#pi-album-btn'); await sleep(900);
 check('album screen: 7 new', /7 new/.test(await page.$eval('.pi-count', (e) => e.textContent)));
+check('album screen: Files below (small, secondary)', await page.$eval('#pi-more', (e) => !e.hidden && !!e.querySelector('#files') && !e.querySelector('.primary')));
+check('#/add-photos (old link) = Add sheet music', await page.evaluate(async () => { location.hash = '#/add-photos'; await new Promise((r) => setTimeout(r, 900)); return location.hash; }) === '#/add-sheets');
+await until(page, () => document.querySelectorAll('#pi-grid figure').length === 7, null, 20000);  // the session read before: back on its preview
+await page.click('#pi-album-btn'); await sleep(900);
 // a wrong album name: clear message, then back
 await page.$eval('#pi-album', (e) => { e.value = ''; });
 await page.type('#pi-album', 'Holiday pics'); await page.click('#pi-look'); await sleep(900);
 check('unknown album: “Album not found” + the albums there', /Album not found/.test(await page.$eval('.pi-err', (e) => e.textContent)) && /SHEET/.test(await page.$eval('.pi-err', (e) => e.textContent)));
+check('unknown album: Files fallback on screen', await page.$eval('#pi-more', (e) => !e.hidden && !!e.querySelector('#src-files') && e.getBoundingClientRect().bottom <= innerHeight + 1));
 await page.$eval('#pi-album', (e) => { e.value = ''; }); await page.type('#pi-album', 'sheet'); await page.keyboard.press('Enter'); await sleep(900);
 check('album name matches without case', /7 new/.test(await page.$eval('.pi-count', (e) => e.textContent)));
 check('album name saved in the settings', (await api('/settings')).photosAlbum === 'sheet');
@@ -67,8 +79,11 @@ check('the holiday photo is marked not sure', !!(await page.$('#pi-grid figure:n
 await page.screenshot({ path: `${SHOTS}/photoimport-preview-mac.png` });
 
 // exclude the holiday photo (✕), toggle a break off and on again
+check('each photo has a ✕ Skip', (await page.$$eval('#pi-grid [data-a="out"]', (e) => e.filter((x) => /^Skip/.test(x.getAttribute('aria-label'))).length)) === 7);
 await page.click('#pi-grid figure:nth-child(7) [data-a="out"]'); await sleep(200);
-check('✕ leaves photo 7 out', await page.$eval('#pi-grid figure:nth-child(7)', (e) => e.classList.contains('out')));
+check('✕ Skip leaves photo 7 out', await page.$eval('#pi-grid figure:nth-child(7)', (e) => e.classList.contains('out')));
+await sleep(300);
+check('…remembered on the Mac at once', (await api('/photos/skipped')).some((x) => x.id === 'fake-IMG_107'));
 check('3 sheets now', /→ 3 sheets/.test(await page.$eval('#pi-sum', (e) => e.textContent)));
 await page.click('#pi-grid figure:nth-child(6) .bs-pg'); await sleep(200);
 check('tap photo 6: no new song there', (await starts()) === '1,3' && /→ 2 sheets/.test(await page.$eval('#pi-sum', (e) => e.textContent)));
@@ -126,7 +141,7 @@ if (made.every(Boolean)) {
   check('photo 2 kept whole', w2 === 1240 && h2 === 1754, `${w2}x${h2}`);
 }
 const al1 = await api('/photos/album');
-check('the album now: 1 new (the holiday photo)', al1.new === 1 && al1.photos.find((p) => !p.inLibrary)?.filename === 'IMG_107.jpg', al1.new);
+check('the album now: nothing new (6 added, the holiday photo skipped)', al1.new === 0 && al1.skipped === 1 && al1.photos.find((p) => !p.inLibrary)?.filename === 'IMG_107.jpg', JSON.stringify({ n: al1.new, s: al1.skipped }));
 check('activity logged', (await api('/activity')).some((a) => a.type === 'photo-import' && /Moon River/.test(a.detail)));
 await page.screenshot({ path: `${SHOTS}/photoimport-done-mac.png` });
 
@@ -136,15 +151,14 @@ await page.click('#pi-undo');
 check('undo: back to the preview', await until(page, () => document.querySelectorAll('#pi-grid figure').length === 7, null, 10000));
 const gone = await Promise.all(made.filter(Boolean).map((s) => fetch(`${BASE}api/items/${s.id}`).then((r) => r.status)));
 check('undo: the sheets are gone', gone.length === 3 && gone.every((x) => x === 404), gone.join());
-check('undo: all 7 photos new again', (await api('/photos/album')).new === 7);
+check('undo: the 6 added photos are new again (the skipped one stays skipped)', (await api('/photos/album')).new === 6);
 check('undo: your arrangement is still there', (await order()) === '1,2,3,5,4,6,7' && (await starts()) === '1,3,6' && await page.$eval('#pi-grid figure:nth-child(7)', (e) => e.classList.contains('out')));
 
 // ---- iPad Pro and iPhone Air: everything fits, touch works ----
 for (const [name, w, h] of [['iPad Pro', 1376, 1032], ['iPad Pro portrait', 1032, 1376], ['iPhone Air', 420, 912]]) {
   const p = await newPage({ width: w, height: h, hasTouch: true, isMobile: true });
-  await p.goto(BASE + '#/add-photos', { waitUntil: 'networkidle0' }); await sleep(600);
-  await p.tap('#pi-go');
-  check(`${name}: preview`, await until(p, () => document.querySelectorAll('#pi-grid figure').length === 7, null, 60000));
+  await p.goto(BASE + '#/add-sheets', { waitUntil: 'networkidle0' }); await sleep(600);
+  check(`${name}: preview at once (6 new)`, await until(p, () => document.querySelectorAll('#pi-grid figure').length === 6, null, 60000));
   const fit = await p.evaluate(() => {
     const se = document.scrollingElement, add = document.querySelector('#pi-add').getBoundingClientRect(), g = document.querySelector('#pi-grid');
     const tb = document.querySelector('.tabbar'), tbt = tb && getComputedStyle(tb).display !== 'none' ? tb.getBoundingClientRect().top : innerHeight;
@@ -169,6 +183,28 @@ for (const [name, w, h] of [['iPad Pro', 1376, 1032], ['iPad Pro portrait', 1032
   await p.screenshot({ path: `${SHOTS}/photoimport-crop-${name.replace(/ /g, '-').toLowerCase()}.png` });
   await p.close();
 }
+
+// ---- nothing new: add the 6 (the first page's preview), then Add sheet music says so, Files below ----
+await page.bringToFront();
+await page.click('#pi-add'); await sleep(400); await page.click('.modal [data-ok]');
+check('added again', await until(page, () => /sheets? added/.test(document.querySelector('.pi-done h2')?.textContent || ''), null, 20000));
+const made2 = (await api('/items')).filter((x) => x.source === 'photos').map((x) => x.id);
+await post('/items/purge', { ids: made2 });  // deleted for good: still never offered again
+const nn = await newPage({ width: 390, height: 844, hasTouch: true, isMobile: true });
+await nn.goto(BASE + '#/add-sheets', { waitUntil: 'networkidle0' }); await sleep(1200);
+const none = await nn.$eval('.pi-none', (e) => e.textContent).catch(() => '');
+check('nothing new: says so plainly (also after the sheets were deleted)', /^Nothing new\./.test(none) && !(await nn.$('#pi-go')) && !(await nn.$('#pi-grid')), none);
+check('nothing new: Files / Camera on screen (iPhone)', await nn.$eval('#pi-more', (e) => !e.hidden && !!e.querySelector('#src-files') && !!e.querySelector('#src-camera') && e.getBoundingClientRect().bottom <= innerHeight + 1));
+check('nothing new: fits the iPhone (no sideways scroll)', await nn.evaluate(() => document.scrollingElement.scrollWidth <= innerWidth + 1 && document.querySelector('#main').scrollWidth <= document.querySelector('#main').clientWidth + 1));
+await nn.screenshot({ path: `${SHOTS}/photoimport-nothing-new-iphone.png` });
+// Show skipped → Restore: the holiday photo is offered again
+check('Show skipped (1)', /Show skipped \(1\)/.test(await nn.$eval('#pi-skipped summary', (e) => e.textContent).catch(() => '')));
+await nn.tap('#pi-skipped summary'); await sleep(700);
+check('…lists the skipped photo', /IMG_107/.test(await nn.$eval('#pi-skipped ul', (e) => e.textContent)));
+await nn.tap('[data-restore="fake-IMG_107"]'); await sleep(1200);
+check('Restore: 1 new, ready to look at', /1 new/.test(await nn.$eval('.pi-count', (e) => e.textContent)) && !!(await nn.$('#pi-go')) && !(await nn.$('#pi-skipped')));
+await post('/photos/skip', { ids: ['fake-IMG_107'], album: 'SHEET' });
+await nn.close();
 
 check('no page errors', !errs.length, errs.join(' | '));
 await b.close();

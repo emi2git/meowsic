@@ -1,12 +1,14 @@
-// Add music → From Photos. The Mac looks into one Apple Photos album (default "SHEET"; Photos itself is only
-// read, never changed), takes the photos that are not in the library yet, reads each page (title, page dots,
-// a suggested crop) and proposes where each song starts. Here you check that:
+// Add sheet music (server mode) = this view: it opens on the Apple Photos album (default "SHEET"; Photos itself is
+// only read, never changed) and at once reads its new photos: not in the library, not added or skipped before, and
+// put in the album after the last check. Files / Camera stay as small options below (add.js passes them in).
+// The Mac reads each page (title, page dots, a suggested crop) and proposes where each song starts. You check:
 //  · the photos in order (capture time), songs as coloured bands with an editable title each
-//  · tap a photo: a new song starts here (again: not) · ‹ › or drag: move a photo · ✕: not a sheet
+//  · tap a photo: a new song starts here (again: not) · ‹ › or drag: move a photo · ✕ Skip: not a sheet, never
+//    offered again (album screen → Show skipped → Restore)
 //  · Crop pages… (suggested box, the last box carries over, Frame 1 / 2) — or later
 //  · Add N sheets → Undo removes them again and the photos are new again
 import { store } from '../store.js';
-import { go } from '../app.js';
+import { leaveTo, HOME } from '../app.js';
 import { isDesktop } from '../device.js';
 import { $, esc, toast, sheet as modal } from '../ui.js';
 import { cropStage, framesBar, boxOf, isFull, full } from '../cropbox.js';  // the one crop box (also Organize pages)
@@ -25,37 +27,42 @@ const when = (ms) => (ms ? new Date(ms).toLocaleString(undefined, { day: 'numeri
 // kept while the app is open: going back to the album keeps your arrangement (also after an Undo)
 let S = null;
 
-export function photoImportView(main) {
-  if (store.mode !== 'server') {
-    main.innerHTML = `<header class="top"><a class="icon-btn back" href="#/add-sheets" aria-label="Back">‹ Back</a><h1>From Photos</h1></header>
-      <p class="pad muted">Adding from Photos needs the Mac (it reads the album in Apple Photos there).</p>`;
-    return;
-  }
-  main.innerHTML = `<header class="top pi-top"><a class="icon-btn back" href="#/add-sheets" aria-label="Back">‹ Back</a><h1>From Photos</h1>
+// opts.sources(el, stop): fills the small "Or add from Files / Camera" row (add.js); stop() ends this view first
+export function photoImportView(main, opts = {}) {
+  main.innerHTML = `<header class="top pi-top"><a class="icon-btn back" href="${HOME}" aria-label="Back">‹ Back</a><h1>Add sheet music</h1>
     <span class="grow"></span><span class="muted small" id="pi-status"></span>
-    <button id="pi-undo" class="cu-undo" hidden>↶ Undo</button></header><div class="pi" id="pi"></div>`;
-  const body = $('#pi', main);
+    <button id="pi-undo" class="cu-undo" hidden>↶ Undo</button></header><div class="pi" id="pi"></div><div class="pi-more" id="pi-more"></div>`;
+  const body = $('#pi', main), more = $('#pi-more', main);
   let alive = true, timer = null;
   const ui = { focus: 0, tab: 'arrange', crop: null, ci: 0 };
+  const stop = () => { alive = false; clearTimeout(timer); removeEventListener('keydown', onKey); };
+  opts.sources?.(more, stop);
+  // the step on screen: album / reading / preview / crop / done; Files / Camera only show while nothing is to arrange
+  const mode = (m) => { body.className = 'pi ' + m; more.hidden = !['album', 'reading'].includes(m); };
 
   // ---------- 1. the album ----------
-  const showAlbum = async () => {
-    body.className = 'pi album';
-    body.innerHTML = '<p class="pad muted">Looking at the album…</p>';
+  const showAlbum = async (auto = false) => {
+    mode('album');
+    body.innerHTML = '<p class="pad muted pi-looking">Looking for new photos in the album…</p>';
     let a;
     try { a = await api('GET', `/photos/album${S?.albumName ? `?name=${encodeURIComponent(S.albumName)}` : ''}`); } catch (e) { a = { error: 'failed', message: e.message, photos: [] }; }
     if (!alive) return;
-    const have = a.photos.filter((p) => p.inLibrary), fresh = a.photos.filter((p) => !p.inLibrary);
-    const last = a.lastImport;
+    const have = a.photos.filter((p) => p.inLibrary), fresh = a.photos.filter((p) => p.new);
+    const last = a.lastImport, nSkip = a.skipped || 0, nOld = a.photos.filter((p) => !p.new && !p.inLibrary && !p.handled).length;
+    // opened from the menu with new photos: read them at once (no extra tap); back on the album (Album…) it waits
+    if (auto && !a.error && fresh.length) return start(a.album || a.name);
     body.innerHTML = `<div class="pad narrow pi-album">
       <label class="field pi-name">Album in Photos <span class="pi-row"><input id="pi-album" value="${esc(a.album || a.name || 'SHEET')}" autocomplete="off" spellcheck="false" aria-label="Album name">
         <button id="pi-look" class="ghost">Look again</button></span>
-        <small class="muted">Put photos of sheet music into this album in Photos (on any of your devices). Meowsic only reads it — nothing in Photos is changed.</small></label>
+        <small class="muted">Meowsic only reads this album; Photos is never changed.</small></label>
       ${a.error ? `<div class="pi-err" role="alert"><b>${esc(a.error === 'access' ? 'No access to Photos' : a.error === 'no-album' ? 'Album not found' : 'Photos can’t be read')}</b>
         <p>${esc(a.message || '')}</p>${a.albums?.length ? `<p class="muted small">Albums: ${a.albums.map(esc).join(' · ')}</p>` : ''}</div>` : `
       <p class="pi-count"><b>${plural(a.photos.length, 'photo')}</b> in “${esc(a.album)}” · <b>${fresh.length} new</b>${have.length ? ` · ${have.length} already in the library` : ''}${a.fake ? ' <span class="muted small">(test album)</span>' : ''}</p>
       ${fresh.length ? `<button id="pi-go" class="primary big">Look at the ${plural(fresh.length, 'new photo')}</button>
-        ${S?.session && S.session.status === 'ready' && S.session.pages.some((p) => fresh.some((f) => f.id === p.id)) ? '<button id="pi-back" class="ghost">Back to the preview</button>' : ''}` : '<p class="muted">Nothing new — every photo in the album is in the library.</p>'}
+        ${S?.session && S.session.status === 'ready' && !S.imported && S.session.pages.some((p) => fresh.some((f) => f.id === p.id)) ? '<button id="pi-back" class="ghost">Back to the preview</button>' : ''}`
+        : `<p class="pi-none" role="status"><b>Nothing new.</b> ${a.photos.length ? 'Every photo in the album was added or skipped already' : 'The album is empty'}${a.lastCheck ? ` (last check ${esc(when(a.lastCheck))})` : ''}. Put new sheet photos into “${esc(a.album)}”, or add from Files below.</p>`}
+      ${nOld ? `<p class="muted small">${plural(nOld, 'older photo')} from before the last check ${nOld === 1 ? 'is' : 'are'} not shown.</p>` : ''}
+      ${nSkip ? `<details class="pi-skipped" id="pi-skipped"><summary>Show skipped (${nSkip})</summary><ul></ul></details>` : ''}
       ${have.length ? `<details class="pi-have"><summary>${plural(have.length, 'photo')} already in the library</summary><ul>${have.map((p) => `<li><span class="muted">${esc(p.filename)} · ${esc(when(p.date))}</span> → <a href="#/item/${esc(p.inLibrary.itemId)}">${esc(p.inLibrary.title)}</a>${p.inLibrary.deleted ? ' <span class="muted">(in the Trash)</span>' : ''} <small class="muted">(${esc(p.inLibrary.how)})</small></li>`).join('')}</ul></details>` : ''}`}
       ${last ? `<p class="pi-last muted small">Last added: ${plural(last.sheets.length, 'sheet')} (${esc(last.sheets.map((s) => s.title).slice(0, 4).join(', '))}${last.sheets.length > 4 ? '…' : ''}) · <button class="link" id="pi-unlast">Undo that</button></p>` : ''}
     </div>`;
@@ -71,15 +78,29 @@ export function photoImportView(main) {
     $('#pi-go', body)?.addEventListener('click', () => start(inp.value.trim()));
     $('#pi-back', body)?.addEventListener('click', () => showPreview());
     $('#pi-unlast', body)?.addEventListener('click', () => undoImport(last.id));
+    const sk = $('#pi-skipped', body);
+    if (sk) sk.ontoggle = async () => {
+      if (!sk.open) return;
+      const ul = sk.querySelector('ul');
+      let list = [];
+      try { list = await api('GET', `/photos/skipped?name=${encodeURIComponent(a.album)}`); } catch (e) { toast(e.message); }
+      const inAlbum = new Set(a.photos.map((p) => p.id));
+      list = list.filter((x) => inAlbum.has(x.id));
+      ul.innerHTML = list.map((x) => `<li><span class="muted">${esc(x.filename || x.id)}${x.date ? ' · ' + esc(when(x.date)) : ''}</span> <button class="link" data-restore="${esc(x.id)}">Restore</button></li>`).join('') || '<li class="muted">None</li>';
+      ul.onclick = async (e) => {
+        const b = e.target.closest('[data-restore]'); if (!b) return;
+        try { await api('POST', '/photos/unskip', { ids: [b.dataset.restore] }); toast('Restored — it is new again'); showAlbum(); } catch (err) { toast(err.message); }
+      };
+    };
   };
 
   // ---------- 2. reading the photos (the Mac copies them out of Photos and reads each page) ----------
   const start = async (name) => {
-    body.className = 'pi reading';
+    mode('reading');
     body.innerHTML = '<div class="pad narrow center"><p id="pi-msg">Copying the photos out of Photos…</p><progress id="pi-prog" max="1" value="0"></progress></div>';
     try {
       const s = await api('POST', '/photos/sessions', { name });
-      S = { albumName: name, session: s, order: null };
+      S = { albumName: name, session: s, order: null, imported: false };
       poll();
     } catch (e) { toast(e.message); showAlbum(); }
   };
@@ -133,16 +154,16 @@ export function photoImportView(main) {
 
   const showPreview = () => {
     if (!S?.order) return showAlbum();
-    body.className = 'pi preview';
+    mode('preview');
     body.innerHTML = `<div class="pi-bar">
-        <div class="pi-sum"><b id="pi-sum"></b><small class="muted">Tap a photo where a new song starts · ‹ › or drag to move · ✕ not a sheet</small></div>
+        <div class="pi-sum"><b id="pi-sum"></b><small class="muted">Tap a photo where a new song starts · ‹ › or drag to move · ✕ skip (not a sheet)</small></div>
         <span class="grow"></span>
         <button id="pi-album-btn" class="ghost">Album…</button>
         <button id="pi-crop" class="ghost big">Crop pages…</button>
         <button id="pi-add" class="primary big">Add sheets</button></div>
       <div class="bs-segs pi-segs" id="pi-segs"></div>
       <div class="bs-grid pi-grid" id="pi-grid"></div>`;
-    $('#pi-album-btn', body).onclick = showAlbum;
+    $('#pi-album-btn', body).onclick = () => showAlbum();
     $('#pi-crop', body).onclick = () => { ui.ci = 0; showCrop(); };
     $('#pi-add', body).onclick = () => confirmAdd();
     const g = $('#pi-grid', body);
@@ -191,11 +212,11 @@ export function photoImportView(main) {
           ${p.file ? `<img src="${thumb(id)}" alt="" loading="lazy" draggable="false">` : '<div class="pi-nofile">No photo</div>'}
           <span class="bs-flag">${start ? `Song ${si + 1}` : ''}</span>${unsure ? `<span class="pi-unsure" title="${esc((p.why || []).join(' · '))}">?</span>` : ''}</button>
         <button class="bs-zoom" data-a="zoom" aria-label="View photo ${k + 1} large" title="View large (Space)">⤢</button>
-        <figcaption><span class="bs-n">${k + 1}</span><span class="bs-t">${out ? esc(p.error ? 'can’t be used' : p.dup ? `already in the library: ${p.dup.title}` : 'not a sheet') : start ? '' : `song ${si + 1}`}</span>
+        <figcaption><span class="bs-n">${k + 1}</span><span class="bs-t">${out ? esc(p.error ? 'can’t be used' : p.dup ? `already in the library: ${p.dup.title}` : 'skipped') : start ? '' : `song ${si + 1}`}</span>
           <span class="grow"></span>
           <button class="pi-mini" data-a="prev" aria-label="Move earlier" title="Move earlier (⇧←)" ${k === 0 ? 'disabled' : ''}>‹</button>
           <button class="pi-mini" data-a="next" aria-label="Move later" title="Move later (⇧→)" ${k === S.order.length - 1 ? 'disabled' : ''}>›</button>
-          <button class="pi-mini" data-a="out" aria-label="${out ? 'Use this photo' : 'Not a sheet — leave it out'}" title="${out ? 'Use it after all' : 'Not a sheet (X)'}" ${p.error || !p.file ? 'disabled' : ''}>${out ? '↺' : '✕'}</button></figcaption>
+          <button class="pi-mini" data-a="out" aria-label="${out ? 'Use this photo' : 'Skip — not a sheet'}" title="${out ? 'Use it after all' : 'Skip: not a sheet, never offered again (X)'}" ${p.error || !p.file ? 'disabled' : ''}>${out ? '↺' : '✕'}</button></figcaption>
         ${start ? `<input class="bs-title" data-t="${esc(id)}" value="${esc(S.titles[id] ?? '')}" placeholder="Untitled" enterkeyhint="done" aria-label="Title of song ${si + 1}"><small class="bs-det muted" data-state="${P(id).title?.confidence >= 0.5 ? 'ok' : ''}">${esc(detHint(id))}</small>` : ''}
         ${S.crops[id] ? '<span class="pi-cropped" title="Will be cropped">✂</span>' : ''}</figure>`;
     }).join('');
@@ -239,11 +260,14 @@ export function photoImportView(main) {
     [S.order[k], S.order[j]] = [S.order[j], S.order[k]];
     ui.focus = j; renderGrid();
   };
+  // ✕ Skip: not a sheet — remembered on the Mac at once, so it is never offered again (↺ takes it back)
   const exclude = (id) => {
     const p = P(id);
     if (p.error || !p.file) return;
-    if (S.out.has(id)) S.out.delete(id); else S.out.add(id);
+    const back = S.out.has(id);
+    if (back) S.out.delete(id); else S.out.add(id);
     renderGrid();
+    api('POST', back ? '/photos/unskip' : '/photos/skip', { session: S.session.id, ids: [id] }).catch((e) => toast(e.message));
   };
   const large = (id) => {
     let k = S.order.indexOf(id);
@@ -291,7 +315,7 @@ export function photoImportView(main) {
     ui.ci = Math.max(0, Math.min(ui.ci, ids.length - 1));
     const id = ids[ui.ci], sg = songs(), si = songOf(id, sg);
     ui.crop = { id };
-    body.className = 'pi crop';
+    mode('crop');
     body.innerHTML = `<div class="pi-bar"><button id="pi-done-crop" class="ghost">‹ Songs</button>
         <div class="pi-sum"><b>${esc(sg[si]?.title || 'Untitled')}</b><small class="muted">Page ${sg[si].ids.indexOf(id) + 1} of ${sg[si].ids.length} · photo ${ui.ci + 1} of ${ids.length}</small></div>
         <span class="grow"></span><button id="pi-add2" class="primary">Add ${plural(sg.length, 'sheet')}</button></div>
@@ -342,19 +366,19 @@ export function photoImportView(main) {
         const r = await api('POST', `/photos/sessions/${S.session.id}/import`, { songs: sg.map((g) => ({ title: g.title || 'Untitled', pages: g.ids.map((id) => ({ id, crop: S.crops[id] || null })) })) });
         m.close();
         for (const it of r.items) store.putItem(it);
-        S.lastImport = r.import;
+        S.lastImport = r.import; S.imported = true;  // next time: a fresh look at the album
         done(r);
       } catch (err) { e.target.disabled = false; toast(err.message); }
     };
   };
   const done = (r) => {
-    body.className = 'pi done';
+    mode('done');
     body.innerHTML = `<div class="pad narrow pi-done"><h2>${plural(r.items.length, 'sheet')} added</h2>
       <ul class="pi-made">${r.items.map((it) => `<li><a href="#/item/${esc(it.id)}">${esc(it.title)}</a> <span class="muted">${plural(it.pages, 'page')}</span></li>`).join('')}</ul>
-      <p class="muted small">The photos stay in Photos. Next time only new photos in the album are shown.</p>
+      <p class="muted small">The photos stay in Photos. Next time only photos put into the album after now are shown.</p>
       <div class="pi-row"><button id="pi-again" class="ghost">Look at the album again</button><button id="pi-open" class="primary">Open the library</button></div></div>`;
-    $('#pi-again', body).onclick = showAlbum;
-    $('#pi-open', body).onclick = () => go('#/library?kind=sheet');
+    $('#pi-again', body).onclick = () => showAlbum();
+    $('#pi-open', body).onclick = () => leaveTo(HOME);
     const ub = $('#pi-undo', main);
     ub.hidden = false; ub.textContent = `↶ Undo add ${plural(r.items.length, 'sheet')}`;
     ub.onclick = () => undoImport(r.import.id);
@@ -364,6 +388,7 @@ export function photoImportView(main) {
     try {
       const u = await api('POST', `/photos/imports/${encodeURIComponent(iid)}/undo`);
       store.drop(u.removed);
+      if (S) S.imported = false;
       $('#pi-undo', main).hidden = true;
       toast(`Undone — ${plural(u.removed.length, 'sheet')} removed; the photos are new again`);
       if (S?.session?.id === u.session && S.order) showPreview(); else showAlbum();
@@ -404,8 +429,8 @@ export function photoImportView(main) {
   };
   addEventListener('keydown', onKey);
 
-  if (S?.order && S.session?.status === 'ready') showPreview();
-  else if (S?.session && ['queued', 'fetching', 'reading'].includes(S.session.status)) { body.innerHTML = '<div class="pad narrow center"><p id="pi-msg">Reading…</p><progress id="pi-prog" max="1" value="0"></progress></div>'; poll(); }
-  else showAlbum();
-  return () => { alive = false; clearTimeout(timer); removeEventListener('keydown', onKey); };
+  if (S?.order && S.session?.status === 'ready' && !S.imported) showPreview();
+  else if (S?.session && ['queued', 'fetching', 'reading'].includes(S.session.status)) { mode('reading'); body.innerHTML = '<div class="pad narrow center"><p id="pi-msg">Reading…</p><progress id="pi-prog" max="1" value="0"></progress></div>'; poll(); }
+  else showAlbum(true);
+  return stop;
 }

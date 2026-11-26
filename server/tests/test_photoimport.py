@@ -114,9 +114,9 @@ def test_import_group_crop_and_undo(client, album, data):
     assert db.execute('SELECT photo_id FROM sheet_page WHERE item_id=? ORDER BY page', (a['id'],)).fetchall() == [(ids[0],), (ids[2],), (ids[1],)]
     acts = client.get('/api/activity').json()
     assert any(x['type'] == 'photo-import' and 'Moon River' in x['detail'] for x in acts)
-    # now 4 of them are in the library; photo 5 (left out) is still new
+    # now 4 of them are in the library; photo 5 (left out, not skipped) was there at the last check: not offered
     al = client.get('/api/photos/album').json()
-    assert al['new'] == 1 and al['photos'][4]['inLibrary'] is None and al['photos'][0]['inLibrary']['how'] == 'photo'
+    assert al['new'] == 0 and al['photos'][4]['inLibrary'] is None and al['photos'][4]['old'] and al['photos'][0]['inLibrary']['how'] == 'photo'
     assert al['lastImport']['id'] == r['import']['id']
     # importing the same photos again is refused
     assert client.post(f'/api/photos/sessions/{s["id"]}/import', json=body).status_code == 409
@@ -221,3 +221,68 @@ def test_import_undo_from_activities(client, album):
     assert r['changed'] == 1 and client.get(f'/api/items/{it["id"]}').status_code == 404
     assert client.get('/api/photos/imports').json()[0]['undoneAt']
     assert client.post(f'/api/activity/{row["id"]}/undo', json={}).status_code == 409
+
+
+# ---------- handled photos and the last check ----------
+
+def test_added_photos_stay_handled_after_delete(client, album):
+    s = wait(client, client.post('/api/photos/sessions', json={}).json()['id'])
+    ids = [p['id'] for p in s['pages']]
+    r = client.post(f'/api/photos/sessions/{s["id"]}/import', json={'songs': [{'title': 'A', 'pages': [{'id': i} for i in ids[:4]]}]}).json()
+    client.post('/api/photos/skip', json={'session': s['id'], 'ids': [ids[4]]})
+    it = r['items'][0]
+    # the sheet goes to the Trash and is then deleted for good: its photos are still not offered again
+    client.post('/api/items/purge', json={'ids': [it['id']]})
+    assert client.get(f'/api/items/{it["id"]}').status_code == 404
+    a = client.get('/api/photos/album').json()
+    assert a['new'] == 0 and all(p['inLibrary'] is None for p in a['photos'])
+    assert [p['handled']['state'] for p in a['photos']] == ['added'] * 4 + ['skipped'] and a['skipped'] == 1
+    assert client.post('/api/photos/sessions', json={}).status_code == 409
+
+
+def test_skip_and_restore(client, album):
+    s = wait(client, client.post('/api/photos/sessions', json={}).json()['id'])
+    ids = [p['id'] for p in s['pages']]
+    assert client.post('/api/photos/skip', json={'ids': []}).status_code == 400
+    client.post('/api/photos/skip', json={'session': s['id'], 'ids': [ids[1], ids[2]]})
+    a = client.get('/api/photos/album').json()
+    assert a['new'] == 3 and a['skipped'] == 2
+    sk = client.get('/api/photos/skipped?name=sheet').json()
+    assert [x['id'] for x in sk] == [ids[1], ids[2]] and sk[0]['filename'] == 'IMG_2.png'
+    assert client.get('/api/photos/skipped?name=holiday').json() == []
+    s2 = wait(client, client.post('/api/photos/sessions', json={}).json()['id'])
+    assert [p['id'] for p in s2['pages']] == [ids[0], ids[3], ids[4]]  # skipped ones are not looked at again
+    # import the rest (moves the last check past every photo), then restore one: it is offered although it is old
+    client.post(f'/api/photos/sessions/{s2["id"]}/import', json={'songs': [{'title': 'X', 'pages': [{'id': i} for i in (ids[0], ids[3], ids[4])]}]})
+    assert client.get('/api/photos/album').json()['new'] == 0
+    client.post('/api/photos/unskip', json={'ids': [ids[2]]})
+    a = client.get('/api/photos/album').json()
+    assert a['new'] == 1 and a['skipped'] == 1 and a['photos'][2]['new']
+    assert [x['id'] for x in client.get('/api/photos/skipped').json()] == [ids[1]]
+
+
+def test_only_photos_newer_than_the_last_check(client, album):
+    import os
+    a0 = client.get('/api/photos/album').json()
+    assert a0['lastCheck'] is None and a0['new'] == 5  # first run: everything not in the library
+    s = wait(client, client.post('/api/photos/sessions', json={}).json()['id'])
+    ids = [p['id'] for p in s['pages']]
+    # photo 5 is neither added nor skipped (the API allows it): it was in the album at the last check
+    r = client.post(f'/api/photos/sessions/{s["id"]}/import', json={'songs': [{'title': 'A', 'pages': [{'id': i} for i in ids[:4]]}]}).json()
+    a = client.get('/api/photos/album').json()
+    assert a['lastCheck'] == s['at'] and a['new'] == 0 and a['photos'][4]['old'] and not a['photos'][4]['new']
+    # a photo put into the album after the check is offered
+    f = album / 'IMG_9.png'; f.write_bytes(page((9, 9, 9)))
+    later = (s['at'] + 60_000) / 1000; os.utime(f, (later, later))
+    a = client.get('/api/photos/album').json()
+    assert a['new'] == 1 and [p['filename'] for p in a['photos'] if p['new']] == ['IMG_9.png']
+    s2 = wait(client, client.post('/api/photos/sessions', json={}).json()['id'])
+    assert [p['filename'] for p in s2['pages']] == ['IMG_9.png']
+    # undo the import: its photos are offered again and the last check goes back
+    client.post(f'/api/photos/imports/{r["import"]["id"]}/undo')
+    a = client.get('/api/photos/album').json()
+    assert a['lastCheck'] is None and a['new'] == 6
+    # a chosen-few session (ids) does not move the last check
+    s3 = wait(client, client.post('/api/photos/sessions', json={'ids': [ids[0]]}).json()['id'])
+    client.post(f'/api/photos/sessions/{s3["id"]}/import', json={'songs': [{'title': 'B', 'pages': [{'id': ids[0]}]}]})
+    assert client.get('/api/photos/album').json()['lastCheck'] is None

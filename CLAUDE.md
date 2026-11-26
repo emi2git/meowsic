@@ -31,7 +31,7 @@ Server (`server/meowsic/`; each file's docstring explains it, and most list thei
 - `lyricsedit.py`: lyrics by hand and Edit notes → Lyrics. `lyricsfit.py`: a sheet's words placed on a score.
 - `simplepiano.py` + `smoothrhythm.py` + `arrange.py`: the Simple piano versions. `chordfind.py`: chords from notes.
 - `organize.py`, `pages.py`, `booksplit.py`, `cleanup.py` + `cleanstate.py` + `trim.py`: Manage library (Fix pages, split / join, books, crops).
-- `photoimport.py`: Add music → From Photos. `titles.py`: title from a page photo. `metafill.py` / `autofill.py` / `completeinfo.py`: song info.
+- `photoimport.py`: Add sheet music = the Photos album (only new photos since the last check; added / skipped ones never again). `titles.py`: title from a page photo. `metafill.py` / `autofill.py` / `completeinfo.py`: song info.
 - `barcheck.py`: Check bars on OMR scores. `voice.py` + `singscore.py`: singing. `feedback.py`: the Feedback queue. `ai.py`: offline tag AI.
 - `backup.py`: JSON export / import and daily DB copies. `version.py`: git sha and shell version for health.
 
@@ -39,7 +39,7 @@ Web (`web/js/`): `app.js` is the shell and hash router, `store.js` the library s
 Views (`web/js/views/`):
 - `library.js`: lists. `item.js`: the viewer frame. `sheet.js`, `chordsview.js`, `score.js`: the three viewers. `info.js`: the one edit popup.
 - `scoreeditor.js` is the ✎ entry: real scores open `editnotes.js` (+ `lyricmode.js`, `lyricspanel.js`, `../midiedit.js`, `../editdraft.js`: drafts, session, the Save note), and preview samples open the old one-line bar (`../scoremodel.js`). `checkbars.js`: Check bars.
-- `simplepiano.js`, `print.js`, `annotate.js` (ink), `actions.js` (⋯ menus), `add.js` + `photoimport.js` (Add music).
+- `simplepiano.js`, `print.js`, `annotate.js` (ink), `actions.js` (⋯ menus), `add.js` + `photoimport.js` (Add music; with the Mac, Add sheet music is `photoimport.js` with Files / Camera below).
 - `manage.js` hub + `managekit.js`, `review.js`, `pageeditor.js`, `completeinfo.js`, `organize.js` (Tags, Trash).
 - `activity.js` (Activities + Undo), `more.js` (Stats, Settings, Developer), `feedback.js`, `help.js`, `beta-keyboard.js`, `autotag.js`, `maketags.js`, `verified.js`.
 

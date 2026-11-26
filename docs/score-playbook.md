@@ -24,7 +24,7 @@ the library, a YouTube video, or lyrics. This is what worked (Nov 2026). Read §
 All API calls go to `https://localhost:5180/api/…`, with the CA at `~/Documents/Meowsic/certs/meowsic-ca.pem`.
 | Clue | Route |
 |---|---|
-| Sheet photos in the Photos album | Add music → From Photos (`photoimport.py`: `GET /api/photos/album?name=SHEET`, `POST /api/photos/sessions`, `…/import`) |
+| Sheet photos in the Photos album | Add sheet music opens on the album (`photoimport.py`: `GET /api/photos/album?name=SHEET`, `POST /api/photos/sessions`, `…/import`; added / skipped photos are remembered in `photo_handled`, the last check in `photo_check`) |
 | Screenshots not in an album | Export the originals read-only with the helper: `migrate/.venv/bin/python migrate/photos_album.py fetch <out dir> <photo id> …` (iCloud-only photos are downloaded, HEIC becomes JPEG). Then upload them as a sheet: `POST /api/sheets` (multipart `files`, `title`, `artist`, `tags`; `item_id` adds pages to an existing sheet) |
 | Sheet already in the library | Make a score, the same call as the sheet's ⋯ → "Make a score…": `POST /api/jobs {kind:'omr', title, source:'From the sheet “T”', outputs:['original'], fromItemId:<sheet id>, artist}`. Poll `GET /api/jobs/{id}` |
 | YouTube video | See §1a |

@@ -37,7 +37,7 @@ SUITES = {
     'booksplit': 'server', 'checkbars': 'server', 'completeinfo': 'server', 'cuedrag': 'server', 'dailycleanup': 'server', 'easyscore': 'server',
     'dragnote': 'server', 'editnotes': 'server', 'note32': 'server', 'evenout': 'server', 'ottava': 'server', 'editperf': 'server', 'feedback': 'server', 'jobs': 'server', 'langtoggle': 'server', 'libversion': 'server',
     'lyricmode': 'server', 'manage': 'server', 'menus': 'server', 'metadata': 'server', 'midiedit': 'server',
-    'notenames': 'server', 'organizepages': 'server', 'photoimport': 'server', 'quickfeedback': 'server', 'real': 'server',
+    'notenames': 'server', 'organizepages': 'server', 'photoimport': 'server', 'cropback': 'server', 'quickfeedback': 'server', 'real': 'server',
     'realedit': 'server', 'renameopen': 'server', 'resync': 'server', 'simplepiano': 'server', 'swipeclose': 'server',
     'textinput': 'server', 'touchfill': 'server', 'touchlib': 'server', 'touchpages': 'server', 'touchview': 'server',
     'verified': 'server', 'voice': 'server',
@@ -63,15 +63,18 @@ def run_suite(name, out_dir, timeout):
         else:
             data = dev.temp_data(f'e2e-{name}')
             senv = {}
-            if name == 'photoimport':  # a fake Photos album instead of the real one
+            if name in ('photoimport', 'cropback'):  # a fake Photos album instead of the real one
                 album = out_dir / 'fake-album'
                 if not album.exists(): subprocess.run([sys.executable, str(E2E / 'make_fake_album.py'), str(album)], check=True, capture_output=True)
                 senv['MEOWSIC_FAKE_PHOTOS'] = str(album)
+            else:  # every other suite: an empty fake Photos (Add sheet music looks at the album; never the real one)
+                (out_dir / 'no-photos').mkdir(exist_ok=True)
+                senv['MEOWSIC_FAKE_PHOTOS'] = str(out_dir / 'no-photos')
             port = dev.free_port()
             base = f'http://127.0.0.1:{port}/'
             env.update(BASE=base, FILL_BASE=base, TOUCH_BASE=base, DATA=str(data), MDATA=str(data), DB=str(data / 'meowsic.db'))
             if kind == 'restart':
-                env['SERVER'] = (f'cd {dev.SERVER} && MEOWSIC_CERT= MEOWSIC_KEY= exec {dev.PY} -m meowsic --host 127.0.0.1 '
+                env['SERVER'] = (f'cd {dev.SERVER} && MEOWSIC_CERT= MEOWSIC_KEY= MEOWSIC_FAKE_PHOTOS={senv["MEOWSIC_FAKE_PHOTOS"]} exec {dev.PY} -m meowsic --host 127.0.0.1 '
                                  f'--port {port} --data {data} >> {out_dir / (name + "-server.log")} 2>&1')
             else:
                 procs.append(dev.server(data, port, log_dir=out_dir, env=senv))
@@ -156,7 +159,7 @@ def main():
 # (voice: loads the SoulX-Singer model; may time out while another sing job runs).
 MAIN = ['flows', 'keycolumn', 'libfit', 'playback', 'scorezoom', 'topcast', 'touchseek', 'betakeyboard',
         'activities', 'chordplay', 'hands', 'tempo', 'addmusic', 'booksplit', 'completeinfo', 'cuedrag', 'dailycleanup', 'dragnote', 'editnotes', 'note32', 'evenout', 'ottava', 'editperf', 'feedback', 'jobs', 'langtoggle',
-        'lyricmode', 'manage', 'menus', 'midiedit', 'organizepages', 'photoimport', 'quickfeedback', 'renameopen',
+        'lyricmode', 'manage', 'menus', 'midiedit', 'organizepages', 'photoimport', 'cropback', 'quickfeedback', 'renameopen',
         'swipeclose', 'textinput', 'verified', 'offline', 'storage', 'swupdate', 'editsafe']
 if __name__ == '__main__':
     sys.exit(main())

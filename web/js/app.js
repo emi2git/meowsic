@@ -11,7 +11,6 @@ import { printView } from './views/print.js';
 import { statsView, settingsView, developerView } from './views/more.js';
 import { activityView } from './views/activity.js';
 import { manageView } from './views/manage.js';
-import { photoImportView } from './views/photoimport.js';
 import { makeTagsView } from './views/maketags.js';
 import { helpView } from './views/help.js';
 import { placeBanner } from './conn.js';
@@ -24,6 +23,19 @@ let cleanup = null;
 export const HOME = '#/library?kind=sheet';
 export function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
 
+// Leave a finished step (a saved crop, say) so that Back / swipe-back never opens it again: when we came here from
+// `target`, step back onto that entry (then fix up its query); otherwise replace this entry. The finished entry is
+// marked: coming forward onto it again goes straight on to `target`.
+let hashNow = '', hashBefore = '';
+const pathOf = (h) => (h || '').replace(/^#\/?/, '#/').split('?')[0];
+export function leaveTo(target) {
+  try { history.replaceState({ ...(history.state || {}), leftTo: target }, '', location.href); } catch {}
+  if (hashBefore && pathOf(hashBefore) === pathOf(target) && history.length > 1) {
+    addEventListener('popstate', () => { if (location.hash !== target) location.replace(target); }, { once: true });
+    history.back();
+  } else location.replace(target);
+}
+
 export function parseHash() {
   const [path, qs] = location.hash.replace(/^#\/?/, '').split('?');
   return { parts: path.split('/').filter(Boolean).map(decodeURIComponent), q: new URLSearchParams(qs || '') };
@@ -31,7 +43,7 @@ export function parseHash() {
 
 const ROUTES = {
   library: libraryView, item: itemView,
-  'add-sheets': addSheetsView, 'add-photos': photoImportView, 'add-chords': addChordsView, 'add-score': addScoreView, jobs: addScoreView,
+  'add-sheets': addSheetsView, 'add-chords': addChordsView, 'add-score': addScoreView, jobs: addScoreView,
   tags: tagsView,
   print: printView, stats: statsView, activity: activityView, activities: activityView, manage: manageView, 'make-tags': makeTagsView, developer: developerView, settings: settingsView, help: helpView, beta: betaView,
 };
@@ -50,10 +62,13 @@ function betaView(main, ctx) {
 }
 
 function route() {
+  if (history.state?.leftTo) return void location.replace(history.state.leftTo);  // a finished step (see leaveTo)
   if (/^#\/?feedback\b/.test(location.hash)) return void location.replace('#/developer'); // #/feedback alias of the Feedback page (#/developer)
   const { parts, q } = parseHash();
   const to = manageRedirect(parts, q);
   if (to) { location.replace(to); return; }
+  if (parts[0] === 'add-photos') { location.replace('#/add-sheets'); return; }  // From Photos is Add sheet music now
+  if (location.hash !== hashNow) { hashBefore = hashNow; hashNow = location.hash; }
   const name = parts[0] || 'library';
   const view = ROUTES[name] || libraryView;
   if (typeof cleanup === 'function') cleanup();

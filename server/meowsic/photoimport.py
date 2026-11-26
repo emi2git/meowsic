@@ -10,6 +10,15 @@ library yet become sheets.
                                             → one sheet per song, pages in that order, crops kept undoable
   POST /api/photos/imports/{iid}/undo       the sheets made by that import are removed; the photos are new again
   GET  /api/photos/imports                  recent imports (to undo after a reload)
+  POST /api/photos/skip {session?, ids}     "not a sheet": never offered again (until restored)
+  POST /api/photos/unskip {ids}             restore skipped photos
+  GET  /api/photos/skipped?name=            the skipped photos of that album
+
+Handled photos are remembered (table photo_handled, by Photos id and sha256): one that was added or skipped is
+never offered again, even after its sheet is deleted or emptied from the Trash. Undo of an import forgets its
+"added" rows. photo_check keeps each album's last check (when the last whole import's session looked): after
+that, only photos added to Photos later ("added", else the capture date) are offered. No last check yet: every
+photo that is not in the library.
 
 Photos is only read, never changed (no album is made or touched): migrate/photos_album.py (osxphotos, in
 migrate/.venv) lists and copies. MEOWSIC_FAKE_PHOTOS=<folder> uses <folder>/<album>/ instead (tests):
@@ -54,6 +63,11 @@ def ensure_schema(c):
         c.execute('ALTER TABLE sheet_page ADD COLUMN photo_id TEXT')
     c.execute('CREATE INDEX IF NOT EXISTS sheet_page_photo ON sheet_page(photo_id)')
     c.execute('CREATE INDEX IF NOT EXISTS sheet_page_sha ON sheet_page(sha256)')
+    c.execute("""CREATE TABLE IF NOT EXISTS photo_handled (  -- photos added or skipped: never offered again
+        photo_id TEXT PRIMARY KEY, sha256 TEXT, album TEXT, state TEXT NOT NULL, at INTEGER NOT NULL,
+        item_id TEXT, import_id TEXT, filename TEXT, date INTEGER)""")
+    c.execute('CREATE INDEX IF NOT EXISTS photo_handled_sha ON photo_handled(sha256)')
+    c.execute('CREATE TABLE IF NOT EXISTS photo_check (album TEXT PRIMARY KEY, at INTEGER NOT NULL)')  # last check per album (lower case)
     c.execute("""CREATE TABLE IF NOT EXISTS photo_import (  -- every From Photos import; undo sets undone_at (rows stay)
         id TEXT PRIMARY KEY, album TEXT NOT NULL, at INTEGER NOT NULL, record TEXT NOT NULL, undone_at INTEGER)""")
     c.commit()
@@ -111,6 +125,7 @@ def list_album(cf, name) -> dict:
                 with Image.open(f) as im: w, h = im.size
             except Exception: w = h = 0
             photos.append({'id': 'fake-' + f.stem, 'date': int(dates.get(f.name) or f.stat().st_mtime * 1000), 'filename': f.name,
+                           'added': int(f.stat().st_mtime * 1000),
                            'w': w, 'h': h, 'local': True, 'sha256': _sha(f)})
         return {'album': d.name, 'photos': photos}
     cf.work_dir.mkdir(parents=True, exist_ok=True)
@@ -159,16 +174,44 @@ def in_library(c, cf, photos) -> dict[str, dict]:
     return out
 
 
+def handled(c, photos) -> dict[str, dict]:
+    """id -> {state: added | skipped, at, itemId, filename} for photos added or skipped before (by id, else same sha)."""
+    out = {}
+    for p in photos:
+        r = c.execute('SELECT state, at, item_id, filename FROM photo_handled WHERE photo_id=?', (p['id'],)).fetchone()
+        if not r and p.get('sha256'):
+            r = c.execute('SELECT state, at, item_id, filename FROM photo_handled WHERE sha256=? LIMIT 1', (p['sha256'],)).fetchone()
+        if r: out[p['id']] = {'state': r[0], 'at': r[1], 'itemId': r[2], 'filename': r[3]}
+    return out
+
+
+def last_check(c, album) -> int | None:
+    r = c.execute('SELECT at FROM photo_check WHERE album=?', (album.lower(),)).fetchone()
+    return r[0] if r else None
+
+
+def _mark(c, cf, res):
+    """The album's photos in capture order, each marked: inLibrary, handled, old, new (= offered). → (photos, lastCheck)"""
+    photos = sorted((p for p in res['photos'] if not p.get('ismovie')), key=lambda p: (p.get('date') or 0, p.get('filename') or ''))
+    have, done, lc = in_library(c, cf, photos), handled(c, photos), last_check(c, res['album'])
+    for p in photos:
+        h = done.get(p['id'])
+        back = bool(h and h['state'] == 'restored')  # skipped, then restored: offered again however old
+        p['inLibrary'], p['handled'] = have.get(p['id']), None if back else h
+        p['old'] = not back and bool(lc and (p.get('added') or p.get('date') or 0) <= lc)  # in the album before the last check
+        p['new'] = not p['inLibrary'] and not p['handled'] and not p['old']
+    return photos, lc
+
+
 @router.get('/photos/album')
 def album(name: str = '', c=Depends(conn), cf=Depends(cfg)):
     name = (name or _setting(c, 'photosAlbum') or DEFAULT_ALBUM).strip() or DEFAULT_ALBUM
     res = list_album(cf, name)
     if 'error' in res: return {'name': name, **res, 'photos': []}
-    photos = sorted((p for p in res['photos'] if not p.get('ismovie')), key=lambda p: (p.get('date') or 0, p.get('filename') or ''))
-    have = in_library(c, cf, photos)
-    for p in photos: p['inLibrary'] = have.get(p['id'])
+    photos, lc = _mark(c, cf, res)
     last = _last_import(c)
-    return {'name': name, 'album': res['album'], 'photos': photos, 'new': sum(1 for p in photos if not p['inLibrary']),
+    return {'name': name, 'album': res['album'], 'photos': photos, 'new': sum(1 for p in photos if p['new']),
+            'skipped': sum(1 for p in photos if (p['handled'] or {}).get('state') == 'skipped'), 'lastCheck': lc,
             'fake': bool(os.environ.get('MEOWSIC_FAKE_PHOTOS')), 'lastImport': last}
 
 
@@ -274,18 +317,18 @@ def start(request: Request, body: dict = Body(default={}), c=Depends(conn), cf=D
     name = (body.get('name') or _setting(c, 'photosAlbum') or DEFAULT_ALBUM).strip() or DEFAULT_ALBUM
     res = list_album(cf, name)
     if 'error' in res: raise HTTPException(400, res.get('message') or res['error'])
-    photos = sorted((p for p in res['photos'] if not p.get('ismovie')), key=lambda p: (p.get('date') or 0, p.get('filename') or ''))
-    have = in_library(c, cf, photos)
-    if body.get('ids'):
+    photos, _ = _mark(c, cf, res)
+    if body.get('ids'):  # just these, in this order: any that is not in the library
         by = {p['id']: p for p in photos}
-        photos = [by[i] for i in body['ids'] if i in by]
-    photos = [p for p in photos if p['id'] not in have]
-    if not photos: raise HTTPException(409, 'Every photo in this album is in the library already')
+        photos = [by[i] for i in body['ids'] if i in by and not by[i]['inLibrary']]
+    else: photos = [p for p in photos if p['new']]
+    if not photos: raise HTTPException(409, 'Nothing new in this album — every photo was added or skipped already')
     sid = 'pi-' + uid('x')[2:] + str(int(time.time()))[-4:]
     d = cf.work_dir / 'photoimport' / sid
     d.mkdir(parents=True)
     st = {'id': sid, 'album': res['album'], 'status': 'queued', 'done': 0, 'total': len(photos), 'at': now_ms(), 'error': None,
-          'pages': [{'id': p['id'], 'date': p.get('date'), 'filename': p.get('filename'), 'w': p.get('w'), 'h': p.get('h')} for p in photos],
+          'whole': not body.get('ids'),  # every new photo (not a chosen few): its import moves the album's last check
+          'pages': [{'id': p['id'], 'date': p.get('date'), 'added': p.get('added'), 'filename': p.get('filename'), 'w': p.get('w'), 'h': p.get('h')} for p in photos],
           'imports': []}
     with _lock: _sessions[sid] = st
     _save(cf, st)
@@ -381,7 +424,17 @@ def do_import(sid: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)
                 cropped += 1
         made.append({'id': it['id'], 'title': title, 'pages': len(pages), 'photos': [p['id'] for p in pages], 'cropped': cropped})
     iid = uid('imp')
-    rec = {'id': iid, 'album': st['album'], 'session': sid, 'at': t, 'sheets': made}
+    for m in made:
+        for pid in m['photos']:
+            p = by[pid]
+            c.execute('INSERT OR REPLACE INTO photo_handled(photo_id, sha256, album, state, at, item_id, import_id, filename, date) VALUES (?,?,?,?,?,?,?,?,?)',
+                      (pid, p.get('sha256'), st['album'], 'added', t, m['id'], iid, p.get('filename'), p.get('date')))
+    prev, check = last_check(c, st['album']), None
+    if st.get('whole', True):  # the last check = when this session looked; a photo that could not be fetched stays newer
+        bad = [(p.get('added') or p.get('date') or 0) - 1 for p in st['pages'] if p.get('error')]
+        check = max(min([st['at'], *bad]), prev or 0)
+        c.execute('INSERT OR REPLACE INTO photo_check(album, at) VALUES (?,?)', (st['album'].lower(), check))
+    rec = {'id': iid, 'album': st['album'], 'session': sid, 'at': t, 'sheets': made, 'prevCheck': prev, 'check': check}
     c.execute('INSERT INTO photo_import(id, album, at, record) VALUES (?,?,?,?)', (iid, st['album'], t, json.dumps(rec, ensure_ascii=False)))
     n = len(made)
     aid = log_event(c, 'photo-import', made[0]['title'] if n == 1 else f'{n} sheets', f'From Photos (album “{st["album"]}”): '
@@ -423,7 +476,47 @@ def undo(iid: str, c=Depends(conn), cf=Depends(cfg)):
         except ValueError: d = None
         if d and d.is_dir() and d.resolve().parent == cf.items_dir.resolve(): shutil.rmtree(d)
     cs.forget_items(c, *gone)
+    c.execute("UPDATE photo_handled SET state='restored', item_id=NULL, import_id=NULL WHERE import_id=? AND state='added'", (iid,))
+    if rec.get('check') and last_check(c, rec['album']) == rec['check']:  # the last check goes back too
+        if rec.get('prevCheck'): c.execute('UPDATE photo_check SET at=? WHERE album=?', (rec['prevCheck'], rec['album'].lower()))
+        else: c.execute('DELETE FROM photo_check WHERE album=?', (rec['album'].lower(),))
     c.execute('UPDATE photo_import SET undone_at=? WHERE id=?', (now_ms(), iid))
     log_event(c, 'photo-unimport', f'{len(gone)} sheets' if len(gone) != 1 else rec['sheets'][0]['title'],
               f'Undo From Photos: removed {len(gone)} sheet{"s" if len(gone) != 1 else ""}; the photos are new again')
     return {'removed': gone, 'session': rec.get('session')}
+
+
+# ---------- skipped photos ("not a sheet") ----------
+
+@router.post('/photos/skip')
+def skip(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
+    """{session?, album?, ids} → these photos are never offered again (Show skipped → Restore brings them back)."""
+    ids = [i for i in (body.get('ids') or []) if isinstance(i, str) and i]
+    if not ids: raise HTTPException(400, 'No photos')
+    st = _get(cf, body['session']) if body.get('session') else None
+    pages = {p['id']: p for p in st['pages']} if st else {}
+    album = (st or {}).get('album') or str(body.get('album') or '')
+    t = now_ms()
+    for i in ids:
+        if c.execute("SELECT 1 FROM photo_handled WHERE photo_id=? AND state='added'", (i,)).fetchone(): continue
+        p = pages.get(i, {})
+        c.execute('INSERT OR REPLACE INTO photo_handled(photo_id, sha256, album, state, at, filename, date) VALUES (?,?,?,?,?,?,?)',
+                  (i, p.get('sha256'), album, 'skipped', t, p.get('filename'), p.get('date')))
+    c.commit()
+    return {'skipped': ids}
+
+
+@router.post('/photos/unskip')
+def unskip(body: dict = Body(...), c=Depends(conn)):
+    """{ids} → offered again (also when they are older than the last check)."""
+    ids = [i for i in (body.get('ids') or []) if isinstance(i, str)]
+    for i in ids: c.execute("UPDATE photo_handled SET state='restored', at=? WHERE photo_id=? AND state='skipped'", (now_ms(), i))
+    c.commit()
+    return {'restored': ids}
+
+
+@router.get('/photos/skipped')
+def skipped(name: str = '', c=Depends(conn)):
+    q, args = "SELECT photo_id, filename, date, at, album FROM photo_handled WHERE state='skipped'", []
+    if name: q += ' AND lower(album)=?'; args.append(name.strip().lower())
+    return [{'id': r[0], 'filename': r[1], 'date': r[2], 'at': r[3], 'album': r[4]} for r in c.execute(q + ' ORDER BY date, filename', args)]
