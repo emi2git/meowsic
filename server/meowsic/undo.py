@@ -26,7 +26,7 @@ Step ops (see record_undo for how they are written):
   vocal    {id, title, before: {audio, bpm, history}, after: {audio, bpm}}  Make it sing -> the earlier take / none (voice.undo_vocal)
   pages    {id, title, n, order, deleted, starts, after}  Organize pages: reordered / deleted -> back (deleted pages from .history)
   reviewed {id, title, on}         Organize pages: "This is a complete song" -> the other way
-  credit   {id, title, old: {artist|source}, new, files: [{file, history, sha}]}  credited to Meowsic -> back (creditfix.undo_step)
+  credit   {id, title, old: {artist|source}, new, files: [{file, history, sha}]}  credited to Meowsic / credits updated (items.refresh_credit) -> back (creditfix.undo_step)
   musicxml {id, title, file, before, beforeSha, afterSha}  Fit lyrics saved into the score -> the file before, from .history (lyricsedit.undo_musicxml)
 Jobs (job table) are rolled back here too: a running one is stopped (cancelled), and what it made goes to the Trash.
 """

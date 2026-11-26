@@ -11,7 +11,7 @@ wrong in metafill_known.json 'fix' — and never a field set by hand in the app,
            title / tags). A key written in the title ("Canon In D", "Minuet In G Major") → Key.
   scores   MusicXML key signature (<fifths>/<mode>) → Key; staves (1 = Lead, 2+ = Piano) → Version only when it is
            empty. Artist = the song's real artist: an Artist "Meowsic" (an earlier one-off put it there) counts as
-           empty. The MusicXML credits follow: composer = that artist + "Made / Transcribed / Arranged / Read by
+           empty. The MusicXML credits follow: composer = that artist + "Made / Transcribed / Arranged by
            Meowsic" (db.credit_xml; the file before goes to items/<id>/.history/, undo puts it back).
   chords   "tone [X]" in the text, else the first chord → Key; Version → Lead (lyrics + chord names = a lead sheet).
   all      well-known songs (metafill_known.json, by title) → Artist / Album; specific tags (Les Miserables, Frozen …)

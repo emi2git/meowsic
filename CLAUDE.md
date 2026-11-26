@@ -125,6 +125,7 @@ Views (`web/js/views/`):
   - `/cleanup/notes` (notes for Claude) and `/cleanup/suggest` (suggested names: accept, dismiss or undo);
   - `GET /api/versions` (same-song groups) in `versions.py`.
   Their tables, Undo and tests stay.
+- `POST /api/items/{id}/credit` (`{dryRun}`): a score's MusicXML credits brought up to date (`db.credit_xml` + `score_byline`), logged + undoable. Photo → score says "Transcribed by Meowsic" since Nov 2026 (it was "Read by Meowsic"; the old text is still matched). Bulk: `server/scripts/credit_transcribed.py`.
 - Job kind `version` (`runners.version_runner`): another arrangement of a score; the UI's "Make another version" is gone. Also `GET /api/ai/status` and `POST /api/backup/snapshot`.
 
 ## Gotchas
