@@ -24,7 +24,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
 from .autofill import fill_from_library, log_fill, recredit
 from . import lyricsfit as lf
-from .db import folder_path, get_item, now_ms, uid, write_item
+from .db import carried_tags, folder_path, get_item, now_ms, uid, write_item
 from .items import cfg, conn, item_dir, must_item, safe_file
 from .sheetversion import refresh_staves
 from .undolog import _q, record_undo
@@ -361,7 +361,7 @@ def save(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg))
     if body.get('mode') == 'new':
         t = now_ms()
         new = {'id': uid('m'), 'kind': 'score', 'title': it['title'], 'artist': it.get('artist') or '',
-               'tags': [*[x for x in it.get('tags', []) if x != TAG], TAG], 'createdAt': t, 'updatedAt': t, 'originAt': t,
+               'tags': [*carried_tags(it.get('tags'), (TAG,)), TAG], 'createdAt': t, 'updatedAt': t, 'originAt': t,
                'version': it.get('version') or 'original', 'source': f'From the score {_q(it["title"])} + lyrics fitted by hand',
                'groupId': it.get('groupId') or uid('g'), 'key': it.get('key') or '', 'bpm': it.get('bpm'), 'ai': it.get('ai') or 0,
                'sourceUrl': it.get('sourceUrl') or ''}

@@ -45,7 +45,7 @@ from fractions import Fraction as Fr
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
 from .autofill import fill_from_library, log_fill, recredit
-from .db import folder_path, get_item, now_ms, uid, write_item
+from .db import carried_tags, folder_path, get_item, now_ms, uid, write_item
 from .easerests import _beam, _beat, _put, fits, pieces
 from .items import cfg, conn, item_dir, must_item
 from .sheetversion import refresh_staves
@@ -1610,7 +1610,7 @@ def _save_new(c, cf, it, out, ops, what, title=None, source=None, detail=None):
     """A new score in the same group as `it` -> (item, activity id)."""
     t = now_ms()
     new = {'id': uid('m'), 'kind': 'score', 'title': title or it['title'], 'artist': it.get('artist') or '',
-           'tags': [*[x for x in it.get('tags', []) if x not in (TAG, TAG_EDIT)], _tag(ops)], 'createdAt': t, 'updatedAt': t, 'originAt': t,
+           'tags': [*carried_tags(it.get('tags'), (TAG, TAG_EDIT)), _tag(ops)], 'createdAt': t, 'updatedAt': t, 'originAt': t,
            'version': it.get('version') or 'original', 'source': source or f'From the score {_q(it["title"])}, notes edited',
            'groupId': it.get('groupId') or uid('g'), 'key': it.get('key') or '', 'bpm': it.get('bpm'), 'ai': it.get('ai') or 0,
            'sourceUrl': it.get('sourceUrl') or ''}

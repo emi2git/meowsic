@@ -121,6 +121,14 @@ YOUTUBE = {'youtube.com', 'youtu.be', 'm.youtube.com', 'music.youtube.com', 'you
 FACEBOOK = {'facebook.com', 'fb.watch', 'm.facebook.com', 'fb.com', 'web.facebook.com'}
 AI_SOURCE = 'Meowsic'            # the source of every score Meowsic writes itself (the artist is the song's real artist)
 OLD_CREDITS = ('Meowsic AI',)    # earlier names for it: read and shown as "Meowsic"
+NEVER_COPIED_TAGS = ('Verified',)  # the user's own mark on that one item (web verified.js): never carried to a new version / copy
+
+
+def carried_tags(tags, drop=()):
+    """The tags a new version or copy made from an item gets: its own minus NEVER_COPIED_TAGS and `drop`, in order."""
+    return [t for t in (tags or []) if t not in NEVER_COPIED_TAGS and t not in drop]
+
+
 NOT_ARTIST = (AI_SOURCE, *OLD_CREDITS)  # an earlier one-off put these in scores' Artist: not a real artist
 
 

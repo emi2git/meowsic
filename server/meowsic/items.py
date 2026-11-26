@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, PlainTextResponse, Response
 from .autofill import fill_from_library, log_fill
 from .sheetversion import refresh_staves
 from .undolog import edit_detail, edit_title, fields_step, record_undo
-from .db import AI_SOURCE, NOT_ARTIST, OLD_CREDITS, credit_xml, score_byline, BOOKS, KIND_COLS, SCORE_VERSIONS, SHEET_VERSIONS, book_folder, ensure_tags, folder_base, folder_path, get_item, item_json, log_event, now_ms, folder_name, quiet_now, rebase, uid, write_item
+from .db import AI_SOURCE, NOT_ARTIST, OLD_CREDITS, carried_tags, credit_xml, score_byline, BOOKS, KIND_COLS, SCORE_VERSIONS, SHEET_VERSIONS, book_folder, ensure_tags, folder_base, folder_path, get_item, item_json, log_event, now_ms, folder_name, quiet_now, rebase, uid, write_item
 
 router = APIRouter(prefix='/api')
 
@@ -92,7 +92,7 @@ PROCESS_TAGS = ('Hands moved', 'Notes edited', 'Simple piano')  # what an edit d
 def _version_of(c, cf, body, session):
     """POST /api/items with `fromItemId`: `musicxmlText` saved as a new version of that score (like Edit notes /
     Simple piano 'new'): same song group (a groupId made for the source when it has none; its Last modified stays),
-    its artist, key, tempo, link and tags; source "From the score “X”, <note>"; an Activities row whose Undo moves
+    its artist, key, tempo, link and tags (not Verified: db.carried_tags); source "From the score “X”, <note>"; an Activities row whose Undo moves
     the new score to the Trash. Body: {fromItemId, musicxmlText, version?, title?, note?, artist?}. 423 while Edit
     notes is open on the source."""
     from . import editsafe
@@ -108,7 +108,7 @@ def _version_of(c, cf, body, session):
     t = now_ms()
     new = {'id': uid('m'), 'kind': 'score', 'title': str(body.get('title') or '').strip() or src['title'],
            'artist': str(body.get('artist') or '').strip() or src.get('artist') or '',
-           'tags': [x for x in src.get('tags', []) if x not in PROCESS_TAGS], 'createdAt': t, 'updatedAt': t, 'originAt': t,
+           'tags': carried_tags(src.get('tags'), PROCESS_TAGS), 'createdAt': t, 'updatedAt': t, 'originAt': t,
            'version': version, 'source': f'From the score {_q(src["title"])}' + (f', {note}' if note else ''),
            'groupId': src.get('groupId') or uid('g'), 'key': src.get('key') or '', 'bpm': src.get('bpm'), 'ai': src.get('ai') or 0,
            'sourceUrl': src.get('sourceUrl') or ''}

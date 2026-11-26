@@ -30,7 +30,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException
 
 from .autofill import fill_from_library, log_fill, recredit
 from . import smoothrhythm as sr
-from .db import folder_path, get_item, now_ms, uid, write_item
+from .db import carried_tags, folder_path, get_item, now_ms, uid, write_item
 from .easerests import _beat, _head, _no_staccato
 from .items import cfg, conn, item_dir, must_item
 from .sheetversion import refresh_staves
@@ -336,7 +336,7 @@ def save(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg))
     if body.get('mode') == 'new':
         t = now_ms()
         new = {'id': uid('m'), 'kind': 'score', 'title': it['title'], 'artist': it.get('artist') or '',
-               'tags': [*[x for x in it.get('tags', []) if x != TAG], TAG], 'createdAt': t, 'updatedAt': t, 'originAt': t,
+               'tags': [*carried_tags(it.get('tags'), (TAG,)), TAG], 'createdAt': t, 'updatedAt': t, 'originAt': t,
                'version': 'clear', 'source': f'From the score {_q(it["title"])}, Simple piano',
                'groupId': it.get('groupId') or uid('g'), 'key': it.get('key') or '', 'bpm': it.get('bpm'), 'ai': it.get('ai') or 0,
                'sourceUrl': it.get('sourceUrl') or ''}

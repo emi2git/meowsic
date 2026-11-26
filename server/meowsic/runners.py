@@ -24,7 +24,7 @@ from pathlib import Path
 from . import arrange
 from .arrange import VERSION_TAGS
 from .sheetversion import refresh_staves
-from .db import AI_SOURCE, NOT_ARTIST, OLD_CREDITS, connect, credit_xml, score_byline, folder_path, get_item, now_ms, platform_of, uid, write_item
+from .db import AI_SOURCE, NOT_ARTIST, OLD_CREDITS, carried_tags, connect, credit_xml, score_byline, folder_path, get_item, now_ms, platform_of, uid, write_item
 from .jobs import Cancelled, JobContext
 from .autofill import describe, fill_from_library, log_fill
 
@@ -186,7 +186,7 @@ def version_runner(ctx: JobContext):
     outs = arrange_versions(ctx, work / 'from.musicxml', want, work / 'out', title=job['title'], artist=p.get('artist', src['artist']),
                             stage_arrange=1, stage_write=2, stage_pdf=3, simple=simple)
     ctx.update(stage=3, progress=1)
-    tags = p['tags'] if isinstance(p.get('tags'), list) else src['tags']
+    tags = carried_tags(p['tags'] if isinstance(p.get('tags'), list) else src['tags'])
     ids = save_outputs(ctx, outs, title=job['title'], source=job['source'] or f'From the score “{src["title"]}”',
                        artist=p.get('artist', src['artist']), tags=tags, group_id=src.get('groupId'),
                        key=src.get('key', ''), bpm=src.get('bpm'), ai=src.get('ai'), source_url=src.get('sourceUrl') or '')
@@ -236,7 +236,7 @@ def omr_runner(ctx: JobContext):
     checks = report.get('check', []) if report else []
     ids = save_outputs(ctx, [('original', str(out / 'score.musicxml'), None, None, {})], title=job['title'],
                        source=f'From the sheet “{src["title"]}” (photo → score, beta)', artist=src.get('artist', ''),
-                       tags=[*src.get('tags', []), 'From a sheet'])
+                       tags=[*carried_tags(src.get('tags')), 'From a sheet'])
     try:  # bars to check: why, where on the page, the other reading (GET /api/items/{id}/check)
         from .barcheck import keep_check
         c = connect(ctx.cfg)

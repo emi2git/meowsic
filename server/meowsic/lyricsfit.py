@@ -434,7 +434,7 @@ def lyrics_runner(ctx):
     """Job 'lyrics': fromItemId = the score, sheetId = the sheet with the words. Stages (LYRICS_STAGES in the UI):
     0 read the score, 1 read the words on the sheet, 2 fit them to the tune, 3 write the new score (and its PDF)."""
     from . import arrange
-    from .db import connect, folder_path, get_item
+    from .db import carried_tags, connect, folder_path, get_item
     from .jobs import Cancelled
     from .runners import pdf_on, save_outputs
     p = ctx.params
@@ -466,7 +466,7 @@ def lyrics_runner(ctx):
     v = src.get('version') or 'original'
     ids = save_outputs(ctx, [(v, new, mid, pdf, {})], title=src['title'],
                        source=f'From the score “{src["title"]}” + lyrics from the sheet', artist=src.get('artist', ''),
-                       tags=[*[t for t in src.get('tags', []) if t != TAG], TAG], group_id=src.get('groupId'),
+                       tags=[*carried_tags(src.get('tags'), (TAG,)), TAG], group_id=src.get('groupId'),
                        key=src.get('key', ''), bpm=src.get('bpm'), ai=src.get('ai'), source_url=src.get('sourceUrl') or '')
     ctx.update(stage=3, progress=1, status='done', result=ids,
                msg=f"Done — {rep['coverage']:g}% of the words placed" + (f", {rep['checkBars']} bars to check" if rep['checkBars'] else ''))
