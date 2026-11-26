@@ -9,6 +9,7 @@ import { parseChordPro } from './chordchart.js';
 import * as saved from './saved.js';
 
 const KEY = 'meowsic-mock-v6';
+const VIEW_ONLY = new Set(['transpose', 'zoom', 'rate']); // how an item is viewed, not what it is: no Last modified bump
 let db;
 const subs = new Set();
 const jobSubs = new Set();
@@ -144,7 +145,8 @@ export const store = {
   update(id, patch) {
     const it = this.get(id);
     if (!it) return;
-    Object.assign(it, patch, { updatedAt: Date.now() });
+    // view settings (key shift, zoom, speed) aren't a change: they leave Last modified alone (items.py VIEW_ONLY)
+    Object.assign(it, patch, Object.keys(patch).every((k) => VIEW_ONLY.has(k)) ? {} : { updatedAt: Date.now() });
     if ('text' in patch && it.kind === 'chords') it.lines = parseChordPro(it.text);
     // the Mac's answer wins: a new title renames the folder and the page files, so take its file names
     api('PATCH', `/items/${id}`, patch).then((fresh) => {

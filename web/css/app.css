@@ -1038,6 +1038,7 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .th-menu { min-height: 0; width: 22px; height: 22px; padding: 0; margin-left: 2px; border: 0; border-radius: 6px; background: none; color: var(--mute); display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; cursor: pointer; opacity: .75; }
 .th-menu svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .th-menu:hover { opacity: 1; background: var(--line); color: var(--ink2); }
+.th-sort.th-now { margin-left: 8px; font-weight: 500; color: var(--accent, var(--ink2)); white-space: nowrap; }
 /* bigger target on touch, same small look */
 :root:is([data-device="phone"], [data-device="tablet"]) .th-menu { width: 30px; height: 30px; margin-left: 0; }
 /* Pages: always shown for sheets and books (Key and Tag give way first); "12 p" when narrow */

@@ -49,6 +49,40 @@ await sleep(200);
 check('search finds Memory', (await page.$$eval('#lib-rows .row-title', (e) => e.map((x) => x.textContent))).includes('Memory'));
 await page.$eval('#lib-q', (e) => { e.value = ''; e.dispatchEvent(new Event('input')); });
 check('no Add button and no kind tabs in the Mac header', !(await page.$('#lib-add')) && !(await page.$eval('.lib-top .seg', (e) => e.offsetWidth)));
+console.log('Default order: Last modified, newest first');
+{
+  const ticked = async () => { await page.click('#lib-sort-menu'); await sleep(200); const l = await page.$$eval('.menu button', (e) => e.find((x) => x.getAttribute('aria-checked') === 'true')?.querySelector('span').textContent); await closeMenu(); return l; };
+  const allIds = async () => { const out = []; for (const pg of [1, 2]) { await page.click(`.pager [data-pg="${pg}"]`); await sleep(200); out.push(...await page.$$eval('#lib-rows tr.row', (e) => e.map((x) => x.dataset.id))); } await page.click('.pager [data-pg="1"]'); await sleep(200); return out; };
+  const at = (it) => it.updatedAt || it.createdAt || 0;
+  const now = await page.$eval('.th-now', (e) => e.textContent).catch(() => '');
+  check('Modified ▼ named in the heading, ticked in the ⌄ menu', now === 'Modified ▼' && (await ticked()) === 'Last modified', now);
+  const menu = await (async () => { await page.click('#lib-sort-menu'); await sleep(200); const l = await page.$$eval('.menu button span', (e) => e.map((x) => x.textContent).join('|')); await closeMenu(); return l; })();
+  check('⌄ menu lists Last modified first', menu === 'Last modified|Title A–Z|Title Z–A|Most played|Recently added', menu);
+  // give the sample items distinct changed times (oldest added = newest changed) so the order is not just Added
+  await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('meowsic-mock-v6')); const t = Date.now(); d.items.forEach((x) => { x.updatedAt = t - 1e9 + (t - x.createdAt) % 1e9; }); localStorage.setItem('meowsic-mock-v6', JSON.stringify(d)); });
+  await page.reload({ waitUntil: 'networkidle0' }); await go('#/library'); await sleep(300);
+  let d = await db(), byId = Object.fromEntries(d.items.map((x) => [x.id, x]));
+  let ids = await allIds();
+  check('both pages in Last modified order (newest first)', ids.length === 88 && ids.every((id, i) => !i || at(byId[ids[i - 1]]) >= at(byId[id])), ids.slice(0, 3).map((i) => byId[i].title).join(' | '));
+  const oldest = ids[ids.length - 1], mid = ids[10];
+  await page.evaluate(async (a, b) => { const { store } = await import('./js/store.js'); store.update(b, { transpose: 2 }); store.update(a, { artist: 'Changed Now' }); }, oldest, mid);
+  await sleep(300);
+  ids = await allIds();
+  check('editing info moves an item to the top', ids[0] === oldest, ids[0]);
+  check('changing the key (transpose) does not move it', ids[11] === mid, ids.indexOf(mid));
+  await page.click('.th-now'); await sleep(200);
+  check('tapping "Last modified" reverses it (oldest first)', (await page.$eval('.th-now', (e) => e.textContent)) === 'Modified ▲' && (await allIds()).at(-1) === oldest);
+  await page.click('.th-now'); await sleep(200);
+  await page.click('#lib-sort-menu'); await sleep(200); await clickText('.menu button', 'Title A–Z');
+  const titles = await page.$$eval('#lib-rows .row-title', (e) => e.map((x) => x.textContent));
+  check('switching to Title A–Z sorts by title, no extra label', titles.join() === [...titles].sort((a, b) => a.localeCompare(b)).join() && !(await page.$('.th-now')) && (await ticked()) === 'Title A–Z');
+  await page.reload({ waitUntil: 'networkidle0' }); await go('#/library'); await sleep(300);
+  check('the pick is remembered on this device', (await ticked()) === 'Title A–Z');
+  // a choice saved before Last modified became the default is dropped once
+  await page.evaluate(() => { localStorage.removeItem('meowsic-sort2'); localStorage.removeItem('meowsic-sort2-dir'); localStorage.setItem('meowsic-sort', 'title'); localStorage.setItem('meowsic-sort-dir', '-1'); });
+  await page.reload({ waitUntil: 'networkidle0' }); await go('#/library'); await sleep(300);
+  check('an old saved order is reset to Last modified', (await ticked()) === 'Last modified' && (await page.evaluate(() => localStorage.getItem('meowsic-sort'))) === null);
+}
 await page.click('[data-sort="title"]'); await sleep(200);
 check('Title heading sorts A–Z', (await page.$$eval('#lib-rows .row-title', (e) => e.slice(0, 3).map((x) => x.textContent))).join() === (await page.$$eval('#lib-rows .row-title', (e) => e.slice(0, 3).map((x) => x.textContent).sort((a, b) => a.localeCompare(b)))).join());
 await page.click('[data-sort="title"]'); await sleep(200);
