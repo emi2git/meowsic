@@ -40,7 +40,7 @@ SUITES = {
     'notenames': 'server', 'organizepages': 'server', 'photoimport': 'server', 'cropback': 'server', 'quickfeedback': 'server', 'real': 'server',
     'realedit': 'server', 'renameopen': 'server', 'resync': 'server', 'simplepiano': 'server', 'swipeclose': 'server',
     'textinput': 'server', 'touchfill': 'server', 'touchlib': 'server', 'touchpages': 'server', 'touchview': 'server',
-    'verified': 'server', 'voice': 'server', 'pianodefault': 'server',
+    'verified': 'server', 'voice': 'server', 'pianodefault': 'server', 'unsavedreload': 'server',
     'omr': 'server', 'printscore': 'server',
     'offline': 'restart', 'storage': 'restart', 'swupdate': 'restart', 'editsafe': 'restart',
 }
@@ -160,6 +160,6 @@ def main():
 MAIN = ['flows', 'keycolumn', 'libfit', 'macnoswipe', 'sheetfit', 'playback', 'scorezoom', 'topcast', 'touchseek', 'betakeyboard',
         'activities', 'chordplay', 'chordwindow', 'hands', 'pianodefault', 'tempo', 'addmusic', 'booksplit', 'completeinfo', 'cuedrag', 'dailycleanup', 'dragnote', 'editnotes', 'note32', 'evenout', 'ottava', 'editperf', 'feedback', 'jobs', 'langtoggle',
         'lyricmode', 'manage', 'menus', 'midiedit', 'organizepages', 'photoimport', 'cropback', 'quickfeedback', 'renameopen',
-        'swipeclose', 'textinput', 'verified', 'kidsheads', 'offline', 'storage', 'swupdate', 'editsafe']
+        'swipeclose', 'textinput', 'verified', 'kidsheads', 'unsavedreload', 'offline', 'storage', 'swupdate', 'editsafe']
 if __name__ == '__main__':
     sys.exit(main())

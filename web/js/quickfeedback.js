@@ -2,7 +2,7 @@
 // box whose mic starts listening at once (textinput.js), Send / Cancel. The note goes to the same pool as the
 // Feedback page (feedbackapi.js) with what it is about: the song, and where in it (page, bar / time), zoom,
 // version and device. A tap outside does not close it (the words stay); Cancel, Esc or the button again do. While it is open it counts as a tool (swipe.js: swipes don't close the view).
-import { $, esc, iconOn, toast } from './ui.js';
+import { $, esc, iconOn, toast, unsaved } from './ui.js';
 import { startVoice, stopVoice, voiceSupported } from './textinput.js';
 import { sendFeedback, deviceName } from './feedbackapi.js';
 import { VERSIONS } from './musicxml.js';
@@ -48,6 +48,7 @@ export function openQuickFeedback(it, view, anchor) {
   const where = whereLabel(ctx);
   const el = document.createElement('div');
   el.className = 'qfb';
+  unsaved(el); // text not sent yet (update.js waits)
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', 'Quick feedback');
   el.innerHTML = `<div class="qfb-about">About: <b>${esc(it.title || 'Untitled')}</b>${where ? ` · ${esc(where)}` : ''}</div>

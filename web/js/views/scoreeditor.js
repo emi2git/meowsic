@@ -1,6 +1,6 @@
 // Score note editor (like MuseScore / Flat): click a note on the staff, change it with the one-line
 // bar or the keys. Works on sample scores (TuneModel) and real MusicXML scores (XmlModel).
-import { iconOn, toast } from '../ui.js';
+import { iconOn, toast, unsaved } from '../ui.js';
 import { isTriplet, twelfths, midiOf, nameOf } from '../musicxml.js';
 import { TuneModel, XmlModel } from '../scoremodel.js';
 import { store } from '../store.js';
@@ -50,6 +50,7 @@ export function scoreEditor(view, it, host, btn) {
   const undo = [];
   const panel = document.createElement('div');
   panel.className = 'editbar';
+  unsaved(panel); // edits live in memory until Save (update.js waits)
   host.append(panel);
   const paper = host.querySelector('#paper');
   paper.classList.add('editing');
