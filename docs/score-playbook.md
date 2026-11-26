@@ -43,7 +43,7 @@ All API calls go to `https://localhost:5180/api/…`, with the CA at `~/Document
    for the words.** Use Whisper (`~/ai/models`, mlx whisper-large-v3-turbo) only for word timing.
 3. The sung melody: separate the vocals (HTDemucs in `~/ai/models/huggingface`). Pitch-track them with librosa pyin
    (`pitch.npz`) or basic-pitch (`notes.json`), get beats with beat_this (`bt.json`), then:
-   `omr/.venv/bin/python ~/git/scripts/sung-melody-to-musicxml.py --beats bt.json --words aligned.json --syl syl.json (--pyin pitch.npz | --bp notes.json) [--grid 2|4] [--triplets] [--key N] --out X.musicxml --report rep.json`
+   `omr/.venv/bin/python ~/git/scripts/sung-melody-to-musicxml.py --beats bt.json --words aligned.json --syl syl.json (--pyin pitch.npz | --bp notes.json) [--grid 2|4] [--triplets] [--meter auto] [--rest-min 1] [--key N] --out X.musicxml --report rep.json`
 4. Make **several versions (A–D)**: pyin vs basic-pitch, `--grid 2` (1/8) vs `--grid 4 --triplets` (1/16 + triplets).
    Score each one on pitch accuracy and on how well syllable onsets match the notes. Octave-normalize each phrase
    (keep one singable register). Show the user the best one and say which bars are borderline.
@@ -103,12 +103,20 @@ All API calls go to `https://localhost:5180/api/…`, with the CA at `~/Document
 - Agreement rule: change a note only when **at least 3 of the 4** pitch-tracked versions (A–D) agree.
 - Keep the score's register, its chords and its left hand. Change only the tune.
 - List the borderline bars for the user. Don't guess silently.
-- Rhythm from audio is where the user had to fix by hand (`m-4e35je7`). `sung-melody-to-musicxml.py` snaps each onset
-  and each END to the nearest grid step in a simple-meter beat grid (4/4 only), and a silence longer than one step
-  becomes a rest. So a singer's early release turns a held note into note + rest, an anticipation snaps onto the
-  beat, and 6/8 eighths land on the wrong eighth. For a compound-meter song use `--triplets` (3 per beat) and
-  write 6/8; then, for every bar, play the recording and check each onset with §2 step 7: a rest inside a sung
-  phrase is suspicious (usually the note is held or tied over the beat).
+- Rhythm from audio is where the user had to fix by hand (`m-4e35je7`, and the YouTube piano scores `m-783oy8d`,
+  `m-7lgkx8j` of 2026-11-27: left-hand notes cut short with a rest before the bar line). Both quantizers were fixed
+  on 2026-11-27; they snap only ONSETS and derive each length from the next onset (legato):
+  - The app's "score from YouTube / audio" job (`runners.transcribe_runner` → `musicnote_driver.py` → Emi Music Note
+    `pipeline/score.py` + `rhythm.py`: htdemucs → transkun piano notes → beat_this beats). Each hand holds a chord
+    until its next onset unless the hand is really silent: the gap from its last sounding note is ≥ `rest_min`
+    (1 quarter) AND the recording no longer rings there (pedal / decay: CQT level drop after the key release
+    < `ring_db` 12 dB, up to `ring_max` 4 quarters). A short gap before a bar line is held to the bar line. CC64
+    pedal extends notes (`pedal`). Two dotted-quarter beats a bar → 6/8 (was 12/8). Stray triplets need detail "full".
+    The two songs: LH bar-end rests 36 → 0 and 3 → 0, all rests 186 → 7 and 86 → 7; onsets and pitches unchanged.
+  - `sung-melody-to-musicxml.py` (by hand, §1a): `--meter auto` (2/4, 3/4, 4/4, 6/8, 9/8, 12/8 from the downbeats and
+    the beat division), `--rest-min 1` (quarters; pyin must also hear no voice), `--selftest`.
+  Still check every bar with §2 step 7: a rest inside a phrase is suspicious (the note is usually held or tied),
+  and an onset an 8th early (anticipation) must stay early.
 
 ## 5. Chord symbols
 - **Every score must have chord symbols, covering the whole piece** (user rule 2026-11-26), intro and ending included.
