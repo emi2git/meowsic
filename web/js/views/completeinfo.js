@@ -14,7 +14,7 @@
 // Mac keys (? lists them): 1–4 version · type a key (A–G…) + Enter · Enter = Save & next (when on) · S skip · X don't know · ← back · Space zoom.
 import { store } from '../store.js';
 import { isDesktop } from '../device.js';
-import { $, esc, toast, sheet as modal } from '../ui.js';
+import { $, esc, toast, sheet as modal, unsaved } from '../ui.js';
 import { SHEET_VERSIONS } from './actions.js';
 import { pageSrc } from './sheet.js';
 
@@ -84,6 +84,8 @@ export function completeInfoView(body, { onProgress = () => {} } = {}) {
   const badge = () => onProgress({ at: Math.min(st.i + 1, st.q?.length || 0), left: st.q?.length || 0, done: st.done });
   const needVersion = (r) => r.kind === 'sheet' || r.kind === 'chords';
   const complete = (r) => !!r && !!st.sel.key && (!needVersion(r) || !!st.sel.version);
+  // a pick not saved yet, or a save still going / failed: no auto-reload meanwhile (update.js)
+  const mark = () => unsaved(body, Object.values(st.sel).some((s) => s?.how === 'user') || [...st.saves.values()].some((s) => s.status !== 'done'));
 
   const load = async () => {
     body.innerHTML = '<p class="pad muted">Loading…</p>';
@@ -103,14 +105,14 @@ export function completeInfoView(body, { onProgress = () => {} } = {}) {
         else if (!isMissing(it[f])) st.sel[f] = { v: it[f], how: 'have' };
       }
     }
-    draw();
+    mark(); draw();
   };
 
   const pick = (f, v) => {
     const r = cur(); if (!r) return;
     if (f === 'key') v = normKey(v, r.kind) || v;
     st.sel[f] = { v, how: 'user' }; st.err = '';
-    paint();
+    mark(); paint();
   };
 
   // ---------- saving: one PATCH per card, in the background ----------
@@ -122,7 +124,7 @@ export function completeInfoView(body, { onProgress = () => {} } = {}) {
       if (s.r.skipped) api('DELETE', `/completeinfo/${encodeURIComponent(s.r.id)}/mark`).catch(() => {});
       st.saves.delete(s.r.id);
     } catch (e) { s.status = 'failed'; s.msg = e.message || 'No answer from the Mac'; }
-    drawSaves();
+    mark(); drawSaves();
   };
   const next = () => {
     const r = cur(); if (!complete(r)) return;

@@ -5,7 +5,7 @@
 // preview (server/meowsic/simplepiano.py, ~200 ms after the last move) and draws it in the score (play it too),
 // with what changed highlighted (soft yellow behind the notes; only in the preview, gone once saved or closed).
 // Save into this score (the file before stays in .history, Activities can undo it) or as a new "Simple piano" version.
-import { $, toast } from '../ui.js';
+import { $, toast, unsaved } from '../ui.js';
 import { go } from '../app.js';
 
 const api = (path, body) => fetch('/api' + path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {})
@@ -70,6 +70,7 @@ export async function simplePiano(view, it, host) {
   panel.className = 'sp-panel';
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', 'Simple piano');
+  unsaved(panel); // settings + a preview not saved yet: no auto-reload while open (update.js)
   host.append(panel);
   host.classList.add('simplifying');
   let prev = null, busy = false, shown = false, seq = 0, timer = 0;

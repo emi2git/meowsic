@@ -5,7 +5,7 @@
 // Offline: notes and edits wait in the store's outbox and are sent when the Mac is back (the app's own ids,
 // so a resend is not stored twice). A copy of the list is kept on this device to show offline.
 import { store } from '../store.js';
-import { $, esc, toast, confirmSheet } from '../ui.js';
+import { $, esc, toast, confirmSheet, unsaved } from '../ui.js';
 import { fbCache as ls, fbCall as call, sendFeedback } from '../feedbackapi.js';
 
 const STATUS = { new: 'New', in_progress: 'In progress', fixed: 'Fixed', wontfix: 'Won’t fix' };
@@ -36,7 +36,7 @@ export function feedbackView(main) {
       <div id="fb-list" class="fb-list"></div>
     </div>`;
   const ta = $('#fb-text', main), send = $('#fb-send', main);
-  ta.oninput = () => { send.disabled = !ta.value.trim(); };
+  ta.oninput = () => { send.disabled = !ta.value.trim(); unsaved(ta.closest('.fb-new'), !!ta.value.trim()); }; // text not sent yet (update.js waits)
   const keep = () => ls.set(rows);
   const sorted = () => rows.filter((r) => !r.removedAt).sort((a, b) => b.createdAt - a.createdAt);
 
@@ -47,7 +47,7 @@ export function feedbackView(main) {
     $('#fb-note', main).textContent = store.mode === 'offline' ? 'Offline — sent when the Mac is back' : '';
     $('#fb-list', main).innerHTML = shown.map((f) => {
       const locked = LOCKED.has(f.status), ed = editing === f.id;
-      return `<details class="fb-item fb-${f.status}" data-id="${esc(f.id)}"${open.has(f.id) || ed ? ' open' : ''}>
+      return `<details class="fb-item fb-${f.status}" data-id="${esc(f.id)}"${open.has(f.id) || ed ? ' open' : ''}${ed ? ' data-unsaved="1"' : ''}>
         <summary><span class="fb-when">${esc(fmt(f.createdAt))}</span><span class="fb-st fb-s-${f.status}">${STATUS[f.status] || esc(f.status)}</span>${f.pending ? '<span class="fb-wait">Waiting to send</span>' : ''}
           <span class="fb-first">${f.item?.title ? `<span class="fb-on">${esc(f.item.title)}</span> ` : ''}${esc(firstLine(f.text))}</span></summary>
         <div class="fb-body">

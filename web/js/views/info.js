@@ -4,7 +4,7 @@
 // (Edit pages, Make a score, Export, Move to Trash…) live only in the ⋯ menus (actions.js), never here too.
 // iPhone: a full-screen sheet (app.css).
 import { store } from '../store.js';
-import { $, esc, badge, ago, mins, scoreSource, sheet, tagPicker, toast } from '../ui.js';
+import { $, esc, badge, ago, mins, scoreSource, sheet, tagPicker, toast, unsaved } from '../ui.js';
 import { metaText, verLabel, verDetail, SHEET_VERSIONS } from './actions.js';
 import { VERSIONS } from '../musicxml.js';
 
@@ -60,6 +60,7 @@ export function openInfo(id) {
     const b = e.target.closest('[data-ver]');
     if (!b) return;
     version = version === b.dataset.ver ? '' : b.dataset.ver; // tap the lit one again to clear it
+    unsaved(s.el.parentElement); // (typed fields and tags mark the sheet by themselves)
     s.el.querySelectorAll('#if-ver [data-ver]').forEach((x) => { const on = x.dataset.ver === version; x.classList.toggle('on', on); x.setAttribute('aria-checked', on); });
   });
   const cp = $('#dt-copy', s.el);
