@@ -127,18 +127,48 @@ function padVoice(out, pitch, vel, when, held) {
 
 export const voicesForTests = { pianoVoice, padVoice }; // the level check (chordplay.mjs renders both offline)
 
+// ---------- tempo map: every tempo change of a score (musicxml.js xmlInfo `tempos`) ----------
+// tempos: [{q, bpm}] in score quarters, sorted, the first at q 0. The tempo at q = the last mark at or before it, so a
+// bar plays at its own tempo however it is reached (a repeat, a D.S. / D.C. / coda jump, the A–B loop, a seek).
+// rate (the speed control) scales every mark alike.
+const tempoIdx = (tempos, q) => { let k = 0; while (k + 1 < tempos.length && tempos[k + 1].q <= q + 1e-9) k++; return k; };
+export const tempoAt = (tempos, q) => tempos[tempoIdx(tempos, q)].bpm;
+// seconds from score quarter a to b in straight score order (no jump between; b < a gives a negative time)
+export function tempoSecs(tempos, a, b, rate = 1) {
+  if (b < a) return -tempoSecs(tempos, b, a, rate);
+  let k = tempoIdx(tempos, a), q = a, s = 0;
+  while (q < b - 1e-12) {
+    const z = k + 1 < tempos.length ? Math.min(b, tempos[k + 1].q) : b;
+    s += ((z - q) * 60) / (tempos[k].bpm * rate); q = z; k++;
+  }
+  return s;
+}
+// the score quarter reached dt seconds after a (dt < 0: back at a's tempo)
+export function tempoAdvance(tempos, a, dt, rate = 1) {
+  let k = tempoIdx(tempos, a), q = a;
+  if (dt <= 0) return a + (dt * tempos[k].bpm * rate) / 60;
+  for (;;) {
+    const qps = (tempos[k].bpm * rate) / 60;
+    if (k + 1 >= tempos.length) return q + dt * qps;
+    const span = (tempos[k + 1].q - q) / qps;
+    if (dt <= span) return q + dt * qps;
+    dt -= span; q = tempos[++k].q;
+  }
+}
+
 // ---------- score player: notes in quarter-note time; tempo, loop, transpose ----------
 // segments: [[fromQ, toQ], …] in the order they are played (repeats and endings, musicxml.js playOrder), or null:
 // at the end of each the clock jumps to the next (the playhead with it); A–B loop mode ignores them.
 // chords: the chord symbols as pad chords ([{q, d, n, v}], chordplay.js chordEvents; padVoice), heard while chordsOn;
 // transposed with the notes; each is held to its next change but never past the end of the segment / loop playing;
 // a chord already sounding where Play starts (or a repeat / loop jumps to) is struck there for the rest of its length.
-// Tempo: bpm × rate; setRate while playing takes over at once (the notes already on their way after that moment are
+// Tempo: the tempo map (tempos; none = bpm throughout) × rate; setRate while playing takes over at once (the notes already on their way after that moment are
 // called back and scheduled again at the new tempo), with no stop / restart of the audio.
 // mute: the staves not played (a note's s, musicxml.js; hands.js picks them), changed at once by setMute.
 export class ScorePlayer {
-  constructor({ notes, bpm, beats, onTick, onEnd, segments = null, chords = [] }) {
+  constructor({ notes, bpm, beats, onTick, onEnd, segments = null, chords = [], tempos = null }) {
     Object.assign(this, { notes, bpm, beats, onTick, onEnd, segments, chords });
+    this.tempos = tempos?.length ? tempos : [{ q: 0, bpm: bpm || 100 }];
     this.chordsOn = false; this.chordVoices = []; this.heardChords = []; // heardChords: [q, midi] as scheduled (for tests)
     this.seg = 0; this.played = []; this.heard = []; // played: [segment index, …] as they start (for tests); heard: [q, midi, staff]
     this.mute = new Set(); this.noteVoices = [];
@@ -149,12 +179,14 @@ export class ScorePlayer {
     this.endQ = notes.reduce((m, n) => Math.max(m, n.q + n.d), 0);
     this.endQ = Math.ceil(this.endQ / beats) * beats;
   }
-  get qps() { return (this.bpm * this.rate) / 60; } // quarters per second
+  get qps() { return (tempoAt(this.tempos, this.now()) * this.rate) / 60; } // quarters per second, here
+  secs(a, b, rate = this.rate) { return tempoSecs(this.tempos, a, b, rate); } // a → b in score order, at the tempo map
+  anchor() { return { q0: this.q0, t0: this.t0, rate: this.rate }; }
   now() {
     if (!this.playing) return this.posQ;
     const t = this.ctx.currentTime;
     const a = this.anchors.filter((x) => x.t0 <= t).pop() || this.anchors[0];
-    return a.q0 + Math.max(0, t - a.t0) * a.qps; // not before the start while the first notes are on their way
+    return tempoAdvance(this.tempos, a.q0, Math.max(0, t - a.t0), a.rate); // not before the start while the first notes are on their way
   }
   async play() {
     if (this.playing || this.starting) return;
@@ -182,7 +214,7 @@ export class ScorePlayer {
     }
     this.heard = []; this.heardAt = []; this.heardChords = []; this.chordVoices = []; this.noteVoices = []; this.sched = [];
     this.q0 = this.posQ; this.t0 = c.currentTime + 0.12;
-    this.anchors = [{ q0: this.q0, t0: this.t0, qps: this.qps }];
+    this.anchors = [this.anchor()];
     this.scheduledTo = this.posQ;
     this.carryChords(this.posQ);
     this.playing = true;
@@ -196,7 +228,7 @@ export class ScorePlayer {
     const horizonT = this.ctx.currentTime + 0.4;
     const segs = !this.loop && this.segments;
     for (let guard = 0; guard < 1000; guard++) {
-      const horizonQ = this.q0 + (horizonT - this.t0) * this.qps;
+      const horizonQ = tempoAdvance(this.tempos, this.q0, horizonT - this.t0, this.rate);
       if (this.scheduledTo >= horizonQ) break;
       const stopQ = this.loop ? this.loop[1] : segs ? segs[this.seg][1] : this.endQ;
       const a = this.scheduledTo, b = Math.min(horizonQ, stopQ);
@@ -204,22 +236,23 @@ export class ScorePlayer {
       if (this.chordsOn) for (const n of this.chords) if (n.q >= a && n.q < b) this.chordVoice(n, n.q, Math.min(n.d, stopQ - n.q));
       this.scheduledTo = b;
       if (b < stopQ) break;
-      const tEnd = this.t0 + (stopQ - this.q0) / this.qps;
+      const tEnd = this.t0 + this.secs(this.q0, stopQ);
       if (this.loop) this.q0 = this.loop[0]; // jump back: re-anchor the clock at the loop start
       else if (segs && this.seg + 1 < segs.length) { this.seg++; this.played.push(this.seg); this.q0 = segs[this.seg][0]; } // a repeat / an ending
       else break;
       this.t0 = tEnd; this.scheduledTo = this.q0;
-      this.anchors = [...this.anchors.slice(-2), { q0: this.q0, t0: this.t0, qps: this.qps }];
+      this.anchors = [...this.anchors.slice(-2), this.anchor()];
       this.carryChords(this.q0);
     }
     const tNow = this.ctx.currentTime;
     if (this.sched.length > 64) this.sched = this.sched.filter((s) => s.at > tNow - 0.05);
     const last = !segs || this.seg === segs.length - 1;
-    if (!this.loop && last && this.now() >= (segs ? segs.at(-1)[1] : this.endQ) + 0.5) { this.pause(); this.posQ = 0; this.onEnd?.(); }
+    // the end: in the last segment's own clock (a D.C. / D.S. jumps back, so before it starts the playhead is past its end)
+    if (!this.loop && last && this.anchors.at(-1).t0 <= tNow && this.now() >= (segs ? segs.at(-1)[1] : this.endQ) + 0.5) { this.pause(); this.posQ = 0; this.onEnd?.(); }
   }
   noteVoice(n) {
-    const when = this.t0 + (n.q - this.q0) / this.qps, t = this.ctx.currentTime;
-    const at = Math.max(t, when), v = pianoVoice(this.out, n.n + this.shift, n.v, at, Math.max(0.08, n.d / this.qps));
+    const when = this.t0 + this.secs(this.q0, n.q), t = this.ctx.currentTime;
+    const at = Math.max(t, when), v = pianoVoice(this.out, n.n + this.shift, n.v, at, Math.max(0.08, this.secs(n.q, n.q + n.d)));
     this.noteVoices = this.noteVoices.filter((x) => x.v.end > t); this.noteVoices.push({ v, s: n.s });
     this.sched.push({ v, at, chord: false });
     if (this.heard.length < 4000) { this.heard.push([n.q, n.n, n.s]); this.heardAt.push([n.q, at]); } // what was played, in order (for tests)
@@ -238,12 +271,12 @@ export class ScorePlayer {
     for (const n of this.notes) if (was.has(n.s) && !next.has(n.s) && n.q >= lo && n.q < this.scheduledTo) this.noteVoice(n);
   }
   chordVoice(n, q, d) {
-    const at = Math.max(this.ctx.currentTime, this.t0 + (q - this.q0) / this.qps);
-    const v = padVoice(this.out, n.n + this.shift, n.v, at, Math.max(0.08, d / this.qps - 0.02));
+    const at = Math.max(this.ctx.currentTime, this.t0 + this.secs(this.q0, q)), len = Math.max(0.08, this.secs(q, q + d) - 0.02);
+    const v = padVoice(this.out, n.n + this.shift, n.v, at, len);
     this.sched.push({ v, at, chord: true });
     const t = this.ctx.currentTime;
     this.chordVoices = this.chordVoices.filter((x) => x.end > t); this.chordVoices.push(v);
-    if (this.heardChords.length < 4000) this.heardChords.push([q, n.n + this.shift, d]); // [q, midi as heard (transposed), length in quarters]
+    if (this.heardChords.length < 4000) this.heardChords.push([q, n.n + this.shift, d, at, len]); // [q, midi as heard (transposed), length in quarters, audio time, seconds]
   }
   // a chord that started before q and still sounds there (Play from the middle of it, a jump back): struck at q
   carryChords(q) {
@@ -275,9 +308,9 @@ export class ScorePlayer {
     if (!this.playing) { this.rate = r; return; }
     const t = this.ctx.currentTime + 0.03, last = this.anchors.at(-1);
     if (last.t0 > t) { // a repeat / a loop jump is already on its way: the new tempo from the end of what is scheduled
-      this.t0 += (this.scheduledTo - this.q0) / this.qps; this.q0 = this.scheduledTo; this.rate = r;
+      this.t0 += this.secs(this.q0, this.scheduledTo); this.q0 = this.scheduledTo; this.rate = r;
     } else { // from now: call back what starts after t, then schedule it again at the new tempo
-      const q = last.q0 + Math.max(0, t - last.t0) * last.qps;
+      const q = tempoAdvance(this.tempos, last.q0, Math.max(0, t - last.t0), last.rate);
       let nm = 0, nc = 0;
       this.sched = this.sched.filter((s) => {
         if (s.at < t - 1e-4) return true;
@@ -289,7 +322,7 @@ export class ScorePlayer {
       drop(this.heard, nm); drop(this.heardAt, nm); drop(this.heardChords, nc);
       this.rate = r; this.q0 = q; this.t0 = t; this.scheduledTo = q;
     }
-    this.anchors = [...this.anchors.slice(-2), { q0: this.q0, t0: this.t0, qps: this.qps }];
+    this.anchors = [...this.anchors.slice(-2), this.anchor()];
     this.pump();
   }
   stop() { this.pause(); this.posQ = 0; }

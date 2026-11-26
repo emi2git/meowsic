@@ -387,7 +387,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
   const makePlayer = () => {
     const was = midi;
     player?.pause();
-    midi = new ScorePlayer({ notes: real ? info.notes : tuneNotes(tune, version), bpm: tune.bpm, beats: tune.beats, onTick: place, onEnd: onEnded, segments: real ? info.segments : null, chords: chordNotes() });
+    midi = new ScorePlayer({ notes: real ? info.notes : tuneNotes(tune, version), bpm: tune.bpm, beats: tune.beats, onTick: place, onEnd: onEnded, segments: real ? info.segments : null, chords: chordNotes(), tempos: real ? info.tempos : null });
     applyHands();
     root.dispatchEvent(new CustomEvent('chordlistchange', { bubbles: true }));
     if (was) { midi.rate = was.rate; midi.loop = was.loop; }
@@ -590,6 +590,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     async reload() { if (!real) return; await loadReal(); makePlayer(); await render(); },
     get player() { return player; },
     get pianoNotes() { return midi?.notes || []; },  // what the piano plays (Export ▸ MIDI)
+    get tempos() { return midi?.tempos || null; },  // every tempo change (Export ▸ MIDI; audio.js tempo map)
     get version() { return version; },
     async setTranspose(n) { store.update(it.id, { transpose: n }); it.transpose = n; midi.shift = n; await render(); },
     // Voice: the sung audio (Make it sing) in place of the piano
@@ -662,21 +663,23 @@ export function scoreExportMenu(it, view) {
   const name = `${it.title} - ${VERSIONS[view.version] || 'Score'}`;
   return [
     { label: 'MusicXML', icon: 'download', run: () => download(`${name}.musicxml`, view.xml(), 'application/vnd.recordare.musicxml+xml') },
-    { label: 'MIDI', icon: 'download', run: () => download(`${name}.mid`, midiFile(view.pianoNotes, view.tune.bpm, it.transpose || 0), 'audio/midi') },
+    { label: 'MIDI', icon: 'download', run: () => download(`${name}.mid`, midiFile(view.pianoNotes, view.tune.bpm, it.transpose || 0, view.tempos), 'audio/midi') },
     printEntry(it.id),
   ];
 }
-// notes [{q: start in quarters, d: length, n: MIDI note, v: velocity}] → a Standard MIDI File (one track, piano)
-export function midiFile(notes, bpm = 100, shift = 0) {
+// notes [{q: start in quarters, d: length, n: MIDI note, v: velocity}] → a Standard MIDI File (one track, piano);
+// tempos ([{q, bpm}], xmlInfo): every tempo change, else bpm throughout
+export function midiFile(notes, bpm = 100, shift = 0, tempos = null) {
   const TPQ = 480, ev = [];
   for (const x of notes || []) {
     const n = Math.max(0, Math.min(127, Math.round(x.n + shift))), on = Math.round(x.q * TPQ), off = Math.max(on + 1, Math.round((x.q + x.d) * TPQ));
     ev.push([on, 1, [0x90, n, Math.max(1, Math.min(127, x.v || 80))]], [off, 0, [0x80, n, 0]]);
   }
-  ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);  // at the same tick: note-offs first
+  const tset = (v) => { const us = Math.round(60e6 / (v || 100)); return [0xff, 0x51, 3, (us >> 16) & 255, (us >> 8) & 255, us & 255]; };
+  for (const x of (tempos?.length ? tempos : [{ q: 0, bpm }]).slice(1)) ev.push([Math.round(x.q * TPQ), -1, tset(x.bpm)]);
+  ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);  // at the same tick: the tempo, then note-offs, then note-ons
   const vlq = (v) => { const b = [v & 0x7f]; while ((v >>= 7)) b.unshift((v & 0x7f) | 0x80); return b; };
-  const us = Math.round(60e6 / (bpm || 100));
-  const trk = [...vlq(0), 0xff, 0x51, 3, (us >> 16) & 255, (us >> 8) & 255, us & 255, ...vlq(0), 0xc0, 0];
+  const trk = [...vlq(0), ...tset(tempos?.[0]?.bpm || bpm), ...vlq(0), 0xc0, 0];
   let t = 0;
   for (const [at, , m] of ev) { trk.push(...vlq(at - t), ...m); t = at; }
   trk.push(...vlq(0), 0xff, 0x2f, 0);

@@ -33,7 +33,7 @@ E2E = dev.REPO / 'tests' / 'e2e'
 SUITES = {
     'flows': 'preview', 'keycolumn': 'preview', 'libfit': 'preview', 'playback': 'preview', 'scorezoom': 'preview', 'topcast': 'preview',
     'touchseek': 'preview', 'betakeyboard': 'preview', 'macnoswipe': 'preview', 'sheetfit': 'preview',
-    'activities': 'server', 'chordplay': 'server', 'chordwindow': 'server', 'hands': 'server', 'tempo': 'server', 'addchords': 'server', 'addmusic': 'server', 'aimusic': 'server', 'books': 'server',
+    'activities': 'server', 'chordplay': 'server', 'chordwindow': 'server', 'hands': 'server', 'tempo': 'server', 'tempochange': 'server', 'addchords': 'server', 'addmusic': 'server', 'aimusic': 'server', 'books': 'server',
     'booksplit': 'server', 'checkbars': 'server', 'completeinfo': 'server', 'cuedrag': 'server', 'dailycleanup': 'server', 'easyscore': 'server', 'kidsheads': 'server',
     'dragnote': 'server', 'editnotes': 'server', 'note32': 'server', 'evenout': 'server', 'ottava': 'server', 'editperf': 'server', 'feedback': 'server', 'jobs': 'server', 'langtoggle': 'server', 'libversion': 'server',
     'lyricmode': 'server', 'manage': 'server', 'menus': 'server', 'metadata': 'server', 'midiedit': 'server',
@@ -164,7 +164,7 @@ def main():
 # BASE pointing at a dev-server on a COPY of the library: scripts/dev-server --data <copy>), or are slow and heavy
 # (voice: loads the SoulX-Singer model; may time out while another sing job runs).
 MAIN = ['flows', 'keycolumn', 'libfit', 'macnoswipe', 'sheetfit', 'playback', 'scorezoom', 'topcast', 'touchseek', 'betakeyboard',
-        'activities', 'chordplay', 'chordwindow', 'hands', 'pianodefault', 'tempo', 'addmusic', 'booksplit', 'completeinfo', 'cuedrag', 'dailycleanup', 'dragnote', 'editnotes', 'note32', 'evenout', 'ottava', 'editperf', 'feedback', 'jobs', 'langtoggle',
+        'activities', 'chordplay', 'chordwindow', 'hands', 'pianodefault', 'tempo', 'tempochange', 'addmusic', 'booksplit', 'completeinfo', 'cuedrag', 'dailycleanup', 'dragnote', 'editnotes', 'note32', 'evenout', 'ottava', 'editperf', 'feedback', 'jobs', 'langtoggle',
         'lyricmode', 'manage', 'menus', 'midiedit', 'organizepages', 'photoimport', 'cropback', 'quickfeedback', 'renameopen',
         'swipeclose', 'textinput', 'verified', 'kidsheads', 'unsavedreload', 'offline', 'storage', 'swupdate', 'editsafe']
 if __name__ == '__main__':

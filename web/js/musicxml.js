@@ -136,10 +136,26 @@ export function tuneNotes(tune, version) {
 
 // ---- real scores: read notes, tempo and meter out of any MusicXML (for playback) ----
 const STEP_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+// a tempo mark in quarter notes a minute: <sound tempo> (always quarters), else its <metronome> (beat-unit, dots)
+const UNIT_Q = { whole: 4, half: 2, quarter: 1, eighth: 0.5, '16th': 0.25, '32nd': 0.125 };
+function tempoOf(el) {
+  const s = el.tagName === 'sound' ? el : el.querySelector(':scope > sound');
+  if (+s?.getAttribute('tempo') > 0) return +s.getAttribute('tempo');
+  const m = el.tagName === 'direction' && el.querySelector(':scope > direction-type > metronome');
+  const pm = m && +(m.querySelector('per-minute')?.textContent || '').trim();
+  const u = m && UNIT_Q[(m.querySelector('beat-unit')?.textContent || '').trim()];
+  if (!(pm > 0) || !u) return 0;
+  const dots = m.querySelectorAll('beat-unit-dot').length;
+  return pm * u * (2 - 0.5 ** dots);
+}
+// tempos: [{q, bpm}] every tempo change of the score, in score order, from any part (two parts at the same place:
+// the first part's); the first is moved to q 0 (the music before it plays at it). bpm: the first one (the score's own
+// tempo for the toolbar; the speed control scales them all).
 export function xmlInfo(text) {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   const notes = [];
-  let bpm = 0, beats = 4, end = 0;
+  let beats = 4, end = 0;
+  const marks0 = []; // [q, bpm] of every tempo mark
   const barQ = []; // where each bar of the first part starts, in quarters
   const marks = []; // repeats and endings of each bar of the first part (playOrder)
   let chords = null; // the chord names (<harmony>) of the first part that has any: [{q, name}]
@@ -162,8 +178,8 @@ export function xmlInfo(text) {
           const b = el.querySelector('time > beats');
           if (b && !notes.length) beats = +b.textContent || beats;
         } else if (el.tagName === 'sound' || el.tagName === 'direction') {
-          const s = el.tagName === 'sound' ? el : el.querySelector('sound');
-          if (s?.getAttribute('tempo') && !bpm) bpm = +s.getAttribute('tempo');
+          const v = tempoOf(el);
+          if (v) marks0.push([(t + +(el.querySelector(':scope > offset')?.textContent || 0)) / div, v]);
         } else if (el.tagName === 'harmony') {
           const tx = (s) => el.querySelector(s)?.textContent ?? '';
           const k = el.querySelector(':scope > kind');
@@ -208,7 +224,16 @@ export function xmlInfo(text) {
       if (last && Math.abs(last[1] - a) < 1e-6) last[1] = z; else segments.push([a, z]);
     }
   }
-  return { notes: notes.sort((a, b) => a.q - b.q), bpm: bpm || 100, beats, totalQ: end, barQ, order, segments, chords: chords || [], staves: staffLabels(partStaves) };
+  const tempos = [];
+  for (const [q, v] of marks0.map((x, i) => [...x, i]).sort((x, y) => x[0] - y[0] || x[2] - y[2])) {
+    const lastT = tempos.at(-1);
+    if (lastT && Math.abs(lastT.q - q) < 1e-6) continue; // the same place in another part
+    if (lastT && Math.abs(lastT.bpm - v) < 1e-9) continue; // the same tempo again
+    tempos.push({ q: tempos.length ? q : 0, bpm: v });
+  }
+  if (!tempos.length) tempos.push({ q: 0, bpm: 100 });
+  const bpm = tempos[0].bpm;
+  return { notes: notes.sort((a, b) => a.q - b.q), bpm, tempos, beats, totalQ: end, barQ, order, segments, chords: chords || [], staves: staffLabels(partStaves) };
 }
 
 // the staves' names for the hand picker (hands.js): a two-staff part is a piano (R over L); a one-staff part beside
