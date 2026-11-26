@@ -13,18 +13,22 @@ async function asApp(p, inset) {
   await cdp.send('Emulation.setSafeAreaInsetsOverride', { insets: { top: inset } });
   await p.evaluateOnNewDocument(() => Object.defineProperty(Navigator.prototype, "standalone", { get: () => true })); // iOS home-screen app flag
 }
-// in the app: the fixed band is inset + 48 high, one solid page colour, full width; the sidebar title and the
-// top bar's heading start below it (nothing readable in the iOS 26 blurred zone)
-async function bandCheck(p, inset) {
+// in the app (the white cast, shells v49-v57): NOTHING paints one full-width band across the top. Each column
+// paints its own colour under the status bar, the same colour it has just below it (grey sidebar, white top
+// bar), and content starts right below the status bar (no empty gap). A fixed --bg band inset + 48 high
+// showed on the iPad as a white strip over the grey sidebar and an empty white gap above every header.
+async function topCheck(p, inset) {
   return p.evaluate((inset) => {
-    const out = [], want = inset + Math.min(48, inset * 2);
-    if (!('app' in document.documentElement.dataset)) out.push('not the app (data-app)');
-    const edge = document.querySelector('.topedge'), er = edge.getBoundingClientRect(), es = getComputedStyle(edge);
-    if (es.position !== 'fixed' || er.top !== 0 || er.width < innerWidth - 1 || Math.round(er.height) !== want) out.push(`band ${es.position} ${er.top} ${er.width} ${er.height} want ${want}`);
-    if (es.backgroundColor !== getComputedStyle(document.body).backgroundColor || /rgba/.test(es.backgroundColor)) out.push(`band bg ${es.backgroundColor}`);
-    // what shows at the top edge, all across: the band itself
-    for (let x = 2; x < innerWidth; x += 40) for (const y of [1, want - 2]) { const e = document.elementFromPoint(x, y); if (e !== edge) out.push(`${x},${y} ${e?.className || e?.tagName}`); }
-    for (const sel of ['.brand', '.side nav', '#main .top h1', '#main .top input']) { const e = document.querySelector(sel); if (e && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height && Math.round(e.getBoundingClientRect().top) < Math.round(er.bottom)) out.push(`${sel} under the band (${Math.round(e.getBoundingClientRect().top)})`); }
+    const out = [];
+    if (document.querySelector('.topedge')) out.push('a .topedge band is back');
+    const alpha = (c) => { const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return c === 'transparent' ? 0 : 1; const a = m[1].split(/[ ,/]+/).filter(Boolean); return a.length > 3 ? parseFloat(a[3]) : 1; };
+    const paint = (x, y) => { for (let e = document.elementFromPoint(x, y); e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (alpha(c) > 0) return c; } return getComputedStyle(document.documentElement).backgroundColor; };
+    // under the status bar = the colour just below it, all across (sidebar grey stays grey)
+    for (let x = 4; x < innerWidth; x += 36) { const a = paint(x, 1), b = paint(x, inset + 4); if (a !== b) out.push(`${x}: top ${a} vs below ${b}`); }
+    // no fixed element spans the width at the top edge (a band)
+    for (const e of document.body.querySelectorAll('*')) { const s = getComputedStyle(e); if (s.position !== 'fixed' || s.display === 'none' || alpha(s.backgroundColor) === 0) continue; const r = e.getBoundingClientRect(); if (r.top <= 0 && r.width >= innerWidth - 1 && r.height > 0 && r.height < innerHeight / 2) out.push(`fixed band ${e.className || e.tagName} ${Math.round(r.height)}px`); }
+    // content right below the status bar: sidebar title, top bar heading
+    for (const sel of ['.brand', '#main .top h1']) { const e = document.querySelector(sel); if (!e || getComputedStyle(e).display === 'none' || !e.getBoundingClientRect().height) continue; const t = Math.round(e.getBoundingClientRect().top); if (t < inset || t > inset + 30) out.push(`${sel} top ${t} (inset ${inset})`); }
     return [...new Set(out)].slice(0, 6);
   }, inset);
 }
@@ -73,9 +77,8 @@ for (const [dev, w, h, touch] of devices) for (const theme of ['light', 'dark'])
   await p.close();
 }
 // Score view on iPad, after tapping Verified (toast "Marked verified"): the header text is at full opacity,
-// nothing see-through overlaps the header, and a solid fixed band fills the top edge. In the home-screen app
-// (display-mode standalone, status bar inset 24) iOS 26 blurs the status bar + ~50pt below it, so the band
-// is inset + 48 high and the header (Back, title) starts below it; in Safari (inset 0) it is 1px.
+// nothing see-through overlaps the header, no band at the top edge: the opaque header runs under the status bar
+// and Back / title sit right below the inset (home-screen app, inset 24; Safari, inset 0).
 // Portrait + landscape, light + dark.
 for (const [orient, w, h] of [['portrait', 834, 1194], ['landscape', 1194, 834]]) for (const theme of ['light', 'dark']) for (const inset of [0, 24]) {
   const p = await b.newPage();
@@ -83,7 +86,7 @@ for (const [orient, w, h] of [['portrait', 834, 1194], ['landscape', 1194, 834]]
   if (inset) await asApp(p, inset);
   await p.goto(ORIGIN + '/?preview=1#/library', { waitUntil: 'networkidle0' });
   await p.evaluate((t) => localStorage.setItem('meowsic-theme', t), theme);
-  if (inset) { await p.reload({ waitUntil: 'networkidle0' }); await sleep(400); const r = await bandCheck(p, inset); check(`ipad ${orient} ${theme} app library: solid band, sidebar + top bar start below it`, r.length === 0, r.join(' | ')); }
+  if (inset) { await p.reload({ waitUntil: 'networkidle0' }); await sleep(400); const r = await topCheck(p, inset); check(`ipad ${orient} ${theme} app library: no white band, columns run under the status bar, no gap`, r.length === 0, r.join(' | ')); }
   await p.goto(ORIGIN + '/?preview=1#/item/m-02i', { waitUntil: 'networkidle0' }); await sleep(1000);
   const tag = `ipad ${orient} ${theme} ${inset ? 'app' : 'safari'}`;
   for (const step of ['open', 'verify', 'unverify']) {
@@ -104,32 +107,25 @@ for (const [orient, w, h] of [['portrait', 834, 1194], ['landscape', 1194, 834]]
         const a = alpha(s.backgroundColor), bf = (s.backdropFilter && s.backdropFilter !== 'none') || (s.webkitBackdropFilter && s.webkitBackdropFilter !== 'none');
         if (bf || (a > 0 && a < 1) || (a > 0 && eff(e) < 1)) out.push(`over header: ${e.className || e.tagName} bg ${s.backgroundColor}${bf ? ' blur' : ''}`);
       }
-      // the solid fixed strip at the top edge: page colour, full width, status bar high, no blur
-      const edge = document.querySelector('.topedge'); const es = edge && getComputedStyle(edge), er = edge?.getBoundingClientRect();
-      if (!edge) out.push('no .topedge');
-      else {
-        const want = inset ? inset + Math.min(48, inset * 2) : 1;
-        if (es.position !== 'fixed' || er.top !== 0 || er.width < innerWidth - 1 || Math.round(er.height) !== want) out.push(`topedge box ${es.position} ${er.top} ${er.width} ${er.height} want ${want}`);
-        if (alpha(es.backgroundColor) !== 1 || es.backgroundColor !== getComputedStyle(document.body).backgroundColor || eff(edge) !== 1) out.push(`topedge bg ${es.backgroundColor}`);
-        for (const sel of ['.back', '.item-title', '#it-verified']) { const e = top.querySelector(sel) || document.querySelector(sel); if (e && Math.round(er.bottom) > Math.round(e.getBoundingClientRect().top)) out.push(`topedge covers ${sel}`); }
-      }
+      // no band: the header itself runs under the status bar (opaque, from y 0) and Back / title sit right below it
+      if (document.querySelector('.topedge')) out.push('a .topedge band is back');
+      if (Math.round(tr.top) > 0 || alpha(getComputedStyle(top).backgroundColor) !== 1) out.push(`header top ${tr.top} bg ${getComputedStyle(top).backgroundColor}`);
+      for (const sel of ['.back', '.item-title']) { const e = top.querySelector(sel); const t = e && Math.round(e.getBoundingClientRect().top); if (e && (t < inset || t > inset + 24)) out.push(`${sel} top ${t} (inset ${inset})`); }
       return { out, toast: !document.getElementById('toast').hidden };
     }, inset);
-    check(`${tag} ${step}: header crisp, nothing see-through over it, solid top edge`, r.out.length === 0 && (step === 'open' || r.toast), r.out.slice(0, 4).join(' | '));
+    check(`${tag} ${step}: header crisp, nothing see-through over it, runs under the status bar`, r.out.length === 0 && (step === 'open' || r.toast), r.out.slice(0, 4).join(' | '));
   }
   if (process.env.SHOTS) await p.screenshot({ path: `${process.env.SHOTS}/topcast-${orient}-${theme}-${inset ? 'app' : 'safari'}.png`, clip: { x: 0, y: 0, width: w, height: 140 } });
   await p.close();
 }
 
-// iPhone app (inset 59) gets the band too; no status bar (iPhone landscape), Safari and a Mac web app keep the plain inset
-for (const [tag, w, h, touch, inset, want] of [['iphone app', 402, 874, true, 59, 107], ['iphone app landscape (no status bar)', 874, 402, true, 0, 1], ['mac app', 1440, 900, false, 0, 1], ['ipad safari', 834, 1194, true, 0, 1]]) {
+// iPhone app (inset 59), no status bar (iPhone landscape), Safari and a Mac web app: no band, content starts at the inset
+for (const [tag, w, h, touch, inset] of [['iphone app', 402, 874, true, 59], ['iphone app landscape (no status bar)', 874, 402, true, 0], ['mac app', 1440, 900, false, 0], ['ipad safari', 834, 1194, true, 0]]) {
   const p = await b.newPage();
   await p.setViewport({ width: w, height: h, hasTouch: touch, isMobile: touch, deviceScaleFactor: 1 });
   if (tag.includes('app')) await asApp(p, inset);
   await p.goto(ORIGIN + '/?preview=1#/library', { waitUntil: 'networkidle0' }); await sleep(400);
-  const r = await p.evaluate(() => Math.round(document.querySelector('.topedge').getBoundingClientRect().height));
-  check(`${tag}: band ${want}px`, r === want, String(r));
-  if (inset) { const bad = await bandCheck(p, inset); check(`${tag}: content below the band`, bad.length === 0, bad.join(' | ')); }
+  const bad = await topCheck(p, inset); check(`${tag}: no band, content right below the inset`, bad.length === 0, bad.join(' | '));
   await p.close();
 }
 
@@ -138,8 +134,9 @@ const p = await b.newPage(); await p.goto(ORIGIN + '/?preview=1#/library', { wai
 const meta = await p.$eval('meta[name="apple-mobile-web-app-status-bar-style"]', (m) => m.content);
 check('status bar style is black-translucent (no system veil)', meta === 'black-translucent', meta);
 const css = await p.evaluate(async () => (await (await fetch('css/app.css')).text()));
-check('sidebar pads by the top band', /\.side \{[^}]*padding: calc\(14px \+ var\(--sat\)\)/.test(css));
-check('top paddings use --sat, not the raw inset', (css.match(/env\(safe-area-inset-top\)/g) || []).length === 4, String((css.match(/env\(safe-area-inset-top\)/g) || []).length));
+check('sidebar pads by the inset (--sat)', /\.side \{[^}]*padding: calc\(14px \+ var\(--sat\)\)/.test(css));
+check('top paddings use --sat, not the raw inset', (css.match(/env\(safe-area-inset-top\)/g) || []).length === 2, String((css.match(/env\(safe-area-inset-top\)/g) || []).length));
+check('--sat is the plain inset (no extra band height)', /:root \{ --sat: env\(safe-area-inset-top\); \}/.test(css) && !/--sat: calc/.test(css) && !/\.topedge/.test(css));
 check('top bar is opaque (no blur)', /\.top \{[^}]*background: var\(--bg\);/.test(css) && !/\.top \{[^}]*backdrop-filter/.test(css));
 await b.close();
 console.log(`\n${pass} passed, ${fail} failed`);

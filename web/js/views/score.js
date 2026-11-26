@@ -591,6 +591,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get tempo() { return Math.round(tempoExact()); }, get scoreTempo() { return scoreTempo(); }, setTempo,
     // Chords: play the chord names too (piano only; hidden when the score has none)
     get hasChords() { return chordList.length > 0; }, get chordPlay() { return chordPlay; },
+    get chordTimes() { return chordList; }, // [{q, name}] in score time, not transposed (the chords strip while playing)
     setChordPlay(on) { chordPlay = !!on; try { localStorage.setItem(cpKey, chordPlay ? '1' : '0'); } catch {} midi?.setChords(chordsWanted()); },
     // Hands: the staves' names ([] / one staff: no picker), the muted ones; setMuted takes effect at once (while playing too)
     get staves() { return staves(); }, get muted() { return muted(); },
