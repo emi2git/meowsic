@@ -152,6 +152,73 @@ def test_api_preview_tells_when_a_tie_went(client):
     assert j['ok'] and slurs(saved) == [(72, 79)] and len(ties(saved)) == 2
 
 
+# ---------- a tie over a D.S. jump (When I Grow Up: bar 35's last C5 tied to the segno bar's parenthesized C5) ----------
+def _tn(x, q, kinds, voice=1):
+    n = ev(x, q, 1, voice)
+    n = n.replace('<voice>', ''.join(f'<tie type="{k}"/>' for k in kinds) + '<voice>', 1)
+    return n.replace('</note>', '<notations>' + ''.join(f'<tied type="{k}"/>' for k in kinds) + '</notations></note>')
+
+
+SEGNO = '<direction placement="above"><direction-type><segno/></direction-type><sound segno="s1"/></direction>'
+DS = '<direction placement="above"><direction-type><words>D.S. al Coda</words></direction-type></direction>'
+
+
+def ds_score(jump=True, start_pitch='C5'):
+    """Bar 2 has the segno and a voice-2 C5 (parenthesized) with the tie stop; bar 3 ends on a tied C5 and the D.S.;
+    bar 4 starts on another C5 (the next note in time, which is NOT the tie's partner)."""
+    paren = _tn('C5', 2, ['stop'], 2).replace('<staff>', '<notehead parentheses="yes">normal</notehead><staff>', 1)
+    rh = [[ev('C5', 4)],
+          ([SEGNO] if jump else []) + [ev('E5', 4), '<backup><duration>16</duration></backup>', paren, ev('R', 2, 1, 2)],
+          [ev('D5', 2), _tn(start_pitch, 2, ['start'])] + ([DS] if jump else []),
+          [ev('C5', 4)]]
+    lh = [[ev('C3', 4, 2)] for _ in range(4)]
+    return score(rh, lh)
+
+
+def _tied_at(t):
+    """{(bar, midi, voice): kinds} of the tied notes."""
+    els = list(sm.edit_part(root(t))[1].iter('note'))
+    out = {}
+    for n in ns(t):
+        if n.get('rest'): continue
+        el = els[n['ref']]
+        k = sorted({e.get('type') for e in el.findall('tie')} | {e.get('type') for e in el.findall('notations/tied')})
+        if k: out[(n['bar'], n['midi'], str(n['voice']))] = k
+    return out
+
+
+@pytest.mark.parametrize('op', [{'op': 'chord', 'bar': 0, 'on': 0, 'text': 'C'}, {'op': 'pitch', 'by': 1}, {'op': 'len', 'q': 4}])
+def test_a_tie_over_a_ds_jump_stays(op):
+    y = ds_score()
+    assert _tied_at(y) == {(1, 72, '2'): ['stop'], (2, 72, '1'): ['start']}
+    op = dict(op)
+    if op['op'] != 'chord': op['refs'] = [ref(y, 0, 72)]  # the first bar's C5: far from the D.S. tie
+    info = {}
+    out, _ = sm.apply_ops(y, [op], info)
+    assert _tied_at(out) == {(1, 72, '2'): ['stop'], (2, 72, '1'): ['start']}  # kept; no stop put on bar 4's C5
+    assert info['tiesGone'] == 0
+
+
+def test_a_broken_tie_is_still_fixed_and_counted():
+    # no D.S.: bar 3's tied C5 meets bar 4's C5, so the stop goes there and the stray stop in bar 2 goes (counted)
+    info = {}
+    out, _ = sm.apply_ops(ds_score(jump=False), [{'op': 'chord', 'bar': 0, 'on': 0, 'text': 'C'}], info)
+    assert _tied_at(out) == {(2, 72, '1'): ['start'], (3, 72, '1'): ['stop']} and info['tiesGone'] == 1
+    # a D.S. but the tied note is a D5: no D5 at the segno nor after it -> both halves go (one tie)
+    info = {}
+    out, _ = sm.apply_ops(ds_score(start_pitch='D5'), [{'op': 'chord', 'bar': 0, 'on': 0, 'text': 'C'}], info)
+    assert _tied_at(out) == {} and info['tiesGone'] == 1
+
+
+def test_api_preview_counts_ties_over_a_ds_jump(client):
+    it = client.post('/api/items', json={'kind': 'score', 'title': 'DS', 'musicxmlText': ds_score()}).json()
+    p = client.post(f'/api/items/{it["id"]}/editnotes/preview', json={'ops': [{'op': 'chord', 'bar': 0, 'on': 0, 'text': 'Csus'}]}).json()
+    assert p['tiesGone'] == 0 and _tied_at(p['xml']) == {(1, 72, '2'): ['stop'], (2, 72, '1'): ['start']}
+    it = client.post('/api/items', json={'kind': 'score', 'title': 'No DS', 'musicxmlText': ds_score(jump=False)}).json()
+    p = client.post(f'/api/items/{it["id"]}/editnotes/preview', json={'ops': [{'op': 'chord', 'bar': 0, 'on': 0, 'text': 'C'}]}).json()
+    assert p['tiesGone'] == 1
+
+
 # ---------- real scores (read-only copies) ----------
 REAL = Path(os.environ.get('MEOWSIC_REAL_SCORES', '/nonexistent'))
 FILES = sorted(REAL.glob('*.musicxml')) if REAL.is_dir() else []

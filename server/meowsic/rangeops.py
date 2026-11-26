@@ -459,7 +459,7 @@ def _notes_of(part, refs, rests_ok=False):
 
 def range_op(text, op, info=None):
     from .barnorm import normalize_bar, tidy_score
-    from .staffmove import _head, _midi, _slur_mark, _tie_chain, _tie_count, fix_slurs, fix_ties
+    from .staffmove import _head, _midi, _slur_mark, _tie_chain, _tie_count, fix_slurs, fix_ties, ties_gone
     from .barops import staves as n_staves
     info = {} if info is None else info
     kind = op.get('op')
@@ -501,7 +501,7 @@ def range_op(text, op, info=None):
         touched = picked
         acc_bars = {bar_of[i] for i in chain if i in bar_of}
         tidy_accidentals(part, acc_bars)
-        fix_ties(part)
+        dropped = fix_ties(part)
     else:
         bars = geometry(part)
         snap = None
@@ -545,9 +545,9 @@ def range_op(text, op, info=None):
         added += nb.get('ties', 0)
         tidy_score(root)
         fix_slurs(part, info.pop('snap'))
-        fix_ties(part)
+        dropped = fix_ties(part)
         tidy_accidentals(part, {b for b, _, _ in tidy})
-    gone = max(0, ties_before + added - _tie_count(part))
+    gone = ties_gone(ties_before + added, part, dropped)
     ET.indent(root, space='  ')
     out = _head(text) + ET.tostring(root, encoding='unicode') + '\n'
     ref = {id(e): i for i, e in enumerate(part.iter('note'))}

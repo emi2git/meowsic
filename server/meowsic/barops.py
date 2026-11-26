@@ -337,7 +337,7 @@ def _check_field(root, old_nums):
 
 
 def bar_op(text, op):
-    from .staffmove import _has_tie, _head, _read_bar, _slur_mark, _tie_count, _timeline, edit_part, fix_slurs, fix_ties
+    from .staffmove import _has_tie, _head, _read_bar, _slur_mark, _tie_count, _timeline, edit_part, fix_slurs, fix_ties, ties_gone
     from .barnorm import tidy_score
     kind = op.get('op')
     root = ET.fromstring(text.encode('utf-8'))
@@ -379,8 +379,7 @@ def bar_op(text, op):
     for p, snap in snaps: fix_slurs(p, snap)
     for p in parts:
         if p is not part: fix_ties(p)
-    fix_ties(part)
-    gone = max(0, ties_before - _tie_count(part))
+    gone = ties_gone(ties_before, part, fix_ties(part))
     ET.indent(root, space='  ')
     ref = {id(e): i for i, e in enumerate(part.iter('note'))}
     return _head(text) + ET.tostring(root, encoding='unicode') + '\n', sorted({ref[id(e)] for e in out if id(e) in ref}), gone

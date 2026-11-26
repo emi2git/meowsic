@@ -43,6 +43,30 @@ def test_harmony_round_trip_and_tones():
     assert chordname.tones('N.C.') is None
 
 
+def test_sus_spellings_play_no_third_and_keep_their_text():
+    """A bare "sus" is sus4 (Csus = C F G, not a C major triad); the kind says suspended-*, the other tones are
+    degrees (MuseScore's spelling), and the printed text stays as typed."""
+    def deg(h): return [(int(d.findtext('degree-value')), int(d.findtext('degree-alter')), d.findtext('degree-type')) for d in h.findall('degree')]
+    for typed, text, kind, iv, degrees in [
+            ('Csus', 'sus', 'suspended-fourth', [0, 5, 7], []),
+            ('Csus4', 'sus4', 'suspended-fourth', [0, 5, 7], []),
+            ('Csus2', 'sus2', 'suspended-second', [0, 2, 7], []),
+            ('C7sus', '7sus', 'suspended-fourth', [0, 5, 7, 10], [(7, 0, 'add')]),
+            ('C7sus4', '7sus4', 'suspended-fourth', [0, 5, 7, 10], [(7, 0, 'add')]),
+            ('C7sus2', '7sus2', 'suspended-second', [0, 2, 7, 10], [(7, 0, 'add')]),
+            ('Csus9', '9sus4', 'suspended-fourth', [0, 5, 7, 10, 14], [(7, 0, 'add'), (9, 0, 'add')]),  # = C9sus4
+            ('C9sus', '9sus', 'suspended-fourth', [0, 5, 7, 10, 14], [(7, 0, 'add'), (9, 0, 'add')]),
+            ('Csus/G', 'sus', 'suspended-fourth', [0, 5, 7], [])]:
+        name = chordname.parse(typed)
+        h = chordname.harmony(name)
+        k = h.find('kind')
+        assert (k.get('text'), k.text, deg(h)) == (text, kind, degrees), typed
+        assert chordname.tones(name)[1] == iv, typed
+        assert chordname.name_of(h) == name, typed
+    assert chordname.tones('Csus/G') == (0, [0, 5, 7], 7)
+    assert chordname.harmony('C').find('kind').text == 'major' and chordname.harmony('G7').find('kind').text == 'dominant'
+
+
 def test_write_change_and_take_away_a_chord_name():
     x = tune()
     out, _, _ = op(x, op='chord', bar=0, on=0, text='C')

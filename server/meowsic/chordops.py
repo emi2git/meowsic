@@ -154,7 +154,7 @@ def realize(root, part, start, end, pattern, info):
 def chord_op(text, op, info=None):
     from .barnorm import normalize_bar, tidy_score
     from .rangeops import q_of, tidy_accidentals
-    from .staffmove import _head, _slur_mark, _tie_count, edit_part, fix_slurs, fix_ties
+    from .staffmove import _head, _slur_mark, _tie_count, edit_part, fix_slurs, fix_ties, ties_gone
     info = {} if info is None else info
     kind = op.get('op')
     root = ET.fromstring(text.encode('utf-8'))
@@ -181,9 +181,9 @@ def chord_op(text, op, info=None):
                 if b == bi: normalize_bar(m, st, v, tsig, div, keep=set(), info={})
     tidy_score(root)
     if snap is not None: fix_slurs(part, snap)
-    fix_ties(part)
+    dropped = fix_ties(part)
     if tidy: tidy_accidentals(part, {b for b, _, _ in tidy})
-    gone = max(0, ties_before - _tie_count(part))
+    gone = ties_gone(ties_before, part, dropped)
     ET.indent(root, space='  ')
     out = _head(text) + ET.tostring(root, encoding='unicode') + '\n'
     ref = {id(e): i for i, e in enumerate(part.iter('note'))}
