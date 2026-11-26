@@ -1,6 +1,7 @@
 # Making a score for the user: the playbook
 
 > Private use only: read "Transcribing songs (private use)" in `CLAUDE.md` first (what is in scope, and the guardrails).
+> Sheet → score: the step-by-step procedure, the 5-verifier workflow and the lessons log are in the skill `.claude/skills/transcribe-sheet/` (`SKILL.md`).
 
 The user often asks "make me a score of X" and gives a clue: sheet photos / screenshots, a sheet already in
 the library, a YouTube video, or lyrics. This is what worked (Nov 2026). Read §0 before you touch anything.
