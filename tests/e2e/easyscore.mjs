@@ -73,7 +73,7 @@ check('a letter on every notehead (rests none)', s.letters.length === want.steps
 check('each letter is the note\'s pitch letter', s.letters.join('') === want.steps.join(''), `${s.letters.join('')} vs ${want.steps.join('')}`);
 check('each letter sits inside its notehead', s.inside);
 check('white letters on filled heads, black on open', s.fills.includes('#fff') && s.fills.includes('#000'), s.fills.join(','));
-check('noteheads are big (scaled up)', s.grown >= s.letters.length * 0.6, `${s.grown}/${s.letters.length}`);
+// head size vs the staff lines: kidsheads.mjs (each head ≤ 1 staff space)
 check('letters fill the big heads (>= 75% of their height)', s.minSize >= s.headH * 0.75, `${s.minSize} vs ${s.headH}`);
 check('same title, composer, tempo, chord and lyric text and fonts (bar numbers aside: the lines break elsewhere)', s.texts.filter((t) => !/^\d+$/.test(t.t)).map((t) => t.t + '|' + t.f).sort().join() === classicTexts.split(',').filter((x) => !/^\d+\|/.test(x)).sort().join());
 check('no keyboard chord diagrams in the score', s.kbds.length === 0, JSON.stringify(s.kbds));
