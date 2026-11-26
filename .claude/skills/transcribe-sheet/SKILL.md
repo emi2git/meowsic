@@ -23,6 +23,15 @@ The main session is the PM. Subagents do the drafting, verifying, saving and fix
 - Temp files (page crops, drafts, downloads) go in the scratchpad. Delete them when done, because they hold the words. Nothing goes in `~/git/apps/meowsic`.
 - A video the user links as a check source may be downloaded without asking. Delete it after use.
 
+## 1a. Chords (hard, user rule 2026-11-26)
+**Every score must have chord symbols, covering the whole piece** (intro, interludes and ending too, not just a few bars).
+- The sheet prints chords: copy them **exactly as printed** (name and beat).
+- It doesn't: work them out from the harmony (piano LH + RH, or the melody plus any accompaniment). One chord per harmonic
+  change, usually per bar or half bar. Use a slash chord only where the bass clearly says so (C/E in a walking bass).
+- Always check that each chord fits the notes on its beat (root, quality, bass). Report the doubtful spots.
+- On an existing score, add them with the editnotes `chord` op: `{op:'chord', bar, on, text}` (bars 0-based, `on` in quarters from 0).
+- In a voice + piano score (2 parts) the op writes into the piano part (`staffmove.edit_part`).
+
 ## 2. Choose the source
 1. Find the sheet item(s): `GET /api/items?kind=sheet`, then match the title / album. Use **all** pages in order (`GET /api/items/{id}/pages/{n}`, n from 1).
 2. If a piano sheet exists, make a **piano** score. If only lead sheets exist, make a **lead** score: melody + chords + words. **Never add our own accompaniment or left hand.**
@@ -35,6 +44,7 @@ The main session is the PM. Subagents do the drafting, verifying, saving and fix
 - Write the MusicXML by hand from zoomed crops (about 3x, one system or bar at a time). OMR (Audiveris / homr) is only a first guess.
 - Every voice of every bar must sum to the time signature. Check `<divisions>`, `<backup>` / `<forward>` and the voice numbers.
 - Get the meter right: 6/8 = 2 × 3 eighths, 5/8 follows the printed beaming, and pickups use `pickup`. Keep ties as ties, dots as dots, and anticipations across the bar line as printed.
+- **Chords in the draft** (§1a): the printed ones at their beats, or derived ones over the whole piece, each checked against its notes.
 - Before handing the draft on, run `score-onsets.py draft.musicxml`: no `!SUM` or `!TYPE` flags allowed.
 
 ## 4. Save (see `saving.md`)
@@ -49,11 +59,13 @@ The main session is the PM. Subagents do the drafting, verifying, saving and fix
 
 ## 5. Verify (see `verify.md`)
 - Run 5 independent read-only agents, one method each: **visual**, **OMR diff**, **text layer**, **markings / structure** and **blind re-read**.
+- The markings / structure verifier also checks the chords: they cover the whole piece and each fits its notes.
 - Every method must compare **(onset, duration, pitch) per note** with `~/git/scripts/score-onsets.py`. **A matching pitch sequence is NOT a match.**
 - Then **one fixer** checks every finding against the sheet, applies the real ones, re-runs the onset / sum checks, renders the changed bars, and only then saves.
 
 ## 6. Report to the user
 - For each song: the item id, piano or lead (and why), the bar count, the fixes applied (bar + what), and the findings rejected.
+- The chord source (printed / derived) and the doubtful chords.
 - List oddities kept **as printed** (a wrong-looking chord, a missing bar on the sheet) and the bars still unsure.
 - Use counts for words, never the words themselves. Keep it short: a few lines per song.
 - If the user says a score is wrong, ask for the bar number and check that bar against the sheet before changing anything. Verified scores have been right before (see `lessons.md`).

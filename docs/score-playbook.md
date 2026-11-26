@@ -110,6 +110,12 @@ All API calls go to `https://localhost:5180/api/…`, with the CA at `~/Document
   phrase is suspicious (usually the note is held or tied over the beat).
 
 ## 5. Chord symbols
+- **Every score must have chord symbols, covering the whole piece** (user rule 2026-11-26), intro and ending included.
+- If the source sheet prints chords, copy them exactly as printed (name and beat).
+- Otherwise derive them from the harmony (piano LH + RH, or melody plus any accompaniment): one chord per harmonic change,
+  usually per bar or half bar. Check that each chord fits the notes on its beat (root, quality, bass), and report doubtful spots.
+- Add a missing set in one logged editnotes save (many `chord` ops; `on` in quarters from 0, bars 0-based). On a voice + piano
+  score the op writes into the piano part.
 - Work out the harmony from the notes (functional harmony, in the key). Use a slash chord only for clear bass motion
   (C/E in a walking-down line). `chordfind.py`, the automatic finder, never writes slash chords.
 - Write the names in the `chordname.py` grammar (`Bbm7`, `C/E`, `N.C.`) so the Play chords toggle can voice them.
