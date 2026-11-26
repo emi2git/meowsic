@@ -1,7 +1,7 @@
 // Verified badge against a test server (BASE, default :5347, a temp data folder). Never the real library.
-// Score view: an icon-only round toggle beside the title (seal outline, grey; aria-label/title "Not verified"); tap → filled green seal
-// with a check ("Verified") and the item has the
-// tag "Verified" (made if missing); an Activities row whose Undo takes it back; the library row shows a small ✓.
+// Score view: an icon-only round toggle beside the title (amber seal outline; aria-label/title "Not verified"); tap → a quiet grey
+// seal with a check ("Verified") and the item has the tag "Verified" (made if missing); an Activities row whose Undo takes it back.
+// Library list: an unverified score shows a small amber dot ("Not verified", light + dark); a verified score and a sheet show no mark.
 // Tags is in the App section (left bar after Manage library; iPhone: the More menu, not the tab bar).
 // Mac, iPad Pro 13 and iPhone Air; screenshots in SHOTS.
 import './live-guard.mjs'; // refuses the live app / library
@@ -26,6 +26,12 @@ const xml = (title) => '<?xml version="1.0" encoding="UTF-8"?>\n<score-partwise 
 const badge = (page) => page.$eval('#it-verified', (e) => { const seal = e.querySelector('svg .seal'); return { on: e.classList.contains('on'), pressed: e.getAttribute('aria-pressed'), text: e.textContent.trim(), label: e.getAttribute('aria-label'), title: e.title, w: e.offsetWidth, h: e.offsetHeight, round: getComputedStyle(e).borderRadius === '50%', tgBtn: e.classList.contains('tg-btn'), seal: !!seal, fill: seal ? getComputedStyle(seal).fill : '', tick: !!e.querySelector('svg .tick'), color: getComputedStyle(e).color, top: e.getBoundingClientRect().top }; }).catch(() => null);
 const waitTags = async (id, cond, ms = 4000) => { const end = Date.now() + ms; let t; while (Date.now() < end) { t = (await api('/items/' + id)).tags; if (cond(t)) return t; await sleep(150); } return t; };
 
+const AMBER = { light: 'rgb(197, 139, 0)', dark: 'rgb(233, 185, 73)' };
+const libRows = (page, q) => page.evaluate(async (q) => { const i = document.querySelector('#lib-q'); i.value = q; i.dispatchEvent(new Event('input', { bubbles: true })); await new Promise((r) => setTimeout(r, 600));
+  return [...document.querySelectorAll('#lib-rows tr.row')].map((r) => { const m = r.querySelector('.c-title .unverified-mark'); return { t: r.querySelector('.c-title')?.textContent, old: !!r.querySelector('.verified-mark'), mark: !!m, label: m?.getAttribute('aria-label'), title: m?.title, bg: m ? getComputedStyle(m).backgroundColor : '', w: m?.offsetWidth }; }); }, q);
+const sheetT = `Plain sheet ${stamp}`;
+await send('POST', '/items', { kind: 'sheet', title: sheetT, artist: 'Test', tags: [] });
+
 for (const [name, vp, dev] of [['Mac', MAC, 'mac'], ['iPad Pro 13', IPAD, 'ipad'], ['iPhone Air', PHONE, 'iphone']]) {
   console.log(name);
   const title = `Verify me ${stamp} ${dev}`;
@@ -34,10 +40,23 @@ for (const [name, vp, dev] of [['Mac', MAC, 'mac'], ['iPad Pro 13', IPAD, 'ipad'
   page.on('pageerror', (e) => errs.push(`${name}: ${e.message}`)); page.on('console', (m) => m.type() === 'error' && !/404|409/.test(m.text()) && errs.push(`${name}: ${m.text()}`));
   const tap = async (sel) => { if (vp.hasTouch) await page.tap(sel); else await page.click(sel); await sleep(400); };
 
+  // library before verifying: the unverified score has the small amber dot, light and dark
+  for (const theme of ['light', 'dark']) {
+    await page.goto(BASE + '#/library', { waitUntil: 'networkidle0' }); await page.evaluate((t) => localStorage.setItem('meowsic-theme', t), theme);
+    await page.goto(BASE + '#/library?kind=score', { waitUntil: 'networkidle0' }); await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
+    const r = await libRows(page, title);
+    check(`${theme}: unverified score row shows a small amber dot "Not verified", no old ✓`, r.length === 1 && r[0].mark && !r[0].old && r[0].label === 'Not verified' && r[0].title === 'Not verified' && r[0].bg === AMBER[theme] && r[0].w <= 10, JSON.stringify(r));
+    await page.screenshot({ path: `${SHOTS}/${dev}-library-unverified-${theme}.png` });
+  }
+  await page.evaluate(() => localStorage.setItem('meowsic-theme', 'light'));
+  await page.goto(BASE + '#/library?kind=sheet', { waitUntil: 'networkidle0' }); await page.reload({ waitUntil: 'networkidle0' }); await sleep(800);
+  const sr = await libRows(page, sheetT);
+  check('a sheet row shows no mark', sr.length === 1 && !sr[0].mark && !sr[0].old, JSON.stringify(sr));
+
   await page.goto(BASE + '#/item/' + sc.id, { waitUntil: 'networkidle0' }); await sleep(1200);
   let bd = await badge(page);
   check('score view shows the Verified toggle, off: icon-only round, seal outline, no tick', bd && !bd.on && bd.pressed === 'false' && bd.text === '' && bd.tgBtn && bd.round && bd.w === bd.h && bd.w <= 40 && bd.seal && bd.fill === 'none' && !bd.tick, JSON.stringify(bd));
-  check('off: aria-label and title "Not verified"; quiet grey', bd && bd.label === 'Not verified' && bd.title === 'Not verified' && !/rgb\(15, 122, 61\)/.test(bd.color), JSON.stringify(bd));
+  check('off: aria-label and title "Not verified"; amber', bd && bd.label === 'Not verified' && bd.title === 'Not verified' && bd.color === AMBER.light, JSON.stringify(bd));
   const sc2 = await page.$eval('#it-verified', (e) => { const o = document.createElement('button'); o.className = 'tg-btn'; e.parentNode.appendChild(o); const r = [e.offsetWidth, o.offsetWidth]; o.remove(); return r; });
   check('same size as the score toggle buttons', sc2[0] === sc2[1], JSON.stringify(sc2));
   check('badge is in the title bar, on screen', bd && bd.top >= 0 && bd.top < 120 && (await page.$eval('#it-verified', (e) => !!e.closest('.item-top'))), JSON.stringify(bd));
@@ -45,7 +64,7 @@ for (const [name, vp, dev] of [['Mac', MAC, 'mac'], ['iPad Pro 13', IPAD, 'ipad'
 
   await tap('#it-verified');
   bd = await badge(page);
-  check('tap → filled green seal with a check, icon only', bd?.on && bd.pressed === 'true' && bd.text === '' && /rgb\(15, 122, 61\)/.test(bd.fill) && bd.tick, JSON.stringify(bd));
+  check('tap → quiet grey seal with a check (no green, no amber, no fill), icon only', bd?.on && bd.pressed === 'true' && bd.text === '' && bd.fill === 'none' && bd.tick && bd.color === 'rgb(114, 119, 127)', JSON.stringify(bd));
   check('on: aria-label and title "Verified"', bd?.label === 'Verified' && bd.title === 'Verified', JSON.stringify(bd));
   check('toast "Marked verified"', await page.evaluate(() => document.body.innerText.includes('Marked verified')));
   let t = await waitTags(sc.id, (x) => x.includes('Verified'));
@@ -57,11 +76,10 @@ for (const [name, vp, dev] of [['Mac', MAC, 'mac'], ['iPad Pro 13', IPAD, 'ipad'
   await page.reload({ waitUntil: 'networkidle0' }); await sleep(1200);
   check('after reload the badge is still on', (await badge(page))?.on);
 
-  // the library list shows the small mark next to this score only
+  // the library list shows no mark on a verified score
   await page.goto(BASE + '#/library?kind=score', { waitUntil: 'networkidle0' }); await sleep(800);
-  await page.type('#lib-q', title); await sleep(500);
-  const row = await page.$$eval('#lib-rows tr.row', (rs) => rs.map((r) => ({ t: r.querySelector('.c-title')?.textContent, mark: !!r.querySelector('.verified-mark') })));
-  check('library row shows the verified mark', row.length === 1 && row[0].mark, JSON.stringify(row));
+  const row = await libRows(page, title);
+  check('verified score row shows no mark', row.length === 1 && !row[0].mark && !row[0].old, JSON.stringify(row));
   check('no other tags in the list', (await page.$$eval('#lib-rows .tagchip, #lib-rows .c-tag', (e) => e.length)) === 0);
   await page.screenshot({ path: `${SHOTS}/${dev}-library.png` });
 

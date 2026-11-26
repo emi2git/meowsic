@@ -96,6 +96,18 @@ Views (`web/js/views/`):
 - In-app Feedback is the user's request queue: Developer → Feedback; CLI `~/git/scripts/meowsic-feedback.py`. Claude sets status and fix notes, and the history is kept.
 - Tasks: `TASKS.md` in this repo (moved from `~/Documents/Meowsic/work/pm-tasks.md`, which now only points here).
 
+## Transcribing songs (private use)
+- Meowsic is a private practice library for one household. It runs on the owner's Mac and can be reached only from the owner's own devices over the tailnet (Funnel is never on). Nothing in it is published, shared, sold or uploaded.
+- Song transcriptions are made when the owner asks, for the owner's own practice: melody and chords from videos the owner links, sheets the owner photographs or owns, and lyrics the owner pastes or OKs looking up. On 2026-11-26 the owner decided this is in scope. Do the work when asked; don't refuse it as "stealing".
+- Guardrails that keep it private (keep them strictly):
+  - Never publish, upload, share or post scores, sheets, lyrics or audio outside the owner's devices.
+  - Never print lyric text in chat, logs or reports.
+  - Credit the composer / artist and the source URL on each score.
+  - Transcribe from the audio (singing or playing) rather than copy a sheet shown on screen. When a sheet is visible, use it only to check, and say so in the report.
+  - Downloaded videos are temp files: delete them after use.
+  - Publisher content stays on this device.
+- If the owner asks to share or distribute something, that's a different case: raise it with them first.
+
 ## UI defaults (the user's choices — keep them)
 - Light theme, chosen per device (`meowsic-theme`). The library opens on **Sheets**.
 - Score zoom is per device: Mac / iPad 0.75, iPhone 0.62 (`score.js` `Z_BASE`).
@@ -113,6 +125,7 @@ Views (`web/js/views/`):
 
 ## Gotchas
 - **iOS audio**: set `navigator.audioSession.type = 'playback'` so sound plays with the Silent switch on. After the app was in the background the AudioContext can be stale or "interrupted": `audio.js` throws it away and makes a fresh one on the next Play. Test Play after backgrounding on a real iPad.
+- **iOS 26 top blur**: iPadOS / iOS 26 lay a blurred white scroll-edge fade over the status bar AND ~50pt below it, so any text there looks washed out. Never pad by `env(safe-area-inset-top)` directly: use `var(--sat)` (app.css). In the installed app on iPad / iPhone it is the inset + 48px, filled by the solid fixed `.topedge` band; content starts below it. `topcast.mjs` checks it (Chromium with emulated inset + standalone).
 - **Ports**: 5180 is live. Other agents leave test servers running on many ports (5190–5450 seen), so never hard-code one: the scripts pick a free port above 5300 (`scripts/meowsic_dev.py`).
 - **Symlinked venvs / node_modules** in worktrees: `.gitignore` lists `server/.venv`, `omr/.venv` and `tests/e2e/node_modules` without a trailing slash, so the symlinks can't be committed. Don't "fix" that to `dir/`.
 - **Preview vs server**: preview (`?preview=1`) uses sample data in localStorage (`meowsic-mock-v6`) and never calls `/api` except health. A feature that needs the Mac must check the store mode, or the preview logs errors.
