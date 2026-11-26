@@ -125,11 +125,11 @@ NOT_ARTIST = (AI_SOURCE, *OLD_CREDITS)  # an earlier one-off put these in scores
 
 
 def score_byline(source: str = '', ai=0) -> str:
-    """The small credit drawn on a score: what Meowsic did. Versions made from another score: arranged; photo → score:
-    read; pieces Meowsic wrote itself: made; recordings / videos / audio files: transcribed."""
+    """The small credit drawn on a score: what Meowsic did. Versions made from another score: arranged; pieces Meowsic
+    wrote itself: made; recordings / videos / audio files and photo → score: transcribed (scores read from a sheet said
+    "Read by Meowsic" until Nov 2026: still matched below, and POST /api/items/{id}/credit rewrites it)."""
     s = source or ''
     if s.startswith('From the score'): return 'Arranged by Meowsic'
-    if s.startswith('From the sheet'): return 'Read by Meowsic'
     if ai or s in NOT_ARTIST: return 'Made by Meowsic'
     return 'Transcribed by Meowsic'
 

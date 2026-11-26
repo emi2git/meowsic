@@ -1,6 +1,7 @@
-// Kids note names (the kitten button): big noteheads with the note's letter inside, on every staff, like an
-// E-Z Play / big-note children's sheet — white letters on filled heads, black on open ones. The notes are
-// spaced wider so the big heads have room; everything else stays OSMD's classic engraving (title, composer,
+// Kids note names (the kitten button): noteheads with the note's letter inside, on every staff, like an
+// E-Z Play / big-note children's sheet — white letters on filled heads, black on open ones. A head is never
+// taller than one staff space, so a space note (F in the treble) sits between its two lines and a line note is
+// centred on its line (kidsheads.mjs measures it). The notes are spaced a little wider for the letters; everything else stays OSMD's classic engraving (title, composer,
 // tempo, chord symbols, lyrics). No chord diagrams (those are the ukulele panel's, ukepanel.js).
 // Works on a rendered OpenSheetMusicDisplay instance (screen and print).
 import { splitChord, chordIntervals, notePc, esc } from './chords.js';
@@ -18,16 +19,20 @@ export function easyOn() {
 }
 export function setEasy(it, on) { try { localStorage.setItem(KIDS_KEY, on ? '1' : '0'); } catch {} }
 
-// how big the heads get (× a normal head), and the wider spacing that makes room for them
-export const KIDS_GROW = 1.85;
+// how big the heads are (× a normal head): a normal head is ~1.15 staff spaces tall as drawn, so 0.78 makes it
+// ~0.9 — inside a space with both lines still showing. Never more than 1 space: bigger heads hide which line or space a
+// note is on (they were 1.85× until 2026-11-26: ~2 spaces tall, covering both lines). The spacing is a bit wider
+// so the letters have room.
+export const KIDS_GROW = 0.78;
+// …and the staff is drawn this much bigger in kids mode (screen and print), so those heads are big enough to read
+export const KIDS_STAFF = 1.5;
 export function kidsRules(r) {
-  r.VoiceSpacingMultiplierVexflow = 1.25; r.VoiceSpacingAddendVexflow = 5; r.MinNoteDistance = 4;
-  r.BetweenStaffDistance += 2.5; r.StaffDistance += 3;
-  r.KidsHeadScale = KIDS_GROW; // read by the VexFlow hook below: heads are big before layout
+  r.VoiceSpacingMultiplierVexflow = 1.1; r.VoiceSpacingAddendVexflow = 4; r.MinNoteDistance = 3;
+  r.KidsHeadScale = KIDS_GROW; // read by the VexFlow hook below: heads are sized before layout
   hookBigHeads();
 }
 
-// Big heads, engraved properly: each VexFlow StaveNote OSMD builds gets its noteheads scaled (glyph_font_scale)
+// Kids heads, engraved properly: each VexFlow StaveNote OSMD builds gets its noteheads scaled (glyph_font_scale)
 // *before* layout, so VexFlow itself puts the stem at the head's edge (right going up, left going down), and
 // spaces beams, flags, dots, accidentals and ties for the big head. Only for scores whose rules ask for it
 // (kidsRules); grace and cue notes stay small. Ledger lines are widened to fit (VexFlow sizes them unscaled).
@@ -67,11 +72,11 @@ function growHeads(vf, grow) {
   }
 }
 
-// what Meowsic did, drawn small on a score: Arranged (a version made from another score), Read (photo → score),
-// Made (a piece Meowsic wrote), Transcribed (a recording / video / audio file) — the server writes the same (db.score_byline)
+// what Meowsic did, drawn small on a score: Arranged (a version made from another score),
+// Made (a piece Meowsic wrote), Transcribed (a recording / video / audio file, or photo → score; once "Read by Meowsic") — the server writes the same (db.score_byline)
 export function byline(it) {
   const src = it.source || '';
-  return src.startsWith('From the score') ? 'Arranged by Meowsic' : src.startsWith('From the sheet') ? 'Read by Meowsic'
+  return src.startsWith('From the score') ? 'Arranged by Meowsic'
     : it.ai || /^Meowsic( AI)?$/.test(src) ? 'Made by Meowsic' : 'Transcribed by Meowsic';
 }
 
@@ -188,13 +193,13 @@ export function chordsOf(osmd) {
 // the drawn pitch's letter (accidentals are drawn as signs, so just A–G)
 export const noteLetter = (gn) => LETTER[(gn.sourceNote.TransposedPitch || gn.sourceNote.Pitch)?.FundamentalNote];
 
-// letters inside the noteheads, the heads grown `grow` times (away from the stem, so it stays attached; a
-// chord's heads only as far as the room between them allows). White on filled heads (quarter and shorter),
-// black on open ones (half, whole). No letters on rests. minPx: on a small screen (iPhone) the heads grow
-// more if needed for the letter to be at least this many pixels high on screen.
-export function drawNoteLetters(osmd, { grow: grow0 = KIDS_GROW, minPx = 0 } = {}) {
+// letters inside the noteheads. Heads are sized by VexFlow (hookBigHeads); if that hook is missing, they are
+// scaled here by `grow` (away from the stem, so it stays attached; a chord's heads only as far as the room
+// between them allows). White on filled heads (quarter and shorter), black on open ones (half, whole), the
+// letter as big as the head allows (scales with it at every zoom). No letters on rests. The head never grows
+// past one staff space: that would hide its line / space.
+export function drawNoteLetters(osmd, { grow: grow0 = KIDS_GROW } = {}) {
   const svgs = new Set();
-  const pxPer = new Map(); // svg → screen px per svg unit
   for (const gve of graphicalNotes(osmd)) {
     const notes = gve.notes.filter((n) => n.sourceNote && !n.sourceNote.isRest() && (n.sourceNote.TransposedPitch || n.sourceNote.Pitch));
     if (!notes.length) continue;
@@ -215,11 +220,6 @@ export function drawNoteLetters(osmd, { grow: grow0 = KIDS_GROW, minPx = 0 } = {
       const a = boxes[i - 1].b, c = boxes[i].b;
       if (!native && Math.abs(a.x - c.x) < a.width * 0.6) grow = Math.min(grow, Math.max(1, (Math.abs(a.y - c.y) / a.height) * 0.98));
     }
-    if (minPx && !native) {
-      if (!pxPer.has(svg)) { const vb = (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number); pxPer.set(svg, vb[2] ? svg.getBoundingClientRect().width / vb[2] : 1); }
-      const px = boxes[0].b.height * 0.8 * pxPer.get(svg);
-      if (px > 0 && px < minPx) grow = Math.max(grow, Math.min(2.2, minPx / px));
-    }
     const sorted = [...notes].sort((a, b) => (a.sourceNote.TransposedPitch || a.sourceNote.Pitch).getHalfTone() - (b.sourceNote.TransposedPitch || b.sourceNote.Pitch).getHalfTone());
     const stem = g.querySelector('.vf-stem path, path.vf-stem');
     const sx = stem ? stem.getBBox().x : null;
@@ -235,17 +235,23 @@ export function drawNoteLetters(osmd, { grow: grow0 = KIDS_GROW, minPx = 0 } = {
       if (grow !== 1) h.setAttribute('transform', `translate(${ax} ${cy}) scale(${grow}) translate(${-ax} ${-cy})`);
       const cx = ax + (b.x + b.width / 2 - ax) * grow;
       const filled = gn.sourceNote.Length.RealValue < 0.5;
-      const fs = b.height * grow * (filled ? 0.8 : 0.76);
-      // an open head is drawn as a clean white oval so the black letter reads inside it
+      const H = b.height * grow; // the head's drawn height (≤ 1 staff space)
+      // a bold capital's cap height is ~0.72 em: the letter fills ~2/3 of the head's height
+      const fs = H * (filled ? 0.95 : 0.88);
+      // an open head is drawn as a clean white oval so the black letter reads inside it, no taller than the glyph
+      // it replaces (outer edge of the tilted, stroked oval = the glyph's height)
       if (!filled) {
         const e = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
-        const sw = b.height * 0.14, rx = (b.width * grow) / 2 - sw / 4, ry = (b.height * grow) / 2 - sw / 4;
+        const tilt = gn.sourceNote.Length.RealValue < 1 ? 15 : 0, th = (tilt * Math.PI) / 180;
+        const sw = H * 0.12, rx = (b.width * grow) / 2 - sw / 2, half = H / 2 - sw / 2;
+        const ry = Math.sqrt(Math.max(half * half - (rx * Math.sin(th)) ** 2, (half * 0.6) ** 2)) / Math.cos(th);
         e.setAttribute('cx', cx.toFixed(2)); e.setAttribute('cy', cy.toFixed(2));
         e.setAttribute('rx', rx.toFixed(2)); e.setAttribute('ry', ry.toFixed(2));
-        if (gn.sourceNote.Length.RealValue < 1) e.setAttribute('transform', `rotate(-15 ${cx.toFixed(2)} ${cy.toFixed(2)})`);
+        if (tilt) e.setAttribute('transform', `rotate(-${tilt} ${cx.toFixed(2)} ${cy.toFixed(2)})`);
         e.setAttribute('fill', '#fff'); e.setAttribute('stroke', '#000'); e.setAttribute('stroke-width', sw.toFixed(2));
         e.setAttribute('class', 'nl-head');
         layer.append(e);
+        h.__nlOval = e; // for tests (kidsheads.mjs)
         h.setAttribute('opacity', '0');
       }
       const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -258,6 +264,7 @@ export function drawNoteLetters(osmd, { grow: grow0 = KIDS_GROW, minPx = 0 } = {
       t.setAttribute('fill', filled ? '#fff' : '#000');
       t.setAttribute('class', 'nl');
       t.textContent = L;
+      t.__nlHead = h; // for tests (kidsheads.mjs)
       layer.append(t);
     });
   }

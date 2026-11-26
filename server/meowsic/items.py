@@ -1,4 +1,5 @@
-"""Items, trash, tags, plays, annotations, item files, sheet upload and score MusicXML."""
+"""Items, trash, tags, plays, annotations, item files, sheet upload and score MusicXML (get / put / revert, and
+POST /api/items/{id}/credit: the credits brought up to date, e.g. "Read by Meowsic" -> "Transcribed by Meowsic")."""
 import datetime
 import hashlib
 import io
@@ -589,3 +590,39 @@ def revert_musicxml(item_id: str, c=Depends(conn), cf=Depends(cfg)):
                                              'beforeSha': sha(now), 'afterSha': sha(out), 'what': 'note edits were reverted'},
                           f'Reverted note edits: {it["title"]}', f'Back to the original notes{kept}; the score before is kept in {hist}')
     return {'ok': True, 'staves': refresh_staves(c, cf, item_id), 'activity': aid, 'kept': rep}
+
+
+def _credit_detail(steps):
+    files = sum(len(s.get('files') or []) for s in steps)
+    return f'{len(steps)} score(s), {files} MusicXML file(s): the credit now says what Meowsic did ("Transcribed by Meowsic" …)'
+
+
+@router.post('/items/{item_id}/credit')
+def refresh_credit(item_id: str, body: dict | None = Body(None), c=Depends(conn), cf=Depends(cfg)):
+    """The score's MusicXML credits brought up to date (db.credit_xml: composer kept, arranger = db.score_byline), e.g.
+    an old "Read by Meowsic" -> "Transcribed by Meowsic". Both files (musicxml, musicxml_original); each file before goes
+    to .history/credit-<ms>-<name>. Calls within 15 min share one Activities row (op 'credit', creditfix.undo_step).
+    {dryRun: true} only says what would change. 423 while Edit notes is open (lock_middleware). Last modified stays."""
+    from .creditfix import sha
+    it, d = score_paths(c, cf, item_id)
+    by = score_byline(it.get('source') or '', it.get('ai'))
+    todo = []
+    for col, k in (('musicxml', 'musicxml'), ('musicxml_original', 'musicxmlOriginal')):
+        name = it.get(k)
+        if not name or not safe_file(d, name).is_file(): continue
+        p = safe_file(d, name)
+        x = p.read_text(encoding='utf-8')
+        y = credit_xml(x, None, by)
+        if y != x: todo.append((col, name, p, y))
+    out = {'ok': True, 'by': by, 'files': [n for _, n, _, _ in todo], 'activity': None}
+    if not todo or (body or {}).get('dryRun'): return out
+    t, files = now_ms(), []
+    (d / '.history').mkdir(exist_ok=True)
+    for col, name, p, y in todo:
+        keep = d / '.history' / f'credit-{t}-{name}'
+        shutil.copy2(p, keep)  # the file before first
+        p.write_text(y, encoding='utf-8')
+        files.append({'col': col, 'file': name, 'history': f'.history/{keep.name}', 'sha': sha(p)})
+    step = {'op': 'credit', 'id': item_id, 'title': it['title'], 'old': {}, 'new': {}, 'files': files}
+    out['activity'] = record_undo(c, 'credit', step, 'Score credits updated', _credit_detail, group='credit', window=15 * 60_000)
+    return out

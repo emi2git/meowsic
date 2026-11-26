@@ -14,7 +14,7 @@ import { incompleteBars, barFixSheet, fixBarOp } from '../incomplete.js';
 import { InkLayer } from './annotate.js';
 import { attachSwipe, flipBy } from '../swipe.js';
 import { isTouch, isNarrow } from '../device.js';
-import { easyOn, setEasy, classicXml, drawNoteLetters, kidsRules, noTempoXml } from '../easyscore.js';
+import { easyOn, setEasy, classicXml, drawNoteLetters, kidsRules, noTempoXml, KIDS_STAFF } from '../easyscore.js';
 import { chordsMode, setChordsMode, nextMode, MODE_LABEL, ukePanel } from '../ukepanel.js';
 const CHORD_ICON = { piano: 'piano', uke: 'ukulele', off: 'chordgrid' }; // the chords button shows its state
 import { simplePiano } from './simplepiano.js';
@@ -58,6 +58,8 @@ export function scoreBody(root, it, { perform = false } = {}) {
   //   Mac / iPad: 0.75 (the old 75%)   iPhone / narrow window: 0.62 (the old iPhone default, unchanged)
   const Z_BASE = { wide: 0.75, narrow: 0.62 };
   const zBase = () => (isNarrow() ? Z_BASE.narrow : Z_BASE.wide);
+  // the OSMD zoom drawn: kids note names draw the staff KIDS_STAFF× bigger, so heads that fit a staff space are big enough to read
+  const zDraw = () => zoom * zBase() * (easy ? KIDS_STAFF : 1);
   const zDef = () => (perform ? 1.25 : 1);
   const zClamp = (z) => Math.max(0.6, Math.min(2, Math.round(z * 100) / 100));
   // saved zooms keep their drawn size; each old key is converted once, then moved to zKey and removed:
@@ -177,7 +179,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     unsureLyrics();
     paper.classList.toggle('easy', easy);
     if (!easy) return;
-    drawNoteLetters(osmd, { minPx: isNarrow() ? 9 : 0 }); // iPhone: heads grow more if needed so the letters stay readable
+    drawNoteLetters(osmd); // heads ≤ 1 staff space at every zoom (the letter scales with them)
   };
 
   // ---- pages (iPad / iPhone) ----
@@ -188,7 +190,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     if (!svg) return [];
     const sr = sheet.getBoundingClientRect(), vr = svg.getBoundingClientRect();
     const vb = (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number);
-    const unit = (vb[2] ? vr.width / vb[2] : zoom * zBase()) * 10; // px per OSMD unit
+    const unit = (vb[2] ? vr.width / vb[2] : zDraw()) * 10; // px per OSMD unit
     const off = vr.top - sr.top;
     const sys = [];
     for (const pg of osmd.GraphicSheet?.MusicPages || []) for (const ms of pg.MusicSystems || []) {
@@ -239,7 +241,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     osv.classList.add('ib-host');
     const vb = (svg.getAttribute('viewBox') || '').split(/\s+/).map(Number);
     const sr = svg.getBoundingClientRect(), or = osv.getBoundingClientRect();
-    const unit = (vb[2] ? sr.width / vb[2] : zoom * zBase()) * 10;
+    const unit = (vb[2] ? sr.width / vb[2] : zDraw()) * 10;
     for (const b of incomplete) {
       const gms = (osmd.GraphicSheet.MeasureList[b.bar - 1] || []).filter(Boolean);
       if (!gms.length) continue;
@@ -301,12 +303,12 @@ export function scoreBody(root, it, { perform = false } = {}) {
     // markings with empty text (e.g. a bare tempo <words/>) crash OSMD's reader — drop them; the tempo lives on the item anyway
     const tidyXml = (x) => x.replace(/<direction(?:\s[^>]*)?>\s*<direction-type>\s*<words\s*\/>\s*<\/direction-type>[\s\S]*?<\/direction>/g, '');
     // the credits drawn on the score: the song's real artist (the item's Artist) as the composer, and on the left a
-    // small line saying what Meowsic did: Made (pieces it wrote) / Arranged (versions of a score) / Read (photo → score) /
-    // Transcribed (recordings). Shown in OSMD's lyricist place; the file itself keeps it as the arranger.
+    // small line saying what Meowsic did: Made (pieces it wrote) / Arranged (versions of a score) /
+    // Transcribed (recordings, photo → score). Shown in OSMD's lyricist place; the file itself keeps it as the arranger.
     const credit = (x) => {
       const q = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const src = it.source || '', a = (it.artist || '').trim();
-      const by = src.startsWith('From the score') ? 'Arranged by Meowsic' : src.startsWith('From the sheet') ? 'Read by Meowsic'
+      const by = src.startsWith('From the score') ? 'Arranged by Meowsic'
         : it.ai || /^Meowsic( AI)?$/.test(src) ? 'Made by Meowsic' : 'Transcribed by Meowsic';
       const c = (a && !/^Meowsic( AI)?$/.test(a) ? `<creator type="composer">${q(a)}</creator>` : '') + `<creator type="lyricist">${by}</creator>`;
       x = x.replace(/<creator\b[^>]*>[\s\S]*?<\/creator>|<creator\b[^>]*\/>/g, '');
@@ -316,7 +318,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     const xml = credit(noTempoXml(tidyXml(real ? xmlText : musicXml({ ...tune, title: it.title }, version))));
     if (easy) kidsRules(r); // big noteheads: wider spacing
     await osmd.load(xml);
-    osmd.zoom = zoom * zBase();
+    osmd.zoom = zDraw();
     if (it.transpose) {
       osmd.TransposeCalculator = new O.TransposeCalculator();
       osmd.Sheet.Transpose = it.transpose;
@@ -597,7 +599,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get voice() { return player === voice && !!voice; }, setVoice,
     voiceReady(v) { Object.assign(it, v); voice?.destroy(); voice = null; if (voiceOn) setVoice(true); }, // stays on the piano unless Voice was picked
     zoomReset() { this.setZoom(zDef()); },
-    setZoom(z) { zoom = zClamp(z); if (zLocal) { try { localStorage.setItem(zKey, zoom); } catch {} } else store.update(it.id, { zoom: String(zoom) }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zoom * zBase(); relayout(); },
+    setZoom(z) { zoom = zClamp(z); if (zLocal) { try { localStorage.setItem(zKey, zoom); } catch {} } else store.update(it.id, { zoom: String(zoom) }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zDraw(); relayout(); },
     get easy() { return easy; },
     async setEasy(on) { easy = !!on; setEasy(it, easy); root.dispatchEvent(new CustomEvent('easychange', { bubbles: true })); await render(); },
     get zoom() { return zoom; },

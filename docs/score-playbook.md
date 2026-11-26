@@ -1,6 +1,7 @@
 # Making a score for the user: the playbook
 
 > Private use only: read "Transcribing songs (private use)" in `CLAUDE.md` first (what is in scope, and the guardrails).
+> Sheet → score: the step-by-step procedure, the 5-verifier workflow and the lessons log are in the skill `.claude/skills/transcribe-sheet/` (`SKILL.md`).
 
 The user often asks "make me a score of X" and gives a clue: sheet photos / screenshots, a sheet already in
 the library, a YouTube video, or lyrics. This is what worked (Nov 2026). Read §0 before you touch anything.
@@ -125,6 +126,7 @@ Example: an accurate sheet as the base, plus an intro, fills, decorations or lef
 - Album, e.g. `NDP songs`. Tags as the user uses them. Add `Verified` only after a full check (the user's badge).
 - Autofill fills artist / album from the library and **never sets the key**. Set `key` yourself (PATCH `/api/items/{id}`).
 - No tempo marks on scores (the app hides them anyway, `noTempoXml`). The bpm goes in the item field.
+- Transcriptions: do not copy pedal marks (user request 2026-11-26). Existing ones go with the Edit notes op `{op:'unpedal'}`.
 - New versions are new items (`POST /api/items` with `groupId`, or `mode:'new'` on editnotes / lyrics). Originals stay as they are.
 - `PATCH /api/items/{id}` for title / artist / album / tags / key (one Activities row each).
 

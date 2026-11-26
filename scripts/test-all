@@ -34,7 +34,7 @@ SUITES = {
     'flows': 'preview', 'keycolumn': 'preview', 'libfit': 'preview', 'playback': 'preview', 'scorezoom': 'preview', 'topcast': 'preview',
     'touchseek': 'preview', 'betakeyboard': 'preview', 'macnoswipe': 'preview', 'sheetfit': 'preview',
     'activities': 'server', 'chordplay': 'server', 'chordwindow': 'server', 'hands': 'server', 'tempo': 'server', 'addchords': 'server', 'addmusic': 'server', 'aimusic': 'server', 'books': 'server',
-    'booksplit': 'server', 'checkbars': 'server', 'completeinfo': 'server', 'cuedrag': 'server', 'dailycleanup': 'server', 'easyscore': 'server',
+    'booksplit': 'server', 'checkbars': 'server', 'completeinfo': 'server', 'cuedrag': 'server', 'dailycleanup': 'server', 'easyscore': 'server', 'kidsheads': 'server',
     'dragnote': 'server', 'editnotes': 'server', 'note32': 'server', 'evenout': 'server', 'ottava': 'server', 'editperf': 'server', 'feedback': 'server', 'jobs': 'server', 'langtoggle': 'server', 'libversion': 'server',
     'lyricmode': 'server', 'manage': 'server', 'menus': 'server', 'metadata': 'server', 'midiedit': 'server',
     'notenames': 'server', 'organizepages': 'server', 'photoimport': 'server', 'cropback': 'server', 'quickfeedback': 'server', 'real': 'server',
@@ -160,6 +160,6 @@ def main():
 MAIN = ['flows', 'keycolumn', 'libfit', 'macnoswipe', 'sheetfit', 'playback', 'scorezoom', 'topcast', 'touchseek', 'betakeyboard',
         'activities', 'chordplay', 'chordwindow', 'hands', 'pianodefault', 'tempo', 'addmusic', 'booksplit', 'completeinfo', 'cuedrag', 'dailycleanup', 'dragnote', 'editnotes', 'note32', 'evenout', 'ottava', 'editperf', 'feedback', 'jobs', 'langtoggle',
         'lyricmode', 'manage', 'menus', 'midiedit', 'organizepages', 'photoimport', 'cropback', 'quickfeedback', 'renameopen',
-        'swipeclose', 'textinput', 'verified', 'offline', 'storage', 'swupdate', 'editsafe']
+        'swipeclose', 'textinput', 'verified', 'kidsheads', 'offline', 'storage', 'swupdate', 'editsafe']
 if __name__ == '__main__':
     sys.exit(main())

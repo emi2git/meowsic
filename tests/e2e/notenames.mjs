@@ -1,7 +1,7 @@
 // The score toolbar's round toggles — chords (piano → ukulele → off), kids note names (baby), Play chords, voice — against a test server (BASE, default :5190, a
 // scratchpad copy of the data — never the real library). Per device (Mac, iPad, iPhone), on a two-staff transcription
 // (ID, default "Home NDP" m-b6xs990) and a made-up score without chord symbols:
-//  kids: off by default; on = a letter inside every notehead of every staff, heads grown (big), letter = the pitch,
+//  kids: off by default; on = a letter inside every notehead of every staff, heads ≤ 1 staff space on a 1.5× staff, letter = the pitch,
 //        no keyboard chord diagrams; playback cursor moves; on iPad / iPhone the pages + dots are recomputed;
 //        remembered on this device (all scores), off again = classic. Heads are big before layout (VexFlow), so every
 //        stem sits at its head's edge — right edge going up, left edge going down, never through the circle — at
@@ -129,7 +129,7 @@ async function run(name, vp) {
   check('kids: baby button lights up', s.btn === true);
   check('kids: a letter in every notehead of every staff (rests none)', s.letters > 50 && s.heads === s.letters && s.letters === steps(xml), `${s.letters} letters / ${s.heads} heads / ${steps(xml)} notes`);
   check('kids: each letter sits inside its head', s.inside);
-  check('kids: heads are big (median ≥ 1.3× a classic head)', h0 > 0 && s.headH >= h0 * 1.3, `${s.headH} vs ${h0}`);
+  check('kids: heads a bit bigger on screen than classic (1.5× staff, each head ≤ 1 space: kidsheads.mjs)', h0 > 0 && s.headH >= h0 * 1.1, `${s.headH} vs ${h0}`);
   await stemCheck(page, `(${name}${name === 'ipad' ? ', Dark' : ''})`);
   if (name !== 'iphone') { // iPhone has no zoom buttons (pinch)
     for (const [btn, n] of [['#sc-zin', 2], ['#sc-zout', 4]]) {
