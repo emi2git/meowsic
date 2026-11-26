@@ -1,8 +1,14 @@
 """Chord symbols in Edit notes (web/js/views/editnotes.js): write / change / take away a chord name, and "Realize to
 left hand" — the left hand written from the chord names. staffmove.edit_ex hands these ops over (one undo step each).
 
-  {op:'chord', bar, on, text}         the chord name at that beat of the bar (above the top staff): text '' takes it
-                                      away; a name not in the chord grammar (chordname.parse, omr.py's) is refused
+  {op:'chord', bar, on, text, part?} the chord name at that beat of the bar (above the top staff): text '' takes it
+                                      away; a name not in the chord grammar (chordname.parse, omr.py's) is refused.
+                                      It goes into the part that already holds chord names, else the top part (a
+                                      voice / violin + piano score: above the melody, not the piano); `part` (1-based
+                                      number or part id) picks one
+  {op:'movechords', from, to}         every chord name of part `from` moved to part `to` (1-based numbers or ids) at
+                                      the same bar and beat; one already there at that beat is replaced. The repair
+                                      for chords written into the wrong part
   {op:'realize', start, end, pattern} the lowest staff over the window (rangeops: [bar, on] … [bar, on]; none: the
                                       whole score) written again from the chord names in force there — pattern
                                       'block' (the chord held), 'root5' (root, fifth on every other beat) or 'broken'
@@ -16,8 +22,68 @@ from fastapi import HTTPException
 
 from . import chordname
 
-OPS = ('chord', 'realize')
+OPS = ('chord', 'realize', 'movechords')
 PATTERNS = ('block', 'root5', 'broken')
+
+
+def _pick_part(root, which):
+    """A part by 1-based number or by id."""
+    parts = root.findall('part')
+    if isinstance(which, str) and not which.strip().isdigit():
+        hit = [p for p in parts if p.get('id') == which]
+        if not hit: raise HTTPException(400, f'No part {which} in this score')
+        return hit[0]
+    try: k = int(which)
+    except (TypeError, ValueError): raise HTTPException(400, 'part: a part number (1 = the top part) or a part id')
+    if not 1 <= k <= len(parts): raise HTTPException(400, f'No part {k} in this score')
+    return parts[k - 1]
+
+
+def chord_part(root, which=None):
+    """The part chord names go in: `which` when given, else the first part that has any <harmony>, else the top
+    part (part 1)."""
+    if which not in (None, ''): return _pick_part(root, which)
+    parts = root.findall('part')
+    return next((p for p in parts if p.find('measure/harmony') is not None), parts[0] if parts else None)
+
+
+def move_chords(src, dst, info):
+    """Every <harmony> of part src moved into part dst at the same bar and time (its <offset> folded in); one in
+    dst at that time is replaced. -> number moved."""
+    from .rangeops import geometry
+    from .staffmove import _read_bar, _write_bar
+    from .easerests import _beat
+    if src is dst: raise HTTPException(400, 'from and to are the same part')
+    gs, gd = geometry(src), geometry(dst)
+    staffed = any(n.find('staff') is not None for n in dst.iter('note'))
+    moved = replaced = 0
+    for bi, a in enumerate(gs):
+        sv, so, sl = _read_bar(a.m, a.div)
+        hs = [o for o in so if o[2].tag == 'harmony']
+        if not hs: continue
+        if bi >= len(gd): raise HTTPException(400, f'Part {dst.get("id")} has no bar {bi + 1}')
+        b = gd[bi]
+        dv, do, dl = _read_bar(b.m, b.div)
+        for o in hs:
+            h = o[2]
+            off = h.find('offset')
+            q = (Fr(o[0]) + (Fr(int(float(off.text or 0))) if off is not None else 0)) / a.div
+            t = q * b.div
+            if t.denominator != 1 or not 0 <= q < b.L:
+                raise HTTPException(400, f'Bar {bi + 1}: that chord time is not in part {dst.get("id")}')
+            if off is not None: h.remove(off)
+            for st in h.findall('staff'): h.remove(st)
+            if staffed: ET.SubElement(h, 'staff').text = '1'
+            old = [x for x in do if x[2].tag == 'harmony' and x[0] == t]
+            replaced += len(old)
+            do = [x for x in do if x not in old] + [(t, -1, h)]
+            so = [x for x in so if x is not o]
+            moved += 1
+        _write_bar(a.m, sv, so, max(sl, a.L * a.div), a.div, _beat(a.tsig))
+        _write_bar(b.m, dv, do, max(dl, b.L * b.div), b.div, _beat(b.tsig))
+    if not moved: raise HTTPException(400, f'Part {src.get("id")} has no chord names to move')
+    info['moved'], info['replaced'] = moved, replaced
+    return moved
 
 
 def _set_chord(root, part, bi, on, text, info):
@@ -122,7 +188,7 @@ def realize(root, part, start, end, pattern, info):
     A = pos(bars, start) if start is not None else Fr(0)
     B = pos(bars, end) if end is not None else bars[-1].end
     if B <= A: raise HTTPException(400, 'Pick the bars to realize')
-    cs = chords_in(part)
+    cs = chords_in(part) or chords_in(chord_part(root))  # a voice + piano score: the names sit on the melody
     if not any(A - 1e-9 <= t < B for t, _ in cs) and not any(t < A for t, _ in cs): raise HTTPException(400, 'No chord names there to realize')
     lh = n_staves(part)
     fifths = _fifths(part)
@@ -162,10 +228,13 @@ def chord_op(text, op, info=None):
     if part is None: raise HTTPException(400, 'This score has no notes')
     ties_before = _tie_count(part)
     touched, tidy = [], set()
-    if kind == 'chord':
+    if kind == 'movechords':
+        move_chords(_pick_part(root, op.get('from')), _pick_part(root, op.get('to')), info)
+        snap = None
+    elif kind == 'chord':
         try: bi = int(op.get('bar'))
         except (TypeError, ValueError): raise HTTPException(400, 'bar: a bar number')
-        _set_chord(root, part, bi, q_of(op.get('on') or 0), op.get('text'), info)
+        _set_chord(root, chord_part(root, op.get('part')), bi, q_of(op.get('on') or 0), op.get('text'), info)
         snap = None
     else:
         touched, tidy, _ = realize(root, part, op.get('start'), op.get('end'), op.get('pattern') or 'block', info)

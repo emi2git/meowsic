@@ -123,6 +123,12 @@ export function ago(ts) {
 }
 export const mins = (ms) => { const m = Math.round(ms / 60000); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60} min`; };
 
+// ---------- unsaved work ----------
+// An editor on screen with changes not saved yet carries data-unsaved="1" on its root (update.js: no auto-reload
+// while one is in the page; the mark goes with the element when it is removed). Form fields typed into inside a
+// sheet (modal) mark that sheet by themselves (update.js); everything else calls this.
+export function unsaved(el, on = true) { if (!el) return; if (on) el.dataset.unsaved = '1'; else delete el.dataset.unsaved; }
+
 // ---------- toast ----------
 let toastTimer;
 export function toast(msg, action) {
@@ -218,6 +224,7 @@ export function tagPicker(all, selected, onChange) {
     const t = b.dataset.t;
     sel.has(t) ? sel.delete(t) : sel.add(t);
     b.classList.toggle('on');
+    unsaved(box.closest('.modal-wrap'));
     onChange([...sel]);
   };
   box.onsubmit = (e) => {
@@ -226,6 +233,7 @@ export function tagPicker(all, selected, onChange) {
     if (!v) return;
     if (!all.includes(v)) all.push(v);
     sel.add(v); draw(); onChange([...sel]);
+    unsaved(box.closest('.modal-wrap'));
     box.querySelector('input').focus();
   };
   return box;

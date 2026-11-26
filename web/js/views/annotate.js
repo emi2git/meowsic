@@ -1,7 +1,7 @@
 // Ink layer over a page or score: blue / red pen, text boxes, eraser. Everything is stored in
 // page-relative coordinates (0..1) so it lines up at any zoom, and never touches the page image.
 import { store } from '../store.js';
-import { iconOn } from '../ui.js';
+import { iconOn, unsaved } from '../ui.js';
 
 export const TOOLS = {
   blue: { color: '#1c7ed6', width: 0.0035, alpha: 1 },
@@ -184,6 +184,7 @@ export class InkLayer {
 export function inkToolbar(onTool, onAction, initial = 'blue') {
   const bar = document.createElement('div');
   bar.className = 'inkbar';
+  unsaved(bar); // a text box being typed is saved on blur (update.js waits while inking)
   const tool = (k, inner, title) => `<button data-tool="${k}" class="${k === initial ? 'on' : ''}" title="${title}" aria-label="${title}">${inner}</button>`;
   bar.innerHTML =
     tool('move', iconOn('pointer'), 'Move') +

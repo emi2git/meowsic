@@ -3,7 +3,11 @@
 # (the whole script is read before it runs, so the fast-forward may safely replace this very file)
 #
 #   1. refuses unless the live checkout is on branch v2 with a clean tree (no edits, no untracked files)
-#   2. git fetch + merge --ff-only origin/v2 (never a real merge here: merges happen in worktrees)
+#   2. refuses while the app is in use (scripts/deploy_quiet.py), when web/ or the server would change: an edit
+#      session active on any item (any client), a request from a user device in the last 5 min, or an API write
+#      from one in the last 2 min. User devices = every client but this Mac (loopback = agents / scripts / curl
+#      and this Mac's own addresses don't count). --dry-run only reports it
+#   2b. git fetch + merge --ff-only origin/v2 (never a real merge here: merges happen in worktrees)
 #   3. backs up the DB (backups/pre-deploy-<time>.db, sqlite online backup) whenever something changed
 #   4. restarts the server only when server/ differs from the code the running server started with
 #      (health's serverSha; refuses while a job is running unless --force)
@@ -28,7 +32,7 @@ main() {
   for a in "$@"; do
     case $a in
       --dry-run) dry=1 ;; --check) check=1 ;; --restart) force_restart=1 ;; --force) force=1 ;;
-      -h|--help) sed -n '2,18p' "$SELF"; return 0 ;;
+      -h|--help) sed -n '2,22p' "$SELF"; return 0 ;;
       *) print -u2 "unknown option $a"; return 2 ;;
     esac
   done
@@ -53,7 +57,7 @@ main() {
 
   # what the running server started with: its serverSha (older servers do not say: then the old HEAD)
   local h=$(health || true) ran
-  ran=$(print -r -- "$h" | field serverSha)
+  ran=$(print -r -- "$h" | field serverSha || true)  # no answer: empty (not an err_exit)
   [[ -n $ran ]] && git cat-file -e "${ran}^{commit}" 2>/dev/null || ran=$old
   local restart=0 why=''
   if (( force_restart )); then restart=1; why='asked'
@@ -67,6 +71,16 @@ main() {
 
   say "live ${old[1,12]} -> origin/v2 ${new[1,12]} ($(git rev-list --count $old..$new) commit(s)); web changed: $webchg; restart: $restart${why:+ ($why)}"
   (( webchg )) && [[ $oldshell == $newshell ]] && say "WARNING: web/ changed but the shell cache is still $newshell: bump SHELL in web/sw.js if index.html / css / icons changed"
+  # users first: a new shell reloads open apps, a restart drops requests. Only this Mac's own clients (loopback, its
+  # own addresses) may be busy meanwhile; never while an edit session is active (Edit notes open), whoever holds it.
+  if (( webchg || restart )); then
+    local quiet=${SELF:h}/deploy_quiet.py qwhy
+    [[ -f $quiet ]] || die "missing $quiet"
+    local own=(${(f)"$( { ifconfig 2>/dev/null | awk '/inet6? /{print $2}' | sed 's/%.*//'; tailscale --socket="$HOME/Library/Application Support/Tailscale-Meowsic/tailscaled.sock" ip 2>/dev/null; } || true)"})
+    if qwhy=$(/usr/bin/python3 "$quiet" "$DATA" --self $own 2>&1); then say "quiet: no edit session; no user device active for 5 min"
+    elif (( dry )); then say "not quiet now (a real run would refuse): ${qwhy//$'\n'/; }"
+    else die "the app is in use: ${qwhy//$'\n'/; }"; fi
+  fi
   if (( dry )); then say "dry run: nothing changed"; return 0; fi
 
   if [[ $old != $new ]] || (( restart )); then

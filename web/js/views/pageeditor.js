@@ -13,7 +13,7 @@
 import { store } from '../store.js';
 import { leaveTo } from '../app.js';
 import { isDesktop } from '../device.js';
-import { $, esc, iconOn, toast, sheet as modal, confirmSheet, menu } from '../ui.js';
+import { $, esc, iconOn, toast, sheet as modal, confirmSheet, menu, unsaved } from '../ui.js';
 import { cropStage, savedBoxes, boxOf, isFull, full } from '../cropbox.js';
 import { api, plural, range, sleep, thumb, listPages, head, taps, pushAct, pushUndo, undoLast, canUndo, undoLabel, onUndo, HELP_IC } from './managekit.js';
 
@@ -407,6 +407,7 @@ export function cropView(main, { id, page, q }) {
       <button class="ghost" data-act="orig" id="cr-orig" title="The photo as it came in" hidden>Back to original photo</button>
     </div></div>`;
   $('.mg-back', main).onclick = (e) => { e.preventDefault(); leaveTo(cancelHref); };  // ‹ Cancel: same as Back
+  unsaved($('.pe-crop', main)); // the box drawn is only kept on Crop (update.js waits)
   const total = () => st.info?.length || 0;
   const show = () => {
     const p = st.p, pi = st.info[p - 1];

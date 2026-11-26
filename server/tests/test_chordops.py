@@ -132,3 +132,77 @@ def test_through_the_preview(client):
     assert not pv['incomplete'] and pv['moved']
     assert client.post(url, json={'ops': ops, 'mode': 'this'}).json()['ok']
     assert client.get(f'/api/items/{it["id"]}/score-chords').json()['chords'] == ['C', 'Dm7']
+
+
+def duo(melody_chords=''):
+    """A voice part (P1: no <staff>, divisions 2, chords `melody_chords` in bar 1) over the piano tune (P2)."""
+    piano = tune()
+    body = piano[piano.index('<part id="P1">') + len('<part id="P1">'):piano.index('</part>')]
+    voice = ''.join(f'<measure number="{i + 1}">' + ('<attributes><divisions>2</divisions><time><beats>4</beats><beat-type>4</beat-type></time>'
+                    '<clef><sign>G</sign><line>2</line></clef></attributes>' + melody_chords if i == 0 else '')
+                    + f'<note><pitch><step>{s}</step><octave>5</octave></pitch><duration>8</duration><voice>1</voice><type>whole</type></note></measure>'
+                    for i, s in enumerate('EFE'))
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>Voice</part-name></score-part>'
+            '<score-part id="P2"><part-name>Piano</part-name></score-part></part-list>'
+            f'<part id="P1">{voice}</part><part id="P2">{body}</part></score-partwise>')
+
+
+def part_chords(text):
+    return [[(float(t), n) for t, n in chordops.chords_in(p)] for p in root(text).findall('part')]
+
+
+C_HARMONY = '<harmony><root><root-step>C</root-step></root><kind>major</kind></harmony>'
+
+
+def test_two_parts_chords_go_where_the_chords_are():
+    """Voice + piano, chords already on the voice: a new one goes above the voice, not the piano (it was the piano)."""
+    out, _, _ = op(duo(C_HARMONY), op='chord', bar=1, on=2, text='G7')
+    assert part_chords(out) == [[(0.0, 'C'), (6.0, 'G7')], []]
+    assert all(h.find('staff') is None for h in root(out).iter('harmony'))  # the voice part has no staves
+    out, _, _ = op(out, op='chord', bar=0, on=0, text='')  # takes away the voice's chord
+    assert part_chords(out) == [[(6.0, 'G7')], []]
+    out, _, _ = op(out, op='chord', bar=0, on=0, text='Am', part=2)  # an explicit part still wins
+    assert part_chords(out) == [[(6.0, 'G7')], [(0.0, 'Am')]]
+    out, _, _ = op(out, op='chord', bar=0, on=1, text='D', part='P1')
+    assert part_chords(out)[0] == [(1.0, 'D'), (6.0, 'G7')]
+    with pytest.raises(HTTPException): op(out, op='chord', bar=0, on=0, text='C', part=3)
+
+
+def test_two_parts_no_chords_go_on_the_top_part():
+    out, _, _ = op(duo(), op='chord', bar=0, on=1, text='F')
+    assert part_chords(out) == [[(1.0, 'F')], []]
+    out, _, _ = op(out, op='chord', bar=2, on=0, text='C')
+    assert part_chords(out) == [[(1.0, 'F'), (8.0, 'C')], []]
+    # Realize still writes the piano's left hand, from the voice's chord names
+    out, _, _ = op(out, op='realize', pattern='block')
+    assert part_chords(out) == [[(1.0, 'F'), (8.0, 'C')], []] and lh(out, 2)
+
+
+def test_single_part_unchanged():
+    out, _, _ = op(tune(), op='chord', bar=0, on=0, text='C')
+    h = root(out).find('part/measure/harmony')
+    assert part_chords(out) == [[(0.0, 'C')]] and h.findtext('staff') == '1' and bars(out)
+
+
+def test_movechords_repairs_chords_on_the_piano():
+    x = duo(C_HARMONY)
+    for bar, on, t in [(0, 0, 'F'), (0, 1, 'Am'), (1, 2, 'G7')]: x, _, _ = op(x, op='chord', bar=bar, on=on, text=t, part=2)
+    assert part_chords(x) == [[(0.0, 'C')], [(0.0, 'F'), (1.0, 'Am'), (6.0, 'G7')]]
+    info = {}
+    out, _, _ = sm.edit_ex(x, {'op': 'movechords', 'from': 2, 'to': 1}, info)
+    assert part_chords(out) == [[(0.0, 'F'), (1.0, 'Am'), (6.0, 'G7')], []]  # the newer F replaced the C at that beat
+    assert info['moved'] == 3 and info['replaced'] == 1
+    assert all(h.find('staff') is None for h in root(out).iter('harmony'))
+    assert [n['midi'] for n in notes(out)] == [n['midi'] for n in notes(x)]  # no note changed
+    with pytest.raises(HTTPException): op(out, op='movechords', **{'from': 2, 'to': 1})  # nothing left to move
+    with pytest.raises(HTTPException): op(out, op='movechords', **{'from': 1, 'to': 1})
+
+
+def test_movechords_through_the_api_is_logged(client):
+    x, _, _ = op(duo(), op='chord', bar=0, on=0, text='C', part=2)
+    it = client.post('/api/items', json={'kind': 'score', 'title': 'Duo', 'musicxmlText': x}).json()
+    r = client.post(f'/api/items/{it["id"]}/editnotes', json={'ops': [{'op': 'movechords', 'from': 2, 'to': 1}], 'mode': 'this'}).json()
+    assert r['ok'] and r['activity']
+    row = next(a for a in client.get('/api/activity').json() if a['id'] == r['activity'])
+    assert 'chord names moved' in str(row)
+    assert client.get(f'/api/items/{it["id"]}/score-chords').json()['chords'] == ['C']

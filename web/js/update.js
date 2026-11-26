@@ -3,8 +3,10 @@
 // On start and each time the app comes back into view: ask the Mac what it runs (/api/health, never cached).
 // When its shell or commit differs from the one this page was built with (<meta name="meowsic-build">, filled
 // in by the Mac), the service worker is updated, and once the new one runs the page reloads once.
-// Never while Edit notes is open (unsaved notes): a small "New version — Reload" pill shows instead, and the
-// reload waits until the panel closes. A reload that did not help (same target again) never repeats: pill only.
+// Never while something on screen may hold unsaved work: Edit notes (.notes-panel) or any editor marked with
+// data-unsaved="1" (ui.js unsaved(): Simple piano, Check bars, the ink bar, Crop, Add sheet music's arrangement,
+// Complete info picks, Feedback text; a sheet / popup once a field in it is typed into or its tags are changed).
+// A small "New version — Reload" pill shows instead, and the reload waits until they are closed or saved. A reload that did not help (same target again) never repeats: pill only.
 import { confirmSheet } from './ui.js';
 
 const RELOAD_KEY = 'meowsic-reloaded-for';
@@ -14,8 +16,18 @@ window.__meowsicBuild = build; // tests + the App page
 export const server = { shell: '', sha: '' }; // what the Mac said last
 
 const ss = { get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { sessionStorage.setItem(k, v); } catch {} } };
-// Edit notes open = changes may be unsaved (also any other editor that marks itself with data-unsaved)
-const editing = () => !!document.querySelector('.notes-panel, [data-unsaved="1"]');
+// unsaved work on screen: Edit notes, or any editor that marks itself with data-unsaved (ui.js unsaved())
+export const editing = () => !!document.querySelector('.notes-panel, [data-unsaved="1"]');
+// typing into a field of a sheet (modal) marks the sheet: closing it (Save / Cancel) removes the mark with it.
+// Search boxes and buttons-only sheets don't count.
+const markField = (e) => {
+  const t = e.target;
+  if (!t?.matches?.('input, textarea, select') || t.type === 'search') return;
+  const box = t.closest('.modal-wrap');
+  if (box) box.dataset.unsaved = '1';
+};
+addEventListener('input', markField, true);
+addEventListener('change', markField, true);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function health() {
@@ -48,7 +60,7 @@ function showPill() {
   pill.type = 'button';
   pill.textContent = 'New version — Reload';
   pill.onclick = async () => {
-    if (editing() && !(await confirmSheet({ title: 'Reload now?', body: 'Edit notes is still open: notes you haven’t saved are lost.', ok: 'Reload', danger: true }))) return;
+    if (editing() && !(await confirmSheet({ title: 'Reload now?', body: 'Something you are editing is still open: changes you haven’t saved are lost.', ok: 'Reload', danger: true }))) return;
     location.reload();
   };
   document.body.append(pill);

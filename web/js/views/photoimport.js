@@ -10,7 +10,7 @@
 import { store } from '../store.js';
 import { leaveTo, HOME } from '../app.js';
 import { isDesktop } from '../device.js';
-import { $, esc, toast, sheet as modal } from '../ui.js';
+import { $, esc, toast, sheet as modal, unsaved } from '../ui.js';
 import { cropStage, framesBar, boxOf, isFull, full } from '../cropbox.js';  // the one crop box (also Organize pages)
 
 const SEGS = 6;
@@ -38,7 +38,8 @@ export function photoImportView(main, opts = {}) {
   const stop = () => { alive = false; clearTimeout(timer); removeEventListener('keydown', onKey); };
   opts.sources?.(more, stop);
   // the step on screen: album / reading / preview / crop / done; Files / Camera only show while nothing is to arrange
-  const mode = (m) => { body.className = 'pi ' + m; more.hidden = !['album', 'reading'].includes(m); };
+  // the arrangement (songs, titles, order, crops) lives in this page until Add: no auto-reload meanwhile (update.js)
+  const mode = (m) => { body.className = 'pi ' + m; more.hidden = !['album', 'reading'].includes(m); unsaved(body, m === 'preview' || m === 'crop'); };
 
   // ---------- 1. the album ----------
   const showAlbum = async (auto = false) => {

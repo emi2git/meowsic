@@ -846,10 +846,11 @@ export async function editNotes(view, it, host, opts = {}) {
   const KIND_SUFFIX = { major: '', minor: 'm', dominant: '7', 'dominant-seventh': '7', 'major-seventh': 'maj7', 'minor-seventh': 'm7', diminished: 'dim',
     'diminished-seventh': 'dim7', 'half-diminished': 'm7b5', augmented: 'aug', 'suspended-fourth': 'sus4', 'suspended-second': 'sus2', 'major-sixth': '6',
     'minor-sixth': 'm6', 'dominant-ninth': '9', power: '5' };
-  // [{ bar, on, name }] of the edited part
+  // [{ bar, on, name }] of the chord part (chordops.chord_part: the first part with chord names, else the top part)
   const chordsOf = () => {
     const doc = new DOMParser().parseFromString(cur().xml, 'application/xml');
-    const part = doc.querySelectorAll('part')[base.part] || doc.querySelector('part');
+    const parts = [...doc.querySelectorAll('part')];
+    const part = parts.find((p) => p.querySelector(':scope > measure > harmony')) || parts[0];
     const out = [];
     let div = 1;
     [...part.querySelectorAll(':scope > measure')].forEach((m, bar) => {
