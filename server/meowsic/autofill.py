@@ -159,8 +159,8 @@ def log_fill(c, fills, ctx=None):
 def recredit(xml: str, artist: str) -> str:
     """A copied score whose Artist was just filled: composer = that artist, the arranger credit it had stays."""
     from .db import credit_xml
-    m = re.search(r'<creator\b[^>]*type="arranger"[^>]*>([\s\S]*?)</creator>', xml)
-    by = m[1].strip().replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&') if m else ''
+    m = re.findall(r'<creator\b[^>]*type="arranger"[^>]*>([\s\S]*?)</creator>', xml)  # the last one ("Arranged by" after "Transcribed by")
+    by = m[-1].strip().replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&') if m else ''
     return credit_xml(xml, artist, by)
 
 

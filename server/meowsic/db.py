@@ -147,8 +147,11 @@ def credit_xml(x: str, artist: str | None = None, by: str = 'Made by Meowsic') -
         artist = artist.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
     artist = (artist or '').strip()
     if artist in NOT_ARTIST or re.fullmatch(r'(?:made|transcribed|arranged|read) by meowsic', artist, re.I): artist = ''
+    # a version arranged from a transcription keeps "Transcribed by Meowsic" (an old "Read by Meowsic" too) before "Arranged by"
+    was = by == 'Arranged by Meowsic' and re.search(r'<creator\b[^>]*>\s*(?:transcribed|read) by meowsic\s*</creator>', x, re.I)
     x = re.sub(r'<creator\b[^>]*>[\s\S]*?</creator>|<creator\b[^>]*/>', '', x)
-    c = (f'<creator type="composer">{_xesc(artist)}</creator>' if artist else '') + (f'<creator type="arranger">{_xesc(by)}</creator>' if by else '')
+    c = (f'<creator type="composer">{_xesc(artist)}</creator>' if artist else '') + \
+        ('<creator type="arranger">Transcribed by Meowsic</creator>' if was else '') + (f'<creator type="arranger">{_xesc(by)}</creator>' if by else '')
     if not c: return x
     if '<identification>' in x: return x.replace('<identification>', '<identification>' + c, 1)
     if re.search(r'<identification\s*/>', x): return re.sub(r'<identification\s*/>', '<identification>' + c + '</identification>', x, count=1)

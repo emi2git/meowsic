@@ -11,6 +11,10 @@ For every bar of every staff, compare **(onset, duration, pitch)** triples, neve
 3. Diff the two. A note an eighth early or late, a held note written as note + rest, or a 0-2-4 where the sheet has 0-2~3-5 is an
    error, even when every pitch and every bar sum is right.
 "Matches" means the triple lists match. **A matching pitch sequence is NOT a match.**
+4. **Note + rest where the sheet shows one longer note: every note→rest boundary must be confirmed against the sheet.**
+   List every place where a note is followed straight by a rest in its voice (inside a beat group, or at a bar or
+   phrase end), look at each one on the crop, and confirm the rest is printed and the note has that length. Bar sums
+   and pitch order pass on this error, so only this look catches it (lessons.md, 2026-11-27).
 
 ## The five methods
 | Key | Method |
