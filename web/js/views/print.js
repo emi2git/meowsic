@@ -8,7 +8,7 @@ import { linesHtml, diagramsHtml } from '../chordchart.js';
 import { loadOsmd } from './score.js';
 import { TUNES } from '../mock.js';
 import { musicXml } from '../musicxml.js';
-import { easyOn, classicXml, decoratePrintPage, kidsRules, noTempoXml } from '../easyscore.js';
+import { easyOn, classicXml, decoratePrintPage, kidsRules, noTempoXml, KIDS_STAFF } from '../easyscore.js';
 
 // scores print as real notation: OSMD lays the MusicXML out on A4 pages; each page is an SVG
 const scorePagesCache = new Map(); // item id (+ easy look) → [svg markup per page]
@@ -20,13 +20,14 @@ async function scorePages(it) {
   else { const r = await fetch(`/api/items/${encodeURIComponent(it.id)}/musicxml`); if (!r.ok) return null; xml = classicXml(await r.text(), it); }
   await loadOsmd();
   const box = document.createElement('div');
-  box.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px';
+  // kids note names (the score's kitten toggle): lettered heads (≤ 1 staff space) on a KIDS_STAFF× bigger staff —
+  // the A4 page is laid out that much narrower, then printed at full width; classic engraving otherwise
+  const easy = easyOn(it);
+  box.style.cssText = `position:fixed;left:-10000px;top:0;width:${Math.round(794 / (easy ? KIDS_STAFF : 1))}px`;
   document.body.append(box);
   try {
-    // kids note names (the score's kitten toggle): big noteheads with their letters; classic engraving otherwise
-    const easy = easyOn(it);
     const osmd = new window.opensheetmusicdisplay.OpenSheetMusicDisplay(box, { backend: 'svg', autoResize: false, drawTitle: true, drawSubtitle: true, drawPartNames: true, drawComposer: true, drawMetronomeMarks: false, pageFormat: 'A4_P', pageBackgroundColor: '#FFFFFF' });
-    if (easy) kidsRules(osmd.EngravingRules); // big noteheads need wider spacing
+    if (easy) kidsRules(osmd.EngravingRules); // a little wider spacing for the letters
     await osmd.load(noTempoXml(xml)); // no tempo drawn (♩ = 72, Moderato…)
     if (it.transpose) { osmd.TransposeCalculator = new window.opensheetmusicdisplay.TransposeCalculator(); osmd.Sheet.Transpose = it.transpose; osmd.updateGraphic(); }
     osmd.render();
