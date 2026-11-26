@@ -137,9 +137,13 @@ progress { width: 100%; height: 8px; accent-color: var(--acc); }
 .seg button .ic { width: 17px; height: 17px; }
 .seg button.on { background: var(--card); color: var(--ink); box-shadow: var(--shadow); }
 .seg.small button { min-height: 32px; font-size: 14px; }
-/* Hands (hands.js): L · Both · R beside Play, and in Edit notes */
+/* Parts to play (hands.js): V R L C beside Play, and in Edit notes */
 .seg.hands { padding: 2px; flex-wrap: nowrap; flex: none; } .seg.hands button { min-height: 30px; padding: 0 9px; font-size: 13px; }
 .hands-slot { display: inline-flex; } .hands-slot:empty { display: none; }
+/* Parts to play (V R L C): independent toggles; on = the accent's soft fill (like the library's lang toggle), off = dim */
+.seg.hands.parts button { min-width: 32px; color: var(--ink2); opacity: .6; }
+.seg.hands.parts button.on { background: var(--acc-soft); color: var(--acc-text); opacity: 1; box-shadow: none; }
+.seg.hands.parts button[aria-disabled="true"] { cursor: default; }
 /* Edit notes: Mac / iPad keep the score toolbar (and its picker) on show; iPhone hides it, so the edit bar has one */
 :root:not([data-device="phone"]) #np-hands { display: none; }
 
@@ -972,7 +976,7 @@ label .bs-det { display: block; font-weight: 400; margin-top: 2px; }
 .cu-fr { display: inline-flex; align-items: stretch; min-width: 0; }
 .cu-fr [data-fr] { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; padding: 3px 10px; min-height: 36px; border-radius: 8px 0 0 8px; font-size: 13px; }
 .cu-fr [data-fr] small { font-size: 10px; color: var(--mute); white-space: nowrap; }
-.cu-fr [data-fr]:disabled { opacity: .55; }
+.cu-fr [data-fr]:disabled { opacity: .6; }
 .cu-fr .cu-frsave { border-radius: 0 8px 8px 0; padding: 0 9px; min-height: 36px; border-left: 0; }
 @media (max-width: 760px) { .cu-frames { padding: 4px 8px 0; gap: 6px; } .cu-fr { flex: 1 1 0; } .cu-fr [data-fr] { flex: 1; min-width: 0; } .cu-fr [data-fr] small { overflow: hidden; text-overflow: ellipsis; max-width: 100%; } }
 
@@ -1174,7 +1178,7 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 /* ===== score toolbar: the three round toggles (chords piano/ukulele/off, kids note names, voice); one icon each, the icon shows the state ===== */
 .tg-row { display: inline-flex; gap: 6px; align-items: center; flex: none; }
 .tg-btn { width: 40px; height: 40px; min-height: 40px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; flex: none; background: var(--card); border: 1px solid var(--line2); color: var(--mute); }
-.tg-btn .ic { width: 24px; height: 24px; stroke-width: 1.6; opacity: .55; }
+.tg-btn .ic { width: 24px; height: 24px; stroke-width: 1.6; opacity: .6; }
 .tg-btn.on { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
 .tg-btn.on .ic { opacity: 1; }
 .tg-btn[hidden] { display: none; }
@@ -1227,7 +1231,7 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .np-addstaff label { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
 /* drag a note (Mac): a ghost where it goes + its name; ties / slurs: click to pick, ✕ or ⌫ takes it away */
 .viewer.noting.np-dragging, .viewer.noting.np-dragging * { cursor: grabbing !important; }
-.np-ghost { pointer-events: none; opacity: .55; }
+.np-ghost { pointer-events: none; opacity: .6; }
 .np-ghost path, .np-ghost ellipse { fill: var(--acc) !important; stroke: var(--acc) !important; }
 .np-draglabel { position: fixed; z-index: 61; pointer-events: none; background: var(--acc); color: #fff; font-weight: 700; font-size: 13px; padding: 3px 8px; border-radius: 8px; white-space: nowrap; box-shadow: 0 2px 8px rgba(0, 0, 0, .2); }
 .np-arc-hit { cursor: pointer; }
@@ -1323,7 +1327,7 @@ body[data-view="item"] .item-top .verified-badge { min-height: 40px; }
 body:has(.viewer.noting) .toast { bottom: auto; top: calc(64px + var(--sat)); } /* not over the edit bar */
 .viewer.noting .score-dots { pointer-events: auto; height: 26px; bottom: 0; gap: 4px; z-index: 6; }
 .viewer.noting .score-dots i { width: 22px; height: 22px; border: 0; opacity: 1; background: none; cursor: pointer; }
-.viewer.noting .score-dots i::after { content: ''; position: absolute; left: 7px; top: 7px; width: 8px; height: 8px; box-sizing: border-box; border-radius: 50%; border: 1px solid currentColor; opacity: .55; }
+.viewer.noting .score-dots i::after { content: ''; position: absolute; left: 7px; top: 7px; width: 8px; height: 8px; box-sizing: border-box; border-radius: 50%; border: 1px solid currentColor; opacity: .6; }
 .viewer.noting .score-dots i.on::after { background: currentColor; opacity: .85; }
 
 /* ---------- Add chords: search | preview side by side; one at a time when narrow (iPad 11 portrait, iPhone) ---------- */

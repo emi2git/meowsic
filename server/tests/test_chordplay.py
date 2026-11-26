@@ -1,6 +1,7 @@
-"""Play chords (score toolbar): web/js/chordplay.js, run in node. Its chord grammar (parse, tones) gives what
-chordname.py gives for a list of names; the voicing (bass C2–B2 under a close root-position chord B♭2–A3); the
-<harmony> name (name_of); chordEvents holds each chord to the next name or the bar line, struck again on beat 1."""
+"""Chords part (score toolbar's C toggle): web/js/chordplay.js, run in node. Its chord grammar (parse, tones) gives
+what chordname.py gives for a list of names; the voicing (a close-position block chord in C3–C5, the root or slash
+bass at the bottom); the <harmony> name (name_of); chordEvents strikes each chord on its change and holds it to the
+next name."""
 import json
 import shutil
 import subprocess
@@ -39,19 +40,18 @@ def test_parse_and_tones_match_chordname():
 
 
 def test_voicing():
-    v = node("console.log(JSON.stringify(Object.fromEntries(['C', 'Am', 'G7', 'F/A', 'Bb', 'A', 'B/D#', 'C9', 'N.C.', 'Xyz']"
+    v = node("console.log(JSON.stringify(Object.fromEntries(['C', 'Am', 'G7', 'F/A', 'Bb', 'A', 'B/D#', 'C9', 'Bdim7', 'N.C.', 'Xyz']"
              ".map((n) => [n, cp.voicing(n)]))))")
-    assert v['C'] == {'bass': 36, 'upper': [48, 52, 55]}       # C2 under C3 E3 G3
-    assert v['Am'] == {'bass': 45, 'upper': [57, 60, 64]}      # A2 under A3 C4 E4
-    assert v['G7'] == {'bass': 43, 'upper': [55, 59, 62, 65]}  # G2 under G3 B3 D4 F4
-    assert v['F/A'] == {'bass': 45, 'upper': [53, 57, 60]}     # the slash bass
-    assert v['Bb'] == {'bass': 34, 'upper': [46, 50, 53]}      # B♭1: the bass stays under the chord
-    assert v['C9'] == {'bass': 36, 'upper': [48, 50, 52, 58]}  # four tones: the fifth goes
+    assert v['C'] == {'bass': 48, 'upper': [52, 55, 60]}       # C3 under E3 G3 C4
+    assert v['Am'] == {'bass': 57, 'upper': [60, 64, 69]}      # A3 under C4 E4 A4
+    assert v['G7'] == {'bass': 55, 'upper': [59, 62, 65, 67]}  # G3 under B3 D4 F4 G4
+    assert v['F/A'] == {'bass': 57, 'upper': [60, 65]}         # the slash bass at the bottom
+    assert v['C9'] == {'bass': 48, 'upper': [50, 52, 58, 60]}  # four tones: the fifth goes
     assert v['N.C.'] is None and v['Xyz'] is None
     for name, x in v.items():
         if not x: continue
-        assert 30 <= x['bass'] < 48 and x['bass'] < min(x['upper']), name
-        assert 46 <= min(x['upper']) <= 57 and max(x['upper']) - min(x['upper']) < 12, name
+        assert 48 <= x['bass'] <= 59 and x['bass'] < min(x['upper']), name   # the root / bass, C3–B3
+        assert max(x['upper']) <= 72 and max(x['upper']) - x['bass'] <= 12, name  # close position, up to C5
 
 
 def test_harmony_name_matches_name_of():
@@ -75,9 +75,9 @@ def test_harmony_name_matches_name_of():
 
 
 def test_chord_events():
-    # bars of 4 at 0, 4, 8, 12; C at 0, G at 2, N.C. at 6, F at 9 to the end (16)
+    # bars of 4 at 0, 4, 8, 12; C at 0, G at 2, N.C. at 6, F at 9 to the end (16): struck on each change, held to the next
     ev = node("console.log(JSON.stringify(cp.chordEvents([{q: 0, name: 'C'}, {q: 2, name: 'G'}, {q: 6, name: 'N.C.'}, {q: 9, name: 'F'}], [0, 4, 8, 12], 16)))")
     strikes = sorted({(e['q'], e['d'], e['chord']) for e in ev})
-    assert strikes == [(0, 2, 'C'), (2, 2, 'G'), (4, 2, 'G'), (9, 3, 'F'), (12, 4, 'F')]
+    assert strikes == [(0, 2, 'C'), (2, 4, 'G'), (9, 7, 'F')]
     assert all(e['v'] < 90 for e in ev)  # softer than the melody
-    assert sorted(e['n'] for e in ev if e['q'] == 0) == [36, 48, 52, 55]
+    assert sorted(e['n'] for e in ev if e['q'] == 0) == [48, 52, 55, 60]

@@ -1,13 +1,13 @@
-// Play the chord symbols (MusicXML <harmony>, the names above the bars) as piano chords with the score (the score
-// toolbar's "Chords" toggle). The chord grammar mirrors server/meowsic/chordname.py (parse, tones; omr.py's grammar)
+// Play the chord symbols (MusicXML <harmony>, the names above the bars) as a soft pad with the score (the score
+// toolbar's C part toggle, hands.js; the sound is audio.js padVoice). The chord grammar mirrors server/meowsic/chordname.py (parse, tones; omr.py's grammar)
 // and the reading of a <harmony> its name_of; server/tests/test_chordplay.py runs this file in node and checks it
 // gives the same tones as the Python for a list of names. No DOM here (node can import it).
 //
-// voicing(name) -> { bass, upper }: the root (or slash bass) between C2 and B2, and the chord in close root position
-//   from its root between B♭2 and A3 with up to three tones above it (the third / sus tone and the seventh first, the
-//   fifth dropped first, as chordops.voicing orders them), so it sits under the melody.
-// chordEvents(chords, barQ, endQ) -> [{q, d, n, v}]: each chord held until the next chord name or the end of the bar,
-//   struck again on beat 1 of each bar it lasts through; N.C. is silence. A bit softer than the melody (v 90).
+// voicing(name) -> { bass, upper }: a close-position block chord in C3–C5, the root (or slash bass) at the bottom
+//   (C3–B3) and the other tones just above it (the third / sus tone and the seventh first, the fifth dropped first,
+//   as chordops.voicing orders them).
+// chordEvents(chords, barQ, endQ) -> [{q, d, n, v}]: each chord struck on its change and held until the next chord
+//   name; N.C. is silence. The pad plays it about 9 dB under the melody (audio.js).
 
 const STEP = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const ACC = (a) => ({ '#': 1, b: -1 }[a] || 0);
@@ -80,40 +80,34 @@ export function harmonyName({ rootStep, rootAlter, kind, kindText, bassStep, bas
   return rs + accOf(rootAlter) + suf + (bs ? '/' + bs + accOf(bassAlter) : '');
 }
 
-// bass C2–B2 (MIDI 36–47; an octave lower if it would not be under the chord); the chord's root B♭2–A3 (46–57)
+// close-position block chord in the middle register (C3–C5): the root (or slash bass) as the lowest note, C3–B3
+// (MIDI 48–59), and the chord's tones just above it within the octave — the root on top, then the third / sus tone
+// and the seventh / sixth, the fifth dropped first when there are more than four (chordops.voicing's order)
 export function voicing(name) {
   const t = tones(parse(name) || name);
   if (!t) return null;
   const [root, iv, bassPc] = t;
-  const r = 46 + ((root - 46) % 12 + 12) % 12;
-  let bass = 36 + bassPc;
-  if (bass >= r) bass -= 12;
-  // chordops.voicing's order: the third, then the seventh / sixth, then the fifth; added tones last
+  const bass = 48 + bassPc;
   const rank = (i) => ({ 3: 0, 4: 0, 2: 0, 5: 0, 10: 1, 11: 1, 9: 1, 6: 2, 7: 2, 8: 2 }[i] ?? 3);
   const pcs = [...new Set(iv.map((i) => i % 12).filter((i) => i))];
-  const keep = pcs.sort((a, b) => rank(a) - rank(b)).slice(0, 3);
-  const upper = [r, ...keep.map((i) => r + i)].sort((a, b) => a - b);
+  const keep = pcs.sort((a, b) => rank(a) - rank(b)).slice(0, 3).map((i) => (root + i) % 12);
+  const above = (pc) => bass + 1 + ((pc - bass - 1) % 12 + 12) % 12; // the first one above the bass
+  const upper = [...new Set([root, ...keep].filter((pc) => pc !== bassPc || pc === root).map(above))].sort((a, b) => a - b);
   return { bass, upper };
 }
 
-const BASS_V = 58, UPPER_V = 48;
-// chords: [{q, name}] in score time (quarters), in order; barQ: where each bar starts; endQ: the end of the score
+const PAD_V = 64;
+// chords: [{q, name}] in score time (quarters), in order; barQ: where each bar starts (kept for callers); endQ: the end
+// of the score. Each chord sounds from its change and is held until the next chord name (or N.C., or the end).
 export function chordEvents(chords, barQ, endQ) {
   const out = [];
   const cs = [...chords].sort((a, b) => a.q - b.q);
-  const bars = [...barQ, endQ];
   cs.forEach((c, k) => {
     const v = c.name === 'N.C.' ? null : voicing(c.name);
     if (!v) return;
-    const to = k + 1 < cs.length ? cs[k + 1].q : endQ;
-    // cut at each bar line: struck again on beat 1
-    const cuts = [c.q, ...bars.filter((b) => b > c.q + 1e-6 && b < to - 1e-6), to];
-    for (let i = 0; i + 1 < cuts.length; i++) {
-      const q = cuts[i], d = cuts[i + 1] - q;
-      if (d <= 1e-6) continue;
-      out.push({ q, d, n: v.bass, v: BASS_V, chord: c.name });
-      for (const n of v.upper) out.push({ q, d, n, v: UPPER_V, chord: c.name });
-    }
+    const d = (k + 1 < cs.length ? cs[k + 1].q : endQ) - c.q;
+    if (d <= 1e-6) return;
+    for (const n of [v.bass, ...v.upper]) out.push({ q: c.q, d, n, v: PAD_V, chord: c.name });
   });
   return out;
 }

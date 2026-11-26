@@ -7,7 +7,7 @@ import { TUNES } from '../mock.js';
 import { musicXml, tuneNotes, VERSIONS, barBeats, xmlInfo } from '../musicxml.js';
 import { ScorePlayer, VoicePlayer } from '../audio.js';
 import { chordEvents } from '../chordplay.js';
-import { savedMuted, saveMuted, effectiveMuted, lhMuted, handsHtml, handsClick } from '../hands.js';
+import { savedParts, saveParts, effectiveMuted, handsHtml, handsClick } from '../hands.js';
 import { scoreEditor } from './scoreeditor.js';
 import { checkBadge } from './checkbars.js';
 import { incompleteBars, barFixSheet, fixBarOp } from '../incomplete.js';
@@ -360,9 +360,10 @@ export function scoreBody(root, it, { perform = false } = {}) {
     voice?.setRate(bpm / voice.bpm);
     it.rate = r;
   };
-  // Chords (toolbar toggle, this device): the chord names above the bars played as piano chords with the score
-  const cpKey = 'meowsic-chordplay';
-  let chordPlay = (() => { try { return localStorage.getItem(cpKey) === '1'; } catch { return false; } })();
+  // Parts to play (hands.js, per score on this device): the staves to leave out, and C = the chord names above the
+  // bars played as a soft pad (audio.js padVoice) with the score; at least one part stays on
+  const parts0 = savedParts(it.id);
+  let chordPlay = parts0.chords;
   let chordList = [];
   const chordNotes = () => {
     try {
@@ -372,11 +373,16 @@ export function scoreBody(root, it, { perform = false } = {}) {
       return chordEvents(chordList, ci.barQ, end);
     } catch { chordList = []; return []; }
   };
-  // Hands (hands.js): the staves to leave out; Play chords follows the left hand
-  let mutedPick = savedMuted();
+  let mutedPick = parts0.off;
   const staves = () => (real ? info?.staves || [] : ['R', 'L']);
-  const muted = () => effectiveMuted(staves(), mutedPick);
-  const chordsWanted = () => chordPlay && !lhMuted(muted());
+  const chordsWanted = () => chordPlay && chordList.length > 0;
+  const muted = () => effectiveMuted(staves(), mutedPick, chordsWanted());
+  const setParts = ({ muted: m = mutedPick, chords = chordPlay }) => {
+    mutedPick = [...m]; chordPlay = !!chords;
+    saveParts(it.id, { off: mutedPick, chords: chordPlay });
+    applyHands();
+    root.dispatchEvent(new CustomEvent('handschange', { bubbles: true }));
+  };
   const applyHands = () => { if (!midi) return; const st = staves(), m = muted(); midi.setMute(st.map((l, i) => (m.includes(l) ? i : -1)).filter((i) => i >= 0)); midi.setChords(chordsWanted()); };
   const makePlayer = () => {
     const was = midi;
@@ -589,13 +595,14 @@ export function scoreBody(root, it, { perform = false } = {}) {
     // Voice: the sung audio (Make it sing) in place of the piano
     get hasVoice() { return hasVoice(); },
     get tempo() { return Math.round(tempoExact()); }, get scoreTempo() { return scoreTempo(); }, setTempo,
-    // Chords: play the chord names too (piano only; hidden when the score has none)
-    get hasChords() { return chordList.length > 0; }, get chordPlay() { return chordPlay; },
+    // Parts to play (hands.js): the staves' names, the muted ones, C = the chord names as a pad (no toggle when the
+    // score has none); setParts / setMuted / setChordPlay take effect at once (while playing too), remembered per score
+    get hasChords() { return chordList.length > 0; }, get chordPlay() { return chordsWanted(); },
     get chordTimes() { return chordList; }, // [{q, name}] in score time, not transposed (the chords strip while playing)
-    setChordPlay(on) { chordPlay = !!on; try { localStorage.setItem(cpKey, chordPlay ? '1' : '0'); } catch {} midi?.setChords(chordsWanted()); },
-    // Hands: the staves' names ([] / one staff: no picker), the muted ones; setMuted takes effect at once (while playing too)
+    setChordPlay(on) { setParts({ chords: on }); },
     get staves() { return staves(); }, get muted() { return muted(); },
-    setMuted(labels) { mutedPick = [...labels]; saveMuted(mutedPick); applyHands(); root.dispatchEvent(new CustomEvent('handschange', { bubbles: true })); },
+    setMuted(labels) { setParts({ muted: labels }); },
+    setParts,
     get voice() { return player === voice && !!voice; }, setVoice,
     voiceReady(v) { Object.assign(it, v); voice?.destroy(); voice = null; if (voiceOn) setVoice(true); }, // stays on the piano unless Voice was picked
     zoomReset() { this.setZoom(zDef()); },
@@ -730,7 +737,6 @@ export function scoreToolbar(bar, it, view) {
     <span class="tg-row">
     <button class="tg-btn ${chordsMode() !== 'off' ? 'on' : ''}" id="sc-chords" data-mode="${chordsMode()}" title="${MODE_LABEL[chordsMode()]}" aria-label="${MODE_LABEL[chordsMode()]}">${iconOn(CHORD_ICON[chordsMode()])}</button>
     <button class="tg-btn ${view.easy ? 'on' : ''}" id="sc-names" aria-pressed="${view.easy}" title="Kids note names: big noteheads with the note's letter" aria-label="Kids note names">${iconOn('baby')}</button>
-    <button class="tg-btn ${view.chordPlay ? 'on' : ''}" id="sc-chordplay" aria-pressed="${view.chordPlay}" title="Play the chords too: the chord names above the bars on the piano" aria-label="Play chords"${view.hasChords && !view.voice ? '' : ' hidden'}>${iconOn('chordplay')}</button>
     <button class="tg-btn ${view.voice ? 'on' : ''}" id="sc-voice" aria-pressed="${view.voice}" title="Voice: hear it sung, at the tempo you set (off = piano only)" aria-label="Voice"${view.hasVoice ? '' : ' hidden'}>${iconOn('voice')}</button>
     </span>`;
 
@@ -749,17 +755,13 @@ export function scoreToolbar(bar, it, view) {
   host.addEventListener('playstate', onEnd); // Edit notes' ▶ From here played or paused
   // Voice: the sung audio follows the tempo (time-stretched, same pitch); it has its own key — a key change goes back to the piano
   const voiceBtn = $('#sc-voice', bar);
-  const cpBtn = $('#sc-chordplay', bar);
-  const cpl = () => { cpBtn.hidden = !view.hasChords || view.voice; cpBtn.classList.toggle('on', view.chordPlay); cpBtn.setAttribute('aria-pressed', String(view.chordPlay)); };
-  cpBtn.onclick = () => { view.setChordPlay(!view.chordPlay); cpl(); };
-  host.addEventListener('chordlistchange', cpl); // an edit added / took away chord names
-  // Hands: L · Both · R (or a toggle per staff); not for the singing voice
+  // Parts to play: V / R / L / C toggles, several on at once (hands.js); not for the singing voice
   const handsSlot = $('#sc-hands', bar);
-  const hl = () => { handsSlot.innerHTML = view.voice ? '' : handsHtml(view.staves, view.muted); };
-  handsSlot.onclick = (e) => { const m = handsClick(e, view.staves, view.muted); if (m) view.setMuted(m); };
-  host.addEventListener('handschange', hl); host.addEventListener('chordlistchange', hl); // chordlistchange: new notes (an edit may add a staff)
+  const hl = () => { handsSlot.innerHTML = view.voice ? '' : handsHtml(view.staves, view.muted, { chords: { has: view.hasChords, on: view.chordPlay } }); };
+  handsSlot.onclick = (e) => { const m = handsClick(e, view.staves, view.muted, view.chordPlay, view.hasChords); if (m) view.setParts(m); };
+  host.addEventListener('handschange', hl); host.addEventListener('chordlistchange', hl); // chordlistchange: new notes (an edit may add a staff or chord names)
   hl();
-  const vl = () => { cpl(); hl(); voiceBtn.hidden = !view.hasVoice; voiceBtn.classList.toggle('on', view.voice); voiceBtn.setAttribute('aria-pressed', String(view.voice)); tl(); setPlay(); };
+  const vl = () => { hl(); voiceBtn.hidden = !view.hasVoice; voiceBtn.classList.toggle('on', view.voice); voiceBtn.setAttribute('aria-pressed', String(view.voice)); tl(); setPlay(); };
   voiceBtn.onclick = async () => { const pr = view.setVoice(!view.voice); vl(); await pr; vl(); };
   const toPiano = (why) => { if (!view.voice) return; view.setVoice(false); vl(); toast(`${why} — back to the piano (the voice sings in its own key)`); };
   const onSung = (e) => { // "Make it sing" finished for this score: the Voice button shows (the piano stays the default)
@@ -840,7 +842,7 @@ export function scoreToolbar(bar, it, view) {
     if (saveT) save();
     document.querySelector('.tempo-pop')?.remove();
     offCheck(); offVoice();
-    host.removeEventListener('ended', onEnd); host.removeEventListener('playstate', onEnd); host.removeEventListener('chordlistchange', cpl); host.removeEventListener('handschange', hl); host.removeEventListener('chordlistchange', hl); document.removeEventListener('keydown', onSpace); removeEventListener('meowsic-new-items', onSung);
+    host.removeEventListener('ended', onEnd); host.removeEventListener('playstate', onEnd); host.removeEventListener('handschange', hl); host.removeEventListener('chordlistchange', hl); document.removeEventListener('keydown', onSpace); removeEventListener('meowsic-new-items', onSung);
     viewer?.removeEventListener('ukeclose', onUkeClose); viewer?.removeEventListener('uketoggle', onUkeToggle); uke?.destroy(); uke = null;
   };
 }

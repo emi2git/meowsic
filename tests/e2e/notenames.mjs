@@ -121,7 +121,7 @@ async function run(name, vp) {
   await page.goto(`${BASE}#/item/${ID}`, { waitUntil: 'networkidle0' }); await sleep(3500);
   let s = await state(page);
   check('classic by default: no letters, baby button off, chords off, no panel', s.letters === 0 && s.btn === false && s.kitten && !s.uke && s.ukeBtn === false && s.mode === 'off', JSON.stringify(s));
-  check('toolbar: chords + kids + Play chords (+ voice when the score sings) as round icon-only buttons; no "A B C" / "Voice" text', s.toggles.map((x) => x.id).join() === 'sc-chords,sc-names,sc-chordplay,sc-voice' && s.toggles.every((x) => !x.text && x.icons === 1) && !s.abc, JSON.stringify(s.toggles));
+  check('toolbar: chords + kids (+ voice when the score sings) as round icon-only buttons; no "A B C" / "Voice" text', s.toggles.map((x) => x.id).join() === 'sc-chords,sc-names,sc-voice' && s.toggles.every((x) => !x.text && x.icons === 1) && !s.abc, JSON.stringify(s.toggles));
   const dots0 = s.dots, h0 = s.plainH;
   await page.click('#sc-names'); await sleep(3500);
   s = await state(page);
