@@ -9,7 +9,7 @@
 <meta name="theme-color" content="#15181d" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Meowsic">
-<!-- black-translucent: the page draws under the status bar (each top bar pads by safe-area-inset-top); "default" let iPadOS 26 lay a white veil over the top of the app -->
+<!-- black-translucent: the page draws under the status bar; content keeps clear of the top by --sat (status bar + the iOS 26 edge blur), which the fixed .topedge band fills (app.css). "default" also got the iOS 26 white veil -->
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Meowsic</title>
 <link rel="icon" href="icon.svg?v=2" type="image/svg+xml">
@@ -20,6 +20,7 @@
 <link rel="stylesheet" href="css/completeinfo.css">
 <link rel="stylesheet" href="css/manage.css">
 <link rel="stylesheet" href="css/lyricmode.css">
+<script>try{if(navigator.standalone||matchMedia("(display-mode: standalone)").matches)document.documentElement.dataset.app=""}catch(e){}</script><!-- data-app: the home-screen app (app.css --sat) -->
 <script>try{var t=localStorage.getItem("meowsic-theme")||"light";if(t!=="system")document.documentElement.dataset.theme=t}catch(e){document.documentElement.dataset.theme="light"}</script>
 </head>
 <body>

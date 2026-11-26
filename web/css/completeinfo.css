@@ -17,9 +17,9 @@
 @keyframes ci-spin { to { transform: rotate(360deg); } }
 .ci-zoomhint { position: absolute; top: 8px; right: 8px; z-index: 1; font-size: 12px; font-weight: 650; padding: 4px 10px; border-radius: 999px; background: rgba(0, 0, 0, .6); color: #fff; pointer-events: none; }
 .ci-nopic { padding: 40px 20px; text-align: center; color: var(--mute); }
-.ci.zoomed .ci-pic { position: fixed; inset: 0; height: auto; z-index: 60; border-radius: 0; border: 0; cursor: zoom-out; overflow: auto; -webkit-overflow-scrolling: touch; padding-top: env(safe-area-inset-top); }
+.ci.zoomed .ci-pic { position: fixed; inset: 0; height: auto; z-index: 60; border-radius: 0; border: 0; cursor: zoom-out; overflow: auto; -webkit-overflow-scrolling: touch; padding-top: var(--sat); }
 .ci.zoomed .ci-pic .ci-img { position: static; margin: 0 auto; width: max(100%, 1000px); max-width: none; max-height: none; box-shadow: none; }
-.ci.zoomed .ci-zoomhint { position: fixed; top: calc(8px + env(safe-area-inset-top)); }
+.ci.zoomed .ci-zoomhint { position: fixed; top: calc(8px + var(--sat)); }
 .ci-strip { display: flex; gap: 8px; align-items: center; overflow-x: auto; padding: 4px 2px; }
 .ci-thumb { flex: none; width: 44px; min-height: 0; padding: 0; border: 1px solid var(--line2); border-radius: 4px; overflow: hidden; background: #fff; touch-action: manipulation; }
 .ci-thumb img { display: block; width: 100%; aspect-ratio: 8.5 / 11; object-fit: cover; object-position: top; }
