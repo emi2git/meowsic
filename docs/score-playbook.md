@@ -32,6 +32,7 @@ All API calls go to `https://localhost:5180/api/…`, with the CA at `~/Document
 | Sheet already in the library | Make a score, the same call as the sheet's ⋯ → "Make a score…": `POST /api/jobs {kind:'omr', title, source:'From the sheet “T”', outputs:['original'], fromItemId:<sheet id>, artist}`. Poll `GET /api/jobs/{id}` |
 | YouTube video | See §1a |
 | Lyrics text | See §1b |
+| Hand-made MusicXML as a new version of a score | `POST /api/items {fromItemId:<score id>, musicxmlText, version:'pro', title?, note?}`: same song group, "From the score …" source, Activities + Undo, composer + "Transcribed by" kept, "Arranged by Meowsic" added. Voice + piano → piano solo first: `server/.venv/bin/python server/scripts/arrange_piano.py in.musicxml out.musicxml` (melody on top of the RH, RH thinned, LH kept; `--shift BARS=12` forces a phrase's octave) |
 | Composed / hand-written MusicXML | `~/git/scripts/meowsic-add-ai-score.py score.musicxml --title … --artist "<real artist>"` (it checks bars first), or `POST /api/items {kind:'score', title, musicxmlText, groupId?, version?, tags?}` |
 
 ### 1a. From a video
@@ -127,7 +128,7 @@ Example: an accurate sheet as the base, plus an intro, fills, decorations or lef
 - Autofill fills artist / album from the library and **never sets the key**. Set `key` yourself (PATCH `/api/items/{id}`).
 - No tempo marks on scores (the app hides them anyway, `noTempoXml`). The bpm goes in the item field.
 - Transcriptions: do not copy pedal marks (user request 2026-11-26). Existing ones go with the Edit notes op `{op:'unpedal'}`.
-- New versions are new items (`POST /api/items` with `groupId`, or `mode:'new'` on editnotes / lyrics). Originals stay as they are.
+- New versions are new items (`POST /api/items` with `fromItemId` (logged, undoable) or `groupId`, or `mode:'new'` on editnotes / lyrics). Originals stay as they are.
 - `PATCH /api/items/{id}` for title / artist / album / tags / key (one Activities row each).
 
 ## 8. Saving edits in place (summary)

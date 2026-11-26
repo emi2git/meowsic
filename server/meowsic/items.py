@@ -86,9 +86,56 @@ def read_item(item_id: str, c=Depends(conn)):
     return must_item(c, item_id)
 
 
+PROCESS_TAGS = ('Hands moved', 'Notes edited', 'Simple piano')  # what an edit did to that one score: not copied to a new version
+
+
+def _version_of(c, cf, body, session):
+    """POST /api/items with `fromItemId`: `musicxmlText` saved as a new version of that score (like Edit notes /
+    Simple piano 'new'): same song group (a groupId made for the source when it has none; its Last modified stays),
+    its artist, key, tempo, link and tags; source "From the score “X”, <note>"; an Activities row whose Undo moves
+    the new score to the Trash. Body: {fromItemId, musicxmlText, version?, title?, note?, artist?}. 423 while Edit
+    notes is open on the source."""
+    from . import editsafe
+    from .undolog import _q
+    src = must_item(c, str(body['fromItemId']))
+    if src['kind'] != 'score' or src.get('deleted'): raise HTTPException(400, 'fromItemId must be a score that is not in the Trash')
+    editsafe.check(c, src['id'], session)
+    text = body.get('musicxmlText')
+    if not isinstance(text, str) or not text.lstrip().startswith('<') or '<score-partwise' not in text:
+        raise HTTPException(400, 'musicxmlText (a score-partwise MusicXML) is required')
+    version = check_version('score', body.get('version') if 'version' in body else src.get('version') or 'original')
+    note = str(body.get('note') or f'{version} version').strip()
+    t = now_ms()
+    new = {'id': uid('m'), 'kind': 'score', 'title': str(body.get('title') or '').strip() or src['title'],
+           'artist': str(body.get('artist') or '').strip() or src.get('artist') or '',
+           'tags': [x for x in src.get('tags', []) if x not in PROCESS_TAGS], 'createdAt': t, 'updatedAt': t, 'originAt': t,
+           'version': version, 'source': f'From the score {_q(src["title"])}' + (f', {note}' if note else ''),
+           'groupId': src.get('groupId') or uid('g'), 'key': src.get('key') or '', 'bpm': src.get('bpm'), 'ai': src.get('ai') or 0,
+           'sourceUrl': src.get('sourceUrl') or ''}
+    if new['artist'] in NOT_ARTIST: new['artist'] = ''
+    if not src.get('groupId'): c.execute('UPDATE score SET group_id=? WHERE item_id=?', (new['groupId'], src['id']))  # item.updated_at untouched
+    filled = fill_from_library(c, new)  # Album (and an empty Artist) from the library; never the key
+    # credits: composer = the artist (none: the file's own composer stays); "Transcribed by Meowsic" stays, + "Arranged by Meowsic"
+    text = credit_xml(text, new['artist'] or None, score_byline(new['source'], new['ai']))
+    write_item(c, new, new=True)
+    log_fill(c, [(new, filled)])
+    d = folder_path(cf, new['folder'])
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f'{new["folder"]}.musicxml').write_text(text, encoding='utf-8')
+    c.execute('UPDATE score SET musicxml=? WHERE item_id=?', (f'{new["folder"]}.musicxml', new['id']))
+    refresh_staves(c, cf, new['id'])
+    aid = record_undo(c, 'add-version', {'op': 'created', 'ids': [new['id']], 'titles': [new['title']]},
+                      f'New version: {new["title"]}', f'New "{version}" version from the score {_q(src["title"])} (that score is untouched)')
+    return {**get_item(c, new['id']), 'activity': aid}
+
+
 @router.post('/items', status_code=201)
-def create_item(body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
-    """Add a chord chart, score or (file-less) sheet. Score: pass `musicxmlText` to write the file."""
+def create_item(request: Request, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
+    """Add a chord chart, score or (file-less) sheet. Score: pass `musicxmlText` to write the file; with `fromItemId`
+    it is a new version of that score (_version_of: same song, Activities + Undo)."""
+    if body.get('fromItemId'):
+        from .editsafe import HEADER
+        return _version_of(c, cf, body, body.get('session') or request.headers.get(HEADER))
     kind = body.get('kind')
     if kind not in KIND_COLS or not str(body.get('title', '')).strip():
         raise HTTPException(400, 'kind (sheet|chords|score) and title are required')
