@@ -188,16 +188,17 @@ await page.click('#sv-dots i[data-p="1"]'); await sleep(250);
 const pw = () => page.$eval('.page', (e) => e.getBoundingClientRect().width);
 const w100 = await pw();
 await page.click('#sv-zin'); await sleep(250);
-check('zoom + shows 125%, still two pages, bigger and scrollable', (await text('#sv-zreset')) === '125%' && (await count('.page')) === 2 && Math.abs((await pw()) / w100 - 1.25) < 0.02
-  && await page.$eval('#pages', (e) => e.classList.contains('zoomed') && (e.scrollHeight > e.clientHeight || e.scrollWidth > e.clientWidth)), `${await text('#sv-zreset')} ${(await pw()) / w100}`);
-await page.click('#sv-zin'); await sleep(250);
+// 1366×1024 (4:3): two pages at 125% no longer fit side by side → one page, 1.25× as big (sheetfit.mjs has the rest)
+check('zoom + shows 125%: two pages no longer fit → one page, bigger', (await text('#sv-zreset')) === '125%' && (await count('.page')) === 1 && (await shown()) === '1' && (await text('#sv-count')) === '1 / 3' && Math.abs((await pw()) / w100 - 1.25) < 0.02, `${await text('#sv-zreset')} ${(await pw()) / w100}`);
+await page.click('#sv-zin'); await page.click('#sv-zin'); await sleep(250);
+check('200%: bigger than the room, scrollable', await page.$eval('#pages', (e) => e.classList.contains('zoomed') && (e.scrollHeight > e.clientHeight || e.scrollWidth > e.clientWidth)));
 { const r = await page.$eval('#pages', (e) => { const b = e.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
   const pos = () => page.$eval('#pages', (e) => e.scrollTop + e.scrollLeft);
   const before = await pos();
   await page.mouse.move(r.x, r.y); await page.mouse.down(); await page.mouse.move(r.x - 200, r.y - 200, { steps: 6 }); await page.mouse.up(); await sleep(150);
   check('hand tool: drag moves the zoomed page', (await pos()) > before + 100); }
-check('zoom is kept on this device only, not on the entry', (await page.evaluate(() => localStorage.getItem('meowsic.sheetZoom.s-001'))) === '1.5' && (await db()).items.find((x) => x.id === 's-001').zoom == null);
-await page.keyboard.press('-'); await page.keyboard.press('-'); await sleep(250);
+check('zoom is kept on this device only, not on the entry', (await page.evaluate(() => localStorage.getItem('meowsic.sheetZoom.s-001'))) === '2' && (await db()).items.find((x) => x.id === 's-001').zoom == null);
+await page.keyboard.press('-'); await page.keyboard.press('-'); await page.keyboard.press('-'); await sleep(250);
 check('− key back to 100%: the spread fits again', (await text('#sv-zreset')) === '100%' && (await fits()) && (await count('.page')) === 2);
 await page.keyboard.press('-'); await sleep(250);
 check('− to 75%: smaller pages, still whole', (await text('#sv-zreset')) === '75%' && Math.abs((await pw()) / w100 - 0.75) < 0.02 && (await fits()));
