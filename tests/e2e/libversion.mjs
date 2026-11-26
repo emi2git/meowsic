@@ -1,6 +1,6 @@
 // Library: opens on Sheets; sheet keys (⋯, Info, Key column, search); search × clears in one tap (Esc too); no sort button:
-// the Title heading toggles A–Z ⇄ Z–A, the ⌄ beside it opens the 4 orders (remembered, in sync with the headings);
-// the Version column (Lead / Piano / Duet, scores by their staves) on All, Sheets, Scores, Books:
+// the Title heading toggles A–Z ⇄ Z–A, the ⌄ beside it opens the 5 orders (remembered, in sync with the headings);
+// the Version column (Lead / Piano / Duet / Accomp., scores by their staves) on All, Sheets, Scores, Books:
 // shows, sorts, set from the ⋯ menu, the selection bar and Info; search finds versions; Pages column on Sheets / Books.
 // Mac + iPad Pro 13 (portrait, landscape) + iPhone Air. Sheet versions it sets are put back at the end.
 // BASE=http://localhost:5230/ (a test server; never :5180)  OUT=dir for screenshots
@@ -17,7 +17,7 @@ const patch = (id, body) => api(`/items/${id}`, { method: 'PATCH', headers: { 'C
 const all = (await api('/items')).filter((x) => !x.deleted);
 const before = Object.fromEntries(all.filter((x) => x.kind === 'sheet').map((x) => [x.id, x.version]));
 const sheets = all.filter((x) => x.kind === 'sheet' && !x.book), scores = all.filter((x) => x.kind === 'score');
-const WORD = (it) => (it.kind === 'sheet' ? { lead: 'Lead', piano: 'Piano', duet: 'Duet' }[it.version] || '' : it.kind === 'score' ? (it.version === 'duet' ? 'Duet' : it.version === 'lead' || it.staves === 1 ? 'Lead' : 'Piano') : '');
+const WORD = (it) => (it.kind === 'sheet' ? { lead: 'Lead', piano: 'Piano', duet: 'Duet', accomp: 'Accomp.' }[it.version] || '' : it.kind === 'score' ? (it.version === 'duet' ? 'Duet' : it.version === 'lead' || it.staves === 1 ? 'Lead' : 'Piano') : '');
 
 const hash = (p) => p.evaluate(() => location.hash);
 const fresh = async (p, h = '#/library') => { await p.goto('about:blank'); await p.goto(BASE + h, { waitUntil: 'networkidle0' }); await sleep(500); };
@@ -109,7 +109,7 @@ const xShown = (p) => p.$eval('#lib-q-x', (e) => !e.hidden && e.getBoundingClien
     const heads = await p.$$eval('.lib-table th', (e) => e.map((x) => x.textContent.replace(/[▲▼]/g, '').trim()).filter(Boolean));
     if (!heads.length) { console.log(`  (${h}: nothing here)`); continue; }
     const cells = await col(p, 'c-ver'), rid = await ids(p);
-    check(`${h}: Version column shows Lead / Piano / Duet`, heads.includes('Version') && cells.every((c, i) => c === WORD(byId[rid[i]])), heads.join('|') + ' :: ' + cells.join(','));
+    check(`${h}: Version column shows Lead / Piano / Duet / Accomp.`, heads.includes('Version') && cells.every((c, i) => c === WORD(byId[rid[i]])), heads.join('|') + ' :: ' + cells.join(','));
   }
   await to(p, '#/library');
   check('chords show a blank version', !all.some((x) => x.kind === 'chords') || (await p.$$eval('#lib-rows tr.row', (rows) => rows.filter((r) => r.querySelector('.badge.k-chords')).every((r) => !r.querySelector('.c-ver').textContent.trim()))));
@@ -141,7 +141,7 @@ const xShown = (p) => p.$eval('#lib-q-x', (e) => !e.hidden && e.getBoundingClien
   await p.click(`tr.row[data-id="${sid}"] .row-more`); await sleep(250);
   check('row ⋯ = Info · Move to Trash (Version lives in Info)', (await menuItems(p)).map((x) => x.label).join('|') === 'Info|Move to Trash', JSON.stringify(await menuItems(p)));
   await clickMenu(p, 'Info');
-  check('…Info offers Lead, Piano, Duet', (await p.$$eval('#if-ver [data-ver]', (e) => e.map((x) => x.textContent).join('|'))) === 'Lead|Piano|Duet');
+  check('…Info offers Lead, Piano, Duet, Accomp.', (await p.$$eval('#if-ver [data-ver]', (e) => e.map((x) => x.textContent).join('|'))) === 'Lead|Piano|Duet|Accomp.');
   if (!(await p.$('#if-ver [data-ver="duet"].on'))) await p.click('#if-ver [data-ver="duet"]');
   await p.click('#if-save'); await sleep(500);
   check('set Duet: column + server', (await p.$eval(`tr.row[data-id="${sid}"] .c-ver`, (e) => e.textContent)) === 'Duet' && (await api('/items/' + sid)).version === 'duet');
@@ -197,8 +197,8 @@ const xShown = (p) => p.$eval('#lib-q-x', (e) => !e.hidden && e.getBoundingClien
   console.log('Version column sorts');
   await p.click('[data-sort="version"]'); await sleep(300);
   const vs = await col(p, 'c-ver');
-  const rank = (v) => ({ Duet: 0, Lead: 1, Piano: 2 }[v] ?? 3);
-  check('Version heading sorts Duet, Lead, Piano, then blanks', vs.every((v, i) => !i || rank(vs[i - 1]) <= rank(v)) && vs[0] === 'Duet', vs.join(','));
+  const rank = (v) => ({ 'Accomp.': 0, Duet: 1, Lead: 2, Piano: 3 }[v] ?? 4);
+  check('Version heading sorts Accomp., Duet, Lead, Piano, then blanks', vs.every((v, i) => !i || rank(vs[i - 1]) <= rank(v)) && ['Accomp.', 'Duet'].includes(vs[0]), vs.join(','));
   await p.click('[data-sort="version"]'); await sleep(300);
   const vr = await col(p, 'c-ver');
   check('…again reverses', vr.every((v, i) => !i || rank(vr[i - 1]) >= rank(v)), vr.slice(0, 6).join(','));
@@ -208,14 +208,22 @@ const xShown = (p) => p.$eval('#lib-q-x', (e) => !e.hidden && e.getBoundingClien
   await to(p, '#/library?kind=sheet');
   const two = (await ids(p)).slice(0, 2);
   await to(p, '#/library');
-  // pick two sheets + a score in All
-  for (const id of [...two, scores[0].id]) { const el = await p.$(`tr.row[data-id="${id}"] .pick input`); if (el) { await el.click(); await sleep(150); } }
+  // pick two sheets + a score in All (the score may be on a later page: the selection stays across pages)
+  for (const id of two) { const el = await p.$(`tr.row[data-id="${id}"] .pick input`); if (el) { await el.click(); await sleep(150); } }
+  let sc = null;
+  for (let pg = 0; pg < 40 && !sc; pg++) {
+    sc = byId[(await ids(p)).find((id) => byId[id]?.kind === 'score')];
+    if (sc) { await p.click(`tr.row[data-id="${sc.id}"] .pick input`); await sleep(150); break; }
+    const nx = await p.$('.pager [title="Next page"]:not([disabled])'); if (!nx) break;
+    await nx.click(); await sleep(300);
+  }
+  sc ||= scores[0];
   check('selection bar has "Set version…"', !!(await p.$('#sb-ver')));
   await p.click('#sb-ver'); await sleep(250);
-  check('…Lead, Piano, Duet, Not set', (await menuItems(p)).map((x) => x.label).join('|') === 'Lead|Piano|Duet|Not set');
+  check('…Lead, Piano, Duet, Accomp., Not set', (await menuItems(p)).map((x) => x.label).join('|') === 'Lead|Piano|Duet|Accomp.|Not set');
   await clickMenu(p, 'Piano'); await sleep(600);
-  const after = await Promise.all([...two, scores[0].id].map((id) => api('/items/' + id)));
-  check('bulk Piano: both sheets Piano, the score keeps its version', after[0].version === 'piano' && after[1].version === 'piano' && after[2].version === scores[0].version, after.map((x) => x.version).join());
+  const after = await Promise.all([...two, sc.id].map((id) => api('/items/' + id)));
+  check('bulk Piano: both sheets Piano, the score keeps its version', after[0].version === 'piano' && after[1].version === 'piano' && after[2].version === sc.version, after.map((x) => x.version).join());
   const tst = await p.$eval('#toast', (e) => e.textContent).catch(() => '');
   check('toast says the score was kept', /2 set to Piano.*1 score/.test(tst), tst);
   await p.click('#sb-done').catch(() => {}); await sleep(200);
@@ -225,9 +233,9 @@ const xShown = (p) => p.$eval('#lib-q-x', (e) => !e.hidden && e.getBoundingClien
   const info = async () => { await p.click('#it-more'); await sleep(250); await clickMenu(p, 'Info'); await sleep(300); };
   await info();
   const seg = () => p.$$eval('#if-ver button', (e) => e.map((x) => x.textContent + (x.classList.contains('on') ? '*' : '')).join('|'));
-  check('Info: Version Lead | Piano | Duet, Duet lit', (await seg()) === 'Lead|Piano|Duet*', await seg());
+  check('Info: Version Lead | Piano | Duet | Accomp., Duet lit', (await seg()) === 'Lead|Piano|Duet*|Accomp.', await seg());
   await p.click('#if-ver [data-ver="lead"]'); await sleep(200);
-  check('tap Lead → lit, saved only on Save', (await seg()) === 'Lead*|Piano|Duet' && (await api('/items/' + sid)).version === 'duet');
+  check('tap Lead → lit, saved only on Save', (await seg()) === 'Lead*|Piano|Duet|Accomp.' && (await api('/items/' + sid)).version === 'duet');
   await p.click('#if-save'); await sleep(500);
   check('Save → Lead saved', (await api('/items/' + sid)).version === 'lead');
   await info();
@@ -237,7 +245,7 @@ const xShown = (p) => p.$eval('#lib-q-x', (e) => !e.hidden && e.getBoundingClien
   await info();
   await p.click('#if-ver [data-ver="lead"]'); await p.click('#if-save'); await sleep(500);
   await info();
-  check('Info → Version Lead + Save (Info follows)', (await api('/items/' + sid)).version === 'lead' && (await seg()) === 'Lead*|Piano|Duet');
+  check('Info → Version Lead + Save (Info follows)', (await api('/items/' + sid)).version === 'lead' && (await seg()) === 'Lead*|Piano|Duet|Accomp.');
   await p.keyboard.press('Escape'); await sleep(200);
   const clear = scores.find((x) => x.version === 'clear') || scores[0];
   await to(p, '#/item/' + clear.id); await sleep(800);
@@ -262,9 +270,11 @@ for (const [name, w, h] of [['ipad13-port', 1032, 1376], ['ipad13-land', 1376, 1
       return { th, over: t ? t.getBoundingClientRect().right - box.getBoundingClientRect().right : 0, page: document.scrollingElement.scrollWidth - innerWidth };
     });
     if (!vis.th.length) { console.log(`  (${name} ${k || 'all'}: nothing here)`); continue; }
-    check(`${name} ${k || 'all'}: Title + Version${k ? '' : ' + Type'}${k === 'sheet' || k === 'book' ? ' + Pages' : ''} visible, nothing sticks out`, vis.th[0] === 'Title' && vis.th.includes('Version') && (k || vis.th.includes('Type'))
-      && (!['sheet', 'book'].includes(k) || vis.th.includes('Pages')) && vis.over <= 1 && vis.page <= 0, JSON.stringify(vis));
-    if (k === 'sheet' || k === 'book') {
+    // Pages on Sheets / Books; on an iPhone (≤ 480 px) Sheets show Key instead (Pages gives way first: keycolumn.mjs)
+    const pages = k === 'book' || (k === 'sheet' && w > 480);
+    check(`${name} ${k || 'all'}: Title + Version${k ? '' : ' + Type'}${pages ? ' + Pages' : k === 'sheet' ? ' + Key' : ''} visible, nothing sticks out`, vis.th[0] === 'Title' && vis.th.includes('Version') && (k || vis.th.includes('Type'))
+      && (!pages || vis.th.includes('Pages')) && (k !== 'sheet' || pages || vis.th.includes('Key')) && vis.over <= 1 && vis.page <= 0, JSON.stringify(vis));
+    if (pages) {
       const pc = await p.$$eval('#lib-rows tr.row td.c-pages', (e) => e.map((x) => ({ t: x.innerText.trim(), clip: x.scrollWidth > x.clientWidth + 1 })));
       check(`${name} ${k}: page counts shown${w < 760 ? ' ("12 p")' : ''}, not cut off`, pc.length && pc.every((x) => !x.clip && (w < 760 ? /^\d+ p$|^$/ : /^\d+$|^$/).test(x.t)) && pc.some((x) => x.t), JSON.stringify(pc.slice(0, 4)));
     }
@@ -275,7 +285,7 @@ for (const [name, w, h] of [['ipad13-port', 1032, 1376], ['ipad13-land', 1376, 1
   const sb = await p.$eval('#lib-sort-menu', (e) => { const r = e.getBoundingClientRect(); return { w: r.width, right: r.right, vis: getComputedStyle(e).display !== 'none' }; });
   check(`${name}: ⌄ beside Title on screen`, sb.vis && sb.w > 0 && sb.right <= w, JSON.stringify(sb));
   await p.tap('#lib-sort-menu'); await sleep(250);
-  check(`${name}: tap ⌄ → the 4 orders`, (await menuItems(p)).map((x) => x.label).join('|') === 'Title A–Z|Title Z–A|Most played|Recently added');
+  check(`${name}: tap ⌄ → the 5 orders`, (await menuItems(p)).map((x) => x.label).join('|') === 'Last modified|Title A–Z|Title Z–A|Most played|Recently added');
   await clickMenu(p, 'Title A–Z');
   await p.tap('.th-sort[data-sort="title"]'); await sleep(350);
   await p.tap('#lib-sort-menu'); await sleep(250);

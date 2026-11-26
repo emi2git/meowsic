@@ -1045,7 +1045,7 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .lib-table .c-pages { width: 68px; }
 .lib-table .c-pages .pg-u { display: none; }
 @media (max-width: 760px) {
-  .lib-table .c-pages { width: 50px; }
+  .lib-table .c-pages { width: 62px; } /* "514 p" / "1200 p" fit (50px clipped 3-digit counts) */
   .lib-table .c-pages .pg-u { display: inline; }
 }
 /* Key: the song's key as a chord name (A, Dm, Bb), shown on every device; compact on a phone,
