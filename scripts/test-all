@@ -49,6 +49,12 @@ SUITES = {
 OK_RX = re.compile(r'(\d+)\s+passed,\s+(\d+)\s+failed')
 
 
+def make_album(album):
+    """The fake Photos album (photoimport, cropback). It needs PIL: the server venv's python, never the default
+    python3 (which has no PIL)."""
+    subprocess.run([str(dev.PY), str(E2E / 'make_fake_album.py'), str(album)], check=True, capture_output=True)
+
+
 def run_suite(name, out_dir, timeout):
     kind = SUITES[name]
     log = out_dir / f'{name}.log'
@@ -65,7 +71,7 @@ def run_suite(name, out_dir, timeout):
             senv = {}
             if name in ('photoimport', 'cropback'):  # a fake Photos album instead of the real one
                 album = out_dir / 'fake-album'
-                if not album.exists(): subprocess.run([sys.executable, str(E2E / 'make_fake_album.py'), str(album)], check=True, capture_output=True)
+                if not album.exists(): make_album(album)
                 senv['MEOWSIC_FAKE_PHOTOS'] = str(album)
             else:  # every other suite: an empty fake Photos (Add sheet music looks at the album; never the real one)
                 (out_dir / 'no-photos').mkdir(exist_ok=True)

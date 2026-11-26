@@ -911,13 +911,25 @@ _JUMP_WORDS = re.compile(r'\bD\.\s*[SC]\.|\bD\s?[SC]\b|dal\s+segno|da\s+capo|to\
 
 def _jumps(part):
     """(source bars, target bars): bars ending in a jump (D.S., D.C., To Coda, a backward repeat) and bars a jump
-    lands on (the first bar, a segno, a coda, a forward repeat), as measure indexes."""
+    lands on (the first bar, a segno, a coda, a forward repeat), as measure indexes. A jump marked before the bar's
+    first note (e.g. a To Coda sign at the start of bar 37) is taken at the barline before it, so the bar before is
+    a source too (a tie from bar 36 then goes on in bar 37, or at the coda on the way back)."""
     src, tgt = set(), {0}
     for k, m in enumerate(part.iter('measure')):
+        jump = early = False
+        noted = False
+        for e in m:
+            if e.tag == 'note': noted = True
+            elif e.tag in ('direction', 'sound'):
+                j = any(any(s.get(a) for a in ('dalsegno', 'dacapo', 'tocoda')) for s in e.iter('sound')) \
+                    or any(_JUMP_WORDS.search(w.text or '') for w in e.iter('words'))
+                if j: jump = True; early = early or not noted
         for snd in m.iter('sound'):
-            if any(snd.get(a) for a in ('dalsegno', 'dacapo', 'tocoda')): src.add(k)
+            if any(snd.get(a) for a in ('dalsegno', 'dacapo', 'tocoda')): jump = True
             if snd.get('segno') or snd.get('coda'): tgt.add(k)
-        if any(_JUMP_WORDS.search(w.text or '') for w in m.iter('words')): src.add(k)
+        if any(_JUMP_WORDS.search(w.text or '') for w in m.iter('words')): jump = True
+        if jump: src.add(k)
+        if early and k: src.add(k - 1)
         if m.find('.//segno') is not None or m.find('.//coda') is not None: tgt.add(k)
         for r in m.findall('barline/repeat'):
             (src if r.get('direction') == 'backward' else tgt).add(k)
@@ -926,7 +938,9 @@ def _jumps(part):
 
 def _jump_ties(part, tl):
     """{id(start note): stop entry} for ties over a jump: a tie start on a note ending its bar where the bar jumps
-    (D.S. ...) and a same-pitch tie stop on a note starting a bar the jump lands on (a segno ...)."""
+    (D.S. ...) and a same-pitch tie stop on a note starting a bar the jump lands on (a segno ...). The next bar is
+    not a jump target here: a stop there is the tie's plain partner (kept anyway), so a tie that goes on both ways
+    (bar 36 → 37, and → the coda bar 48 after To Coda) keeps the stop at the coda too."""
     src, tgt = _jumps(part)
     if not src: return {}
     bar = {id(n): k for k, m in enumerate(part.iter('measure')) for n in m.iter('note')}
@@ -941,9 +955,9 @@ def _jump_ties(part, tl):
     out = {}
     for x in tl:
         k = bar.get(id(x[0]))
-        if k in src and x[4] == hi[k] and x[5] is not None and _has_tie(x[0], 'start') and stops.get(x[5]):
-            st = stops[x[5]]
-            out[id(x[0])] = next((y for y in st if y[1] == x[1]), st[0])  # same staff first
+        if k in src and x[4] == hi[k] and x[5] is not None and _has_tie(x[0], 'start'):
+            st = [y for y in stops.get(x[5], ()) if bar.get(id(y[0])) != k + 1]
+            if st: out[id(x[0])] = next((y for y in st if y[1] == x[1]), st[0])  # same staff first
     return out
 
 
