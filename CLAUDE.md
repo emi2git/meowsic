@@ -27,7 +27,7 @@ Server (`server/meowsic/`; each file's docstring explains it, and most list thei
 - `items.py`: items, Trash, tags, plays, ink, files, sheet upload, MusicXML get/put/revert.
 - `jobs.py` + `runners.py`: background jobs (transcribe, omr, lyrics, sing, version) and their runners.
 - `undo.py` + `undolog.py`: Activities rows and their 24 h Undo. `dailycleanup.py`: the daily Final + clean-up.
-- `staffmove.py`: the Edit notes API (`POST /api/items/{id}/editnotes`). It uses `barops`, `rangeops`, `structops`, `noteset`, `barnorm`, `easerests`, `divisions` (finer `<divisions>` when a 32nd needs them).
+- `staffmove.py`: the Edit notes API (`POST /api/items/{id}/editnotes`). It uses `barops`, `rangeops`, `structops`, `rescaleops` (tempo marks; a stretch at double / half note values), `noteset`, `barnorm`, `easerests`, `divisions` (finer `<divisions>` when a 32nd needs them).
 - `editsafe.py`: Edit notes never loses edits: edit sessions (the 423 lock), drafts on disk (`<data>/drafts/<item>/`), and the rebase that merges a Save onto a score changed meanwhile.
 - `lyricsedit.py`: lyrics by hand and Edit notes → Lyrics. `lyricsfit.py`: a sheet's words placed on a score.
 - `simplepiano.py` + `smoothrhythm.py` + `arrange.py`: the Simple piano versions. `chordfind.py`: chords from notes.

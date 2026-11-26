@@ -1128,6 +1128,9 @@ def edit(text: str, op: dict) -> tuple[str, list]:
       {op:'ottava', staff, from_bar, to_bar, shift, from_beat?, to_beat?}  an 8va (8) / 8vb (-8) / 15ma / 15mb line over those bars of a
                                       staff (from_beat / to_beat: from / before a beat inside the bar), 0: off (octaveops.py); the pitches stay (MusicXML pitch = what sounds)
       {op:'unpedal', staff?}          every pedal mark ("Ped." / *) off, or only on that staff (pedalops.py)
+      {op:'tempo', bar, bpm}          the tempo mark at that bar set / changed; bpm null: removed (rescaleops.py)
+      {op:'rescale', from, to, factor} bars from … to (0-based) of every part: note values × 0.5 (bars merged in pairs)
+                                      or × 2 (each bar split in two), barred again with ties (rescaleops.py)
     Every voice of every bar still fills it. Ties and slurs stay (fix_ties / fix_slurs)."""
     out, touched, _ = edit_ex(text, op)
     return out, touched
@@ -1158,6 +1161,9 @@ def edit_ex(text: str, op: dict, info=None):
     if kind == 'unpedal':  # every pedal mark off (pedalops.py)
         from .pedalops import unpedal_op
         return unpedal_op(text, op, info)
+    if kind in ('tempo', 'rescale'):  # a tempo mark; a stretch written at double / half the note values (rescaleops.py)
+        from .rescaleops import rescale_op
+        return rescale_op(text, op, info)
     if kind == 'shift':  # a note dragged to another beat (dragops.py)
         from .dragops import shift_op
         return shift_op(text, op, info)
@@ -1548,7 +1554,8 @@ def _what(ops):
     for o in ops:
         k = o.get('op') or ('move' if 'to' in o else '')
         k = f'move{o.get("to")}' if k == 'move' else k
-        cnt[k] = cnt.get(k, 0) + (len(o.get('bars') or []) if k == 'unmark' else 1 if k in ('alt', 'delbar', 'fillbar', 'bartime', 'clearbar', 'addhand', 'insbar', 'addstaff', 'delstaff', 'clear', 'paste', 'pickup', 'keysig', 'timesig', 'repeat', 'ending', 'chord', 'movechords', 'realize', 'clef', 'ottava', 'unpedal') else len(o.get('refs') or []))
+        if k == 'rescale': k = 'halve' if str(o.get('factor')) in ('0.5', '1/2', '.5') else 'double'
+        cnt[k] = cnt.get(k, 0) + (len(o.get('bars') or []) if k == 'unmark' else 1 if k in ('alt', 'delbar', 'fillbar', 'bartime', 'clearbar', 'addhand', 'insbar', 'addstaff', 'delstaff', 'clear', 'paste', 'pickup', 'keysig', 'timesig', 'repeat', 'ending', 'chord', 'movechords', 'realize', 'clef', 'ottava', 'unpedal', 'tempo', 'halve', 'double') else len(o.get('refs') or []))
     words = {'move1': lambda n: f'{s(n)} to the right hand', 'move2': lambda n: f'{s(n)} to the left hand', 'move3': lambda n: f'{s(n)} to staff 3',
              'pitch': lambda n: f'{s(n)} higher / lower', 'len': lambda n: f'{n} note{"s" if n != 1 else ""} / rest{"s" if n != 1 else ""} longer / shorter',
              'fill': lambda n: f'{s(n)} filled into the rest after', 'restdel': lambda n: f'{n} rest{"s" if n != 1 else ""} removed',
@@ -1571,6 +1578,9 @@ def _what(ops):
              'ending': lambda n: f'{n} ending{"s" if n != 1 else ""} changed', 'clef': lambda n: f'{n} clef change{"s" if n != 1 else ""}',
              'ottava': lambda n: f'{n} octave line{"s" if n != 1 else ""} (8va / 8vb) changed',
              'unpedal': lambda n: 'pedal marks removed',
+             'tempo': lambda n: f'{n} tempo mark{"s" if n != 1 else ""} changed',
+             'halve': lambda n: f'note values halved in {n} stretch{"es" if n != 1 else ""} (bars merged in pairs)',
+             'double': lambda n: f'note values doubled in {n} stretch{"es" if n != 1 else ""} (each bar split in two)',
              'chord': lambda n: f'{n} chord name{"s" if n != 1 else ""} changed', 'movechords': lambda n: 'chord names moved to another part', 'realize': lambda n: f'left hand written from the chords{f" ({n} times)" if n != 1 else ""}'}
     verses = sorted({str(o.get('verse') or '1') for o in ops if o.get('op') == 'lyrics'}, key=lambda v: (len(v), v))
     out = [words[k](n) for k, n in cnt.items() if k in words and n] + ([f'lyrics of verse{"s" if len(verses) > 1 else ""} {", ".join(verses)}'] if verses else [])
