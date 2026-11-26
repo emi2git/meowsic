@@ -19,9 +19,11 @@ export function helpView(main) {
         'Tap <b>Add music</b> in the left bar (or <b>Add</b> on iPhone), then pick one.',
       ])}
       ${sec('sheet', 'Sheet', [
+        'With the Mac, <b>Sheet</b> opens on your “Sheet” album in Apple Photos and reads its new photos at once. Photos is only read, never changed.',
+        'New = put into the album since the last time you added from it. A photo you added, or skipped, is never offered again — even if you delete its sheet.',
+        '<b>✕ Skip</b> — not a sheet. <b>Show skipped</b> on the album screen brings one back.',
         '<b>Files</b> — photos or PDFs. On iPad / iPhone: photo library, camera or Files.',
         '<b>Camera</b> (iPad / iPhone) — take a photo of the page.',
-        '<b>Photos</b> — the new photos in your “SHEET” album in Apple Photos. Only read, never changed. Needs the Mac.',
         'On the Mac you can also drag files onto the page.',
         'The Mac reads each page and finds its title.',
         'A page with a title starts a new sheet; the pages after it join it.',

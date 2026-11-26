@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Read one Apple Photos album for Meowsic's "Add music → From Photos" (runs in migrate/.venv: osxphotos).
 
-  photos_album.py list <album>                 -> {"album", "photos": [{id, date, filename, w, h, local, sha256}]}
+  photos_album.py list <album>                 -> {"album", "photos": [{id, date, added, filename, w, h, local, sha256}]}
   photos_album.py fetch <out dir> <id> ...     -> {id: {file, sha256, quality, note} | {error}}
 
 Read-only: the Photos library is never changed (osxphotos reads Photos.sqlite; nothing is written there,
@@ -76,7 +76,9 @@ def cmd_list(name, cache_file=None):
             key = f'{p.uuid}:{path}:{st.st_mtime_ns}:{st.st_size}'
             sha = cache.get(key) or sha256(path)
             cache[key] = sha
-        photos.append({'id': p.uuid, 'date': int(p.date.timestamp() * 1000) if p.date else None, 'filename': p.original_filename or p.filename,
+        added = getattr(p, 'date_added', None)  # when it came into Photos (Add sheet music offers photos after the last check)
+        photos.append({'id': p.uuid, 'date': int(p.date.timestamp() * 1000) if p.date else None, 'added': int(added.timestamp() * 1000) if added else None,
+                       'filename': p.original_filename or p.filename,
                        'w': p.width, 'h': p.height, 'local': bool(path), 'sha256': sha, 'edited': bool(p.hasadjustments), 'ismovie': bool(p.ismovie)})
     if cache_file:
         try: Path(cache_file).write_text(json.dumps(cache))

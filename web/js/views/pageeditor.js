@@ -11,6 +11,7 @@
 // Every change goes to the Mac at once and gets an Activities row; Undo (header) rolls the newest one back.
 // No hint text on screen: Help (next to Done / Make sheets) explains it all in a dialog.
 import { store } from '../store.js';
+import { leaveTo } from '../app.js';
 import { isDesktop } from '../device.js';
 import { $, esc, iconOn, toast, sheet as modal, confirmSheet, menu } from '../ui.js';
 import { cropStage, savedBoxes, boxOf, isFull, full } from '../cropbox.js';
@@ -391,7 +392,8 @@ export function editorView(main, { id, q }) {
 export function cropView(main, { id, page, q }) {
   if (store.mode !== 'server') { main.innerHTML = head({ title: 'Crop', sub: null }) + '<p class="mg-pad muted">Crop needs the Mac.</p>'; return; }
   const toItem = q?.get?.('back') === 'item' && q?.get?.('from') !== 'editor';
-  const leave = (p) => { location.hash = toItem ? `#/item/${encodeURIComponent(id)}` : editorHash(id, q, p ? `sel=${p}` : ''); };
+  // leaving takes the crop out of the history: Back / swipe-back never opens a crop again (leaveTo)
+  const leave = (p) => leaveTo(toItem ? `#/item/${encodeURIComponent(id)}` : editorHash(id, q, p ? `sel=${p}` : ''));
   const st = { info: null, p: page, stage: null, ver: store.get(id)?.updatedAt || 0, working: false, alive: true, boxes: null };
   const cancelHref = toItem ? `#/item/${encodeURIComponent(id)}` : editorHash(id, q, `sel=${page}`);
   main.innerHTML = `<div class="mg-full pe-crop">${head({ back: cancelHref, backLabel: 'Cancel', title: 'Crop', sub: null,
@@ -404,6 +406,7 @@ export function cropView(main, { id, page, q }) {
       <button data-act="whole" id="cr-whole" title="Whole page (W)">Whole page</button>
       <button class="ghost" data-act="orig" id="cr-orig" title="The photo as it came in" hidden>Back to original photo</button>
     </div></div>`;
+  $('.mg-back', main).onclick = (e) => { e.preventDefault(); leaveTo(cancelHref); };  // ‹ Cancel: same as Back
   const total = () => st.info?.length || 0;
   const show = () => {
     const p = st.p, pi = st.info[p - 1];
@@ -460,7 +463,7 @@ export function cropView(main, { id, page, q }) {
     if ((e.code === 'Digit1' || e.code === 'Digit2') && st.boxes) { e.preventDefault(); const n = +e.code.slice(-1); return e.shiftKey ? st.boxes.save(n) : st.boxes.use(n); }
     const a = e.altKey ? { ArrowLeft: () => s.nudge(e.shiftKey ? 'right' : 'left', -0.005), ArrowRight: () => s.nudge(e.shiftKey ? 'right' : 'left', 0.005) }[k]
       : { ArrowUp: () => s.nudge(e.shiftKey ? 'bottom' : 'top', -0.005), ArrowDown: () => s.nudge(e.shiftKey ? 'bottom' : 'top', 0.005),
-        ArrowLeft: () => go(-1), ArrowRight: () => go(1), Enter: () => apply(true), w: () => s.set(full(), 'Whole page'), Escape: () => { location.hash = cancelHref; } }[k];
+        ArrowLeft: () => go(-1), ArrowRight: () => go(1), Enter: () => apply(true), w: () => s.set(full(), 'Whole page'), Escape: () => leaveTo(cancelHref) }[k];
     if (!a) return;
     e.preventDefault(); a();
   };

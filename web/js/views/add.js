@@ -10,6 +10,7 @@ import { suggestTags, tagChips } from '../tagchips.js';
 import { keySelect } from './chordsview.js';
 import { sheetUrl } from '../sheet-art.js';
 import { isTouch, isDesktop } from '../device.js';
+import { photoImportView } from './photoimport.js';
 
 const titleCase = (s) => s.replace(/\s+/g, ' ').trim().replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase();
@@ -19,13 +20,14 @@ let pending = null; // [{title, tags, pages:[{name, url, pdf}] , dup}]
 
 export function addSheetsView(main) {
   if (pending) return reviewSheets(main);
+  // with the Mac: straight to the new photos in the Sheet album; Files / Camera (PDFs, iPad camera) stay as small options
+  if (store.mode === 'server') return photoImportView(main, { sources: (el, stop) => smallSources(main, el, stop) });
   main.innerHTML = `
     <header class="top"><a class="icon-btn back" href="#/library?kind=sheet" aria-label="Back">‹ Back</a><h1>Add sheet music</h1></header>
     <div class="pad narrow add-src" id="drop">
       <div class="src-row">
         <label class="src-btn primary" id="src-files">${icon('upload')}<b>Files</b><input type="file" id="files" accept="image/*,application/pdf" multiple hidden></label>
         ${isTouch() ? `<label class="src-btn" id="src-camera">${icon('photo')}<b>Camera</b><input type="file" id="camera" accept="image/*" capture="environment" hidden></label>` : ''}
-        ${store.mode === 'server' ? `<a class="src-btn pi-from" href="#/add-photos">${icon('photo')}<b>Photos</b></a>` : ''}
         ${store.mode === 'mock' ? `<button class="src-btn" id="sample">${icon('sheet')}<b>Samples</b></button>` : ''}
       </div>
       <p class="muted small center">${isDesktop() ? 'Or drop files here · ' : ''}<a class="link" href="#/help">Help</a></p>
@@ -42,6 +44,28 @@ export function addSheetsView(main) {
     const names = ['Edelweiss 1', 'Moon River 1', 'Moon River 2', 'Castle on a Cloud 1', 'Castle on a Cloud 2', 'Castle on a Cloud 3', 'Arirang 1'];
     analyse(main, names.map((n, i) => ({ name: n + '.jpg', type: 'image/jpeg', lastModified: Date.now() - (names.length - i) * 30000, sample: true })));
   });
+}
+
+// the "Or add from" row under the album (server mode): Files, Camera on touch, drop on the Mac
+function smallSources(main, el, stop) {
+  el.innerHTML = `<span class="muted small">Or add from</span>
+    <label class="src-btn" id="src-files">${icon('upload')}<b>Files</b><input type="file" id="files" accept="image/*,application/pdf" multiple hidden></label>
+    ${isTouch() ? `<label class="src-btn" id="src-camera">${icon('photo')}<b>Camera</b><input type="file" id="camera" accept="image/*" capture="environment" hidden></label>` : ''}
+    <a class="link small" href="#/help">Help</a>`;
+  const take = (files) => { if (!files.length) return; stop(); analyse(main, files); };
+  for (const inp of el.querySelectorAll('input[type=file]')) inp.onchange = () => take([...inp.files]);
+  if (!isDesktop()) return;
+  const files = (e) => {
+    if (!el.isConnected) { main.ondragover = main.ondragleave = main.ondrop = null; return false; }  // left this view
+    return [...(e.dataTransfer?.types || [])].includes('Files');
+  };
+  main.ondragover = (e) => { if (!files(e) || el.hidden) return; e.preventDefault(); el.classList.add('over'); };
+  main.ondragleave = () => el.classList.remove('over');
+  main.ondrop = (e) => {
+    if (!files(e) || el.hidden) return;
+    e.preventDefault(); el.classList.remove('over');
+    take([...e.dataTransfer.files].filter((f) => /^image\/|pdf$/.test(f.type)));
+  };
 }
 
 function analyse(main, files) {
