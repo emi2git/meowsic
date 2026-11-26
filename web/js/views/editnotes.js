@@ -361,7 +361,7 @@ export async function editNotes(view, it, host, opts = {}) {
     const pages = view.pages > 1;
     const off = (c) => (c ? '' : 'disabled');
     npBody.innerHTML = `<div class="np-row"><b class="np-title">${opts.title || 'Edit notes'}</b>
-      ${view.voice ? '' : handsHtml(view.staves || [], view.muted || [], { id: 'np-hands' })}
+      ${view.voice ? '' : handsHtml(view.staves || [], view.muted || [], { id: 'np-hands', chords: { has: !!view.hasChords, on: !!view.chordPlay } })}
       <span class="np-count" id="np-count">${arcSel ? `${arcSel.kind === 'tie' ? 'Tie' : 'Slur'} picked · ⌫ or ✕ takes it away` : p.length ? `${plural(ns.length, 'note')}${rs.length ? ` · ${plural(rs.length, 'rest')}` : ''} ${rng ? 'in the range' : 'picked'}` : barPick ? `Bar ${barPick.bar + 1} picked (${staffName(barPick.staff, nst)})` : 'Pick notes on the score'}</span>
       ${midiCtl ? '<span class="np-midi-slot"></span>' : ''}<span class="grow"></span>
       <button data-a="playhere" class="np-play ${view.player?.playing ? 'on' : ''}" title="${view.player?.playing ? 'Pause (space)' : 'Play from the bar before the picked notes, as edited (space)'}" aria-label="${view.player?.playing ? 'Pause' : 'Play from here'}">${view.player?.playing ? '❚❚ Pause' : '▶ From here'}</button>
@@ -1320,7 +1320,7 @@ export async function editNotes(view, it, host, opts = {}) {
   };
 
   panel.addEventListener('click', (e) => {
-    if (e.target.closest('#np-hands')) { const m = handsClick(e, view.staves, view.muted); if (m) view.setMuted(m); return; } // Hands (hands.js): at once, playing or not
+    if (e.target.closest('#np-hands')) { const m = handsClick(e, view.staves, view.muted, view.chordPlay, view.hasChords); if (m) view.setParts(m); return; } // Parts to play (hands.js): at once, playing or not
     const l = e.target.closest('[data-len]');
     if (l) return act(() => setLen(+l.dataset.len));
     const a = e.target.closest('[data-a]')?.dataset.a;
