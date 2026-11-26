@@ -2,8 +2,8 @@
 // Copy into the session's workflows folder, or pass this file, with args:
 //   { root: '<scratchpad>/transcribe',            // temp work folder (NOT inside ~/git/apps/meowsic); deleted per song
 //     tags: ['Musical', 'English', 'From a sheet'], // optional default tags
-//     songs: [{ key: 'think-of-me',               // folder-safe id
-//               title: 'Think Of Me', composer: 'Andrew Lloyd Webber', album: 'The Phantom Of The Opera',
+//     songs: [{ key: 'song-01',               // folder-safe id
+//               title: '<title as printed>', composer: '<composer>', album: '<musical / album>',
 //               sources: 's-xxxx (piano, 6 pages), s-yyyy (lead, 2 pages)',   // candidate library sheets
 //               plan: '',                          // optional extra instructions for this song
 //               fixItem: '' }] }                    // optional: an EXISTING score id to verify + fix instead of a new one

@@ -52,4 +52,4 @@ Lyrics route: `GET /api/items/{id}/lyrics?line=` (notes + refs + sha), `POST …
 Item info (title / artist / album / tags / key / version): `PATCH /api/items/{id}`, one Activities row each.
 
 If a fix can't be expressed with logged ops, don't do it some other way. List it in the report (or get the app fixed
-first, as with the When I Grow Up D.S. tie).
+first, as with the D.S. tie on `m-1dapqsx`).

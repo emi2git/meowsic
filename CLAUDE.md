@@ -104,7 +104,7 @@ Views (`web/js/views/`):
   - Never publish, upload, share or post scores, sheets, lyrics or audio outside the owner's devices.
   - Never print lyric text in chat, logs or reports.
   - Credit the composer / artist and the source URL on each score.
-  - Transcribe from the audio (singing or playing) rather than copy a sheet shown on screen. When a sheet is visible, use it only to check, and say so in the report.
+  - A sheet from the user's library (one they own or photographed) is the source: copy it exactly. A sheet only seen inside a video is for checking only: there the audio (singing or playing) is the primary source; say so in the report.
   - Downloaded videos are temp files: delete them after use.
   - Publisher content stays on this device.
 - If the owner asks to share or distribute something, that's a different case: raise it with them first.
