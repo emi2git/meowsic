@@ -72,11 +72,11 @@ function growHeads(vf, grow) {
   }
 }
 
-// what Meowsic did, drawn small on a score: Arranged (a version made from another score), Read (photo → score),
-// Made (a piece Meowsic wrote), Transcribed (a recording / video / audio file) — the server writes the same (db.score_byline)
+// what Meowsic did, drawn small on a score: Arranged (a version made from another score),
+// Made (a piece Meowsic wrote), Transcribed (a recording / video / audio file, or photo → score; once "Read by Meowsic") — the server writes the same (db.score_byline)
 export function byline(it) {
   const src = it.source || '';
-  return src.startsWith('From the score') ? 'Arranged by Meowsic' : src.startsWith('From the sheet') ? 'Read by Meowsic'
+  return src.startsWith('From the score') ? 'Arranged by Meowsic'
     : it.ai || /^Meowsic( AI)?$/.test(src) ? 'Made by Meowsic' : 'Transcribed by Meowsic';
 }
 

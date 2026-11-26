@@ -7,6 +7,7 @@ One app for the family's sheet music, chord charts, books and scores, used on Ma
 - **sing/**: "Make it sing (beta)", run in SoulX-Singer's venv at `~/ai/SoulX-Singer/.venv`. Default singer for every song (English, Vietnamese, Mandarin): `zh_target`, a low male voice (the user's pick, "take C"); the auto octave (`octave_for`) fits the melody to its range. `{voice, octave}` on the sing job still picks another.
 - **migrate/**: one-off importers from the three old apps (done; the old data stays read-only).
 - **Making scores for the user** (from a sheet, video or lyrics) → read `docs/score-playbook.md` first.
+- **Sheet → score** ("transcribe <song> from the sheet", a whole musical): follow the skill `.claude/skills/transcribe-sheet/SKILL.md` (procedure, 5 verifiers, lessons log, workflow template).
 - More detail: `docs/architecture.md`. History: `WORKLOG.md`, `docs/history/`. Task list: `TASKS.md`.
 
 ## Where things live
@@ -103,7 +104,7 @@ Views (`web/js/views/`):
   - Never publish, upload, share or post scores, sheets, lyrics or audio outside the owner's devices.
   - Never print lyric text in chat, logs or reports.
   - Credit the composer / artist and the source URL on each score.
-  - Transcribe from the audio (singing or playing) rather than copy a sheet shown on screen. When a sheet is visible, use it only to check, and say so in the report.
+  - A sheet from the user's library (one they own or photographed) is the source: copy it exactly. A sheet only seen inside a video is for checking only: there the audio (singing or playing) is the primary source; say so in the report.
   - Downloaded videos are temp files: delete them after use.
   - Publisher content stays on this device.
 - If the owner asks to share or distribute something, that's a different case: raise it with them first.
@@ -125,6 +126,7 @@ Views (`web/js/views/`):
   - `/cleanup/notes` (notes for Claude) and `/cleanup/suggest` (suggested names: accept, dismiss or undo);
   - `GET /api/versions` (same-song groups) in `versions.py`.
   Their tables, Undo and tests stay.
+- `POST /api/items/{id}/credit` (`{dryRun}`): a score's MusicXML credits brought up to date (`db.credit_xml` + `score_byline`), logged + undoable. Photo → score says "Transcribed by Meowsic" since Nov 2026 (it was "Read by Meowsic"; the old text is still matched). Bulk: `server/scripts/credit_transcribed.py`.
 - Job kind `version` (`runners.version_runner`): another arrangement of a score; the UI's "Make another version" is gone. Also `GET /api/ai/status` and `POST /api/backup/snapshot`.
 
 ## Gotchas
