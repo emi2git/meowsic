@@ -5,8 +5,13 @@
 // chord is used light up in the score. Remembered on this device, off by default. Every device: one compact row at the
 // top of the score (under the toolbar, above the music), scrolling sideways when there are many chords; the score
 // below fits the rest of the height (its ResizeObserver lays it out again). Off = no strip, full height.
-import { ukeShape, transposeChord, splitChord, esc } from './chords.js';
+// While the score plays (piano or voice, Play chords on or off): only the chord sounding at the playhead and the next 3 in
+// the order they are played (repeats, D.S. / coda, an A–B loop: chordplay.chordWindow), the sounding one marked
+// (.uk-now); paused or stopped: every chord again. The ticks only swap 4 small boxes when the chord changes, the score
+// is not drawn again. A score without chord symbols (chords worked out from its notes) keeps the full list.
+import { ukeShape, transposeChord, splitChord, notePc, esc } from './chords.js';
 import { chordsOf, keyboardSvg } from './easyscore.js';
+import { chordWindow } from './chordplay.js';
 
 // the score toolbar's chords button cycles piano → ukulele → off (this device; off by default)
 const KEY = 'meowsic-chords';
@@ -119,12 +124,66 @@ export function ukePanel(view, it, host, mode = 'uke') {
     const n = `${list.length} chord${list.length > 1 ? 's' : ''}${from === 'notes' ? ' · worked out from the notes' : ''}`;
     const sx = panel.querySelector('.uk-row')?.scrollLeft || 0; // a redraw (transpose, zoom) keeps the strip where it was
     panel.title = list.length ? `${MODE_LABEL[mode]}: ${n}` : MODE_LABEL[mode];
+    liveKey = null;
+    panel.classList.remove('uk-playing');
     panel.innerHTML = `<div class="uk-row">${list.length ? list.map((c) => `<button class="uk-chord ${c === pick ? 'on' : ''}" data-chord="${esc(c)}" aria-pressed="${c === pick}" title="Show where ${esc(c)} is played">${mode === 'piano' ? pianoBox(c) : ukeBox(c)}</button>`).join('')
-        : '<p class="muted uk-none">No chords in this score</p>'}</div>
+        : '<p class="muted uk-none">No chords in this score</p>'}</div><div class="uk-row uk-next" role="list" aria-label="Playing now and next" hidden></div>
       <button class="icon-btn uk-close" aria-label="Close the chords" title="Close">✕</button>`;
     panel.querySelector('.uk-row').scrollLeft = sx;
     light();
   };
+  // playing: the chord now + the next 3 (chord symbols only: they have their times)
+  let liveKey = null, idle = 0, tCache = null, tFor = null;
+  const same = (x) => { const c = splitChord(baseChord(x).replace(/♯/g, '#').replace(/♭/g, 'b')); return c ? `${notePc(c.root)}|${c.suffix}` : x; };
+  const timed = () => {
+    const src = view.chordTimes || [], n = it.transpose || 0, drawn = chordsOf(view.osmd || {}).map(baseChord);
+    if (tFor && tFor[0] === src && tFor[1] === n && tFor[2] === drawn.join()) return tCache;
+    const spell = new Map(drawn.map((d) => [same(d), d])); // the drawn spelling (C♯ or D♭) of each chord
+    tCache = [];
+    for (const c of src) {
+      const b = baseChord(n ? transposeChord(c.name, n) : c.name);
+      if (b && b !== 'N.C.' && splitChord(b.replace(/♯/g, '#').replace(/♭/g, 'b'))) tCache.push({ q: c.q, name: spell.get(same(b)) || b.replace(/^([A-G])#/, '$1♯').replace(/^([A-G])b/, '$1♭') });
+    }
+    tFor = [src, n, drawn.join()];
+    return tCache;
+  };
+  // the segment playing now: the piano's own index (one back while its jump is still on its way), the voice's from its audio time
+  const segNow = (p) => {
+    if (!p?.segments?.length) return 0;
+    if (typeof p.seg === 'number') { const a = p.anchors?.at(-1); return p.seg > 0 && a && p.ctx && a.t0 > p.ctx.currentTime && a.q0 === p.segments[p.seg][0] ? p.seg - 1 : p.seg; }
+    if (p.el) { const pq = p.el.currentTime * p.qps; let acc = 0; for (let j = 0; j < p.segments.length; j++) { const [a, z] = p.segments[j]; if (pq < acc + z - a) return j; acc += z - a; } return p.segments.length - 1; }
+    return 0;
+  };
+  const showAll = () => {
+    clearTimeout(idle);
+    if (liveKey == null) return;
+    liveKey = null; panel.classList.remove('uk-playing');
+    const row = panel.querySelector('.uk-row:not(.uk-next)'), next = panel.querySelector('.uk-next');
+    if (row) row.hidden = false;
+    if (next) { next.hidden = true; next.innerHTML = ''; }
+  };
+  const boxOf = (c) => (mode === 'piano' ? pianoBox(c) : ukeBox(c));
+  const onTick = (e) => {
+    const p = view.player;
+    if (!p?.playing) { showAll(); return; }
+    clearTimeout(idle);
+    idle = setTimeout(function look() { if (view.player?.playing) idle = setTimeout(look, 300); else showAll(); }, 300); // paused: no more ticks
+    const next = panel.querySelector('.uk-next'), list = timed();
+    if (!next || !list.length) return;
+    const q = e?.detail?.q ?? p.now();
+    const win = chordWindow(list, { q, segments: p.segments, seg: segNow(p), loop: p.loop, n: 4 });
+    const key = win.map((w) => `${w.now ? '*' : ''}${w.name}@${w.k}:${w.q}`).join('|');
+    if (key === liveKey) return;
+    liveKey = key;
+    panel.classList.add('uk-playing');
+    panel.querySelector('.uk-row:not(.uk-next)').hidden = true;
+    next.hidden = false;
+    next.innerHTML = win.map((w) => `<button class="uk-chord ${w.now ? 'uk-now' : ''} ${w.name === pick ? 'on' : ''}" data-chord="${esc(w.name)}" aria-pressed="${w.name === pick}"${w.now ? ' aria-current="true"' : ''} title="${w.now ? 'Playing now' : 'Coming up'}: ${esc(w.name)}">${boxOf(w.name)}</button>`).join('');
+  };
+  const onStop = () => { if (!view.player?.playing) showAll(); };
+  host.addEventListener('tick', onTick);
+  host.addEventListener('ended', onStop);
+  host.addEventListener('playstate', onStop);
   panel.addEventListener('click', (e) => {
     if (e.target.closest('.uk-close')) { host.dispatchEvent(new CustomEvent('ukeclose')); return; }
     const b = e.target.closest('[data-chord]');
@@ -136,5 +195,5 @@ export function ukePanel(view, it, host, mode = 'uke') {
   const onDrawn = () => draw();
   host.addEventListener('scoredrawn', onDrawn);
   draw();
-  return { el: panel, refresh: draw, setMode(m) { mode = m; panel.dataset.mode = m; panel.setAttribute('aria-label', MODE_LABEL[m]); draw(); }, destroy() { host.removeEventListener('scoredrawn', onDrawn); host.querySelectorAll('.uke-hit').forEach((e) => e.classList.remove('uke-hit')); panel.remove(); host.classList.remove('uke-on'); } };
+  return { el: panel, refresh: draw, setMode(m) { mode = m; liveKey = null; panel.dataset.mode = m; panel.setAttribute('aria-label', MODE_LABEL[m]); draw(); }, destroy() { clearTimeout(idle); host.removeEventListener('scoredrawn', onDrawn); host.removeEventListener('tick', onTick); host.removeEventListener('ended', onStop); host.removeEventListener('playstate', onStop); host.querySelectorAll('.uke-hit').forEach((e) => e.classList.remove('uke-hit')); panel.remove(); host.classList.remove('uke-on'); } };
 }

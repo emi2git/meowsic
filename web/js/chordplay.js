@@ -117,3 +117,36 @@ export function chordEvents(chords, barQ, endQ) {
   });
   return out;
 }
+
+// The chords strip while playing (ukepanel.js): the chord sounding at q and the next ones in the order they are
+// played: through repeats, endings, D.S. / coda (segments, as ScorePlayer plays them) or round and round an A–B loop.
+// A chord named again right after itself counts once. chords: [{q, name}] (no N.C.); segments: [[a, z], …] or null;
+// seg: the segment playing now (a hint: the player's own index; q is looked for from there back); loop: [a, z] or null.
+// → up to n [{name, q, k, now}]: k the segment; now = the first one, sounding at q (none before the first chord).
+export function chordWindow(chords, { q, segments = null, seg = 0, loop = null, n = 4 }) {
+  const E = 1e-6;
+  const cs = [...chords].sort((a, b) => a.q - b.q);
+  if (!cs.length || n <= 0) return [];
+  const segs = loop ? [loop] : segments?.length ? segments : [[0, Infinity]];
+  let k = 0;
+  if (segs.length > 1) {
+    const inSeg = (j) => q >= segs[j][0] - E && q < segs[j][1] - E;
+    const h = Math.max(0, Math.min(segs.length - 1, seg | 0));
+    k = -1;
+    for (let j = h; j >= 0 && k < 0; j--) if (inSeg(j)) k = j;
+    for (let j = h + 1; j < segs.length && k < 0; j++) if (inSeg(j)) k = j;
+    if (k < 0) k = h;
+  }
+  const out = [];
+  const push = (c, j, now = false) => { if (c && out.at(-1)?.name !== c.name) out.push({ name: c.name, q: c.q, k: j, now }); };
+  const lastBefore = (x) => { let r = null; for (const c of cs) { if (c.q <= x) r = c; else break; } return r; };
+  push(lastBefore(q + E), k, true); // sounding now (a chord from before a jump goes on sounding, as carryChords plays it)
+  for (let step = 0, j = k; out.length < n && step < segs.length + 2 * n + 2; step++) {
+    const [a, z] = segs[j];
+    if (step > 0) push(lastBefore(a + E), j); // carried over the jump into this segment
+    for (const c of cs) if (out.length < n && c.q < z - E && (step === 0 ? c.q > q + E : c.q >= a - E)) push(c, j);
+    if (loop) continue; // round again
+    if (++j >= segs.length) break;
+  }
+  return out;
+}

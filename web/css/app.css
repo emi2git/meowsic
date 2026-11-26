@@ -1126,6 +1126,10 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .uk-chord { flex: none; height: 100%; padding: 2px 4px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); min-height: 0; display: flex; align-items: center; justify-content: center; }
 .uk-chord.on { border: 2px solid var(--acc); padding: 1px 3px; background: var(--acc-soft); }
 .uk-none { margin: 0; padding: 0 6px; white-space: nowrap; }
+/* playing: the chord sounding now (in the chord colour) and the next 3 a little softer */
+.uk-next .uk-chord:not(.uk-now) { opacity: .62; }
+.uk-next .uk-chord.uk-now { border: 2px solid var(--chord); padding: 1px 3px; }
+.uk-next .uk-now .uk-name { fill: var(--chord); }
 .chord-strip .uk-close { flex: none; align-self: center; min-height: 34px; width: 34px; padding: 0; border-radius: 50%; }
 .uk-box { height: 100%; width: auto; display: block; }
 .uk-box .uk-name { font: 700 14px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: var(--ink); }
