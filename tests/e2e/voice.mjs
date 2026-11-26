@@ -1,7 +1,7 @@
 // Request singing voice + the score player's Voice toggle (server on $BASE, default :5244, temp data; the server runs with
 // MEOWSIC_SING_PYTHON = a stand-in that "sings" a 12 s test tone, so no model is needed):
 // ⋯ → Request singing voice → job → Voice button appears, OFF (the piano is the default); tap it on; Play plays the audio with the playhead in sync; tap on
-// the music and dragging the line move the audio; Voice off/on swaps piano ↔ voice at the same spot; Stop goes back to the start; a tempo change
+// the music and dragging the line move the audio; Voice off/on swaps piano ↔ voice at the same spot; Stop goes back to the line, twice to the start; a tempo change
 // keeps the voice (time-stretched to the new tempo); it ends; the choice is remembered; iPhone: a tap on Play starts the audio.
 import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';
@@ -41,7 +41,7 @@ await page.click('.modal [data-ok]'); await sleep(300);
 let job;
 for (let i = 0; i < 600; i++) { await sleep(500); job = (await api('/jobs')).find((j) => j.kind === 'sing' && j.title === 'Voice Test'); if (job && ['done', 'failed'].includes(job.status)) break; }
 check('sing job finishes', job?.status === 'done', JSON.stringify(job?.log?.slice(-3)));
-check('job log has the checks', /100(\.0)?% of 2 notes within 50 cents/.test(job?.log?.at(-1)?.msg || ''), job?.log?.at(-1)?.msg);
+check('job log has the checks', /100(\.0)?% of 6 notes within 50 cents/.test(job?.log?.at(-1)?.msg || ''), job?.log?.at(-1)?.msg);
 const got = await api(`/items/${it.id}`);
 check('score has vocalAudio + vocalBpm', got.vocalAudio === `${got.folder} vocal.m4a` && got.vocalBpm === 72, JSON.stringify([got.vocalAudio, got.vocalBpm]));
 let shown = false;
@@ -89,10 +89,19 @@ check('Voice off: audio stops, piano keeps playing on', a.paused && qb > qa && (
 await page.click('#sc-voice'); await sleep(600);
 a = await audio(); const qc = await pos();
 check('Voice on again: the audio plays from the same spot', !a.paused && qc >= qb && Math.abs(a.t * qps - qc) < 0.35, JSON.stringify({ qb, qc, a }));
-// Stop (the square before Play): the voice stops and goes back to the beginning; Play starts it from there
+// Stop (the square before Play): the voice stops at once and goes back to where the line was put (the cue, from the
+// drag above); Play starts it from there; Stop twice = back to the beginning, and Play starts the voice from the start
+const cue = await page.evaluate(() => window.__score.cueQ);
 await page.click('#sc-stop'); await sleep(300);
 a = await audio();
-check('Stop: voice stops, back to the beginning', a.paused && a.t < 0.05 && (await pos()) === 0 && (await page.$eval('#sc-play', (e) => e.getAttribute('aria-label'))) === 'Play', JSON.stringify(a));
+check('Stop: voice stops, back to the line', cue > 0 && a.paused && Math.abs(a.t * qps - cue) < 0.05 && Math.abs((await pos()) - cue) < 1e-6 && (await page.$eval('#sc-play', (e) => e.getAttribute('aria-label'))) === 'Play', JSON.stringify({ cue, a }));
+await page.click('#sc-play'); await sleep(900);
+a = await audio();
+check('Play after Stop: the voice from the line', !a.paused && a.t * qps > cue + 0.3 && a.t * qps < cue + 2.5, JSON.stringify({ cue, a }));
+await page.click('#sc-stop'); await sleep(200);
+await page.click('#sc-stop'); await sleep(300);
+a = await audio();
+check('Stop twice: voice stops, back to the beginning', a.paused && a.t < 0.05 && (await pos()) === 0 && (await page.$eval('#sc-play', (e) => e.getAttribute('aria-label'))) === 'Play', JSON.stringify(a));
 await page.click('#sc-play'); await sleep(900);
 a = await audio();
 check('Play after Stop: the voice from the start', !a.paused && a.t > 0.3 && a.t < 2, JSON.stringify(a));
@@ -115,12 +124,13 @@ for (let i = 0; i < 30 && !ended; i++) { await sleep(250); ended = (await page.$
 check('the end: button back to Play', ended);
 const r = await fetch(`${BASE}api/items/${it.id}/vocal`, { headers: { Range: 'bytes=0-99' } });
 check('vocal endpoint serves ranges (Safari)', r.status === 206 && r.headers.get('content-type') === 'audio/mp4' && (await r.arrayBuffer()).byteLength === 100, String(r.status));
-await page.screenshot({ path: 'voice.png' });
+await page.screenshot({ path: `${process.env.SHOTS || '.'}/voice.png` });
 
-// Add → Score lists the job with its own stages
-await page.goto(`${BASE}#/jobs`, { waitUntil: 'networkidle0' }); await sleep(600);
-const jl = await page.$$eval('section.job', (e) => e.map((x) => x.textContent.replace(/\s+/g, ' ')).find((t) => t.includes('Voice Test')) || '');
-check('jobs list: sing stages + its result line', ['Read the score', 'Load the voice', 'Sing', 'Piano and mix', 'Check'].every((s) => jl.includes(s)) && /within 50 cents/.test(jl) && !jl.includes('Download audio'), jl);
+// Activities: the finished sing job's log has its stages and the result line (Add → Score lists running jobs only)
+await page.goto(`${BASE}#/activities`, { waitUntil: 'networkidle0' }); await sleep(800);
+await page.evaluate(() => [...document.querySelectorAll('#ac tr.ac-row.has-log')].find((x) => x.querySelector('.ac-title')?.textContent === 'Voice Test')?.click()); await sleep(300);
+const jl = await page.$eval('#ac', (e) => [...e.querySelectorAll('tr.ac-log')].map((x) => x.textContent.replace(/\s+/g, ' ')).join(' ')).catch(() => '');
+check('Activities: sing job log with its stages + result line', ['Reading the score', 'Loading the voice', 'Phrase 1 of', 'Piano and mix', 'Checking pitch'].every((x) => jl.includes(x)) && /within 50 cents/.test(jl), jl.slice(0, 300));
 // Activities: "Made … sing" → Undo = no voice again (the take stays in .history)
 await page.goto(`${BASE}#/activities`, { waitUntil: 'networkidle0' }); await sleep(800);
 const row = await page.evaluate(() => { const r = [...document.querySelectorAll('#ac tr.ac-row')].find((x) => x.querySelector('.ac-title')?.textContent === 'Made “Voice Test” sing'); return r && { id: r.dataset.id, btn: r.querySelector('[data-act]')?.textContent || '' }; });
@@ -135,7 +145,14 @@ if (row) {
   check('…and the Voice button is gone', await page.$eval('#sc-voice', (e) => e.hidden));
   // sing again so the iPhone part has audio
   const j2 = await api('/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'sing', title: 'Voice Test', fromItemId: it.id }) });
+  // Add → Score lists it while it runs: a compact card with its own stages (n/5 · stage)
+  await page.goto(`${BASE}#/jobs`); await page.reload({ waitUntil: "networkidle0" }); // a fresh load picks up the job the API started
+  let card = '';
+  for (let i = 0; i < 40 && !card; i++) { await sleep(250); card = await page.$$eval('section.job', (e) => e.map((x) => x.textContent.replace(/\s+/g, ' ')).find((t) => t.includes('Voice Test')) || ''); }
+  check('jobs list: the running sing job with its stages', /(Waiting|[1-5]\/5 · (Read the score|Load the voice|Sing|Piano and mix|Check))/.test(card) && !card.includes('Download audio'), card);
   for (let i = 0; i < 750; i++) { await sleep(400); if ((await api(`/jobs/${j2.id}`)).status === 'done') break; }
+  await sleep(2500);
+  check('jobs list: gone when it is done (it lives in Activities)', !(await page.$$eval('section.job', (e) => e.some((x) => x.textContent.includes('Voice Test')))));
 }
 
 // iPhone: a tap on Play starts the audio
@@ -147,7 +164,7 @@ check('iPhone: Voice button shown and on', await ph.$eval('#sc-voice', (e) => !e
 await ph.tap('#sc-play'); await sleep(1500);
 const pa = await ph.evaluate(() => { const x = window.__audios.at(-1); return x && { t: x.currentTime, paused: x.paused }; });
 check('iPhone: tap Play → the voice plays', pa && !pa.paused && pa.t > 0.5, JSON.stringify(pa));
-await ph.screenshot({ path: 'voice-iphone.png' });
+await ph.screenshot({ path: `${process.env.SHOTS || '.'}/voice-iphone.png` });
 await ph.tap('#sc-play');
 
 check('no page errors', !errs.length, errs.join(' | '));
