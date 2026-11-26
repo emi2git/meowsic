@@ -37,3 +37,8 @@ Add a dated line whenever something new goes wrong.
 - **2026-11-26, scores without chords.** Several scores had no chord symbols, or only on a few bars (a piano intro and ending
   left bare). The user's rule: every score has chords over the whole piece. *Now:* printed chords copied, else derived from the
   harmony and checked note by note (SKILL.md §1a); the markings verifier checks them.
+- **2026-11-27, note + rest where the sheet shows one longer note.** The user found scores with ♩♩♩ + an eighth + an eighth
+  rest where the sheet prints four quarters: a note cut short into note + rest, mostly at phrase or bar ends. Bar sums still
+  passed, so the verifiers missed it. A scan of every note→rest boundary in the sheet scores (440) against the crops found
+  2 in one OMR-made melody score; one more there had the next note an eighth late. *Now:* every note→rest boundary must be
+  confirmed against the sheet (drafting self-check, verify.md rule); fix with the editnotes `fill` / `shift` ops.
