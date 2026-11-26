@@ -330,12 +330,14 @@ export function scoreBody(root, it, { perform = false } = {}) {
     if (!player?.posQ && !cued) bar.style.display = 'none';
   };
 
-  // Voice (Make it sing): the sung audio plays in place of the piano; on by default once a score has one
-  // (this device remembers turning it off). midi = the piano player; `player` = whichever is playing.
+  // Voice (Make it sing): the sung audio plays in place of the piano, only when chosen. Every score plays the piano by
+  // default (a vocal audio or a voice staff never turns it on); this device remembers picking Voice per score
+  // (`meowsic-voice2-<id>` = '1'). midi = the piano player; `player` = whichever is playing.
   let midi = null, voice = null;
-  const vKey = `meowsic-voice-${it.id}`;
+  dropOldVoiceKeys();
+  const vKey = `meowsic-voice2-${it.id}`;
   const hasVoice = () => real && !!it.vocalAudio;
-  let voiceOn = (() => { try { return localStorage.getItem(vKey) !== '0'; } catch { return true; } })();
+  let voiceOn = (() => { try { return localStorage.getItem(vKey) === '1'; } catch { return false; } })();
   const onEnded = () => root.dispatchEvent(new CustomEvent('ended', { bubbles: true }));
   const makeVoice = () => {
     voice?.destroy();
@@ -592,7 +594,7 @@ export function scoreBody(root, it, { perform = false } = {}) {
     get staves() { return staves(); }, get muted() { return muted(); },
     setMuted(labels) { mutedPick = [...labels]; saveMuted(mutedPick); applyHands(); root.dispatchEvent(new CustomEvent('handschange', { bubbles: true })); },
     get voice() { return player === voice && !!voice; }, setVoice,
-    voiceReady(v) { Object.assign(it, v); voice?.destroy(); voice = null; if (voiceOn) setVoice(true); },
+    voiceReady(v) { Object.assign(it, v); voice?.destroy(); voice = null; if (voiceOn) setVoice(true); }, // stays on the piano unless Voice was picked
     zoomReset() { this.setZoom(zDef()); },
     setZoom(z) { zoom = zClamp(z); if (zLocal) { try { localStorage.setItem(zKey, zoom); } catch {} } else store.update(it.id, { zoom: String(zoom) }); root.dispatchEvent(new CustomEvent('zoomchange', { bubbles: true })); osmd.zoom = zoom * zBase(); relayout(); },
     get easy() { return easy; },
@@ -757,9 +759,9 @@ export function scoreToolbar(bar, it, view) {
   const vl = () => { cpl(); hl(); voiceBtn.hidden = !view.hasVoice; voiceBtn.classList.toggle('on', view.voice); voiceBtn.setAttribute('aria-pressed', String(view.voice)); tl(); setPlay(); };
   voiceBtn.onclick = async () => { const pr = view.setVoice(!view.voice); vl(); await pr; vl(); };
   const toPiano = (why) => { if (!view.voice) return; view.setVoice(false); vl(); toast(`${why} — back to the piano (the voice sings in its own key)`); };
-  const onSung = (e) => { // "Make it sing" finished for this score: Voice turns on
+  const onSung = (e) => { // "Make it sing" finished for this score: the Voice button shows (the piano stays the default)
     if (!(e.detail || []).includes(it.id)) return;
-    setTimeout(() => { const f = store.get(it.id); if (!f?.vocalAudio) return; view.voiceReady({ vocalAudio: f.vocalAudio, vocalBpm: f.vocalBpm, updatedAt: f.updatedAt }); vl(); toast('It sings now — Voice is on'); }, 800);
+    setTimeout(() => { const f = store.get(it.id); if (!f?.vocalAudio) return; view.voiceReady({ vocalAudio: f.vocalAudio, vocalBpm: f.vocalBpm, updatedAt: f.updatedAt }); vl(); toast(view.voice ? 'It sings now — Voice is on' : 'It sings now — tap Voice to hear it'); }, 800);
   };
   addEventListener('meowsic-new-items', onSung);
   // tempo: − / + in steps of 5 (hold to repeat); tap the number to type it, go back to the score's tempo or tap the beat
@@ -840,11 +842,24 @@ export function scoreToolbar(bar, it, view) {
   };
 }
 
+// The old per-score Voice choice (`meowsic-voice-<id>`, where no key meant "on") is dropped once, so every score starts
+// on the piano; `meowsic-voice-lang` (voice input) is a different setting and stays.
+let oldVoiceKeysDropped = false;
+function dropOldVoiceKeys() {
+  if (oldVoiceKeysDropped) return;
+  oldVoiceKeysDropped = true;
+  try {
+    const old = [];
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k?.startsWith('meowsic-voice-') && k !== 'meowsic-voice-lang') old.push(k); }
+    old.forEach((k) => localStorage.removeItem(k));
+  } catch {}
+}
+
 // Request singing voice (the "sing" job): the Mac sings the melody with its lyrics (SoulX-Singer, offline) over a
 // soft piano; the audio is saved with this score and the toolbar's Voice toggle (shown once it exists) plays it
 async function makeItSing(it) {
   const again = !!it.vocalAudio;
-  const ok = await confirmSheet({ title: `${again ? 'Redo the' : 'Request a'} singing voice for “${it.title}”?`, body: `The Mac sings the melody with its lyrics over a soft piano (about 2–3 minutes for a short song).${again ? ' The new voice replaces the one it has.' : ''} When it is done, Play sings it; the Voice button switches back to the piano.`, ok: again ? 'Redo' : 'Request' });
+  const ok = await confirmSheet({ title: `${again ? 'Redo the' : 'Request a'} singing voice for “${it.title}”?`, body: `The Mac sings the melody with its lyrics over a soft piano (about 2–3 minutes for a short song).${again ? ' The new voice replaces the one it has.' : ''} When it is done, tap the Voice button to hear it sung; Play stays on the piano until you do.`, ok: again ? 'Redo' : 'Request' });
   if (!ok) return;
   store.addJob({ kind: 'sing', title: it.title, source: 'Singing voice', output: 'Voice', outputs: ['voice'], fromItemId: it.id });
   toast('Singing… progress is in Add → Score');

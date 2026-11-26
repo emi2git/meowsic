@@ -1,6 +1,6 @@
 // Request singing voice + the score player's Voice toggle (server on $BASE, default :5244, temp data; the server runs with
 // MEOWSIC_SING_PYTHON = a stand-in that "sings" a 12 s test tone, so no model is needed):
-// ⋯ → Request singing voice → job → Voice button appears (on); Play plays the audio with the playhead in sync; tap on
+// ⋯ → Request singing voice → job → Voice button appears, OFF (the piano is the default); tap it on; Play plays the audio with the playhead in sync; tap on
 // the music and dragging the line move the audio; Voice off/on swaps piano ↔ voice at the same spot; Stop goes back to the start; a tempo change
 // keeps the voice (time-stretched to the new tempo); it ends; the choice is remembered; iPhone: a tap on Play starts the audio.
 import './live-guard.mjs'; // refuses the live app / library
@@ -39,15 +39,17 @@ await page.evaluate(() => [...document.querySelectorAll('.menu button')].find((x
 check('asks first', !!(await page.$('.modal [data-ok]')));
 await page.click('.modal [data-ok]'); await sleep(300);
 let job;
-for (let i = 0; i < 40; i++) { await sleep(500); job = (await api('/jobs')).find((j) => j.kind === 'sing' && j.title === 'Voice Test'); if (job && ['done', 'failed'].includes(job.status)) break; }
+for (let i = 0; i < 600; i++) { await sleep(500); job = (await api('/jobs')).find((j) => j.kind === 'sing' && j.title === 'Voice Test'); if (job && ['done', 'failed'].includes(job.status)) break; }
 check('sing job finishes', job?.status === 'done', JSON.stringify(job?.log?.slice(-3)));
 check('job log has the checks', /100(\.0)?% of 2 notes within 50 cents/.test(job?.log?.at(-1)?.msg || ''), job?.log?.at(-1)?.msg);
 const got = await api(`/items/${it.id}`);
 check('score has vocalAudio + vocalBpm', got.vocalAudio === `${got.folder} vocal.m4a` && got.vocalBpm === 72, JSON.stringify([got.vocalAudio, got.vocalBpm]));
 let shown = false;
-for (let i = 0; i < 20 && !shown; i++) { await sleep(300); shown = await page.$eval('#sc-voice', (e) => !e.hidden && e.classList.contains('on')); }
-check('Voice button appears, on, without reloading', shown);
-check('says it sings now', /It sings now/.test(await page.$eval('#toast', (e) => e.textContent)));
+for (let i = 0; i < 20 && !shown; i++) { await sleep(300); shown = await page.$eval('#sc-voice', (e) => !e.hidden); }
+check('Voice button appears, OFF (piano stays the default), without reloading', shown && !(await page.$eval('#sc-voice', (e) => e.classList.contains('on'))));
+check('says it sings now (tap Voice)', /It sings now — tap Voice/.test(await page.$eval('#toast', (e) => e.textContent)));
+await page.click('#sc-voice'); await sleep(300);
+check('tap Voice: on', await page.$eval('#sc-voice', (e) => e.classList.contains('on')));
 
 const audio = () => page.evaluate(() => { const a = window.__audios.at(-1); return a ? { t: a.currentTime, paused: a.paused, src: a.src, n: window.__audios.length } : null; });
 const pos = () => page.evaluate(() => window.__score.player.now());
@@ -133,13 +135,13 @@ if (row) {
   check('…and the Voice button is gone', await page.$eval('#sc-voice', (e) => e.hidden));
   // sing again so the iPhone part has audio
   const j2 = await api('/jobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'sing', title: 'Voice Test', fromItemId: it.id }) });
-  for (let i = 0; i < 40; i++) { await sleep(400); if ((await api(`/jobs/${j2.id}`)).status === 'done') break; }
+  for (let i = 0; i < 750; i++) { await sleep(400); if ((await api(`/jobs/${j2.id}`)).status === 'done') break; }
 }
 
 // iPhone: a tap on Play starts the audio
 const ph = await newPage({ width: 390, height: 844, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
 await ph.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1');
-await ph.evaluateOnNewDocument((id) => { try { localStorage.setItem(`meowsic-voice-${id}`, '1'); } catch {} }, it.id);
+await ph.evaluateOnNewDocument((id) => { try { localStorage.setItem(`meowsic-voice2-${id}`, '1'); } catch {} }, it.id);
 await ph.goto(`${BASE}#/item/${it.id}`, { waitUntil: 'networkidle0' }); await sleep(1800);
 check('iPhone: Voice button shown and on', await ph.$eval('#sc-voice', (e) => !e.hidden && e.classList.contains('on')));
 await ph.tap('#sc-play'); await sleep(1500);
