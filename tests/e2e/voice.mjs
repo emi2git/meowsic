@@ -45,7 +45,7 @@ check('job log has the checks', /100(\.0)?% of 2 notes within 50 cents/.test(job
 const got = await api(`/items/${it.id}`);
 check('score has vocalAudio + vocalBpm', got.vocalAudio === `${got.folder} vocal.m4a` && got.vocalBpm === 72, JSON.stringify([got.vocalAudio, got.vocalBpm]));
 let shown = false;
-for (let i = 0; i < 20 && !shown; i++) { await sleep(300); shown = await page.$eval('#sc-voice', (e) => !e.hidden); }
+for (let i = 0; i < 20 && !shown; i++) { await sleep(300); shown = await page.$eval('#sc-voice', (e) => !e.hidden) && /It sings now/.test(await page.$eval('#toast', (e) => e.textContent)); }
 check('Voice button appears, OFF (piano stays the default), without reloading', shown && !(await page.$eval('#sc-voice', (e) => e.classList.contains('on'))));
 check('says it sings now (tap Voice)', /It sings now — tap Voice/.test(await page.$eval('#toast', (e) => e.textContent)));
 await page.click('#sc-voice'); await sleep(300);
