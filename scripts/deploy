@@ -6,7 +6,8 @@
 #   2. refuses while the app is in use (scripts/deploy_quiet.py), when web/ or the server would change: an edit
 #      session active on any item (any client), a request from a user device in the last 5 min, or an API write
 #      from one in the last 2 min. User devices = every client but this Mac (loopback = agents / scripts / curl
-#      and this Mac's own addresses don't count). --dry-run only reports it
+#      and this Mac's own addresses don't count; allowlist: env MEOWSIC_SELF_IPS). --dry-run only reports it;
+#      a failed check refuses (fail closed)
 #   2b. git fetch + merge --ff-only origin/v2 (never a real merge here: merges happen in worktrees)
 #   3. backs up the DB (backups/pre-deploy-<time>.db, sqlite online backup) whenever something changed
 #   4. restarts the server only when server/ differs from the code the running server started with
@@ -76,9 +77,10 @@ main() {
   if (( webchg || restart )); then
     local quiet=${SELF:h}/deploy_quiet.py qwhy
     [[ -f $quiet ]] || die "missing $quiet"
-    local own=(${(f)"$( { ifconfig 2>/dev/null | awk '/inet6? /{print $2}' | sed 's/%.*//'; tailscale --socket="$HOME/Library/Application Support/Tailscale-Meowsic/tailscaled.sock" ip 2>/dev/null; } || true)"})
-    if qwhy=$(/usr/bin/python3 "$quiet" "$DATA" --self $own 2>&1); then say "quiet: no edit session; no user device active for 5 min"
-    elif (( dry )); then say "not quiet now (a real run would refuse): ${qwhy//$'\n'/; }"
+    # this Mac's own addresses (LAN, the Meowsic tailnet node; allowlist: env MEOWSIC_SELF_IPS) are found by the script
+    if (( dry )); then say "${$(/usr/bin/python3 "$quiet" "$DATA" --dry-run 2>&1 || print 'cannot check (a real run would refuse)')//$'\n'/; }"
+    elif qwhy=$(/usr/bin/python3 "$quiet" "$DATA" 2>&1); then say "quiet: no edit session; no user device active for 5 min"
+    elif [[ $qwhy == deploy_quiet:* ]]; then die "${qwhy//$'\n'/; }"
     else die "the app is in use: ${qwhy//$'\n'/; }"; fi
   fi
   if (( dry )); then say "dry run: nothing changed"; return 0; fi

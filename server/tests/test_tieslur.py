@@ -219,6 +219,60 @@ def test_api_preview_counts_ties_over_a_ds_jump(client):
     assert p['tiesGone'] == 1
 
 
+# ---------- a tie into a coda bar (shaped like m-925un1n: bar 36's B4+G5 tied into bar 37, whose start has the To Coda
+# sign; on the way back (D.S.) the jump is taken at that barline, so bar 48, the coda, starts on tie stops too) ----------
+TOCODA = '<direction placement="above"><direction-type><coda/></direction-type><sound tocoda="c1"/></direction>'
+CODA = '<direction placement="above"><direction-type><coda/></direction-type><sound coda="c1"/></direction>'
+DS_SND = '<direction placement="below"><direction-type><words>D.S. al Coda</words></direction-type><sound dalsegno="s1"/></direction>'
+
+
+def _tchord(pitches, q, kinds):
+    return ''.join(_tn(p, q, kinds).replace('<pitch>', '<chord/><pitch>', 1) if k else _tn(p, q, kinds) for k, p in enumerate(pitches))
+
+
+def coda_score(tocoda_early=True, coda_stop=True):
+    """bar 1 segno · bar 2 (= 36) ends on a tied B4+G5 · bar 3 (= 37) To Coda, the tie's stops · bar 4 D.S. ·
+    bar 5 (= 48) the coda, starting on B4+G5 tie stops."""
+    rh = [[SEGNO, ev('C5', 4)],
+          [ev('D5', 2), _tchord(['B4', 'G5'], 2, ['start'])],
+          ([TOCODA] if tocoda_early else []) + [_tchord(['B4', 'G5'], 4, ['stop'])] + ([] if tocoda_early else [TOCODA]),
+          [ev('E5', 4), DS_SND],
+          [CODA, _tchord(['B4', 'G5'], 4, ['stop']) if coda_stop else ev('B4+G5', 4)]]
+    lh = [[ev('C3', 4, 2)] for _ in range(5)]
+    return score(rh, lh)
+
+
+CODA_TIES = {(1, 71, '1'): ['start'], (1, 79, '1'): ['start'], (2, 71, '1'): ['stop'], (2, 79, '1'): ['stop'],
+             (4, 71, '1'): ['stop'], (4, 79, '1'): ['stop']}
+
+
+@pytest.mark.parametrize('op', [{'op': 'chord', 'bar': 0, 'on': 0, 'text': 'C'}, {'op': 'pitch', 'by': 1}, {'op': 'len', 'q': 2}])
+def test_a_tie_into_the_coda_keeps_its_stop_at_the_coda(op):
+    y = coda_score()
+    assert _tied_at(y) == CODA_TIES
+    op = dict(op)
+    if op['op'] != 'chord': op['refs'] = [ref(y, 0, 72)]  # bar 1's C5, far from the ties
+    info = {}
+    out, _ = sm.apply_ops(y, [op], info)
+    assert _tied_at(out) == CODA_TIES and info['tiesGone'] == 0
+
+
+def test_coda_stops_without_a_jump_before_them_still_go():
+    # the To Coda sign at the END of bar 3: the jump is from bar 3, whose notes don't start a tie, so bar 5's stops are strays
+    info = {}
+    out, _ = sm.apply_ops(coda_score(tocoda_early=False), [{'op': 'chord', 'bar': 0, 'on': 0, 'text': 'C'}], info)
+    assert _tied_at(out) == {k: v for k, v in CODA_TIES.items() if k[0] != 4} and info['tiesGone'] == 2
+    # no stops at the coda: nothing is added there
+    out, _ = sm.apply_ops(coda_score(coda_stop=False), [{'op': 'chord', 'bar': 0, 'on': 0, 'text': 'C'}], {})
+    assert _tied_at(out) == {k: v for k, v in CODA_TIES.items() if k[0] != 4}
+
+
+def test_api_preview_keeps_the_coda_tie(client):
+    it = client.post('/api/items', json={'kind': 'score', 'title': 'Coda', 'musicxmlText': coda_score()}).json()
+    p = client.post(f'/api/items/{it["id"]}/editnotes/preview', json={'ops': [{'op': 'chord', 'bar': 0, 'on': 0, 'text': 'Csus'}]}).json()
+    assert p['tiesGone'] == 0 and _tied_at(p['xml']) == CODA_TIES
+
+
 # ---------- real scores (read-only copies) ----------
 REAL = Path(os.environ.get('MEOWSIC_REAL_SCORES', '/nonexistent'))
 FILES = sorted(REAL.glob('*.musicxml')) if REAL.is_dir() else []
