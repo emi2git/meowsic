@@ -125,6 +125,7 @@ Views (`web/js/views/`):
 
 ## Gotchas
 - **iOS audio**: set `navigator.audioSession.type = 'playback'` so sound plays with the Silent switch on. After the app was in the background the AudioContext can be stale or "interrupted": `audio.js` throws it away and makes a fresh one on the next Play. Test Play after backgrounding on a real iPad.
+- **iOS 26 top blur**: iPadOS / iOS 26 lay a blurred white scroll-edge fade over the status bar AND ~50pt below it, so any text there looks washed out. Never pad by `env(safe-area-inset-top)` directly: use `var(--sat)` (app.css). In the installed app on iPad / iPhone it is the inset + 48px, filled by the solid fixed `.topedge` band; content starts below it. `topcast.mjs` checks it (Chromium with emulated inset + standalone).
 - **Ports**: 5180 is live. Other agents leave test servers running on many ports (5190–5450 seen), so never hard-code one: the scripts pick a free port above 5300 (`scripts/meowsic_dev.py`).
 - **Symlinked venvs / node_modules** in worktrees: `.gitignore` lists `server/.venv`, `omr/.venv` and `tests/e2e/node_modules` without a trailing slash, so the symlinks can't be committed. Don't "fix" that to `dir/`.
 - **Preview vs server**: preview (`?preview=1`) uses sample data in localStorage (`meowsic-mock-v6`) and never calls `/api` except health. A feature that needs the Mac must check the store mode, or the preview logs errors.

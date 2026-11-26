@@ -118,7 +118,7 @@ body[data-view="manage"] #main:has(.pe-crop) { overflow: hidden; }
 .pe-crop { height: 100%; }
 .pe-cstage { flex: 1; min-height: 0; background: #2a2d33; padding: 20px; align-items: center; }
 .pe-cstage .cu-img { height: auto; max-width: 100%; }
-.pe-cstage .cu-img img { height: auto; width: auto; max-width: 100%; max-height: calc(var(--vh) - 180px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
+.pe-cstage .cu-img img { height: auto; width: auto; max-width: 100%; max-height: calc(var(--vh) - 180px - var(--sat) - env(safe-area-inset-bottom)); }
 .pe-cstage > p { color: #ccc; }
 .pe-cbar { flex: none; display: flex; gap: 10px; align-items: center; padding: 12px 20px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); flex-wrap: wrap; background: var(--bg); }
 .pe-cbar button { min-height: 44px; }
