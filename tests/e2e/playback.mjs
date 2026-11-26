@@ -129,6 +129,45 @@ for (const [name, vp] of DEVICES) {
   check('no page errors', errs.length === 0, errs.join(' | '));
   await p.close();
 }
+// jumps (musicxml.js barMarks + playOrder): D.S. / D.S.S. al Coda with two segni and two codas, D.C. al Fine (no
+// repeat taken again after the jump, only the last ending), and plain repeats as before
+{
+  console.log('Jumps');
+  const p = await b.newPage();
+  await p.goto(BASE + '#/library', { waitUntil: 'networkidle0' });
+  // bars: { n: 1-based bar → { pre: sound attrs at the start, post: at the end, bar: barline xml } }
+  const order = (n, bars) => p.evaluate(async (n, bars) => {
+    const { xmlInfo } = await import('/js/musicxml.js');
+    const dir = (attrs) => `<direction><direction-type><words>x</words></direction-type><sound ${attrs}/></direction>`;
+    let x = '<?xml version="1.0"?><score-partwise><part-list><score-part id="P1"><part-name>P</part-name></score-part></part-list><part id="P1">';
+    for (let k = 1; k <= n; k++) {
+      const o = bars[k] || {};
+      x += `<measure number="${k}">${k === 1 ? '<attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>' : ''}`
+        + (o.pre ? dir(o.pre) : '') + '<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration></note>' + (o.post ? dir(o.post) : '') + (o.bar || '') + '</measure>';
+    }
+    const info = xmlInfo(x + '</part></score-partwise>');
+    const seg = info.segments ? info.segments.map(([a, z]) => `${a / 4 + 1}-${z / 4}`).join(',') : 'none';
+    return { order: info.order.map(([i]) => i + 1).join(','), seg };
+  }, n, bars);
+  const runs = (s) => s.split(',').flatMap((r) => { const [a, z = a] = r.split('-').map(Number); return Array.from({ length: z - a + 1 }, (_, k) => a + k); }).join(',');
+  const ds = await order(49, { 13: { pre: 'segno="1"' }, 29: { pre: 'segno="2"' }, 37: { pre: 'tocoda="1"' }, 38: { pre: 'tocoda="2"' },
+    47: { post: 'dalsegno="1"' }, 48: { pre: 'coda="1"', post: 'dalsegno="2"' }, 49: { pre: 'coda="2"' } });
+  check('D.S. + D.S.S. al Coda: 1–47, 13–36, 48, 29–37, 49', ds.order === runs('1-47,13-36,48,29-37,49'), ds.order);
+  check('…and the player gets those segments', ds.seg === '1-47,13-36,48-48,29-37,49-49', ds.seg);
+  const rep = (dirn) => `<barline location="${dirn === 'forward' ? 'left' : 'right'}"><repeat direction="${dirn}"/></barline>`;
+  const end = (num, type) => `<barline location="${type === 'start' ? 'left' : 'right'}"><ending number="${num}" type="${type}"/></barline>`;
+  const dc = await order(8, { 2: { bar: rep('forward') }, 3: { bar: rep('backward') }, 4: { post: 'fine="yes"' }, 8: { post: 'dacapo="yes"' } });
+  check('D.C. al Fine: no repeat after the jump, stops at Fine', dc.order === '1,2,3,2,3,4,5,6,7,8,1,2,3,4', dc.order);
+  const vol = await order(6, { 3: { bar: end('1', 'start') + end('1', 'stop') + rep('backward') }, 4: { bar: end('2', 'start') + end('2', 'stop') }, 5: { pre: 'tocoda="1"' }, 6: { pre: 'coda="1"' } });
+  const vol2 = await order(7, { 3: { bar: end('1', 'start') + end('1', 'stop') + rep('backward') }, 4: { bar: end('2', 'start') + end('2', 'stop') }, 5: { post: 'dacapo="yes"' }, 6: { pre: 'tocoda="x"' } });
+  check('D.C. after a 1st / 2nd ending: only the 2nd ending the second time', vol2.order === '1,2,3,1,2,4,5,1,2,4,5,6,7', vol2.order);
+  check('a To Coda before any jump is ignored', vol.order === '1,2,3,1,2,4,5,6', vol.order);
+  const plain = await order(4, { 2: { bar: rep('backward') } });
+  check('plain repeat unchanged', plain.order === '1,2,1,2,3,4' && plain.seg === '1-2,1-4', `${plain.order} ${plain.seg}`);
+  const none = await order(3, {});
+  check('no marks: no segments', none.seg === 'none' && none.order === '1,2,3', `${none.order} ${none.seg}`);
+  await p.close();
+}
 await b.close();
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

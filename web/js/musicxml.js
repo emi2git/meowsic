@@ -197,10 +197,10 @@ export function xmlInfo(text) {
     partStaves.push(nst); sBase += nst;
     if (!chords && hs.length) chords = hs.sort((a, b) => a.q - b.q).filter((h, i, a) => !i || Math.abs(h.q - a[i - 1].q) > 1e-6);
   }
-  // the bars as they are played (repeats, 1st / 2nd endings): [[from, to] in quarters] for the player, or null
+  // the bars as they are played (repeats, 1st / 2nd endings, D.S. / D.C. / Coda / Fine): [[from, to] in quarters] for the player, or null
   const order = playOrder(marks);
   let segments = null;
-  if (marks.some((m) => m.start || m.end || m.ending)) {
+  if (marks.some((m) => m.start || m.end || m.ending || m.dalsegno != null || m.dacapo)) {
     segments = [];
     const barEnd = (i) => (i + 1 < barQ.length ? barQ[i + 1] : Math.max(end, barQ[i] || 0));
     for (const [i] of order) {
@@ -229,7 +229,7 @@ export function staffLabels(partStaves) {
   return out;
 }
 
-// ---- repeats and endings (the same rules as server/meowsic/structops.py play_order) ----
+// ---- repeats and endings (the same rules as server/meowsic/structops.py play_order), plus D.S. / D.C. / Coda / Fine (web only) ----
 const nums = (s) => { const out = []; for (const x of String(s || '1').replace(/[\s.]/g, '').split(',')) { const r = x.split('-'); if (r.length === 2 && +r[0] && +r[1]) for (let k = +r[0]; k <= +r[1]; k++) out.push(k); else if (+x) out.push(+x); } return out.length ? out : [1]; };
 export function barMarks(part) {
   const ms = [...part.querySelectorAll(':scope > measure')];
@@ -249,6 +249,26 @@ export function barMarks(part) {
   });
   if (cur) brackets.push({ ...cur, z: ms.length - 1 });
   for (const br of brackets) for (let i = br.a; i <= br.z; i++) out[i].ending = br;
+  // jumps (<sound segno / coda / tocoda / dalsegno / dacapo / fine>, in a <direction> or the bar itself): segno, coda,
+  // dalsegno: the value; dacapo: true; tocoda, fine: { v, at0 } (at0: at the very start of the bar, before its notes)
+  ms.forEach((m, i) => {
+    let t = 0;
+    for (const el of m.children) {
+      const dur = +(el.querySelector(':scope > duration')?.textContent || 0);
+      if (el.tagName === 'backup') t -= dur;
+      else if (el.tagName === 'forward') t += dur;
+      else if (el.tagName === 'note') { if (!el.querySelector('chord') && !el.querySelector('grace')) t += dur; }
+      const s = el.tagName === 'sound' ? el : el.tagName === 'direction' ? el.querySelector(':scope > sound') : null;
+      if (!s) continue;
+      const at0 = t + +(el.querySelector(':scope > offset')?.textContent || 0) <= 0, a = (k) => s.getAttribute(k), mk = out[i];
+      if (a('segno') != null) mk.segno ??= a('segno');
+      if (a('coda') != null) mk.coda ??= a('coda');
+      if (a('dalsegno') != null) mk.dalsegno = a('dalsegno');
+      if (a('dacapo') === 'yes') mk.dacapo = true;
+      if (a('tocoda') != null) mk.tocoda = { v: a('tocoda'), at0 };
+      if (a('fine') != null && a('fine') !== 'no') mk.fine = { at0 };
+    }
+  });
   return out;
 }
 // octave lines (8va / 8vb, octaveops.py) of a <part>: { staff: [{ a: [bar, q], z: [bar, q], shift }] } (shift 8, -8,
@@ -291,24 +311,48 @@ export function ottavaAt(lines, staff, bar, q = 0) {
   const at = (x) => x[0] < bar || (x[0] === bar && x[1] <= q + 1e-6);
   return (lines[staff] || []).find((s) => at(s.a) && !at(s.z))?.shift || 0;
 }
-// [[bar index, time through]] in the order they are played
+// [[bar index, time through]] in the order they are played: repeats and 1st / 2nd endings, then the jumps (barMarks):
+// - dalsegno="v" / dacapo: after that bar plays (each jump taken once), go to the bar with segno="v" (else the first
+//   segno) or, for D.C., bar 1.
+// - tocoda="v": ignored until a D.S. / D.C. was taken; then taken (once per jump) if v is that jump's value, or, when
+//   no tocoda in the score has that value, the first one met after the jump. It goes to the bar with coda="v" (else
+//   the first coda bar after it).
+// - fine: after a jump, the music stops there.
+// - A tocoda / fine at the very start of a bar (at0) acts before that bar plays; elsewhere after it.
+// - After a jump no repeat is taken again and only the last ending of a chain is played.
+// server/meowsic/structops.py play_order (sung audio, unroll) knows repeats and endings only, not these jumps.
 export function playOrder(marks) {
   const brackets = [...new Set(marks.map((m) => m.ending).filter(Boolean))].sort((x, y) => x.a - y.a);
-  const out = [], count = new Map();
-  let i = 0, start = 0, pass = 1, guard = 0;
+  const out = [], count = new Map(), taken = new Set();
+  const find = (k, v) => marks.findIndex((m) => m[k] === v);
+  let i = 0, start = 0, pass = 1, guard = 0, jump = null; // jump: { v, coda: taken already } after a D.S. / D.C.
+  const toCoda = (mk) => {
+    if (!jump || jump.coda || !mk.tocoda) return false;
+    const v = mk.tocoda.v;
+    if (v !== jump.v && marks.some((m) => m.tocoda?.v === jump.v)) return false;
+    let k = find('coda', v);
+    if (k < 0) k = marks.findIndex((m, j) => j > i && m.coda != null);
+    if (k < 0) return false;
+    jump.coda = true; i = k; start = k; pass = 1;
+    return true;
+  };
   while (i < marks.length && guard++ < 10000) {
     const mk = marks[i], e = mk.ending;
+    if (mk.tocoda?.at0 && toCoda(mk)) continue;
+    if (mk.fine?.at0 && jump) break;
     if (mk.start && i !== start) { start = i; pass = 1; }
-    if (e && e.a === i && !e.nums.includes(pass)) {
+    if (e && e.a === i) {
       const chain = [e];
       let k = brackets.indexOf(e);
       while (k + 1 < brackets.length && brackets[k + 1].a === chain.at(-1).z + 1) chain.push(brackets[++k]);
-      const nx = chain.slice(1).find((c) => c.nums.includes(pass));
-      if (nx) i = nx.a; else { i = chain.at(-1).z + 1; start = i; pass = 1; }
-      continue;
+      if (jump ? chain.length > 1 : !e.nums.includes(pass)) {
+        const nx = jump ? chain.at(-1) : chain.slice(1).find((c) => c.nums.includes(pass));
+        if (nx) i = nx.a; else { i = chain.at(-1).z + 1; start = i; pass = 1; }
+        continue;
+      }
     }
     out.push([i, pass]);
-    if (mk.end) {
+    if (mk.end && !jump) {
       const c = count.get(i) || 0;
       if (c < mk.times - 1) { count.set(i, c + 1); pass++; i = start; continue; }
       count.set(i, 0);
@@ -317,6 +361,15 @@ export function playOrder(marks) {
     if (e && e.z === i && !mk.end) {
       const k = brackets.indexOf(e);
       if (!(k + 1 < brackets.length && brackets[k + 1].a === i + 1)) { start = i + 1; pass = 1; }
+    }
+    if (mk.tocoda && !mk.tocoda.at0 && toCoda(mk)) continue;
+    if (mk.fine && !mk.fine.at0 && jump) break;
+    if ((mk.dalsegno != null || mk.dacapo) && !taken.has(i)) {
+      taken.add(i);
+      let k = 0;
+      if (mk.dalsegno != null) { k = find('segno', mk.dalsegno); if (k < 0) k = Math.max(0, marks.findIndex((m) => m.segno != null)); }
+      jump = { v: mk.dacapo ? 'yes' : mk.dalsegno, coda: false }; i = k; start = k; pass = 1;
+      continue;
     }
     i++;
   }
