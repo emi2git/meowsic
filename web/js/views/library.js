@@ -9,7 +9,11 @@ import { isTouch, onDeviceChange } from '../device.js';
 import { attachSwipe } from '../swipe.js';
 import { verifiedMark } from './verified.js';
 
+// when an item last changed: its content or info (title, tags, key, pages, notes, chords text…), set by
+// the Mac; viewing, playing, zoom, transpose and speed don't count (store.update / items.py VIEW_ONLY)
+const changedAt = (it) => it.updatedAt || it.createdAt || 0;
 const SORTS = {
+  modified: ['Last modified', (a, b) => changedAt(b) - changedAt(a) || b.createdAt - a.createdAt || a.title.localeCompare(b.title)],
   added: ['Recently added', (a, b) => b.createdAt - a.createdAt],
   title: ['Title A–Z', (a, b) => a.title.localeCompare(b.title)],
   played: ['Recently played', (a, b) => store.lastPlayed(b.id) - store.lastPlayed(a.id)],
@@ -52,15 +56,22 @@ const LANG_ICON = {
 const LANG_TITLE = { world: 'All songs (tap: Vietnamese only)', vi: 'Vietnamese only (tap: all songs)' };
 // older devices stored 'all' (or 'world' = not Vietnamese): both are World now
 let lang = 'world'; try { lang = localStorage.getItem('meowsic-lang') === 'vi' ? 'vi' : 'world'; } catch {}
-const state = { q: '', sort: 'added', dir: 1, select: false, sel: new Set(), page: 1, anchor: null, per: 0, key: null, top: 0 };
-try { const s = localStorage.getItem('meowsic-sort'); if (SORTS[s]) state.sort = s; state.dir = localStorage.getItem('meowsic-sort-dir') === '-1' ? -1 : 1; } catch {}
-const saveSort = () => { try { localStorage.setItem('meowsic-sort', state.sort); localStorage.setItem('meowsic-sort-dir', String(state.dir)); } catch {} };
+const state = { q: '', sort: 'modified', dir: 1, select: false, sel: new Set(), page: 1, anchor: null, per: 0, key: null, top: 0 };
+// Default: Last modified, newest first (the user's choice, 2026-11-26). A pick is remembered on this device
+// under `meowsic-sort2`; the old `meowsic-sort` keys (from before that default) are dropped once.
+try {
+  localStorage.removeItem('meowsic-sort'); localStorage.removeItem('meowsic-sort-dir');
+  const s = localStorage.getItem('meowsic-sort2'); if (SORTS[s]) state.sort = s; state.dir = localStorage.getItem('meowsic-sort2-dir') === '-1' ? -1 : 1;
+} catch {}
+const saveSort = () => { try { localStorage.setItem('meowsic-sort2', state.sort); localStorage.setItem('meowsic-sort2-dir', String(state.dir)); } catch {} };
 // No sort button: tap a column heading to sort by it (Title: A–Z ⇄ Z–A); the small ⌄ next to
-// "Title" opens these four orders. Remembered on this device.
-const SORT_MENU = [['title', 1, 'Title A–Z'], ['title', -1, 'Title Z–A'], ['most', 1, 'Most played'], ['added', 1, 'Recently added']];
+// "Title" opens these orders. When the order has no column (Last modified, Most played) its name sits
+// after the ⌄ (tap: reverse). Remembered on this device.
+const SORT_MENU = [['modified', 1, 'Last modified'], ['title', 1, 'Title A–Z'], ['title', -1, 'Title Z–A'], ['most', 1, 'Most played'], ['added', 1, 'Recently added']];
+const NEWEST_FIRST = new Set(['added', 'modified', 'played', 'most']); // dir 1 = newest / most first
 const CHEVRON = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3"/></svg>';
 const sortName = () => SORT_MENU.find(([k, d]) => k === state.sort && d === state.dir)?.[2]
-  || `${SORTS[state.sort][0]}${(state.sort === 'added') === (state.dir > 0) ? '' : ' (reversed)'}`;
+  || `${SORTS[state.sort][0]}${NEWEST_FIRST.has(state.sort) === (state.dir > 0) ? '' : ' (reversed)'}`;
 
 const fold = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase();
 
@@ -114,16 +125,18 @@ export function libraryView(main, { q }) {
       const more = fit() ? miniPager(state.page, pages) : pager(state.page, pages);
       const cnt = `${list.length} item${list.length === 1 ? '' : 's'}`;
       {
-        // ▲ = A→Z / oldest first, ▼ = Z→A / newest first; Added starts newest first
-        const arrow = (k) => (state.sort !== k ? '' : (k === 'added') === (state.dir > 0) ? ' ▼' : ' ▲');
+        // ▲ = A→Z / oldest first, ▼ = Z→A / newest first; Added / Last modified start newest first
+        const arrow = (k) => (state.sort !== k ? '' : NEWEST_FIRST.has(k) === (state.dir > 0) ? ' ▼' : ' ▲');
         const cols = COLS_BY[kind] || COLS_BY[''];
+        // the order has no heading of its own (Last modified, Most played…): name it after the ⌄
+        const now = cols.some(([k]) => k === state.sort) ? '' : `<button class="th-sort th-now on" data-sort="${state.sort}" title="${esc(sortName())} (tap to reverse)">${esc(state.sort === 'modified' ? 'Modified' : SORTS[state.sort][0])}${arrow(state.sort)}</button>`;
         const cell = {
           'c-title': (it) => (kind === 'book' ? `<span class="cover">${store.thumbUrl(it, 1, 160) ? `<img src="${store.thumbUrl(it, 1, 160)}" alt="" loading="lazy">` : ''}</span>` : '') + esc(it.title) + verifiedMark(it), 'c-artist': (it) => esc(it.artist || ''), 'c-album': (it) => esc(it.album || ''), 'c-type': (it) => badge(it), 'c-ver': (it) => (verLabel(it) ? `<span title="${esc(verDetail(it) || verLabel(it))}">${esc(verLabel(it))}</span>` : ''),
           'c-pages': (it) => (it.pages ? `${it.pages}<span class="pg-u"> p</span>` : ''), 'c-key': (it) => esc(keyShort(it.key)), 'c-when': (it) => ago(it.createdAt),
         };
         rows.innerHTML = `<table class="lib-table ${kind ? 'one-kind' : ''} ${selecting() ? 'selecting' : ''}"><thead><tr><th class="c-pick"></th>${cols.map(([k, l, c]) =>
           `<th class="${c}">${k ? `<button class="th-sort ${state.sort === k ? 'on' : ''}" data-sort="${k}">${l}${arrow(k)}</button>` : l}${c === 'c-title'
-            ? `<button class="th-menu" id="lib-sort-menu" aria-haspopup="menu" title="Sort: ${esc(sortName())}" aria-label="Sort options (now: ${esc(sortName())})">${CHEVRON}</button>` : ''}</th>`).join('')}<th class="c-more"></th></tr></thead><tbody>${shownList.map((it) => `
+            ? `<button class="th-menu" id="lib-sort-menu" aria-haspopup="menu" title="Sort: ${esc(sortName())}" aria-label="Sort options (now: ${esc(sortName())})">${CHEVRON}</button>${now}` : ''}</th>`).join('')}<th class="c-more"></th></tr></thead><tbody>${shownList.map((it) => `
           <tr class="row ${state.sel.has(it.id) ? 'sel' : ''}" data-id="${it.id}">
             <td class="c-pick"><label class="pick" title="Select (Shift-click for a range)"><input type="checkbox" ${state.sel.has(it.id) ? 'checked' : ''} aria-label="Select ${esc(it.title)}"></label></td>
             ${cols.map(([, , c]) => `<td class="${c}${c === 'c-title' ? ' row-title' : ''}">${cell[c](it)}</td>`).join('')}

@@ -35,7 +35,7 @@ const xShown = (p) => p.$eval('#lib-q-x', (e) => !e.hidden && e.getBoundingClien
   const p = await b.newPage(); p.on('pageerror', (e) => errs.push('mac: ' + e.message));
   await p.setViewport({ width: 1440, height: 900 });
   await fresh(p);
-  await p.evaluate(() => { localStorage.removeItem('meowsic-sort'); localStorage.removeItem('meowsic-sort-dir'); localStorage.removeItem('meowsic-lang'); });
+  await p.evaluate(() => { localStorage.removeItem('meowsic-sort2'); localStorage.removeItem('meowsic-sort2-dir'); localStorage.removeItem('meowsic-lang'); });
   console.log('Opens on Sheets');
   for (const h of ['', '#/', '#/library']) {
     await fresh(p, h);
@@ -73,7 +73,7 @@ const xShown = (p) => p.$eval('#lib-q-x', (e) => !e.hidden && e.getBoundingClien
   check('tiny ⌄ right next to the Title heading', chev.th.includes('c-title') && chev.svg && chev.w > 0 && chev.w <= 24 && chev.gap >= -1 && chev.gap < 8, JSON.stringify(chev));
   await p.click('#lib-sort-menu'); await sleep(250);
   const mi = await menuItems(p);
-  check('menu: exactly the 4 orders, Recently added ticked', mi.map((x) => x.label).join('|') === 'Title A–Z|Title Z–A|Most played|Recently added' && mi.map((x) => x.checked).join() === 'false,false,false,true', JSON.stringify(mi));
+  check('menu: exactly the 5 orders, Last modified ticked', mi.map((x) => x.label).join('|') === 'Last modified|Title A–Z|Title Z–A|Most played|Recently added' && mi.map((x) => x.checked).join() === 'true,false,false,false,false', JSON.stringify(mi));
   await p.keyboard.press('Escape'); await p.mouse.click(5, 890); await sleep(200);
   const byId = Object.fromEntries(all.map((x) => [x.id, x]));
   const backup = await api('/backup');
@@ -83,6 +83,7 @@ const xShown = (p) => p.$eval('#lib-q-x', (e) => !e.hidden && e.getBoundingClien
     'Title Z–A': (a, z) => a.title.localeCompare(z.title) >= 0,
     'Most played': (a, z) => (plays[a.id] || 0) >= (plays[z.id] || 0),
     'Recently added': (a, z) => a.createdAt >= z.createdAt,
+    'Last modified': (a, z) => (a.updatedAt || a.createdAt) >= (z.updatedAt || z.createdAt),
   };
   for (const [label, ok] of Object.entries(orders)) {
     await p.click('#lib-sort-menu'); await sleep(200); await clickMenu(p, label);

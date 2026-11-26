@@ -146,6 +146,9 @@ def set_versions(body: dict = Body(...), c=Depends(conn)):
     return {'count': len(done), 'skipped': skipped, 'items': done}
 
 
+VIEW_ONLY = {'transpose', 'zoom', 'rate'}  # PATCH keys that are how an item is viewed, not what it is
+
+
 @router.patch('/items/{item_id}')
 def update_item(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
     it = must_item(c, item_id)
@@ -158,7 +161,9 @@ def update_item(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depend
         if k in patch: patch[k] = ' '.join(str(patch[k] or '').split())[:200]
     if (st := fields_step(it, patch)):  # Activities: rename / tags / key / version edits (quick edits in a row make one row)
         record_undo(c, 'edit', st, edit_title, edit_detail, group='edit', window=3000)
-    write_item(c, {**patch, 'id': item_id, 'kind': it['kind'], 'updatedAt': now_ms()}, new=False)
+    # view settings only (key shift, zoom, speed: set while looking or playing) leave updatedAt (Last modified) alone
+    stamp = {} if patch and set(patch) <= VIEW_ONLY else {'updatedAt': now_ms()}
+    write_item(c, {**patch, 'id': item_id, 'kind': it['kind'], **stamp}, new=False)
     if it['folder'] and 'title' in patch and patch['title'] != it['title']:
         rename_folder(c, cf, it, patch['title'])
         if it['kind'] == 'score':  # the title drawn on the score follows Info (scoretitle.py; the file before stays in .history)

@@ -33,6 +33,22 @@ def test_item_crud(client, chord):
     assert client.post('/api/items', json={'kind': 'bad', 'title': 'x'}).status_code == 400
 
 
+def test_view_settings_leave_last_modified(client, chord):
+    """Library default order is Last modified (updatedAt): key shift, zoom and speed are how an item is
+    viewed, not a change; anything else (info, chord text, tags) bumps it."""
+    import time
+    u = client.get(f'/api/items/{chord["id"]}').json()['updatedAt']
+    time.sleep(0.01)
+    for patch in ({'transpose': 3}, {'zoom': '1.25'}, {'rate': 0.8}, {'transpose': 1, 'zoom': '1'}):
+        it = client.patch(f'/api/items/{chord["id"]}', json=patch).json()
+        assert it['updatedAt'] == u, patch
+    assert it['transpose'] == 1
+    client.post('/api/plays', json={'itemId': chord['id'], 'openedAt': u, 'closedAt': u + 60000})
+    assert client.get(f'/api/items/{chord["id"]}').json()['updatedAt'] == u  # playing isn't a change
+    it = client.patch(f'/api/items/{chord["id"]}', json={'artist': 'Trad.', 'transpose': 0}).json()
+    assert it['updatedAt'] > u
+
+
 def test_trash_restore_purge(client, chord, data):
     i = chord['id']
     assert client.post('/api/items/trash', json={'ids': [i]}).json()['count'] == 1
