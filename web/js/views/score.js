@@ -301,12 +301,12 @@ export function scoreBody(root, it, { perform = false } = {}) {
     // markings with empty text (e.g. a bare tempo <words/>) crash OSMD's reader — drop them; the tempo lives on the item anyway
     const tidyXml = (x) => x.replace(/<direction(?:\s[^>]*)?>\s*<direction-type>\s*<words\s*\/>\s*<\/direction-type>[\s\S]*?<\/direction>/g, '');
     // the credits drawn on the score: the song's real artist (the item's Artist) as the composer, and on the left a
-    // small line saying what Meowsic did: Made (pieces it wrote) / Arranged (versions of a score) / Read (photo → score) /
-    // Transcribed (recordings). Shown in OSMD's lyricist place; the file itself keeps it as the arranger.
+    // small line saying what Meowsic did: Made (pieces it wrote) / Arranged (versions of a score) /
+    // Transcribed (recordings, photo → score). Shown in OSMD's lyricist place; the file itself keeps it as the arranger.
     const credit = (x) => {
       const q = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const src = it.source || '', a = (it.artist || '').trim();
-      const by = src.startsWith('From the score') ? 'Arranged by Meowsic' : src.startsWith('From the sheet') ? 'Read by Meowsic'
+      const by = src.startsWith('From the score') ? 'Arranged by Meowsic'
         : it.ai || /^Meowsic( AI)?$/.test(src) ? 'Made by Meowsic' : 'Transcribed by Meowsic';
       const c = (a && !/^Meowsic( AI)?$/.test(a) ? `<creator type="composer">${q(a)}</creator>` : '') + `<creator type="lyricist">${by}</creator>`;
       x = x.replace(/<creator\b[^>]*>[\s\S]*?<\/creator>|<creator\b[^>]*\/>/g, '');

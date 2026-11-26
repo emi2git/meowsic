@@ -66,6 +66,27 @@ All API calls go to `https://localhost:5180/api/…`, with the CA at `~/Document
 5. Render it and compare it with the page side by side (open the score in a dev-server, or render with music21/OSMD).
 6. Watch for: triplets, pickup bars (`pickup` op), key / time changes mid-song (`keysig`, `timesig`), duet parts written
    as chords in one staff, and more than one lyric line (verse 2 = `<lyric number="2">`).
+7. **Onset check (rhythm placement), every bar, every staff.** A pitch-sequence diff and a note-type diff both pass
+   a melody whose notes sit an eighth early or late, so they prove nothing about rhythm. Learned from the user's own
+   fixes of a 6/8 lead sheet (`m-4e35je7`, act-3xskunq, 18 bars): the draft had
+   - notes struck one eighth late or early (an anticipation across the bar line moved onto the downbeat; a note on
+     the 3rd eighth moved to the 2nd);
+   - a note held across the middle of the 6/8 bar (eighth tied over beat 2) written as note + **rest** + re-attack,
+     or as three quarters (0-2-4) instead of the compound 0-2~3-5 pattern;
+   - lengths that were wrong because the next onset was wrong, so every bar still added up (the sum check can't see it).
+   The method:
+   - Dump where each note starts: `python3 ~/git/scripts/score-onsets.py draft.musicxml --staff 1`
+     (onset:pitch/length in eighths from the bar start, worked out from `<divisions>`, `<duration>`, `<chord/>`,
+     `<backup>`, `<forward>`; it also flags `!SUM` and `!TYPE` = `<type>`/`<dot>` that disagree with `<duration>`).
+   - Write the same list **from the sheet crop (or the recording) first**, then compare **(onset, length, pitch)**
+     triples bar by bar. A verifier's "matches" must mean this list matches, never "same pitches in the same order".
+   - Compound meters (6/8, 9/8, 12/8): the beat is a dotted quarter = 3 eighths. Any onset on eighth 2 or 5, and any
+     tie across eighth 3, is real syncopation: keep it as printed or sung. Three quarters in a 6/8 bar is a hemiola:
+     only write it when the source shows it.
+   - Odd meters (5/8, 7/8): the beaming on the page says the grouping (2+3 or 3+2, and it can change bar to bar);
+     keep the printed beams (`<beam>`) and check the onsets fall on that grouping.
+   - Look at the render too: each RH note must line up over the LH note struck at the same onset.
+   - `score-onsets.py old.musicxml --diff new.musicxml` lists only the bars whose onsets, lengths or pitches differ.
 
 ## 3. Fitting lyrics
 - One syllable per note. A split word keeps all its pieces (`syllabic` begin/middle/end), and every piece is a real syllable.
@@ -80,6 +101,12 @@ All API calls go to `https://localhost:5180/api/…`, with the CA at `~/Document
 - Agreement rule: change a note only when **at least 3 of the 4** pitch-tracked versions (A–D) agree.
 - Keep the score's register, its chords and its left hand. Change only the tune.
 - List the borderline bars for the user. Don't guess silently.
+- Rhythm from audio is where the user had to fix by hand (`m-4e35je7`). `sung-melody-to-musicxml.py` snaps each onset
+  and each END to the nearest grid step in a simple-meter beat grid (4/4 only), and a silence longer than one step
+  becomes a rest. So a singer's early release turns a held note into note + rest, an anticipation snaps onto the
+  beat, and 6/8 eighths land on the wrong eighth. For a compound-meter song use `--triplets` (3 per beat) and
+  write 6/8; then, for every bar, play the recording and check each onset with §2 step 7: a rest inside a sung
+  phrase is suspicious (usually the note is held or tied over the beat).
 
 ## 5. Chord symbols
 - Work out the harmony from the notes (functional harmony, in the key). Use a slash chord only for clear bass motion

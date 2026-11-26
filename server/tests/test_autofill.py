@@ -170,7 +170,7 @@ def test_job_outputs_fill_and_log(client, app):
     m = client.get(f'/api/items/{ids[0]}').json()
     assert (m['artist'], m['album'], m['key'], m['version']) == ('Andrew Lloyd Webber', 'Cats', '', 'original')
     xml = client.get(f'/api/items/{ids[0]}/musicxml').text
-    assert '<creator type="composer">Andrew Lloyd Webber</creator><creator type="arranger">Read by Meowsic</creator>' in xml
+    assert '<creator type="composer">Andrew Lloyd Webber</creator><creator type="arranger">Transcribed by Meowsic</creator>' in xml
     assert 'Info filled from your library: artist, album' in msgs
     assert activity(client)
 
