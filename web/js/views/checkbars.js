@@ -10,7 +10,7 @@
 // Every change is saved into the score with history + Activities undo: Looks right / Use other reading through
 // POST /api/items/{id}/check (server/meowsic/barcheck.py; scores without check.json: through Edit notes), note
 // edits through Edit notes (server/meowsic/staffmove.py), which marks the bar checked in the same save.
-import { esc, iconOn, toast, sheet as modal, confirmSheet } from '../ui.js';
+import { esc, iconOn, toast, sheet as modal, confirmSheet, unsaved } from '../ui.js';
 import { store } from '../store.js';
 import { go } from '../app.js';
 import { pageSrc } from './sheet.js';
@@ -104,6 +104,7 @@ export async function reviewChecks(view, it, host, list, start = 0, refreshBadge
   const url = `/items/${encodeURIComponent(it.id)}/editnotes`;
   const panel = document.createElement('div');
   panel.className = 'cb-panel';
+  unsaved(panel); // a reading being previewed is not kept yet (update.js waits)
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', 'Check bars');
   host.append(panel);
