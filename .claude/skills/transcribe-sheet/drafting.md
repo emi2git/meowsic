@@ -50,6 +50,9 @@
 ## Self-check before handing over
 1. `score-onsets.py draft.musicxml` shows no `!SUM` and no `!TYPE`.
 2. Write your own onset list for 3–4 hard bars from the crops, and check it against the dump.
+   **Every note→rest boundary** (a note followed straight by a rest in its voice, above all at a beat, bar or phrase end):
+   look at that spot on the crop. If the sheet prints one longer note (or a tie) and no rest there, the draft is wrong.
+   Note + rest where the sheet shows one longer note is a known recurring error (lessons.md, 2026-11-27).
 3. Render the draft and look at each system beside its crop. Each RH note must sit over the LH note struck at the same onset.
 4. Check the chords: every bar is covered (a symbol, or a carried one that still fits), and each fits its notes.
 5. Return the draft path, the sheet used and why, a structure summary (bars, staves, keys, meters, repeats) the chord source (printed / derived), the doubtful chords and the unsure bars.

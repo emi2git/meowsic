@@ -128,6 +128,7 @@ Views (`web/js/views/`):
   - `GET /api/versions` (same-song groups) in `versions.py`.
   Their tables, Undo and tests stay.
 - `POST /api/items/{id}/credit` (`{dryRun}`): a score's MusicXML credits brought up to date (`db.credit_xml` + `score_byline`), logged + undoable. Photo → score says "Transcribed by Meowsic" since Nov 2026 (it was "Read by Meowsic"; the old text is still matched). Bulk: `server/scripts/credit_transcribed.py`.
+- `POST /api/items {fromItemId, musicxmlText, version, title?, note?}`: a hand-made MusicXML saved as a new version of that score (same song group, Activities + Undo; `items._version_of`). `server/scripts/arrange_piano.py`: voice + piano → piano solo.
 - Job kind `version` (`runners.version_runner`): another arrangement of a score; the UI's "Make another version" is gone. Also `GET /api/ai/status` and `POST /api/backup/snapshot`.
 
 ## Gotchas
