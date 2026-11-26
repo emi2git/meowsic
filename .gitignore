@@ -26,7 +26,8 @@ migrate/.venv/
 *.safetensors
 *.gguf
 models--*/
-.claude/
+.claude/*
+!.claude/skills/
 web/takes/
 
 # symlinks into the live folder (worktrees): no trailing slash, so a symlink can't be committed
