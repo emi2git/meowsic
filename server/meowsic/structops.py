@@ -498,7 +498,7 @@ def unroll(root, verses=True):
 def struct_op(text, op, info=None):
     from .barnorm import normalize_bar, tidy_score
     from .barops import _renumber
-    from .staffmove import _head, _slur_mark, _tie_count, edit_part, fix_slurs, fix_ties
+    from .staffmove import _head, _slur_mark, _tie_count, edit_part, fix_slurs, fix_ties, ties_gone
     from .rangeops import tidy_accidentals
     info = {} if info is None else info
     kind = op.get('op')
@@ -570,9 +570,11 @@ def struct_op(text, op, info=None):
                 if b == bi: normalize_bar(m, st, v, tsig, div, keep=set(), info={})
     tidy_score(root)
     for p, snap in snaps: fix_slurs(p, snap)
-    for p in parts: fix_ties(p)
+    dropped = sum(fix_ties(p) for p in parts if p is part)
+    for p in parts:
+        if p is not part: fix_ties(p)
     if acc is not None or tidy:
         for p in parts: tidy_accidentals(p, acc if acc is not None else {b for b, _, _ in tidy})
-    gone = max(0, ties_before - _tie_count(part))
+    gone = ties_gone(ties_before, part, dropped)
     ET.indent(root, space='  ')
     return _head(text) + ET.tostring(root, encoding='unicode') + '\n', [], gone

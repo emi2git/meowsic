@@ -131,9 +131,9 @@ def shift_op(text, op, info=None):
     for b, st, v in sorted(tidy): normalize_bar(bars[b], st, v, ctx[b][1], ctx[b][0], keep={id(n) for n in picked}, info=nb)
     tidy_score(root)
     sm.fix_slurs(part, snap)
-    sm.fix_ties(part)
+    dropped = sm.fix_ties(part)
     tidy_accidentals(part, {b for b, _, _ in tidy})
-    gone = max(0, ties_before + nb.get('ties', 0) - sm._tie_count(part))
+    gone = sm.ties_gone(ties_before + nb.get('ties', 0), part, dropped)
     ET.indent(root, space='  ')
     out = sm._head(text) + ET.tostring(root, encoding='unicode') + '\n'
     ref = {id(e): i for i, e in enumerate(part.iter('note'))}

@@ -18,7 +18,7 @@ pytestmark = pytest.mark.skipif(not NODE, reason='node not installed')
 NAMES = ['C', 'Am', 'F/A', 'G7', 'Bb7sus4', 'Cmaj7', 'CM7', 'CΔ7', 'Dm7b5', 'Bø', 'Bø7', 'C°7', 'Cdim', 'C+', 'C+7', 'Caug',
          'Csus', 'Csus2', 'Csus4', 'Csus7', 'C6', 'Cm6', 'C6/9', 'C69', 'C9', 'Cmaj9', 'Cm9', 'C11', 'C13', 'Cadd9',
          'C(add9)', 'C7b9', 'C7#9', 'C7#11', 'C7b5', 'Cm(maj7)', 'CmM7', 'F#m7/C#', 'Ebmaj7', 'Ab', 'Db/F', 'C5', 'N.C.',
-         'NC', 'C♭', 'B♭m', 'H', 'Xyz', '', 'Gm7/F', 'E7sus', 'Amin7', 'Cmi']
+         'NC', 'C♭', 'B♭m', 'H', 'Xyz', '', 'Gm7/F', 'E7sus', 'Amin7', 'Cmi', 'C7sus', 'C9sus', 'Csus9', 'Csus/G', 'C7sus2']
 
 
 def node(code):

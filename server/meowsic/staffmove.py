@@ -906,20 +906,74 @@ def _partner_index(tl):
 def _tie_count(part): return sum(_has_tie(x[0], 'start') for x in _timeline(part))
 
 
+_JUMP_WORDS = re.compile(r'\bD\.\s*[SC]\.|\bD\s?[SC]\b|dal\s+segno|da\s+capo|to\s+coda', re.I)
+
+
+def _jumps(part):
+    """(source bars, target bars): bars ending in a jump (D.S., D.C., To Coda, a backward repeat) and bars a jump
+    lands on (the first bar, a segno, a coda, a forward repeat), as measure indexes."""
+    src, tgt = set(), {0}
+    for k, m in enumerate(part.iter('measure')):
+        for snd in m.iter('sound'):
+            if any(snd.get(a) for a in ('dalsegno', 'dacapo', 'tocoda')): src.add(k)
+            if snd.get('segno') or snd.get('coda'): tgt.add(k)
+        if any(_JUMP_WORDS.search(w.text or '') for w in m.iter('words')): src.add(k)
+        if m.find('.//segno') is not None or m.find('.//coda') is not None: tgt.add(k)
+        for r in m.findall('barline/repeat'):
+            (src if r.get('direction') == 'backward' else tgt).add(k)
+    return src, tgt
+
+
+def _jump_ties(part, tl):
+    """{id(start note): stop entry} for ties over a jump: a tie start on a note ending its bar where the bar jumps
+    (D.S. ...) and a same-pitch tie stop on a note starting a bar the jump lands on (a segno ...)."""
+    src, tgt = _jumps(part)
+    if not src: return {}
+    bar = {id(n): k for k, m in enumerate(part.iter('measure')) for n in m.iter('note')}
+    lo, hi = {}, {}
+    for x in tl:
+        k = bar.get(id(x[0]))
+        lo[k] = min(lo.get(k, x[3]), x[3]); hi[k] = max(hi.get(k, x[4]), x[4])
+    stops = {}
+    for x in tl:
+        k = bar.get(id(x[0]))
+        if k in tgt and x[3] == lo[k] and x[5] is not None and _has_tie(x[0], 'stop'): stops.setdefault(x[5], []).append(x)
+    out = {}
+    for x in tl:
+        k = bar.get(id(x[0]))
+        if k in src and x[4] == hi[k] and x[5] is not None and _has_tie(x[0], 'start') and stops.get(x[5]):
+            st = stops[x[5]]
+            out[id(x[0])] = next((y for y in st if y[1] == x[1]), st[0])  # same staff first
+    return out
+
+
 def fix_ties(part):
     """Every tie start joined to its partner (a stop added there when missing); a start with no partner and a stop
-    with no start go. Returns how many tie starts went."""
+    with no start go. A tie over a jump (a start ending a D.S. / D.C. / To Coda / repeat bar, its stop at the segno,
+    coda or repeat start, same pitch) is kept as it is. Returns how many ties went: the starts or the stops dropped,
+    whichever are more (a stop can go while its start finds another partner)."""
     tl = _timeline(part)
     nxt = _partner_index(tl)
-    ok, gone = set(), 0
+    jump = _jump_ties(part, tl)
+    ok, gone, stops = set(), 0, 0
     for x in tl:
         if not _has_tie(x[0], 'start'): continue
         p = nxt(x)
+        j = jump.get(id(x[0]))
+        if j is not None:
+            ok.add(id(j[0]))
+            if p is None or p[0] is x[0] or not _has_tie(p[0], 'stop'): continue  # the tie goes over the jump only
         if p is None or p[0] is x[0]: _drop_tie(x[0], 'start'); gone += 1; continue
         _add_tie(p[0], 'stop'); ok.add(id(p[0]))
     for x in tl:
-        if _has_tie(x[0], 'stop') and id(x[0]) not in ok: _drop_tie(x[0], 'stop')
-    return gone
+        if _has_tie(x[0], 'stop') and id(x[0]) not in ok: _drop_tie(x[0], 'stop'); stops += 1
+    return max(gone, stops)
+
+
+def ties_gone(before, part, dropped):
+    """tiesGone for the preview: tie starts fewer than before, or the tie marks fix_ties dropped (a stop can go while
+    its start finds another partner), whichever is more."""
+    return max(0, before - _tie_count(part), dropped)
 
 
 def _tie_chain(part, want):
@@ -1267,11 +1321,11 @@ def edit_ex(text: str, op: dict, info=None):
     from .barnorm import tidy_score
     tidy_score(root)  # no repeated time / key / clef (a bar left short is shown as such, never filled: incomplete_bars)
     fix_slurs(part, snap)
-    fix_ties(part)
+    dropped = fix_ties(part)
     if tidy and kind in ('pitch', 'add', 'set', 'move'):  # accidentals where the bar needs them, redundant ones gone
         from .rangeops import tidy_accidentals
         tidy_accidentals(part, {b for b, _, _ in tidy})
-    gone = max(0, ties_before + added + nb.get('ties', 0) - _tie_count(part))
+    gone = ties_gone(ties_before + added + nb.get('ties', 0), part, dropped)
     ET.indent(root, space='  ')
     out = _head(text) + ET.tostring(root, encoding='unicode') + '\n'
     ref = {id(e): i for i, e in enumerate(part.iter('note'))}

@@ -996,9 +996,9 @@ label .bs-det { display: block; font-weight: 400; margin-top: 2px; }
 /* library language toggle: World (dim earth, every song) ⇄ Vietnamese (lit star, no disc); round, icon only */
 .lang-btn { width: 36px; height: 36px; min-height: 0; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
 .lang-btn .ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.lang-btn[data-lang="world"] { opacity: .45; }
-.lang-btn.on { color: var(--acc-text); background: none; }
-.lang-btn .ic.star { fill: currentColor; stroke-width: 1.4; }
+.lang-btn, .lang-btn.on { color: var(--acc-text); }
+.lang-btn.on { background: var(--acc-soft); }
+.lang-btn .lang-vi { font-size: 14px; font-weight: 700; letter-spacing: .02em; line-height: 1; }
 
 /* ---------- Settings: storage on this device ---------- */
 .st-cap { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0 4px; }
@@ -1034,6 +1034,9 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 :is(.page-dots, .score-dots) i.on { background: currentColor; opacity: .75; }
 .score-dots { color: #222; }
 .page-dots i { pointer-events: auto; cursor: pointer; }
+/* Mac: "3 / 7" (one page shown) or "3–4 / 7" (two), bottom right of the page window */
+.page-count { position: absolute; right: 48px; bottom: 1px; font-size: 11px; line-height: 13px; color: var(--ink2); pointer-events: none; z-index: 4; font-variant-numeric: tabular-nums; }
+.page-count:empty { display: none; }
 .page-dots i::after { content: ''; position: absolute; inset: -8px -4px; }
 
 /* ===== Library: sort from the Title heading (no sort button) ===== */

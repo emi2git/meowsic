@@ -23,6 +23,7 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
       <div class="pages ${perform ? 'perform' : ''}" id="pages" tabindex="-1"><div class="page-row" id="page-row"></div></div>
       <button class="turn-strip next" aria-label="Next page" title="Next page">›</button>
       <div class="page-dots" id="sv-dots" role="tablist" aria-label="Pages"></div>
+      <div class="page-count" id="sv-count" aria-live="polite"></div>
     </div>`;
 
   // two pages side by side only in a Mac browser (mouse / trackpad and a wide window); iPad and iPhone show one
@@ -31,16 +32,45 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
   // side on a Mac in a wide window. The steps scale that fitted size; bigger than 100% scrolls.
   // Kept per item on this device only (localStorage): a zoom picked on the Mac never makes the iPad
   // open overflowing. The old shared item.zoom (other scale, 100% = 1.5× the screen) is ignored.
+  // Mac: the layout picks itself: two pages while both fit side by side at the current zoom, else
+  // one (zoomed in, or a narrow window); re-checked on zoom and resize. ‹ › step by what is shown.
   const canTwo = () => it.pages > 1 && isDesktop() && root.clientWidth > 900;
   const LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2];
   const zKey = `meowsic.sheetZoom.${it.id}`;
   let zoom = 1;
   try { const z = +localStorage.getItem(zKey); if (LEVELS.includes(z)) zoom = z; } catch {}
-  const twoUp = () => canTwo();
+  const DEF_RATIO = 850 / 1100;
+  const ratioOf = (p) => { const c = imgs.get(pageSrc(it, p)); return c?.done && c.im.naturalWidth ? c.im.naturalWidth / c.im.naturalHeight : DEF_RATIO; };
+  // the room inside .pages, measured unzoomed: iPad / iPhone the whole room (no padding: the page goes
+  // edge to edge); Mac: a small margin. W = the whole width; one page of n gets (W - gaps) / n.
+  const measure = () => {
+    const was = pages.classList.contains('zoomed');
+    pages.classList.remove('zoomed');
+    const touch = isTouch(), pcs = getComputedStyle(pages);
+    const gap = touch ? parseFloat(getComputedStyle($('#page-row', root)).columnGap) || 0 : 4;
+    const m = {
+      gap,
+      H: pages.clientHeight - (touch ? parseFloat(pcs.paddingTop) + parseFloat(pcs.paddingBottom) : 8) - DOTS,
+      W: pages.clientWidth - (touch ? parseFloat(pcs.paddingLeft) + parseFloat(pcs.paddingRight) : 12),
+    };
+    if (was) pages.classList.add('zoomed');
+    return m;
+  };
+  // fitted (100%) page height: the scale is the spread's fit whenever two pages are possible at all,
+  // so zooming only makes pages bigger or smaller, and the layout follows from whether two still fit
+  const fitH = (m, ratio) => Math.max(1, Math.min(m.H, (canTwo() ? (m.W - m.gap) / 2 : m.W) / ratio));
+  const leftOf = (p) => (p % 2 ? p : p - 1);
+  const twoUp = () => {
+    if (!canTwo()) return false;
+    const m = measure(), l = Math.min(leftOf(page), it.pages - 1);
+    const w = [l, l + 1].reduce((s, p) => { const r = ratioOf(p); return s + fitH(m, r) * zoom * r; }, 0);
+    return w + m.gap <= m.W + 1;
+  };
+  let two = false, first = 1; // the layout drawn last: two pages or one, the first page shown
   // room under the page for the page dots: Mac only (iPad / iPhone pages stay edge to edge, the
   // thin dots sit over the bottom margin of the page)
   const DOTS = it.pages > 1 && isDesktop() ? 14 : 0;
-  const dots = $('#sv-dots', root);
+  const dots = $('#sv-dots', root), count = $('#sv-count', root);
   dots.onclick = (e) => { const d = e.target.closest('[data-p]'); if (d) { page = +d.dataset.p; draw(); } };
 
   // page pictures, loaded and decoded ahead (the pages next to the shown ones too), so a turn swaps
@@ -69,36 +99,37 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
   };
   let gen = 0;
   const draw = () => {
-    if (twoUp() && page % 2 === 0) page--;
-    const show = twoUp() ? [page, page + 1].filter((p) => p <= it.pages) : [page];
+    // page = the page being read; two pages show its spread (odd page on the left), so a switch
+    // between one and two keeps it in view
+    page = Math.max(1, Math.min(it.pages, page));
+    two = twoUp();
+    first = two ? leftOf(page) : page;
+    const show = two ? [first, first + 1].filter((p) => p <= it.pages) : [page];
     const row = $('#page-row', root);
-    const big = zoom > 1;
     if (dots.childElementCount !== (it.pages > 1 ? it.pages : 0)) dots.innerHTML = it.pages > 1 ? Array.from({ length: it.pages }, (_, k) => `<i data-p="${k + 1}" role="tab" aria-label="Page ${k + 1}"></i>`).join('') : '';
     [...dots.children].forEach((d) => { const on = show.includes(+d.dataset.p); d.classList.toggle('on', on); d.setAttribute('aria-selected', on); });
     root.querySelector('.turn-strip.prev').disabled = page <= 1;
-    root.querySelector('.turn-strip.next').disabled = page + (twoUp() ? 2 : 1) > it.pages;
+    root.querySelector('.turn-strip.next').disabled = show.at(-1) >= it.pages;
+    count.textContent = isDesktop() && it.pages > 1 ? `${show.join('–')} / ${it.pages}` : '';
     root.querySelectorAll('#strip button').forEach((b) => b.classList.toggle('on', show.includes(+b.dataset.p)));
     root.dispatchEvent(new CustomEvent('pagechange', { detail: { page, show, pages: it.pages }, bubbles: true }));
     const cs = show.map(load);
     const g = ++gen;
-    const swap = () => { if (g === gen) put(row, show, cs, big); };
+    // the fit check used a guessed page shape until the pictures were decoded: check again then
+    const swap = () => { if (g !== gen) return; if (twoUp() !== two) return draw(); put(row, show, cs); };
     // the old page stays until the new picture is decoded (a slow one shows anyway after 3 s)
     if (cs.every((c) => c.done)) swap();
     else Promise.race([Promise.all(cs.map((c) => c.ready)), new Promise((r) => setTimeout(r, 3000))]).then(swap);
     preload(show);
   };
-  const put = (row, show, cs, big) => {
+  const put = (row, show, cs) => {
     layers.forEach((l) => l.destroy());
     layers = [];
-    // the room a fitted (100%) page gets, measured unzoomed: iPad / iPhone the whole room inside .pages
-    // (no padding there: the page goes edge to edge); Mac: a small margin
-    pages.classList.remove('zoomed');
-    const touch = isTouch(), pcs = getComputedStyle(pages), n = show.length;
-    const gap = touch ? parseFloat(getComputedStyle(row).columnGap) || 0 : 4;
-    const room = {
-      H: pages.clientHeight - (touch ? parseFloat(pcs.paddingTop) + parseFloat(pcs.paddingBottom) : 8) - DOTS,
-      W: (pages.clientWidth - (touch ? parseFloat(pcs.paddingLeft) + parseFloat(pcs.paddingRight) : 12) - gap * (n - 1)) / n,
-    };
+    const room = measure();
+    // zoomed (scrolls, the hand pans) only when the zoomed pages are bigger than the room; a bigger
+    // page that still fits (one page at 125% on a 4:3 screen) stays centered
+    const hs = show.map((p) => [fitH(room, ratioOf(p)) * zoom, ratioOf(p)]);
+    const big = zoom > 1 && (hs.reduce((s, [h, r]) => s + h * r, 0) + room.gap * (hs.length - 1) > room.W + 1 || Math.max(...hs.map(([h]) => h)) > room.H + 1);
     pages.classList.toggle('zoomed', big);
     row.style.height = '';
     row.replaceChildren(...show.map((p, i) => {
@@ -116,7 +147,7 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
       const size = () => {
         const ratio = img.naturalWidth ? img.naturalWidth / img.naturalHeight : 850 / 1100;
         w.style.aspectRatio = String(ratio);
-        const h = Math.max(1, Math.min(room.H, room.W / ratio)) * zoom;
+        const h = fitH(room, ratio) * zoom;
         w.style.height = h + 'px';
         w.style.width = h * ratio + 'px';
       };
@@ -125,9 +156,9 @@ export function sheetBody(root, it, { perform = false, onEnd } = {}) {
       img.complete ? mk() : img.addEventListener('load', mk, { once: true });
     });
   };
-  const step = () => (twoUp() ? 2 : 1);
-  const next = () => { if (page + step() <= it.pages) { page += step(); draw(); } else onEnd?.(); };
-  const prev = () => { if (page > 1) { page = Math.max(1, page - step()); draw(); } };
+  // one page shown: ±1; two: the next / previous spread
+  const next = () => { const p = two ? leftOf(page) + 2 : page + 1; if (p <= it.pages) { page = p; draw(); } else onEnd?.(); };
+  const prev = () => { if (first > 1) { page = Math.max(1, two ? first - 2 : first - 1); draw(); } };
   root.querySelector('.turn-strip.prev').onclick = prev;
   root.querySelector('.turn-strip.next').onclick = next;
 

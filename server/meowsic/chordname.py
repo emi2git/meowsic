@@ -52,7 +52,24 @@ KINDS = {'': ('major', (0, 4, 7)), 'm': ('minor', (0, 3, 7)), '7': ('dominant', 
 _ALT = re.compile(r'(add|sus|b|#)?(13|11|9|7|6|5|4|2)')
 
 
+_DEG = {9: (6, 0), 10: (7, 0), 11: (7, 1), 13: (9, -1), 14: (9, 0), 15: (9, 1), 17: (11, 0), 18: (11, 1), 20: (13, -1), 21: (13, 0)}
+
+
+def _suspended(iv, degrees):
+    """A chord with its third replaced by a sus tone as MusicXML spells it: kind suspended-fourth / -second and the
+    other tones as degrees (C7sus4 = suspended-fourth + 7), so a player reading the kind plays no third."""
+    base = (0, 5, 7) if 5 in iv else (0, 2, 7)
+    kind = 'suspended-fourth' if 5 in iv else 'suspended-second'
+    out = [d for d in degrees if d[2] == 'alter']
+    pcs = {x % 12 for x in base}
+    for x in iv:
+        if x % 12 in pcs or x in (6, 8): continue
+        if x in _DEG: out.append((*_DEG[x], 'add')); pcs.add(x % 12)
+    return kind, out
+
+
 def _split(name):
+    name = re.sub(r'sus(?!\d)', 'sus4', name)  # a bare "sus" is sus4 (Csus, C7sus, C9sus)
     m = _NAME.match(name)
     if not m: return None
     root = STEP[m['root']] + {'#': 1, 'b': -1}.get(m['acc'], 0)
@@ -73,7 +90,10 @@ def _split(name):
         else:
             iv.append(semis); degrees.append((n, 0, 'add'))
     bass = STEP[m['bass'][0]] + {'#': 1, 'b': -1}.get(m['bass'][1:], 0) if m['bass'] else None
-    return m, kind, key, sorted(set(iv)), degrees, bass
+    iv = sorted(set(iv))
+    if any(how == 'sus' for how, _ in _ALT.findall(m['alt'] or '')) and 3 not in iv and 4 not in iv:
+        kind, degrees = _suspended(iv, degrees)
+    return m, kind, key, iv, degrees, bass
 
 
 def tones(name):
