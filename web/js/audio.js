@@ -103,11 +103,36 @@ function pianoVoice(out, pitch, vel, when, held) {
   return { src, env, end: when + held + tail };
 }
 
+// ---------- the chords' pad (Chords part toggle): a warm synth pad, made here in Web Audio ----------
+// No pad / string / e-piano samples ship (only the piano), so it is synthesised: two sawtooths a few cents apart and a
+// sine an octave down, through a gentle low-pass, with a slow attack (0.12 s) and a soft release (0.3 s): sustained
+// and clearly not the piano. Its level sits about 9 dB under a piano melody note (PAD_GAIN, for a 4-note chord).
+const PAD_GAIN = 0.0021; // the piano samples are quiet (a held C5 at v 90: RMS ≈ 0.009); chordplay.mjs measures the gap
+function padVoice(out, pitch, vel, when, held) {
+  const c = out.context, env = c.createGain(), lp = c.createBiquadFilter();
+  const f = 440 * Math.pow(2, (pitch - 69) / 12);
+  lp.type = 'lowpass'; lp.frequency.value = Math.min(2400, f * 4); lp.Q.value = 0.5;
+  const oscs = [['sawtooth', f, -6], ['sawtooth', f, 6], ['sine', f / 2, 0]].map(([type, fr, cents]) => {
+    const o = c.createOscillator(); o.type = type; o.frequency.value = fr; o.detune.value = cents; o.connect(lp); return o;
+  });
+  const peak = PAD_GAIN * (vel / 64), release = 0.3, tail = release * 4;
+  env.gain.setValueAtTime(0, when);
+  env.gain.linearRampToValueAtTime(peak, when + Math.min(0.12, held * 0.5));
+  env.gain.setTargetAtTime(0, when + held, release);
+  lp.connect(env); env.connect(out);
+  for (const o of oscs) { o.start(when); o.stop(when + held + tail); }
+  const src = { stop: (t) => { for (const o of oscs) { try { o.stop(t); } catch {} } } };
+  return { src, env, end: when + held + tail };
+}
+
+export const voicesForTests = { pianoVoice, padVoice }; // the level check (chordplay.mjs renders both offline)
+
 // ---------- score player: notes in quarter-note time; tempo, loop, transpose ----------
 // segments: [[fromQ, toQ], …] in the order they are played (repeats and endings, musicxml.js playOrder), or null:
 // at the end of each the clock jumps to the next (the playhead with it); A–B loop mode ignores them.
-// chords: the chord symbols as piano chords ([{q, d, n, v}], chordplay.js chordEvents), heard while chordsOn; a chord
-// already sounding where Play starts (or a loop jumps back to) is struck there for the rest of its length.
+// chords: the chord symbols as pad chords ([{q, d, n, v}], chordplay.js chordEvents; padVoice), heard while chordsOn;
+// transposed with the notes; each is held to its next change but never past the end of the segment / loop playing;
+// a chord already sounding where Play starts (or a repeat / loop jumps to) is struck there for the rest of its length.
 // Tempo: bpm × rate; setRate while playing takes over at once (the notes already on their way after that moment are
 // called back and scheduled again at the new tempo), with no stop / restart of the audio.
 // mute: the staves not played (a note's s, musicxml.js; hands.js picks them), changed at once by setMute.
@@ -176,7 +201,7 @@ export class ScorePlayer {
       const stopQ = this.loop ? this.loop[1] : segs ? segs[this.seg][1] : this.endQ;
       const a = this.scheduledTo, b = Math.min(horizonQ, stopQ);
       for (const n of this.notes) if (n.q >= a && n.q < b && !this.mute.has(n.s)) this.noteVoice(n);
-      if (this.chordsOn) for (const n of this.chords) if (n.q >= a && n.q < b) this.chordVoice(n, n.q, n.d);
+      if (this.chordsOn) for (const n of this.chords) if (n.q >= a && n.q < b) this.chordVoice(n, n.q, Math.min(n.d, stopQ - n.q));
       this.scheduledTo = b;
       if (b < stopQ) break;
       const tEnd = this.t0 + (stopQ - this.q0) / this.qps;
@@ -214,24 +239,27 @@ export class ScorePlayer {
   }
   chordVoice(n, q, d) {
     const at = Math.max(this.ctx.currentTime, this.t0 + (q - this.q0) / this.qps);
-    const v = pianoVoice(this.out, n.n + this.shift, n.v, at, Math.max(0.08, d / this.qps - 0.02));
+    const v = padVoice(this.out, n.n + this.shift, n.v, at, Math.max(0.08, d / this.qps - 0.02));
     this.sched.push({ v, at, chord: true });
     const t = this.ctx.currentTime;
     this.chordVoices = this.chordVoices.filter((x) => x.end > t); this.chordVoices.push(v);
-    if (this.heardChords.length < 4000) this.heardChords.push([q, n.n]);
+    if (this.heardChords.length < 4000) this.heardChords.push([q, n.n + this.shift, d]); // [q, midi as heard (transposed), length in quarters]
   }
   // a chord that started before q and still sounds there (Play from the middle of it, a jump back): struck at q
   carryChords(q) {
     if (!this.chordsOn) return;
-    for (const n of this.chords) if (n.q < q - 1e-6 && n.q + n.d > q + 1e-3) this.chordVoice(n, q, n.q + n.d - q);
+    const z = this.segEnd();
+    for (const n of this.chords) if (n.q < q - 1e-6 && n.q + n.d > q + 1e-3) this.chordVoice(n, q, Math.min(n.q + n.d, z) - q);
   }
+  // where the part playing now ends (the A-B loop's end, the repeat segment's end, else the end)
+  segEnd() { return this.loop ? this.loop[1] : this.segments ? this.segments[this.seg][1] : this.endQ; }
   // the Chords toggle while playing: on = from the chord sounding now; off = the chords already on their way fade out
   setChords(on) {
     on = !!on;
     if (on === this.chordsOn) return;
     this.chordsOn = on;
     if (!this.playing) return;
-    if (on) { const q = this.now(); for (const n of this.chords) if (n.q < q && n.q + n.d > q + 0.05) this.chordVoice(n, q, n.q + n.d - q); for (const n of this.chords) if (n.q >= q && n.q < this.scheduledTo) this.chordVoice(n, n.q, n.d); }
+    if (on) { const q = this.now(), z = this.segEnd(); for (const n of this.chords) if (n.q < q && n.q + n.d > q + 0.05) this.chordVoice(n, q, Math.min(n.q + n.d, z) - q); for (const n of this.chords) if (n.q >= q && n.q < this.scheduledTo) this.chordVoice(n, n.q, Math.min(n.d, z - n.q)); }
     else { this.hush(this.chordVoices); this.chordVoices = []; }
   }
   pause() {

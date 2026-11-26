@@ -86,7 +86,7 @@ for (const [name, vp, mode] of DEVICES) {
   await waitFor(async () => (await seen())[0] === '*F', 6000);
   s = await seen();
   check('bar 4 the second time: F Dm Em G7', s.join() === '*F,Dm,Em,G7', s.join());
-  await tap('#sc-chordplay');
+  await tap('#sc-hands [data-part="chords"]');
   await sleep(300);
   s = await seen();
   check('Play chords on: still 4, the first current', (await E(() => window.__score.player.chordsOn)) && s.length === 4 && s[0].startsWith('*'), s.join());
@@ -111,7 +111,7 @@ for (const [name, vp, mode] of DEVICES) {
   check('stopped: every chord again, none marked', s.join() === 'C,G,Am,F,Dm,Em,G7', s.join());
   const sw = await E(() => document.documentElement.scrollWidth);
   check('no sideways scroll', sw <= vp.width, String(sw));
-  await tap('#sc-chordplay'); // Play chords off again (this device)
+  await tap('#sc-hands [data-part="chords"]'); // Play chords off again (this device)
   await page.close();
 }
 
