@@ -36,7 +36,7 @@ Bars are **0-based** and staves 1-based (1 = top). The ops most used here:
 | Op | Shape |
 |---|---|
 | replace a bar | `{op:'alt', bar, measure:'<measure>…</measure>'}` (keeps the words by onset, `barcheck.carry_lyrics`; check the words after thinning a bar) |
-| chord symbol | `{op:'chord', bar, on, text}`: `on` in **quarters from the bar start, from 0**; `text:''` removes it |
+| chord symbol | `{op:'chord', bar, on, text}`: `on` in **quarters from the bar start, from 0**; `text:''` removes it. Every score needs chords over the whole piece (SKILL.md §1a); add a missing set in **one** save (many `chord` ops). On a voice + piano score it writes into the piano part |
 | remove a staff | `{op:'delstaff', staff}` (e.g. an arranged LH on a lead score) |
 | lyrics | `{op:'lyrics', staff, verse, notes:[{ref, text, syllabic, extend?}]}`, or the lyrics route below |
 | clef | `{op:'clef', bar, staff, clef:'treble'\|'bass', until?}` |

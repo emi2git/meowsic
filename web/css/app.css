@@ -16,14 +16,12 @@
    short (a strip at the bottom). There are no browser bars, so add the inset back, capped at the full
    screen (100lvh). An app added before the status bar change has no inset and keeps 100dvh. */
 @media (display-mode: standalone) { :root { --vh: min(100lvh, 100dvh + env(safe-area-inset-top)); } }
-/* --sat: how far app content keeps clear of the top edge (use it, not the raw safe-area inset).
-   iPadOS / iOS 26 lay a soft scroll-edge effect (blur + white fade) over the top of the web view: the
-   status bar PLUS about 50pt below it, so the first header row sat in the blur. In the installed app
-   (iPad / iPhone) the band is the status bar + 48px (only when there is a status bar: min(48px, 2 x
-   inset)), filled by the solid fixed .topedge; content starts below it, so the blur only ever lies
-   over a plain solid colour. Safari and the Mac keep the plain inset. */
+/* --sat: how far app content keeps clear of the top edge = the status bar inset (0 in Safari and on the Mac).
+   Each column paints its own colour under the status bar (sidebar --bg2, top bars --bg), so the top reads as
+   one surface. NO full-width band: shells v49-v57 laid a fixed --bg band (inset + 48px) across the top for an
+   "iOS 26 blur"; on iPad it showed as a white strip over the grey sidebar and an empty white gap above every
+   header: that band WAS the white cast. The iPadOS 26.5 home-screen app draws no blur over inner scrollers. */
 :root { --sat: env(safe-area-inset-top); }
-:root[data-app]:is([data-device="tablet"], [data-device="phone"]) { --sat: calc(env(safe-area-inset-top) + min(48px, env(safe-area-inset-top) * 2)); }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #15181d; --bg2: #1d2128; --card: #22272f; --ink: #eef1f5; --ink2: #c9cfd8; --mute: #8f97a3;
@@ -122,11 +120,6 @@ progress { width: 100%; height: 8px; accent-color: var(--acc); }
 .tabbar { display: none; }
 
 /* ---------- top bars ---------- */
-/* The solid top band (see --sat): one page colour, full width, fixed, --sat high (1px in Safari). WebKit
-   26 samples fixed elements at the top edge for its edge colour; a band that only covered the status
-   bar (shell v47) was missed and the header below still blurred. Now nothing but this band sits in the
-   blurred zone. Below modals (100). */
-.topedge { position: fixed; top: 0; left: 0; right: 0; height: max(1px, var(--sat)); background: var(--bg); z-index: 99; }
 .top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px; padding: 12px 22px; padding-top: calc(12px + var(--sat)); background: var(--bg); border-bottom: 1px solid var(--line); min-height: 64px; } /* opaque: it sits under the status bar */
 .top h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .top .back { margin-left: -10px; }
@@ -452,7 +445,7 @@ legend { font-weight: 700; margin-bottom: 8px; }
 @media print {
   @page { size: A4; margin: 0; }
   body { overflow: visible; background: #fff; }
-  .app, .toast, .modal-wrap, .menu, .topedge { display: none !important; }
+  .app, .toast, .modal-wrap, .menu { display: none !important; }
   #print-root { display: block; }
   #print-root .pp { width: var(--pw, 210mm); height: var(--ph, 297mm); page-break-after: always; break-after: page; position: relative; overflow: hidden; color: #222; background: #fff; }
   #print-root .pp img { width: 100%; height: 100%; object-fit: contain; }
@@ -1126,6 +1119,10 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .uk-chord { flex: none; height: 100%; padding: 2px 4px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); min-height: 0; display: flex; align-items: center; justify-content: center; }
 .uk-chord.on { border: 2px solid var(--acc); padding: 1px 3px; background: var(--acc-soft); }
 .uk-none { margin: 0; padding: 0 6px; white-space: nowrap; }
+/* playing: the chord sounding now (in the chord colour) and the next 3 a little softer */
+.uk-next .uk-chord:not(.uk-now) { opacity: .62; }
+.uk-next .uk-chord.uk-now { border: 2px solid var(--chord); padding: 1px 3px; }
+.uk-next .uk-now .uk-name { fill: var(--chord); }
 .chord-strip .uk-close { flex: none; align-self: center; min-height: 34px; width: 34px; padding: 0; border-radius: 50%; }
 .uk-box { height: 100%; width: auto; display: block; }
 .uk-box .uk-name { font: 700 14px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: var(--ink); }

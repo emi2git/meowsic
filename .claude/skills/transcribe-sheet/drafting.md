@@ -29,8 +29,11 @@
   "tidy" it onto the downbeat.
 - **Pickup**: the first bar is `implicit="yes"`, holds only the printed pickup length, and is numbered 0. On an existing item, use the editnotes `pickup` op.
 - **Repeats / D.S. / coda**: use `<barline><repeat>`, `<ending>`, `<segno/>`, `<coda/>`, and `<words>D.S. al Coda</words>` / `To Coda` with `<sound dalsegno=… tocoda=…>`, at the printed bars. Don't unroll them. A tie that runs back to the segno must stay a tie.
-- Chord symbols are `<harmony>` at the printed beat, in the `chordname.py` grammar (`Bbm7`, `C/E`, `Csus4`, `N.C.`).
-  Write `sus4`, not a bare `sus`.
+- **Every score has chord symbols over the whole piece** (SKILL.md §1a). They are `<harmony>` at the printed beat, in the
+  `chordname.py` grammar (`Bbm7`, `C/E`, `Csus4`, `N.C.`). Write `sus4`, not a bare `sus`.
+  - Printed on the sheet: copy them exactly.
+  - Not printed: derive them from the harmony (LH + RH, or melody + accompaniment). One per harmonic change (usually a bar or
+    half bar), slash chords only for a clear bass line. Check each against the notes on its span and list the doubtful ones.
 - Lyrics: one syllable per note, with `syllabic` begin / middle / end and `<extend/>` on melismas. Verse 2 is `<lyric number="2">`. No words on rests or tied-into notes.
 - No tempo marks (the app hides them; the bpm goes in the item field). **No `<pedal>`.**
 - Ottava: `<octave-shift>`. `<pitch>` is always the **sounding** pitch.
@@ -48,4 +51,5 @@
 1. `score-onsets.py draft.musicxml` shows no `!SUM` and no `!TYPE`.
 2. Write your own onset list for 3–4 hard bars from the crops, and check it against the dump.
 3. Render the draft and look at each system beside its crop. Each RH note must sit over the LH note struck at the same onset.
-4. Return the draft path, the sheet used and why, a structure summary (bars, staves, keys, meters, repeats) and the unsure bars.
+4. Check the chords: every bar is covered (a symbol, or a carried one that still fits), and each fits its notes.
+5. Return the draft path, the sheet used and why, a structure summary (bars, staves, keys, meters, repeats) the chord source (printed / derived), the doubtful chords and the unsure bars.

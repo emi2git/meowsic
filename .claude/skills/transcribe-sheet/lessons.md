@@ -34,3 +34,6 @@ Add a dated line whenever something new goes wrong.
   changing anything. Then say plainly whether the score or the sheet is the issue.
 - **2026-11-26, the version name.** A workflow asked to save scores as version `piano`, but scores only take `original` /
   `lead` / …. *Now:* piano = `original`.
+- **2026-11-26, scores without chords.** Several scores had no chord symbols, or only on a few bars (a piano intro and ending
+  left bare). The user's rule: every score has chords over the whole piece. *Now:* printed chords copied, else derived from the
+  harmony and checked note by note (SKILL.md §1a); the markings verifier checks them.
