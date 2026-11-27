@@ -33,9 +33,10 @@ iPad / iPhone / Mac browser ── PWA (web/, ES modules, no build) ── servi
           ▼
 FastAPI server (server/meowsic, Python 3.12) ── SQLite (schema: server/schema.sql) + item folders on disk
           ├─ background jobs: transcribe · omr · lyrics · sing · version · tags
-          │     omr   → omr/   (homr + Audiveris + Apple Vision)
-          │     sing  → sing/  (SoulX-Singer on PyTorch MPS)
-          │     tags  → local MLX model (Qwen2.5 7B 4-bit)
+          │     transcribe → transcribe/ (recording → piano score)
+          │     omr        → omr/ (homr + Audiveris + Apple Vision)
+          │     sing       → sing/ (SoulX-Singer on PyTorch MPS)
+          │     tags       → local MLX model (Qwen2.5 7B 4-bit)
           └─ daily loops: DB backup, clean-up of expired undo history
 ```
 
