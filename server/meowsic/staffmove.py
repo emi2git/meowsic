@@ -1122,6 +1122,12 @@ def _slur_op(part, want, on, nxt_note=False, start_only=False):
     if len({p[3] for p in picked}) < 2: raise HTTPException(400, 'Pick two or more notes for a slur (Shift-click or drag a box)')
     a = min(picked, key=lambda x: (x[3], -(x[5] or 0)))
     b = max(picked, key=lambda x: (x[3], x[5] or 0))
+    # that very slur is there already (first to last picked): S takes it away (a toggle); a longer slur around the
+    # picked notes stays, and the new one goes inside it
+    same = [(num, x, y, sa, sb) for num, x, y, sa, sb in _slur_spans(tl) if x[1] == a[1] and x[3] == a[3] and y[3] == b[3]]
+    if same:
+        for num, x, y, sa, sb in same: _unslur([(x[0], sa), (y[0], sb)])
+        return [a[0], b[0]]
     used = {num for num, s, e, _, _ in _slur_spans(tl) if s[3] <= b[3] and e[3] >= a[3]}
     num = next(str(k) for k in range(1, 9) if str(k) not in used)
     _notations(a[0]).append(ET.Element('slur', type='start', number=num, placement='above' if a[1] == '1' else 'below'))

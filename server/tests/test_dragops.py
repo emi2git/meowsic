@@ -73,3 +73,15 @@ def test_unslur_at_start_takes_only_that_slur():
     r = refs(x, lambda n: n['midi'] == 74)[0]
     out, _, _ = sm.edit_ex(x, {'op': 'unslur', 'refs': [r], 'at': 'start'})
     assert slurs(out) == [(72, 74)]
+
+
+def test_slur_inside_a_longer_slur_is_added_and_the_same_slur_toggles():
+    # C5 ( D5 E5 F5 ): a long slur; picking D5 + E5 adds a slur inside it (the long one stays)
+    rh = [[with_slur(ev('C5', 1), 'start'), ev('D5', 1), ev('E5', 1), with_slur(ev('F5', 1), 'stop')], RH[1]]
+    x = score(rh, LH)
+    d5, e5 = refs(x, lambda n: n['midi'] == 74)[0], refs(x, lambda n: n['midi'] == 76 and n['bar'] == 0)[0]
+    out, _, _ = sm.edit_ex(x, {'op': 'slur', 'refs': [d5, e5]})
+    assert sorted(slurs(out)) == [(72, 77), (74, 76)]
+    # the same two again: that slur goes, the long one stays
+    out2, _, _ = sm.edit_ex(out, {'op': 'slur', 'refs': [d5, e5]})
+    assert slurs(out2) == [(72, 77)]

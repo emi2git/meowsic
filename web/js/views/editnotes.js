@@ -1072,8 +1072,11 @@ export async function editNotes(view, it, host, opts = {}) {
   }));
   const slur = () => need(noteRefs(), (refs) => {
     const ns = picked().filter((n) => !n.rest);
-    if (ns.every((n) => n.slur)) return run({ op: 'unslur', refs });
-    return run({ op: 'slur', refs, next: new Set(ns.map((n) => `${n.bar}|${n.on}`)).size === 1 });
+    const one = new Set(ns.map((n) => `${n.bar}|${n.on}`)).size === 1;
+    // one note under a slur: S takes it away; two or more: a slur over them (the same slur again: taken away — the Mac
+    // toggles it), even inside a longer slur
+    if (one && ns.every((n) => n.slur)) return run({ op: 'unslur', refs });
+    return run({ op: 'slur', refs, next: one });
   });
   // ← / →: the note (or rest) before / after the last one picked, on its staff; the page turns with it
   const stepNote = (d) => {
