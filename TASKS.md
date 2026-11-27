@@ -3,7 +3,7 @@
 The one task list (it used to be ~/Documents/Meowsic/work/pm-tasks.md, which now only points here).
 Kept by Claude (PM). Each task is done by a subagent and only marked done once it is tested and live.
 Edit it in a worktree and push to v2 like any other change. The user's own requests arrive through in-app
-Feedback (Developer → Feedback; ~/git/scripts/meowsic-feedback.py). Old phase 1–2 lists: docs/history/.
+Feedback (Developer → Feedback; scripts/feedback.py). Old phase 1–2 lists: docs/history/.
 
 
 Updated: 2026-11-25
@@ -21,7 +21,7 @@ Updated: 2026-11-25
 | 11 | Singing voice: default = zh_target (take C, low male) for English, Vietnamese and Mandarin; auto octave fits it; {voice, octave} still override | ✅ Pushed, deploying |
 | 10 | Maintainability: project CLAUDE.md, scripts (test-all/smoke/deploy/dev-server), docs tidy, dead-code sweep, /api/health | ✅ Pushed, deploying |
 | 4 | Add music → Chords: fit iPad Pro/iPhone, auto-tags + "+ Tag", never save empty chords, refill One Day More | ✅ Live (a6de135) |
-| 4b | Singing: only sing lyric notes, wrong-note diagnosis, Approve/Reject toggles, Mandarin + voice choice, sing 两只老虎 (m-nrogmyq) | ✅ Live (takes page re-rendered; verdicts via ~/git/scripts/meowsic-verdicts.py) |
+| 4b | Singing: only sing lyric notes, wrong-note diagnosis, Approve/Reject toggles, Mandarin + voice choice, sing 两只老虎 (m-nrogmyq) | ✅ Live (takes page re-rendered; verdicts via scripts/verdicts.py) |
 | 5 | Manage library on iPad: fix layout, no suggested starts, no hint text, Help button, search-only picker, no "Show hidden", ✓ icon, small Undo, declutter | ✅ Pushed 290e665, deploying |
 | 6 | flows.mjs 1 failing check after the Manage library merge | ✅ Test-setup bug, fixed (0b3f98b) |
 | 7 | Sidebar: Developer → Feedback; sections Manage (Library, Tags, App) + Developer (Stats, Activities, Feedback, Keyboard); no Beta | ✅ Live (e1ca1d3) |

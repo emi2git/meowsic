@@ -18,7 +18,7 @@ One app for the family's sheet music, chord charts, books and scores, used on Ma
 | Data | `~/Documents/Meowsic`: `meowsic.db`, `items/<id>/` (each with `.history/`), `history/` (bulk logs), `backups/`, `work/` (job folders, `server.log`, `cleanup.log`), `certs/` |
 | Logs | `~/Documents/Meowsic/work/server.log` (the live server's stdout) and `~/Library/Logs/Meowsic.log` (Python logging) |
 | AI models | `~/ai/models` only, never in git (`models.json` lists them) |
-| Helper scripts | `~/git/scripts/meowsic-*.py` (feedback, sheet-lyrics, sing, add-ai-score); one-off fixes in `server/scripts/` |
+| Helper scripts | `scripts/*.py` in this repo (live copy `~/git/apps/meowsic/scripts/`; feedback, sheet-lyrics, sing, add-ai-score, verdicts, sung-melody-to-musicxml, video-subtitle-ocr); one-off fixes in `server/scripts/` |
 | Launcher | `~/Applications/Meowsic.app` (starts `server/start.sh` if it is down, opens https://localhost:5180) |
 
 ## Module map
@@ -96,7 +96,7 @@ Views (`web/js/views/`):
 - Never print lyric text in logs, reports, commits or chat: give counts only.
 - No downloads (models, packages, media) without the user's OK.
 - Test end-to-end before reporting done.
-- In-app Feedback is the user's request queue: Developer → Feedback; CLI `~/git/scripts/meowsic-feedback.py`. Claude sets status and fix notes, and the history is kept.
+- In-app Feedback is the user's request queue: Developer → Feedback; CLI `scripts/feedback.py`. Claude sets status and fix notes, and the history is kept.
 - Tasks: `TASKS.md` in this repo (moved from `~/Documents/Meowsic/work/pm-tasks.md`, which now only points here).
 
 ## Transcribing songs (private use)
@@ -122,8 +122,8 @@ Views (`web/js/views/`):
 - Buttons are single icons with an aria-label, not icon + text. No tags in library lists. No tempo marks drawn on scores (`noTempoXml`).
 
 ## Claude-only tools (server endpoints with no UI, kept on purpose)
-- `GET/POST /api/items/{id}/lyrics`, `POST …/lyrics/sheet`, `…/lyrics/preview` (`lyricsedit.py` + `lyricsfit.py`, job kind `lyrics`). Driven by `~/git/scripts/meowsic-sheet-lyrics.py`.
-- `POST /api/items/{id}/sing` (`~/git/scripts/meowsic-sing.py`) and `/api/feedback` (`meowsic-feedback.py`).
+- `GET/POST /api/items/{id}/lyrics`, `POST …/lyrics/sheet`, `…/lyrics/preview` (`lyricsedit.py` + `lyricsfit.py`, job kind `lyrics`). Driven by `scripts/sheet-lyrics.py`.
+- `POST /api/items/{id}/sing` (`scripts/sing.py`) and `/api/feedback` (`scripts/feedback.py`).
 - Clean-up state from before Manage library (`cleanup.py`):
   - `GET /api/cleanup` (pages to trim, odd titles), `/cleanup/ok`, `/cleanup/later`, `/cleanup/sort`;
   - `/cleanup/notes` (notes for Claude) and `/cleanup/suggest` (suggested names: accept, dismiss or undo);
