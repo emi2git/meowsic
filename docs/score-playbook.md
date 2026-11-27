@@ -33,24 +33,24 @@ All API calls go to `https://localhost:5180/api/…`, with the CA at `~/Document
 | YouTube video | See §1a |
 | Lyrics text | See §1b |
 | Hand-made MusicXML as a new version of a score | `POST /api/items {fromItemId:<score id>, musicxmlText, version:'pro', title?, note?}`: same song group, "From the score …" source, Activities + Undo, composer + "Transcribed by" kept, "Arranged by Meowsic" added. Voice + piano → piano solo first: `server/.venv/bin/python server/scripts/arrange_piano.py in.musicxml out.musicxml` (melody on top of the RH, RH thinned, LH kept; `--shift BARS=12` forces a phrase's octave) |
-| Composed / hand-written MusicXML | `~/git/scripts/meowsic-add-ai-score.py score.musicxml --title … --artist "<real artist>"` (it checks bars first), or `POST /api/items {kind:'score', title, musicxmlText, groupId?, version?, tags?}` |
+| Composed / hand-written MusicXML | `scripts/add-ai-score.py score.musicxml --title … --artist "<real artist>"` (it checks bars first), or `POST /api/items {kind:'score', title, musicxmlText, groupId?, version?, tags?}` |
 
 ### 1a. From a video
 1. Ask before downloading (say the size). `yt-dlp -f 'bv*[height<=1080]+ba/b' …`: use 1080p when the on-screen lyrics
    are small. Work in a scratch folder and **delete the video afterwards**.
-2. On-screen lyrics: `omr/.venv/bin/python ~/git/scripts/video-subtitle-ocr.py VIDEO out.json --fps 4 --crop W:H:X:Y --lang en-US`
+2. On-screen lyrics: `omr/.venv/bin/python scripts/video-subtitle-ocr.py VIDEO out.json --fps 4 --crop W:H:X:Y --lang en-US`
    (Apple Vision OCR, all local; crop = the subtitle strip). **YouTube auto-captions are often wrong. Don't use them
    for the words.** Use Whisper (`~/ai/models`, mlx whisper-large-v3-turbo) only for word timing.
 3. The sung melody: separate the vocals (HTDemucs in `~/ai/models/huggingface`). Pitch-track them with librosa pyin
    (`pitch.npz`) or basic-pitch (`notes.json`), get beats with beat_this (`bt.json`), then:
-   `omr/.venv/bin/python ~/git/scripts/sung-melody-to-musicxml.py --beats bt.json --words aligned.json --syl syl.json (--pyin pitch.npz | --bp notes.json) [--grid 2|4] [--triplets] [--meter auto] [--rest-min 1] [--key N] --out X.musicxml --report rep.json`
+   `omr/.venv/bin/python scripts/sung-melody-to-musicxml.py --beats bt.json --words aligned.json --syl syl.json (--pyin pitch.npz | --bp notes.json) [--grid 2|4] [--triplets] [--meter auto] [--rest-min 1] [--key N] --out X.musicxml --report rep.json`
 4. Make **several versions (A–D)**: pyin vs basic-pitch, `--grid 2` (1/8) vs `--grid 4 --triplets` (1/16 + triplets).
    Score each one on pitch accuracy and on how well syllable onsets match the notes. Octave-normalize each phrase
    (keep one singable register). Show the user the best one and say which bars are borderline.
 
 ### 1b. Lyrics
 - Sources, in this order: the user's own text; the library (chord charts `c-*` of the same song; the sheet's own words
-  through OMR, `server/.venv/bin/python ~/git/scripts/meowsic-sheet-lyrics.py <score id> <sheet id> [--dry]`;
+  through OMR, `server/.venv/bin/python scripts/sheet-lyrics.py <score id> <sheet id> [--dry]`;
   older copies in `items/<id>/.history/`); on-screen lyrics from the video (§1a).
 - Online lyric lookup **only with the user's explicit OK, for each song** (copyright). Only the title goes out.
 - Never print the words. Report syllable / line counts.
@@ -106,8 +106,8 @@ All API calls go to `https://localhost:5180/api/…`, with the CA at `~/Document
 - Rhythm from audio is where the user had to fix by hand (`m-4e35je7`, and the YouTube piano scores `m-783oy8d`,
   `m-7lgkx8j` of 2026-11-27: left-hand notes cut short with a rest before the bar line). Both quantizers were fixed
   on 2026-11-27; they snap only ONSETS and derive each length from the next onset (legato):
-  - The app's "score from YouTube / audio" job (`runners.transcribe_runner` → `musicnote_driver.py` → Emi Music Note
-    `pipeline/score.py` + `rhythm.py`: htdemucs → transkun piano notes → beat_this beats). Each hand holds a chord
+  - The app's "score from YouTube / audio" job (`runners.transcribe_runner` → `transcribe/driver.py` →
+    `transcribe/pipeline/score.py` + `rhythm.py`: htdemucs → transkun piano notes → beat_this beats). Each hand holds a chord
     until its next onset unless the hand is really silent: the gap from its last sounding note is ≥ `rest_min`
     (1 quarter) AND the recording no longer rings there (pedal / decay: CQT level drop after the key release
     < `ring_db` 12 dB, up to `ring_max` 4 quarters). A short gap before a bar line is held to the bar line. CC64
@@ -179,7 +179,7 @@ pickup 8ths on beat 4, joining an 8va over bars 1–3: `{"op":"ottava","staff":1
 | Song | Ids / notes |
 |---|---|
 | Home (NDP) | `m-b6xs990` |
-| One Day More | score `m-7kynu6y` (from YouTube, A major); sheet `s-3hmg922` (4 pages, C major). Lyrics fitted with meowsic-sheet-lyrics.py |
+| One Day More | score `m-7kynu6y` (from YouTube, A major); sheet `s-3hmg922` (4 pages, C major). Lyrics fitted with sheet-lyrics.py |
 | Our Singapore | `m-irrw2nj`: from MuseScore screenshots + the video's on-screen lyrics, Verified. Sung-melody versions A–D: `m-dpfen7t`, `m-r3wf2af`, `m-7rqhz65`, `m-9f43ynr` |
 | You Are My Sunshine | `m-g3vp6s7` |
 | Two Tigers (两只老虎) | `m-nrogmyq` (Mandarin singing) |

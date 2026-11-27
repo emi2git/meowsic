@@ -4,6 +4,7 @@ One app for the family's sheet music, chord charts, books and scores, used on Ma
 - **web/**: a PWA in vanilla JS ES modules (no build step, no framework); `web/sw.js` caches the shell for offline.
 - **server/meowsic/**: FastAPI + SQLite (Python 3.12, `server/.venv`). It serves `web/` and `/api/*`.
 - **omr/**: sheet photo → score (homr + Audiveris + Apple Vision), with its own `omr/.venv`.
+- **transcribe/**: audio / YouTube link → score (htdemucs + transkun + Whisper + beat_this; `pipeline/`, started by `driver.py`), with its own `transcribe/.venv` (Python 3.11, `transcribe/setup.sh --offline` from `requirements.lock`). Moved here from the archived Emi Music Note on 2026-11-27; env `MEOWSIC_TRANSCRIBE` points elsewhere.
 - **sing/**: "Make it sing (beta)", run in SoulX-Singer's venv at `~/ai/SoulX-Singer/.venv`. Default singer for every song (English, Vietnamese, Mandarin): `zh_target`, a low male voice (the user's pick, "take C"); the auto octave (`octave_for`) fits the melody to its range. `{voice, octave}` on the sing job still picks another.
 - **migrate/**: one-off importers from the three old apps (done; the old data stays read-only).
 - **Making scores for the user** (from a sheet, video or lyrics) → read `docs/score-playbook.md` first.
@@ -17,7 +18,7 @@ One app for the family's sheet music, chord charts, books and scores, used on Ma
 | Data | `~/Documents/Meowsic`: `meowsic.db`, `items/<id>/` (each with `.history/`), `history/` (bulk logs), `backups/`, `work/` (job folders, `server.log`, `cleanup.log`), `certs/` |
 | Logs | `~/Documents/Meowsic/work/server.log` (the live server's stdout) and `~/Library/Logs/Meowsic.log` (Python logging) |
 | AI models | `~/ai/models` only, never in git (`models.json` lists them) |
-| Helper scripts | `~/git/scripts/meowsic-*.py` (feedback, sheet-lyrics, sing, add-ai-score); one-off fixes in `server/scripts/` |
+| Helper scripts | `scripts/*.py` in this repo (live copy `~/git/apps/meowsic/scripts/`; feedback, sheet-lyrics, sing, add-ai-score, verdicts, sung-melody-to-musicxml, video-subtitle-ocr); one-off fixes in `server/scripts/` |
 | Launcher | `~/Applications/Meowsic.app` (starts `server/start.sh` if it is down, opens https://localhost:5180) |
 
 ## Module map
@@ -48,7 +49,7 @@ Views (`web/js/views/`):
 - **Live**: `server/start.sh`. It serves HTTPS on port 5180 with `~/Documents/Meowsic/certs`, at https://localhost:5180 and https://192.168.1.50:5180. Only the deploy procedure restarts it.
 - **Test server**: `scripts/dev-server` picks a free port above 5300 and a temp data folder. With `--data DIR` it uses a COPY of the data, never the live folder.
 - **UI preview**: `scripts/dev-server --preview` (= `python3 serve.py <port>`), then open `/?preview=1`. It needs no server: the sample library lives in the browser (store mode `mock`), and `/api/health` says `{ok: false, mock: true}`. Without `?preview` it is an empty offline app.
-- **First setup in a new worktree**: symlink the ignored folders from the live checkout: `server/.venv`, `tests/e2e/node_modules`, `omr/.venv`.
+- **First setup in a new worktree**: symlink the ignored folders from the live checkout: `server/.venv`, `tests/e2e/node_modules`, `omr/.venv`, `transcribe/.venv`.
 
 ## Remote access (Tailscale)
 - https://meowsic-mac.tailf62bf.ts.net — tailnet only (`tailscale serve` → `https+insecure://localhost:5180`, Let's Encrypt cert from Tailscale). **Funnel is OFF; never enable it.** Devices: meowsic-mac, iphone184, ipad163.
@@ -85,7 +86,7 @@ Views (`web/js/views/`):
 - The daily clean-up (`dailycleanup.py`, inside the server) runs every 24 h. It makes activities older than 24 h Final, then deletes their `.history` copies, the bulk logs, old job folders and old DB backups. It always keeps the newest backup.
 - Deleting moves items to the Trash (Manage → Trash: Restore, Delete for good, Empty). Only Trash deletes for good.
 - Back up the DB before any restart or one-off script (`scripts/deploy` does it). One-off scripts go in `server/scripts/`; each needs an undo or a backup.
-- Old apps' data is read-only: `Meowsic.store*` in the data folder, `~/Documents/Emi Songbook`, `~/Documents/Emi Music Note`.
+- Old apps' data is read-only: `Meowsic.store*` in the data folder.
 
 - **Never write to an item someone is editing.** While Edit notes is open on a score it holds an edit session (`GET /api/items/{id}/editsession` → `active`); every other API write to that item (edit notes, lyrics, chords, check bars, simple piano, MusicXML, pages, PATCH, Trash, a lyrics job) gets **423 Locked**. Agents and scripts must check first, wait, and retry later — never work around it. The lock lets go 2 min after the editor's last heartbeat.
 - Edit notes keeps drafts in the browser (localStorage / IndexedDB) and on disk (`<data>/drafts/`, pruned after 30 days); a Save on a score changed meanwhile merges, or keeps the full edit as "<title> (my edits)". Never bring back a dead-end 409.
@@ -95,7 +96,7 @@ Views (`web/js/views/`):
 - Never print lyric text in logs, reports, commits or chat: give counts only.
 - No downloads (models, packages, media) without the user's OK.
 - Test end-to-end before reporting done.
-- In-app Feedback is the user's request queue: Developer → Feedback; CLI `~/git/scripts/meowsic-feedback.py`. Claude sets status and fix notes, and the history is kept.
+- In-app Feedback is the user's request queue: Developer → Feedback; CLI `scripts/feedback.py`. Claude sets status and fix notes, and the history is kept.
 - Tasks: `TASKS.md` in this repo (moved from `~/Documents/Meowsic/work/pm-tasks.md`, which now only points here).
 
 ## Transcribing songs (private use)
@@ -121,8 +122,8 @@ Views (`web/js/views/`):
 - Buttons are single icons with an aria-label, not icon + text. No tags in library lists. No tempo marks drawn on scores (`noTempoXml`).
 
 ## Claude-only tools (server endpoints with no UI, kept on purpose)
-- `GET/POST /api/items/{id}/lyrics`, `POST …/lyrics/sheet`, `…/lyrics/preview` (`lyricsedit.py` + `lyricsfit.py`, job kind `lyrics`). Driven by `~/git/scripts/meowsic-sheet-lyrics.py`.
-- `POST /api/items/{id}/sing` (`~/git/scripts/meowsic-sing.py`) and `/api/feedback` (`meowsic-feedback.py`).
+- `GET/POST /api/items/{id}/lyrics`, `POST …/lyrics/sheet`, `…/lyrics/preview` (`lyricsedit.py` + `lyricsfit.py`, job kind `lyrics`). Driven by `scripts/sheet-lyrics.py`.
+- `POST /api/items/{id}/sing` (`scripts/sing.py`) and `/api/feedback` (`scripts/feedback.py`).
 - Clean-up state from before Manage library (`cleanup.py`):
   - `GET /api/cleanup` (pages to trim, odd titles), `/cleanup/ok`, `/cleanup/later`, `/cleanup/sort`;
   - `/cleanup/notes` (notes for Claude) and `/cleanup/suggest` (suggested names: accept, dismiss or undo);
@@ -136,7 +137,7 @@ Views (`web/js/views/`):
 - **iOS audio**: set `navigator.audioSession.type = 'playback'` so sound plays with the Silent switch on. After the app was in the background the AudioContext can be stale or "interrupted": `audio.js` throws it away and makes a fresh one on the next Play. Test Play after backgrounding on a real iPad.
 - **iPad top "white cast"** (reported 3 times): the cause was our own fixed full-width `.topedge` band (`--bg`, inset + 48px, shells v49–v57), which drew a white strip over the grey sidebar and an empty white gap above every header. No band now: `--sat` = `env(safe-area-inset-top)` (use `var(--sat)` for top padding), each column paints its own colour under the status bar, status bar style `black-translucent`. The iPadOS 26.5 Simulator home-screen app showed no system blur, at rest or while scrolling. Never add a full-width top band or extra top padding again. Check top-edge changes in the Simulator as a home-screen app (Share → Add to Home Screen on a dev server), not only Chromium. `topcast.mjs` checks it.
 - **Ports**: 5180 is live. Other agents leave test servers running on many ports (5190–5450 seen), so never hard-code one: the scripts pick a free port above 5300 (`scripts/meowsic_dev.py`).
-- **Symlinked venvs / node_modules** in worktrees: `.gitignore` lists `server/.venv`, `omr/.venv` and `tests/e2e/node_modules` without a trailing slash, so the symlinks can't be committed. Don't "fix" that to `dir/`.
+- **Symlinked venvs / node_modules** in worktrees: `.gitignore` lists `server/.venv`, `omr/.venv`, `transcribe/.venv` and `tests/e2e/node_modules` without a trailing slash, so the symlinks can't be committed. Don't "fix" that to `dir/`.
 - **Preview vs server**: preview (`?preview=1`) uses sample data in localStorage (`meowsic-mock-v6`) and never calls `/api` except health. A feature that needs the Mac must check the store mode, or the preview logs errors.
 - **Worktree agents can't write the live folder** (`~/git/apps/meowsic`) and must not restart the live server. Ask the deploy agent.
 - The server's tests make their own temp data (`server/tests/conftest.py`). An e2e suite that needs particular songs must make them itself, or say it needs a library copy.

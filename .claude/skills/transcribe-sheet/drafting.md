@@ -13,7 +13,7 @@
 | homr | `omr/omr.py`, models in `~/ai/models/homr`; the library's "Make a score…" job is `POST /api/jobs {kind:'omr', fromItemId}`. A second OMR opinion. |
 | `python3 ~/git/scripts/score-onsets.py X.musicxml [--staff N]` | Per bar / staff / voice `onset:pitch/len` in eighths from the bar start (`3:D5/2~` = D5 on the 4th eighth, a quarter, tied on). It flags `!SUM` (the voice doesn't fill the bar) and `!TYPE` (`<type>`/`<dot>` disagrees with `<duration>`). `--diff B.musicxml` lists only the bars that differ. It never prints words. |
 | `/Applications/MuseScore 4.app/Contents/MacOS/mscore -o out.png X.musicxml` | Render for the side-by-side check. music21 is in `omr/.venv` (verovio isn't installed). |
-| `~/git/scripts/sung-melody-to-musicxml.py` | Audio → lead line. **Its grid is 4/4 only** (see the pitfalls). Use it only to check a recording, never as the score. |
+| `scripts/sung-melody-to-musicxml.py` | Audio → lead line. **Its grid is 4/4 only** (see the pitfalls). Use it only to check a recording, never as the score. |
 
 ## Writing it
 - Use one `<part>`. A piano score has `<staves>2</staves>` (staff 1 RH, staff 2 LH); a lead score has one treble staff.

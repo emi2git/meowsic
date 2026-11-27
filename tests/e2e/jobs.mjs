@@ -9,7 +9,7 @@ const errs = []; page.on('pageerror', (e) => errs.push(e.message));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0; const check = (n, c, x = '') => { c ? pass++ : fail++; console.log(c ? '  ok  ' : '  FAIL', n, c ? '' : x); };
 const api = (p, o) => fetch(BASE + 'api' + p, o).then((r) => r.json());
-const xml = fs.readFileSync('/Users/emi2mac/Documents/Emi Music Note/memory-from-cats-andrew-lloyd-webber/memory-from-cats-andrew-lloyd-webber.musicxml', 'utf8');
+const xml = fs.readFileSync(new URL('../../server/tests/fixtures/lead-sheet.musicxml', import.meta.url), 'utf8');
 const sc = await api('/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'score', title: 'Memory', version: 'original', tags: ['Original'], musicxmlText: xml }) });
 await page.goto(BASE + '#/item/' + sc.id, { waitUntil: 'networkidle0' }); await sleep(4000);
 // the score ⋯ has no "Make another version…" any more: the version job is started as it made it

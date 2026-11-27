@@ -1,5 +1,5 @@
 // Note names (server on $BASE with an AI piece that has chord symbols, e.g. a lead sheet added by
-// meowsic-add-ai-score.py): every score, AI ones included, opens in OSMD's classic look
+// add-ai-score.py): every score, AI ones included, opens in OSMD's classic look
 // (title, the real composer + "… by Meowsic", tempo as OSMD draws them); the kids button (baby icon) / ⋯ toggle draws big
 // noteheads with the note's letter inside — no chord diagrams (those are the chords button's); the text
 // stays the same; transpose updates the letters; remembered on this device; playback still works.

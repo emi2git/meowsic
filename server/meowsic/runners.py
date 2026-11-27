@@ -1,6 +1,6 @@
 """The real job runners.
 
-transcribe: Emi Music Note's pipeline (its own venv, in a subprocess) turns a link or an audio file into
+transcribe: the pipeline in transcribe/ (its own venv, in a subprocess) turns a link or an audio file into
             original / vocal / lead; other versions are arranged from that with music21 (arrange.py).
 version:    arrange an existing score item into other versions (music21, rule-based).
 omr:        sheet photos → a score (omr/omr.py).
@@ -30,8 +30,8 @@ from .autofill import describe, fill_from_library, log_fill
 
 log = logging.getLogger('meowsic')
 
-MUSICNOTE = Path(os.environ.get('MEOWSIC_MUSICNOTE', Path.home() / 'git' / 'apps' / 'emi-music-note'))
-DRIVER = Path(__file__).with_name('musicnote_driver.py')
+TRANSCRIBE = Path(os.environ.get('MEOWSIC_TRANSCRIBE', Path(__file__).resolve().parents[2] / 'transcribe'))  # code + .venv (transcribe/setup.sh)
+DRIVER = TRANSCRIBE / 'driver.py'
 STAGES = ['Download audio', 'Separate voice and instruments', 'Find the notes', 'Read the lyrics',
           'Find key, beat and chords', 'Write the score', 'Draw the pages']
 GEN_STAGES = ['Read the score', 'Arrange', 'Write the score', 'Draw the pages']
@@ -265,7 +265,7 @@ def driver_env(work: Path) -> dict:
     env['TRANSCRIBE_ROOT'] = str(work)
     env.setdefault('HF_HUB_CACHE', str(Path.home() / 'ai' / 'models' / 'huggingface'))
     env.setdefault('TORCH_HOME', str(Path.home() / 'ai' / 'models' / 'torch'))
-    env['PATH'] = os.pathsep.join([str(MUSICNOTE / '.venv' / 'bin'), '/opt/homebrew/bin', '/usr/local/bin', env.get('PATH', '/usr/bin:/bin')])
+    env['PATH'] = os.pathsep.join([str(TRANSCRIBE / '.venv' / 'bin'), '/opt/homebrew/bin', '/usr/local/bin', env.get('PATH', '/usr/bin:/bin')])
     env.pop('PYTHONPATH', None)
     env.pop('VIRTUAL_ENV', None)
     return env
@@ -303,11 +303,11 @@ class Progress:
 
 
 def run_driver(ctx, work, src, versions, opts, prog: Progress):
-    """Run the pipeline for `versions` in Music Note's venv; returns {version: song dir}. Cancel kills it."""
-    py = MUSICNOTE / '.venv' / 'bin' / 'python'
-    if not py.exists(): raise RuntimeError(f'Emi Music Note is not installed ({py} is missing)')
-    proc = subprocess.Popen([str(py), str(DRIVER), str(MUSICNOTE), src, json.dumps(versions), json.dumps(opts)],
-                            cwd=str(MUSICNOTE), env=driver_env(work), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    """Run the pipeline for `versions` in transcribe/.venv; returns {version: song dir}. Cancel kills it."""
+    py = TRANSCRIBE / '.venv' / 'bin' / 'python'
+    if not py.exists(): raise RuntimeError(f'The transcriber is not set up ({py} is missing; run transcribe/setup.sh)')
+    proc = subprocess.Popen([str(py), str(TRANSCRIBE / 'driver.py'), src, json.dumps(versions), json.dumps(opts)],
+                            cwd=str(TRANSCRIBE), env=driver_env(work), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             text=True, bufsize=1, start_new_session=True)
     lines, tail, made, err = queue.Queue(), collections.deque(maxlen=20), {}, None
 

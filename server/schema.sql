@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS score (            -- kind = 'score'; each version is
   bpm         REAL,
   source      TEXT NOT NULL DEFAULT '',       -- 'YouTube' | 'Facebook' | 'Audio file · …' | 'From the score “…”' | 'Meowsic'
   group_id    TEXT,                           -- versions made from the same recording share this
-  ai          INTEGER NOT NULL DEFAULT 0,     -- 1 = composed by Claude (source 'Meowsic'); added only by ~/git/scripts/meowsic-add-ai-score.py
+  ai          INTEGER NOT NULL DEFAULT 0,     -- 1 = composed by Claude (source 'Meowsic'); added only by scripts/add-ai-score.py
   source_url  TEXT NOT NULL DEFAULT '',       -- the full original link (YouTube / Facebook); versions keep their parent's
   staves      INTEGER,                        -- staves in the MusicXML (1 = lead sheet, 2 = piano RH + LH); NULL = not read yet
   vocal_audio TEXT,                           -- "Make it sing (beta)": '<folder> vocal.m4a' (+ '<folder> vocal.wav') in items/<folder>/

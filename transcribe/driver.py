@@ -1,6 +1,6 @@
-"""Runs Emi Music Note's pipeline for Meowsic. Started with THAT project's venv python, never imported by the server.
+"""Runs the audio → score pipeline (transcribe/pipeline) for Meowsic. Started with transcribe/.venv's python, never imported by the server.
 
-usage: python musicnote_driver.py <emi-music-note dir> <src> <versions JSON> <opts JSON>
+usage: python driver.py <src> <versions JSON> <opts JSON>
 env:   TRANSCRIBE_ROOT = the job's work dir (the pipeline writes only there)
 stdout: one line per event, '@@ ' + JSON:
   {"ev": "stages", "version": v, "stages": [...]}       progress of one pipeline run
@@ -17,8 +17,8 @@ def emit(obj):
 
 
 def main():
-    root, src, versions, opts = sys.argv[1], sys.argv[2], json.loads(sys.argv[3]), json.loads(sys.argv[4])
-    sys.path.insert(0, root)
+    src, versions, opts = sys.argv[1], json.loads(sys.argv[2]), json.loads(sys.argv[3])
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from pipeline.run import run
     for v in versions:
         def report(job, v=v):

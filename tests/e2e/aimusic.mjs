@@ -1,5 +1,5 @@
 // AI pieces through the UI (server on $BASE, default :5195, temp data with one AI piece added by
-// ~/git/scripts/meowsic-add-ai-score.py): plain scores (no AI Studio section), listed + counted under Scores,
+// scripts/add-ai-score.py): plain scores (no AI Studio section), listed + counted under Scores,
 // Info says "Source: Meowsic"; a YouTube score's Info shows "YouTube" + the original link (clickable, Copy link)
 import './live-guard.mjs'; // refuses the live app / library
 import puppeteer from 'puppeteer-core';

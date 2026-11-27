@@ -14,8 +14,7 @@ from music21 import converter, harmony
 
 from meowsic import arrange, runners
 
-MUSICNOTE_DATA = Path.home() / 'Documents' / 'Emi Music Note'  # read-only: files are copied to tmp
-MEMORY = MUSICNOTE_DATA / 'memory-from-cats-andrew-lloyd-webber' / 'memory-from-cats-andrew-lloyd-webber.musicxml'
+LEAD_SHEET = Path(__file__).with_name('fixtures') / 'lead-sheet.musicxml'  # our own 16-bar tune with chord symbols
 
 
 def wait(client, jid, statuses=('done', 'failed', 'cancelled'), t=60):
@@ -29,10 +28,9 @@ def wait(client, jid, statuses=('done', 'failed', 'cancelled'), t=60):
 
 @pytest.fixture(scope='module')
 def small_xml(tmp_path_factory):
-    """The first 12 bars of Memory (lead sheet with chord symbols)."""
-    if not MEMORY.is_file(): pytest.skip('Emi Music Note sample score is not on this Mac')
+    """The first 12 bars of the test lead sheet (with chord symbols)."""
     d = tmp_path_factory.mktemp('src')
-    shutil.copyfile(MEMORY, d / 'full.musicxml')
+    shutil.copyfile(LEAD_SHEET, d / 'full.musicxml')
     sc = converter.parse(str(d / 'full.musicxml')).measures(1, 12)
     sc.write('musicxml', fp=str(d / 'memory.musicxml'))
     return d / 'memory.musicxml'
@@ -144,7 +142,7 @@ def test_version_job_needs_a_score(client, no_pdf):
 
 FAKE = '''#!{py}
 import json, os, shutil, sys, time
-src, versions = sys.argv[3], json.loads(sys.argv[4])
+src, versions = sys.argv[2], json.loads(sys.argv[3])
 root = os.environ['TRANSCRIBE_ROOT']
 names = ["fetch", "separate", "piano notes", "vocal notes", "lyrics", "analyze", "score", "pdf"]
 def emit(o): print("@@ " + json.dumps(o), flush=True)
@@ -166,12 +164,12 @@ for v in versions:
 
 @pytest.fixture
 def fake_pipeline(tmp_path, small_xml, monkeypatch):
-    root = tmp_path / 'emi-music-note'
+    root = tmp_path / 'transcribe'
     (root / '.venv' / 'bin').mkdir(parents=True)
     py = root / '.venv' / 'bin' / 'python'
     py.write_text(FAKE.format(py=sys.executable, xml=str(small_xml)))
     py.chmod(py.stat().st_mode | stat.S_IEXEC)
-    monkeypatch.setattr(runners, 'MUSICNOTE', root)
+    monkeypatch.setattr(runners, 'TRANSCRIBE', root)
     return root
 
 
@@ -250,10 +248,13 @@ def test_upload_job(client, data, fake_pipeline, no_pdf):
 
 @pytest.mark.skipif(os.environ.get('MEOWSIC_SLOW') != '1', reason='set MEOWSIC_SLOW=1 to run the real transcription')
 def test_real_transcription_end_to_end(client, data, tmp_path):
-    wavs = sorted(MUSICNOTE_DATA.glob(os.environ.get('MEOWSIC_SLOW_SONG', 'dem-mau*') + '/source.wav'))
-    if not wavs or not runners.MUSICNOTE.is_dir(): pytest.skip('no Emi Music Note recording on this Mac')
-    clip = tmp_path / 'clip.wav'  # a 20 s copy; the original stays untouched
-    subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-ss', '30', '-t', '20', '-i', str(wavs[0]), str(clip)], check=True)
+    if not (runners.TRANSCRIBE / '.venv' / 'bin' / 'python').exists(): pytest.skip('transcribe/.venv is not set up (transcribe/setup.sh)')
+    clip = tmp_path / 'clip.wav'  # 20 s: MEOWSIC_SLOW_SONG (any audio file, from 30 s in; it stays untouched), else the test tune played
+    song = os.environ.get('MEOWSIC_SLOW_SONG')
+    if song:
+        subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-ss', '30', '-t', '20', '-i', song, str(clip)], check=True)
+    else:
+        tune_to_wav(LEAD_SHEET, clip)
     t0 = time.time()
     with clip.open('rb') as f:
         j = client.post('/api/jobs/upload', files={'file': ('clip.wav', f, 'audio/wav')},
@@ -269,4 +270,22 @@ def test_real_transcription_end_to_end(client, data, tmp_path):
         d = data / 'items' / i['folder']
         assert converter.parse(str(d / i['musicxml'])).parts
         assert (d / i['midi']).is_file() and (d / i['pdf']).is_file()
-    assert not (MUSICNOTE_DATA / 'clip').exists()
+    assert not list(Path.home().glob('Documents/*/clip'))  # the pipeline wrote only into the job's work folder
+
+
+def tune_to_wav(xml: Path, wav: Path, bpm=76, secs=20):
+    """Plays a score's notes into a WAV with plain tones (no synth needed), the first `secs` seconds."""
+    import wave
+    import numpy as np
+    sr, q = 44100, 60 / bpm
+    out = np.zeros(sr * secs)
+    for n in converter.parse(str(xml)).flatten().getElementsByClass('Note'):  # not the chord symbols
+        a, b = int(float(n.offset) * q * sr), min(int(float(n.offset + n.quarterLength) * q * sr), len(out))
+        if b <= a: continue
+        t = np.arange(b - a) / sr
+        f = 440 * 2 ** ((n.pitches[0].midi - 69) / 12)
+        env = np.minimum(1, np.minimum(t / 0.01, (t[-1] - t + 1e-3) / 0.05))
+        out[a:b] += 0.3 * env * (np.sin(2 * np.pi * f * t) + 0.3 * np.sin(4 * np.pi * f * t))
+    with wave.open(str(wav), 'wb') as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+        w.writeframes((np.clip(out, -1, 1) * 32767).astype('<i2').tobytes())

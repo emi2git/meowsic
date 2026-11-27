@@ -6,7 +6,7 @@ item_id / item_kind / item_title and a small context JSON ({page, pages, bar, ti
 Status: new → in_progress → fixed (or wontfix). Fixed / Won't fix rows are locked: no edit, no remove (409).
 Nothing is ever deleted: Remove sets removed_at; every edit, status change and removal first copies the row's
 previous state into feedback_history. The user only writes text; Claude sets the status
-(PATCH {status, fixNote}, or ~/git/scripts/meowsic-feedback.py).
+(PATCH {status, fixNote}, or scripts/feedback.py).
 """
 import json
 
