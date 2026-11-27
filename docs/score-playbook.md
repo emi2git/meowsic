@@ -106,8 +106,8 @@ All API calls go to `https://localhost:5180/api/…`, with the CA at `~/Document
 - Rhythm from audio is where the user had to fix by hand (`m-4e35je7`, and the YouTube piano scores `m-783oy8d`,
   `m-7lgkx8j` of 2026-11-27: left-hand notes cut short with a rest before the bar line). Both quantizers were fixed
   on 2026-11-27; they snap only ONSETS and derive each length from the next onset (legato):
-  - The app's "score from YouTube / audio" job (`runners.transcribe_runner` → `musicnote_driver.py` → Emi Music Note
-    `pipeline/score.py` + `rhythm.py`: htdemucs → transkun piano notes → beat_this beats). Each hand holds a chord
+  - The app's "score from YouTube / audio" job (`runners.transcribe_runner` → `transcribe/driver.py` →
+    `transcribe/pipeline/score.py` + `rhythm.py`: htdemucs → transkun piano notes → beat_this beats). Each hand holds a chord
     until its next onset unless the hand is really silent: the gap from its last sounding note is ≥ `rest_min`
     (1 quarter) AND the recording no longer rings there (pedal / decay: CQT level drop after the key release
     < `ring_db` 12 dB, up to `ring_max` 4 quarters). A short gap before a bar line is held to the bar line. CC64

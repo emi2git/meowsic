@@ -11,7 +11,7 @@ iPad / iPhone / Mac browser ── PWA (web/, ES modules, no build) ── servi
 FastAPI server (server/meowsic, Python 3.12) ── SQLite ~/Documents/Meowsic/meowsic.db (schema: server/schema.sql)
           │                                    └─ files ~/Documents/Meowsic/items/<id>/
           ├─ jobs in threads (jobs.py, runners.py): transcribe · omr · lyrics · sing · version · tags
-          │     transcribe → Emi Music Note's pipeline (its own venv; musicnote_driver.py)
+          │     transcribe → transcribe/driver.py + pipeline/ (transcribe/.venv, Python 3.11)
           │     omr        → omr/omr.py (omr/.venv: homr + Audiveris + Apple Vision)
           │     sing       → sing/sing.py in ~/ai/SoulX-Singer/.venv
           │     tags       → local MLX model from ~/ai/models (ai.py)
@@ -55,7 +55,7 @@ FastAPI server (server/meowsic, Python 3.12) ── SQLite ~/Documents/Meowsic/m
   `Meowsic-CA.crt` once). The second MacBook (`ssh_server`) is not used.
 - No cloud, no API keys. AI runs locally. The model list is in `models.json`, the candidates in `docs/model-candidates.md`.
 - Purchased content (scans, lyrics) never goes to GitHub or any server: `items/` and the DB stay in `~/Documents/Meowsic`.
-- Old data is read-only: `~/Documents/Meowsic/Meowsic.store*` (Meowsic 1), `~/Documents/Emi Songbook/library.json`, `~/Documents/Emi Music Note/`.
+- Old data is read-only: `~/Documents/Meowsic/Meowsic.store*` (Meowsic 1). Emi Songbook's and Emi Music Note's data folders were deleted (2026-11-27).
 
 ## Outdated parts of DESIGN.md (for the record)
 - "Backups keep 30 daily copies": `backup.py` still trims to 30, but the daily clean-up now keeps only the newest copy (plus the

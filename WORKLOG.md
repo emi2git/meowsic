@@ -79,3 +79,6 @@ Next: frontend refactor (dead list-view code in library.js, shared helpers), mig
 - Server job kind 'omr' (runners.omr_runner, schema CHECK + migration); sheet ⋯ "Make a score (beta)…"; job card shows "please check: p1 bar 15…".
 - Hand-checked 4 pages bar by bar (table in omr/README.md): lead sheets' notes 100%, chords 12/12 and 15/16, words complete; piano page 8/10 bars (× noteheads) with both wrong bars flagged.
 - tests/e2e/omr.mjs 7/7 (temp server), server tests 63.
+
+## 2026-11-27 — transcriber moved in
+- The audio → score pipeline moved from ~/git/apps/emi-music-note (archived, folder deleted) into `transcribe/` (pipeline/, driver.py, requirements.lock, setup.sh; venv `transcribe/.venv`, models still in ~/ai/models). `runners.TRANSCRIBE` replaces MUSICNOTE. Tests use our own `server/tests/fixtures/lead-sheet.musicxml` (the old Emi Music Note data folder is gone).

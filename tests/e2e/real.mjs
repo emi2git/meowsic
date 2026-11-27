@@ -48,7 +48,7 @@ items = await api('/items');
 const ch = items.find((x) => x.kind === 'chords');
 check('chord chart saved with real URL and fetch date', ch && ch.url.startsWith('http') && !ch.url.includes('/mock/') && ch.originAt > 0, JSON.stringify(ch && [ch.url, ch.originAt]));
 // score: create one from MusicXML and play it
-const xml = fs.readFileSync('/Users/emi2mac/Documents/Emi Music Note/memory-from-cats-andrew-lloyd-webber/memory-from-cats-andrew-lloyd-webber.musicxml', 'utf8');
+const xml = fs.readFileSync(new URL('../../server/tests/fixtures/lead-sheet.musicxml', import.meta.url), 'utf8');
 const sc = await api('/items', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'score', title: 'Memory test', version: 'original', musicxmlText: xml }) });
 await page.goto(BASE + '#/library', { waitUntil: 'networkidle0' }); await page.reload({ waitUntil: 'networkidle0' });
 await page.goto(BASE + '#/item/' + sc.id, { waitUntil: 'networkidle0' }); await sleep(4000);
