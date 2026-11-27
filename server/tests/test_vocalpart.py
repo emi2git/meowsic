@@ -1,8 +1,10 @@
 """A score with a voice part and a piano part (two <part>s, the voice on its own staff): Edit notes can work on
-either (body.part / op.part = the part id; staffmove.using_part). The default stays the piano part."""
+every part at once (global refs: part × REF_PART + index; staves in score order: voice 1, piano 2–3); an op over
+notes of both parts is split by part and is still one step. op.part still picks one part."""
 import xml.etree.ElementTree as ET
 
 from meowsic import staffmove as sm
+from meowsic.multipart import REF_PART
 
 STEP = {0: 'C', 2: 'D', 4: 'E', 5: 'F', 7: 'G', 9: 'A', 11: 'B'}
 
@@ -29,29 +31,53 @@ def midis(text, pid):
     return [sm._midi(x) for x in p.iter('note')]
 
 
-def test_default_is_the_piano_part_and_op_part_edits_the_voice():
+def test_every_part_at_once_global_refs_and_staves():
     x = score()
-    assert sm.notes(ET.fromstring(x.encode()))[0]['midi'] == 60  # piano by default
-    with sm.using_part('P1'):
-        vn = sm.notes(ET.fromstring(x.encode()))
-    assert [v['midi'] for v in vn] == [72, 74, None]
+    ns = sm.notes(ET.fromstring(x.encode()))
+    voice = [n for n in ns if n['part'] == 0]
+    piano = [n for n in ns if n['part'] == 1]
+    assert [n['midi'] for n in voice] == [72, 74, None] and {n['staff'] for n in voice} == {1}
+    assert [n['midi'] for n in piano] == [60, 48] and [n['staff'] for n in piano] == [2, 3]
+    assert piano[0]['ref'] == REF_PART + 0
+    # one op over a vocal note and a piano note: both change, one step
+    out, moved, _ = sm.edit_ex(x, {'op': 'pitch', 'refs': [voice[1]['ref'], piano[0]['ref']], 'by': 1})
+    assert midis(out, 'P1')[:2] == [72, 75] and midis(out, 'P2') == [61, 48]
+    assert sorted(moved) == [1, REF_PART]
+    # a rest of the voice becomes a note; Delete on a piano note; length on a vocal note
+    out, _, _ = sm.edit_ex(out, {'op': 'set', 'refs': [voice[2]['ref']], 'midis': [79]})
+    assert midis(out, 'P1')[2] == 79
+    out, _, _ = sm.edit_ex(out, {'op': 'len', 'refs': [voice[0]['ref']], 'q': 2})
+    assert full_bars(out)
+    # moving a vocal note to a piano staff is refused (another part)
+    import pytest
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException): sm.edit_ex(x, {'op': 'move', 'refs': [voice[0]['ref']], 'to': 3})
+    # the left hand moves to the right hand inside the piano
+    out, _, _ = sm.edit_ex(x, {'op': 'move', 'refs': [piano[1]['ref']], 'to': 2})
+    assert all(n['staff'] == 2 for n in sm.notes(ET.fromstring(out.encode())) if n['part'] == 1 and not n.get('rest'))
+
+
+def test_op_part_still_picks_one_part():
+    x = score()
     out, _, _ = sm.edit_ex(x, {'op': 'pitch', 'refs': [1], 'by': 1, 'part': 'P1'})
     assert midis(out, 'P1')[:2] == [72, 75] and midis(out, 'P2') == [60, 48]
-    rest = vn[2]['ref']
-    out, _, _ = sm.edit_ex(out, {'op': 'set', 'refs': [rest], 'midis': [79], 'part': 'P1'})
-    assert midis(out, 'P1')[2] == 79 and midis(out, 'P2') == [60, 48]
 
 
-def test_api_preview_and_save_on_the_voice_part(client, data):
+def full_bars(text):
+    from meowsic.multipart import layout
+    root = ET.fromstring(text.encode())
+    return not sm.incomplete_bars(root) and layout(root)
+
+
+def test_api_preview_and_save_every_part(client, data):
     it = client.post('/api/items', json={'kind': 'score', 'title': 'Song', 'musicxmlText': score()}).json()
     i = it['id']
     p0 = client.post(f'/api/items/{i}/editnotes/preview', json={'ops': []}).json()
-    assert p0['partId'] == 'P2' and [p['id'] for p in p0['parts']] == ['P1', 'P2'] and p0['parts'][0]['name'] == 'Voice'
-    pv = client.post(f'/api/items/{i}/editnotes/preview', json={'ops': [], 'part': 'P1'}).json()
-    assert pv['part'] == 0 and pv['partId'] == 'P1' and not pv['hands'] and [n['midi'] for n in pv['notes']] == [72, 74, None]
-    ops = [{'op': 'pitch', 'refs': [0], 'by': 2, 'part': 'P1'}]
-    p = client.post(f'/api/items/{i}/editnotes/preview', json={'ops': ops, 'part': 'P1'}).json()
-    assert [n['midi'] for n in p['notes']][:1] == [74] and midis(p['xml'], 'P2') == [60, 48]
+    assert p0['multi'] and [p['id'] for p in p0['parts']] == ['P1', 'P2']
+    assert [n['midi'] for n in p0['notes']] == [72, 74, None, 60, 48]
+    ops = [{'op': 'pitch', 'refs': [0], 'by': 2}]
+    p = client.post(f'/api/items/{i}/editnotes/preview', json={'ops': ops}).json()
+    assert p['notes'][0]['midi'] == 74 and midis(p['xml'], 'P2') == [60, 48] and p['moved'] == [0]
     client.post(f'/api/items/{i}/editnotes', json={'ops': ops, 'mode': 'this', 'sha': p['sha']})
     saved = (data / 'items' / it['folder'] / it['musicxml']).read_text()
     assert midis(saved, 'P1')[0] == 74 and '<lyric' in saved

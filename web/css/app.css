@@ -1245,8 +1245,6 @@ input.ti-has-mic, textarea.ti-has-mic { padding-right: 40px !important; }
 .np-row, .np-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .np-row .grow, .np-acts .grow { flex: 1; }
 .np-title { font-size: 16px; }
-/* a voice + piano score: Voice | Piano picks the part edited */
-.np-partseg button { min-height: 32px; padding: 0 10px; }
 .np-count { font-weight: 700; color: var(--ink2); }
 .np-acts button { min-height: 42px; padding: 0 14px; }
 .np-acts button.on { background: var(--acc-soft); border-color: var(--acc); }

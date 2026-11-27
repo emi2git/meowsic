@@ -1,4 +1,5 @@
-// Edit notes → Lyrics (the Notes | Lyrics switch in the edit bar; Check bars' "Fix lyrics" opens it on a verse and bar):
+// Edit notes: the words, in the same view as the notes (no Notes | Lyrics tab): click a word on the score, or pick a
+// note and press Enter / the words button, and type; Esc goes back to the note keys (Check bars' "Fix lyrics" opens it on a verse and bar):
 // put words under the notes of the real score. Pick a note (either staff; the top note of a chord carries the words)
 // and type its syllable in the box of the lyrics bar; it shows at once under the note:
 //   Enter / Tab  next note · Shift-Tab  the one before · "-"  the word goes on (begin / middle) and on to the next
@@ -38,10 +39,13 @@ export function lyricMode(ctx) {
     const xml = ctx.cur().xml;
     if (parsed?.xml === xml) return parsed;
     const d = new DOMParser().parseFromString(xml, 'application/xml');
-    const part = d.getElementsByTagName('part')[ctx.base.part] || d.getElementsByTagName('part')[0];
-    const els = part ? [...part.getElementsByTagName('note')] : [];
+    // els[ref] = the note's element (a score of several parts: ref = part × 100000 + its index there, multipart.py)
+    const parts = [...d.getElementsByTagName('part')];
+    let els = [];
+    if (ctx.base.multi) parts.forEach((pt, k) => [...pt.getElementsByTagName('note')].forEach((e, i) => { els[k * 100000 + i] = e; }));
+    else { const part = parts[ctx.base.part] || parts[0]; els = part ? [...part.getElementsByTagName('note')] : []; }
     const verses = new Set();
-    for (const e of els) for (const ly of e.getElementsByTagName('lyric')) verses.add((ly.getAttribute('number') || '1').trim());
+    for (const e of Object.values(els)) for (const ly of e.getElementsByTagName('lyric')) verses.add((ly.getAttribute('number') || '1').trim());
     parsed = { xml, els, verses, lines: {} };
     return parsed;
   };
@@ -131,11 +135,11 @@ export function lyricMode(ctx) {
   let labels = new Map(); // `${ref}|${verse}` -> the drawn <text> (OSMD), plus every lyric node
   const readLabels = () => {
     labels = new Map();
-    const osmd = view.osmd, inst = osmd?.Sheet?.Instruments?.[ctx.base.part];
-    if (!inst) return;
+    const osmd = view.osmd, sno = ctx.staffNos();
+    if (!sno.size) return;
     osmd.GraphicSheet.MeasureList.forEach((gms) => {
       for (const gm of gms || []) {
-        if (!gm || inst.Staves.indexOf(gm.ParentStaff) < 0) continue;
+        if (!gm || !sno.has(gm.ParentStaff)) continue;
         for (const se of gm.staffEntries || []) {
           for (const gle of se.LyricsEntries || []) {
             const node = gle.GraphicalLabel?.SVGNode, le = gle.LyricsEntry;
@@ -147,6 +151,7 @@ export function lyricMode(ctx) {
               const g = gn.getSVGGElement?.();
               const refs = g ? [g, ...g.querySelectorAll('[data-ref]')].map((x) => x.dataset?.ref).filter((r) => r != null) : [];
               for (const r of refs) labels.set(`${r}|${v}`, node);
+              if (refs.length && node.dataset.lyRef == null) { node.dataset.lyRef = refs[0]; node.classList.add('ly-word'); }
             }
           }
         }
@@ -199,11 +204,11 @@ export function lyricMode(ctx) {
   const staffBottom = (ref) => bottoms.get(+ref);
   const readStaves = () => {
     bottoms.clear();
-    const osmd = view.osmd, inst = osmd?.Sheet?.Instruments?.[ctx.base.part];
-    if (!inst) return;
+    const osmd = view.osmd, sno = ctx.staffNos();
+    if (!sno.size) return;
     osmd.GraphicSheet.MeasureList.forEach((gms) => {
       for (const gm of gms || []) {
-        if (!gm || inst.Staves.indexOf(gm.ParentStaff) < 0) continue;
+        if (!gm || !sno.has(gm.ParentStaff)) continue;
         const st = gm.getVFStave?.();
         const y = st?.getBottomLineY?.() ?? st?.getYForLine?.(4);
         if (y == null) continue;
@@ -253,7 +258,7 @@ export function lyricMode(ctx) {
   const where = () => {
     const n = L()[at];
     const w = bar.querySelector('#ly-where');
-    if (w) w.textContent = n ? `Bar ${n.bar + 1} · ${ctx.base.hands ? (staff === 1 ? 'right hand' : 'left hand') : `staff ${staff}`}` : 'Pick a note';
+    if (w) w.textContent = n ? `Bar ${n.bar + 1} · ${ctx.base.multi ? (ctx.base.parts?.length === 2 && ctx.base.parts[0].staves === 1 ? ['voice', 'right hand', 'left hand'][staff - 1] : null) || `staff ${staff}` : ctx.base.hands ? (staff === 1 ? 'right hand' : 'left hand') : `staff ${staff}`}` : 'Pick a note';
   };
   const verses = () => [...new Set([...doc().verses, ...added, ...[...work.keys()].map((k) => k.split('|')[1]), verse])].sort((a, b) => a - b);
   const drawBar = () => {
@@ -350,7 +355,7 @@ export function lyricMode(ctx) {
       if (at > 0) { goTo(at - 1); const t = tok(at); input.value = isS(t) ? t.text : ''; input.setSelectionRange(input.value.length, input.value.length); typed = true; }
       return flush();
     }
-    if (k === 'Escape') { e.preventDefault(); input.blur(); return; }
+    if (k === 'Escape') { e.preventDefault(); input.blur(); set(false); return; } // back to the note keys
     if ((e.metaKey || e.ctrlKey) && k.toLowerCase() === 'z' && !typed) { e.preventDefault(); flush().then(() => ctx.goStep(e.shiftKey ? 1 : -1)); }
   });
   const hold = () => {
@@ -502,14 +507,6 @@ export function lyricMode(ctx) {
   const drawn = () => {
     if (closed) return;
     const row = panel.querySelector('.np-body .np-row');
-    if (row && !row.querySelector('.np-mode')) {
-      const sw = document.createElement('span');
-      sw.className = 'seg small np-mode';
-      sw.setAttribute('role', 'radiogroup');
-      sw.setAttribute('aria-label', 'Edit');
-      sw.innerHTML = `<button role="radio" data-ly="mode" data-m="notes" class="${on ? '' : 'on'}" aria-checked="${!on}">Notes</button><button role="radio" data-ly="mode" data-m="lyrics" class="${on ? 'on' : ''}" aria-checked="${on}">Lyrics</button>`;
-      row.querySelector('.np-title')?.after(sw);
-    }
     lt.drawn(row);
     if (!on) return;
     const c = panel.querySelector('#np-count');
@@ -524,7 +521,7 @@ export function lyricMode(ctx) {
     if (mod && e.key.toLowerCase() === 'z') return false;
     if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !mod && !e.shiftKey) { e.preventDefault(); step(e.key === 'ArrowRight' ? 1 : -1); return true; }
     if (e.key === ' ' || ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.shiftKey && !mod)) return false;
-    if (e.key === 'Escape') { e.preventDefault(); ctx.close(); return true; }
+    if (e.key === 'Escape') { e.preventDefault(); set(false); return true; } // back to the note keys (one view: no tab)
     if (!mod && e.key.length === 1 && at >= 0) { input.focus({ preventScroll: true }); return true; } // the letter goes into the box
     if (e.key === 'Tab' || e.key === 'Enter') { e.preventDefault(); step(e.shiftKey ? -1 : 1); return true; }
     return true; // note editing keys do nothing here
@@ -543,11 +540,25 @@ export function lyricMode(ctx) {
     bar.remove();
     lt.destroy();
   };
+  // a word on the score (clicked / tapped) -> { ref of its note, verse } | null
+  const wordAt = (el) => {
+    const node = el?.closest?.('.ly-word');
+    return node ? { ref: +node.dataset.lyRef, verse: node.dataset.verse || '1' } : null;
+  };
+  // type the words of this note (a word clicked on the score, Enter or the words button): the box under the tools
+  const editAt = async (ref, v) => {
+    if (v && v !== verse) { if (on) setVerse(v); else verse = v; }
+    if (ref != null) ctx.select([ref]);
+    if (!on) await set(true); else fromSel();
+    input.focus({ preventScroll: true });
+    input.select(); // typing replaces the word
+  };
+  readLabels();
   // the lyrics text beside the score (lyricspanel.js): its "Use from selected note" lays words out here
   const lt = lyricsPanel({ it: ctx.it, host, panel, onUse: (t) => lay(t), canUse: () => on });
   return {
     get text() { return lt; },
-    get on() { return on; }, set, drawn, key: keyFor, flush, destroy, lay,
+    get on() { return on; }, set, drawn, key: keyFor, flush, destroy, lay, wordAt, editAt,
     get pending() { return pending(); },
     // for automated tests
     get at() { return at; }, get verse() { return verse; }, get staff() { return staff; },

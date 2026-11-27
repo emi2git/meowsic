@@ -89,7 +89,12 @@ def notes(root):
     """The notes of the part you edit (edit_part): [{ref, bar, on, dur, staff, midi, voice, rest?, tie?, slur?, fill?}]
     (fill: a rest follows it (its tied notes) straight away in its voice, for "Fill next rest"; on / dur in
     quarters, on from the start of its bar; ref = index among the part's <note>s). Rests too (rest: True, midi
-    None); no grace notes."""
+    None); no grace notes. A score of several parts: every part's notes (multipart.notes_all: global refs and staves,
+    `part`), unless one part is picked (using_part)."""
+    if _PART.get() is None:
+        from .multipart import layout, notes_all
+        lay = layout(root)
+        if lay: return notes_all(root, lay)
     k, part, _ = edit_part(root)
     if part is None: return []
     ref = {id(e): i for i, e in enumerate(part.iter('note'))}
@@ -1183,6 +1188,9 @@ def edit(text: str, op: dict) -> tuple[str, list]:
 
 def edit_ex(text: str, op: dict, info=None):
     """_edit_ex on the op's part (op['part']: a part id or index, as the editor's part switch picked it)."""
+    if isinstance(op, dict) and op.get('part') is None and _PART.get() is None:  # several parts: split by part
+        from .multipart import run
+        return run(text, op, {} if info is None else info, _edit_ex)
     with using_part(op.get('part') if isinstance(op, dict) else None):
         return _edit_ex(text, op, info)
 
@@ -1443,7 +1451,17 @@ def apply_ops(text, ops, info=None):
 
 def incomplete_bars(root):
     """Bars of the edit part where a voice does not fill the time signature: [{bar (1-based), have, need (quarters),
-    words: '2 of 4 beats'}]. The first bar when short (a pickup) and bars marked implicit are not counted."""
+    words: '2 of 4 beats'}]. The first bar when short (a pickup) and bars marked implicit are not counted.
+    A score of several parts: a bar short in any part."""
+    if _PART.get() is None:
+        from .multipart import layout
+        lay = layout(root)
+        if lay:
+            seen = {}
+            for pid, _, _ in lay:
+                with using_part(pid):
+                    for b in incomplete_bars(root): seen.setdefault(b['bar'], b)
+            return [seen[b] for b in sorted(seen)]
     k, part, _ = edit_part(root)
     if part is None: return []
     out, div, tsig = [], Fr(1), (4, 4)
@@ -1578,7 +1596,7 @@ def _preview(c, cf, item_id, body):
     ro = ET.fromstring(out.encode('utf-8'))  # one parse for every answer (tidy_score last: it may drop repeated attributes)
     ns, inc, chk = notes(ro), incomplete_bars(ro), _check_of(ro)
     over = [num for _, num in tidy_score(ro)['overfull']]
-    return {'xml': out, 'notes': ns, 'moved': moved, 'part': k, 'partId': part.get('id') or str(k), 'parts': parts_of(ro), 'hands': hands, 'overfull': over,
+    return {'xml': out, 'notes': ns, 'moved': moved, 'part': k, 'partId': part.get('id') or str(k), 'parts': parts_of(ro), 'multi': len(ro.findall('part')) > 1 and body.get('part') is None, 'hands': hands, 'overfull': over,
             'check': chk, 'sha': _sha(text), 'changed': bool(body.get('ops')), 'tiesGone': info['tiesGone'],
             'took': info.get('took', []), 'tookRefs': info.get('tookRefs', []), 'said': info.get('said', []),
             'incomplete': inc}
@@ -1591,8 +1609,15 @@ def clip(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg))
     it = must_item(c, item_id)
     text = _text_for(cf, it, body)
     out, _ = apply_ops(text, body.get('ops') or [])
-    with using_part(body.get('part')):
-        return {'clip': clip_of(out, body.get('start'), body.get('end'), body.get('staves'))}
+    want, staves_ = body.get('part'), body.get('staves')
+    if want is None:  # several parts: the clip comes from the part of its first staff
+        from .multipart import _part_of_staff, layout
+        lay = layout(ET.fromstring(out.encode('utf-8')))
+        if lay and isinstance(staves_, list) and len(staves_) == 2:
+            k, s0 = _part_of_staff(lay, staves_[0])
+            want, staves_ = lay[k][0], [s0, min(int(staves_[1]) - lay[k][1], lay[k][2])]
+    with using_part(want):
+        return {'clip': clip_of(out, body.get('start'), body.get('end'), staves_)}
 
 
 def keep(d, name):

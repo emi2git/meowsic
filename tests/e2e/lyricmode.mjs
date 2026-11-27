@@ -68,11 +68,11 @@ async function run(name, vp, how) {
   check('score ⋯: no Edit notes (toolbar ✎), no Fit lyrics / Add lyrics from a sheet / Edit lyrics', entries.length > 0 && !entries.some((t) => /Edit notes|Fit lyrics|lyrics from a sheet|Edit lyrics/.test(t)), entries.join('|'));
   await page.evaluate(() => document.querySelector('.menu')?.remove()); await sleep(150);
   await page.evaluate(() => document.querySelector('#sc-edit').click());
-  await page.waitForSelector('.notes-panel .np-mode', { timeout: 8000 }); await sleep(500);
-  check('the edit bar has Notes | Lyrics, Notes on', (await page.$$eval('.np-mode button', (e) => e.map((x) => x.textContent + (x.classList.contains('on') ? '*' : '')).join('|'))) === 'Notes*|Lyrics');
-  await tap('.np-mode [data-m="lyrics"]'); await sleep(400);
+  await page.waitForSelector('.notes-panel [data-a="words"]', { timeout: 8000 }); await sleep(500);
+  check('one edit view: no Notes | Lyrics tab, a Words button', !(await page.$('.notes-panel .np-mode')));
+  await tap('.notes-panel [data-a="words"]'); await sleep(400);
   const vis = await EN(() => ({ tools: !!document.querySelector('.notes-panel .np-tools')?.offsetParent, bar: !!document.querySelector('.ly-bar')?.offsetParent, undo: !!document.querySelector('.notes-panel [data-a="undo"]')?.offsetParent, play: !!document.querySelector('.notes-panel [data-a="playhere"]')?.offsetParent }));
-  check('Lyrics: note tools hidden, lyrics bar shown, undo + ▶ From here stay', !vis.tools && vis.bar && vis.undo && vis.play, JSON.stringify(vis));
+  check('Words: the words box shows under the note tools (iPhone: the tools rest), undo + ▶ From here stay', vis.tools === (name !== 'iPhone') && vis.bar && vis.undo && vis.play, JSON.stringify(vis));
   const line = await EN(() => window.__editNotes.lyrics.line);
   check('the line: 12 notes (no rest, no tied note, top of the chord)', line.length === 12, line.length);
   check('the first note is picked', (await EN(() => window.__editNotes.lyrics.at)) === 0 && (await EN(() => window.__editNotes.sel[0])) === line[0]);
@@ -197,8 +197,8 @@ async function run(name, vp, how) {
 
   // ---- notes and words in one session (Mac) ----
   if (how === 'this') {
-    await tap('.np-mode [data-m="notes"]'); await sleep(300);
-    check('Notes again: the note tools are back', await EN(() => !!document.querySelector('.notes-panel .np-tools')?.offsetParent && !document.querySelector('.ly-bar')));
+    await press('Escape'); await sleep(300);
+    check('Esc: back to the note keys, the words box goes', await EN(() => !!document.querySelector('.notes-panel .np-tools')?.offsetParent && !document.querySelector('.ly-bar')));
     const f = await EN(() => window.__editNotes.notes.find((n) => n.bar === 3 && n.midi === 62).ref);
     h = await headOf(f); await tapXY(h.x, h.y);
     await tap('.notes-panel [data-a="semi+"]'); await idle();
