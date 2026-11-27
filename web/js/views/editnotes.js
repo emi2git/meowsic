@@ -72,6 +72,7 @@ const fq = (x) => { const [a, b] = String(x).split('/'); return +a / (+b || 1); 
 // what a staff is called (1-based, of n): a melody; right / left hand; voice + both hands; else its number
 export const staffName = (s, n) => (n === 1 ? 'melody' : n === 2 ? (s === 1 ? 'right hand' : 'left hand') : n === 3 ? ['voice', 'right hand', 'left hand'][s - 1] : `staff ${s}`);
 const SVGNS = 'http://www.w3.org/2000/svg';
+const PART_KEY = 'meowsic-editpart-'; // + item id: the part Edit notes worked on last (a voice + piano score)
 const CLIP_KEY = 'meowsic-noteclip'; // what Copy / Cut took (this device; pastes into any score)
 const COPY_IC = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2"/></svg>';
 const CUT_IC = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><path d="M8.2 15.8L19 3M15.8 15.8L5 3"/></svg>';
@@ -119,8 +120,12 @@ export async function editNotes(view, it, host, opts = {}) {
   let lyr = null; // [lyrics] Lyrics mode (lyricmode.js)
   host.classList.add('noting');
   // steps[0] = the score as saved; each edit adds one (its ops = every edit so far, replayed by the Mac)
-  let steps = [{ ops: [], xml: base.xml, notes: base.notes }], at = 0;
-  if (restored) { steps.push({ ops: restored.ops, xml: restored.xml, notes: restored.notes, sel: [], bar: null }); at = 1; }
+  // a score with a voice part and a piano part (two <part>s): Voice | Piano picks the one edited (the Mac's edit_part;
+  // every op carries its part). Each step's notes are of the part it was drawn for (step.part), fetched again on a switch
+  let partId = base.partId;
+  const multiPart = () => (base.parts?.length || 0) > 1;
+  let steps = [{ ops: [], xml: base.xml, notes: base.notes, part: partId }], at = 0;
+  if (restored) { steps.push({ ops: restored.ops, xml: restored.xml, notes: restored.notes, sel: [], bar: null, part: partId }); at = 1; }
   // the edit session (the Mac's lock) and the drafts: this browser after every edit, the Mac every ~30 s
   const guard = editGuard(it, session, () => ({ sha: base.sha, ops: cur().ops, n: at, xml: cur().xml }), () => panel.isConnected && !closed);
   guard.start(base.sha);
@@ -132,7 +137,7 @@ export async function editNotes(view, it, host, opts = {}) {
   let rng = null, rangeArm = false, rangeEnd = 1;
   let clip = (() => { try { return JSON.parse(localStorage.getItem(CLIP_KEY) || 'null'); } catch { return null; } })();
   const cur = () => steps[at];
-  const nStaves = () => Math.max(1, +(cur().xml.match(/<staves>\s*(\d+)/)?.[1] || 1), ...cur().notes.map((n) => n.staff));
+  const nStaves = () => Math.max(1, multiPart() ? +(base.parts.find((x) => x.id === partId)?.staves || 1) : +(cur().xml.match(/<staves>\s*(\d+)/)?.[1] || 1), ...cur().notes.map((n) => n.staff));
   const byRef = () => new Map(cur().notes.map((n) => [n.ref, n]));
 
   // ---- the drawn notes: data-ref on each notehead (matched by bar, staff, time, then pitch order) and rest ----
@@ -333,7 +338,10 @@ export async function editNotes(view, it, host, opts = {}) {
       b.svg.insertBefore(r, b.svg.firstChild);
     }
   };
-  const untag = () => paper.querySelectorAll('g[data-ref]').forEach((g) => { g.classList.remove('nh-hit', 'nh-on', 'nh-rest', 'nh-took'); delete g.dataset.ref; });
+  const untag = () => {
+    paper.querySelectorAll('g[data-ref]').forEach((g) => { g.classList.remove('nh-hit', 'nh-on', 'nh-rest', 'nh-took'); delete g.dataset.ref; });
+    paper.querySelectorAll('.np-arc-hit').forEach((g) => { g.classList.remove('np-arc-hit', 'np-arc-on'); delete g.dataset.arc; delete g.dataset.arcRef; });
+  };
   host.addEventListener('scoredrawn', tag);
   host.addEventListener('scoredrawn', markBar);
   host.addEventListener('scoredrawn', markRange);
@@ -361,6 +369,7 @@ export async function editNotes(view, it, host, opts = {}) {
     const pages = view.pages > 1;
     const off = (c) => (c ? '' : 'disabled');
     npBody.innerHTML = `<div class="np-row"><b class="np-title">${opts.title || 'Edit notes'}</b>
+      ${multiPart() ? `<span class="seg np-partseg" role="group" aria-label="Part to edit">${base.parts.map((x) => `<button data-part="${x.id}" class="${x.id === partId ? 'on' : ''}" aria-pressed="${x.id === partId}" title="Edit the ${partWord(x)} part">${partWord(x)}</button>`).join('')}</span>` : ''}
       ${view.voice ? '' : handsHtml(view.staves || [], view.muted || [], { id: 'np-hands', chords: { has: !!view.hasChords, on: !!view.chordPlay } })}
       <span class="np-count" id="np-count">${arcSel ? `${arcSel.kind === 'tie' ? 'Tie' : 'Slur'} picked · ⌫ or ✕ takes it away` : p.length ? `${plural(ns.length, 'note')}${rs.length ? ` · ${plural(rs.length, 'rest')}` : ''} ${rng ? 'in the range' : 'picked'}` : barPick ? `Bar ${barPick.bar + 1} picked (${staffName(barPick.staff, nst)})` : 'Pick notes on the score'}</span>
       ${midiCtl ? '<span class="np-midi-slot"></span>' : ''}<span class="grow"></span>
@@ -659,12 +668,14 @@ export async function editNotes(view, it, host, opts = {}) {
     waitMark();
     try {
       const from = replace ? at - 1 : at;
+      if (multiPart() && op.part == null) op.part = partId; // the same object: "replace" offers compare it
       const ops = [...steps[from].ops, op];
       const bar = atBar ?? (op.bar != null ? op.bar : firstBar(op.refs, steps[from].notes));
-      const j = await post(`${url}/preview`, { ops, sha: base.sha });
+      const j = await post(`${url}/preview`, { ops, sha: base.sha, part: partId });
+      if (j.parts) base.parts = j.parts;
       const prevSel = replace ? steps[at].sel : [...sel], prevPick = replace ? steps[at].barPick : barPick, prevRng = replace ? steps[at].rng : rng;
       steps = steps.slice(0, from + 1);
-      steps.push({ ops, xml: j.xml, notes: j.notes, sel: prevSel, bar: bar ?? firstBar(j.moved, j.notes), barPick: prevPick, rng: prevRng });
+      steps.push({ ops, xml: j.xml, notes: j.notes, sel: prevSel, bar: bar ?? firstBar(j.moved, j.notes), barPick: prevPick, rng: prevRng, part: partId });
       at = from + 1;
       guard.changed();
       if (op.op !== 'lyrics') { // [lyrics] words: the picked note stays
@@ -1142,7 +1153,7 @@ export async function editNotes(view, it, host, opts = {}) {
   };
   // ---- copy / cut / paste / repeat (rangeops.py) ----
   const takeClip = async (w) => {
-    const j = await post(`${url}/clip`, { ops: cur().ops, sha: base.sha, start: w.start, end: w.end, staves: [w.s0, w.s1] });
+    const j = await post(`${url}/clip`, { ops: cur().ops, sha: base.sha, part: partId, start: w.start, end: w.end, staves: [w.s0, w.s1] });
     return j.clip;
   };
   const keepClip = (c) => { clip = c; try { localStorage.setItem(CLIP_KEY, JSON.stringify(c)); } catch {} };
@@ -1240,12 +1251,35 @@ export async function editNotes(view, it, host, opts = {}) {
     const bar = steps[Math.max(at, k)].bar;
     at = k;
     guard.changed();
+    try { await partNotes(cur()); } catch (e) { toast(e.message); }
     draw();
     try {
       if (queue.length) stale = true; // another undo / edit waits: draw only the last
       else { stale = false; await show(cur().xml); cue(bar); }
     } finally { busy = false; drain(); }
   };
+
+  // the step's notes for the part edited now (another part was picked since it was made)
+  const partNotes = async (st) => {
+    if (!multiPart() || st.part === partId) return;
+    const j = await post(`${url}/preview`, { ops: st.ops, sha: base.sha, part: partId });
+    st.notes = j.notes; st.part = partId; st.sel = []; st.rng = null; st.barPick = null;
+  };
+  // Voice | Piano: edit the other part (the edits so far stay; one Undo list)
+  const switchPart = async (id) => {
+    if (busy || id === partId || closed) return;
+    if (lyr?.pending) await lyr.flush();
+    busy = true;
+    try {
+      const j = await post(`${url}/preview`, { ops: cur().ops, sha: base.sha, part: id });
+      partId = id; base.part = j.part;
+      try { localStorage.setItem(PART_KEY + it.id, id); } catch {} base.hands = j.hands; if (j.parts) base.parts = j.parts;
+      cur().notes = j.notes; cur().part = id;
+      sel = new Set(); rng = null; rangeArm = false; barPick = null; arcSel = null; anchor = null; took = new Set();
+      untag(); tag(); draw();
+    } catch (e) { toast(e.message); } finally { busy = false; drain(); }
+  };
+  const partWord = (x) => x.name || `Part ${x.index + 1}`;
 
   // ---- save / close ----
   const save = () => {
@@ -1321,6 +1355,8 @@ export async function editNotes(view, it, host, opts = {}) {
 
   panel.addEventListener('click', (e) => {
     if (e.target.closest('#np-hands')) { const m = handsClick(e, view.staves, view.muted, view.chordPlay, view.hasChords); if (m) view.setParts(m); return; } // Parts to play (hands.js): at once, playing or not
+    const pt = e.target.closest('[data-part]');
+    if (pt) return act(() => switchPart(pt.dataset.part));
     const l = e.target.closest('[data-len]');
     if (l) return act(() => setLen(+l.dataset.len));
     const a = e.target.closest('[data-a]')?.dataset.a;
@@ -1382,7 +1418,7 @@ export async function editNotes(view, it, host, opts = {}) {
     get ops() { return cur().ops; }, get xml() { return cur().xml; }, select: (refs) => setSel(refs), get busy() { return busy || queue.length > 0 || stale; }, close,
     get cueBar() { return cueAt; }, run: (op) => run(op), get barPick() { return barPick; }, pickBar: (bar, staff = 1) => { barPick = { bar, staff }; setSel([]); },
     get staves() { return nStaves(); }, get took() { return [...took]; }, get lyrics() { return lyr; },
-    get range() { return rng && { ...rng }; }, get chords() { return chordsOf(); }, chordAt: (x, y) => chordAt(x, y), setRange: (r) => setRange(r), get clip() { return clip; }, get rangeArm() { return rangeArm; }, get arc() { return arcSel && { ...arcSel }; }, get dragging() { return !!drag; } };
+    get range() { return rng && { ...rng }; }, get chords() { return chordsOf(); }, chordAt: (x, y) => chordAt(x, y), setRange: (r) => setRange(r), get clip() { return clip; }, get rangeArm() { return rangeArm; }, get arc() { return arcSel && { ...arcSel }; }, get dragging() { return !!drag; }, get partId() { return partId; }, get parts() { return base.parts || []; }, switchPart: (id) => switchPart(id) };
   window.__editNotes = api; // for automated tests
   // a MIDI keyboard plays into the picked notes: midiedit.js, through these edits
   midiCtl = attachMidi({ get notes() { return cur().notes; }, get sel() { return picked(); }, get busy() { return busy; }, get step() { return at; },
@@ -1395,6 +1431,13 @@ export async function editNotes(view, it, host, opts = {}) {
   draw();
   tag();
   if (restored) { guard.changed(); await show(cur().xml); draw(); toast(`Unsaved edits restored (${plural(restored.ops.length, 'change')}) — Save to keep them`); }
+  // the part edited last time on this score (this device); Lyrics: the voice part (one staff) when there is one
+  if (multiPart()) {
+    let want = null;
+    try { want = localStorage.getItem(PART_KEY + it.id); } catch {}
+    if (!base.parts.some((x) => x.id === want)) want = opts.mode === 'lyrics' ? base.parts.find((x) => x.staves === 1)?.id : null;
+    if (want && want !== partId) await switchPart(want);
+  }
   if (opts.mode === 'lyrics') lyr.set(true); // [lyrics]
   return api;
 }

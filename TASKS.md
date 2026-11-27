@@ -15,6 +15,7 @@ Updated: 2026-11-25
 | 1 | Edit notes: rest length, Fill next rest, Remove rest, re-spelling (½+⅛ → ⅛+½), incomplete-bar highlight + "Change time for this bar" | ✅ Live (cc127a3) |
 | 2 | Edit notes: Lyrics mode (Notes \| Lyrics), paste verse, verses, lyrics-text side panel from chord chart; remove Fit lyrics / Add lyrics from sheet menu | ✅ Live (a5f7384) |
 | 3 | Edit notes: Bar ▾ (clear/add LH or RH bar, insert/delete bar), add/remove staff, vocal + piano (3 staves); remove "Make another version" | ✅ Live (584ef94) |
+| 14 | Bug: vocal line of a voice + piano score could not be edited (only the piano part was) → Voice \| Piano switch in Edit notes (every op carries its part; remembered per score; Lyrics opens on the voice) | ✅ Pushed, deploying |
 | 12 | Edit notes (Mac mouse + keys): drag a note (pitch in key / ⌥ semitone, sideways onto rests or swap; ghost + name; Esc), click a tie / slur → ✕ or ⌫ removes it, A–G note entry (fill key E→L, whole bar B→W), help text gone → Help page lists the keys | ✅ Pushed, deploying |
 | 8 | Pro-editor top 8 (range select, copy/paste, repeat, octave, respell, bar options, repeats/endings, chord symbols + realize) | ✅ Live (54891c1) |
 | 12 | Edit notes speed: server keeps each step (no replay of all edits), score stops read without OSMD's cursor repaint, keys queue while an edit is on its way; 70-bar score 1.2–2.2 s → ~0.4 s, 44-bar 0.4–0.7 s → ~0.14 s per edit (e2e editperf) | ✅ Pushed, deploying |

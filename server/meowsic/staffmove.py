@@ -33,6 +33,8 @@ POST /api/items/{id}/editnotes          {ops, mode: 'this'|'new', sha?, session?
      The edit session's draft (editsafe.py) goes once saved.
 """
 import copy
+from contextlib import contextmanager
+from contextvars import ContextVar
 import hashlib
 import json
 import re
@@ -360,8 +362,37 @@ def _staves(part):
     return staves(part)
 
 
+# the part Edit notes works on, when the editor picked one (a score with a voice part and a piano part: Voice | Piano):
+# its id ("P1") or index; None = the piano part (edit_part). Set per op ({op, part}) and per request (body.part).
+_PART = ContextVar('meowsic_edit_part', default=None)
+
+
+@contextmanager
+def using_part(want):
+    """edit_part gives this part inside the block (None: unchanged)."""
+    if want is None or want == '':
+        yield; return
+    tok = _PART.set(want)
+    try: yield
+    finally: _PART.reset(tok)
+
+
+def parts_of(root):
+    """[{index, id, name, staves}] of the score's parts (the editor's part switch)."""
+    names = {sp.get('id'): (sp.findtext('part-name') or '').strip() for sp in root.iter('score-part')}
+    return [{'index': k, 'id': p.get('id') or str(k), 'name': names.get(p.get('id')) or f'Part {k + 1}', 'staves': _staves(p)}
+            for k, p in enumerate(root.findall('part'))]
+
+
 def edit_part(root):
-    """(index, part, hands): the piano part (two staves: hands = True), else the first part."""
+    """(index, part, hands): the part picked in the editor (using_part), else the piano part (two staves:
+    hands = True), else the first part."""
+    want = _PART.get()
+    if want is not None:
+        parts = root.findall('part')
+        for k, p in enumerate(parts):
+            if p.get('id') == str(want) or (isinstance(want, int) and k == want):
+                return k, p, _staves(p) >= 2
     k, part = piano_part(root)
     if part is not None: return k, part, True
     parts = root.findall('part')
@@ -1151,6 +1182,12 @@ def edit(text: str, op: dict) -> tuple[str, list]:
 
 
 def edit_ex(text: str, op: dict, info=None):
+    """_edit_ex on the op's part (op['part']: a part id or index, as the editor's part switch picked it)."""
+    with using_part(op.get('part') if isinstance(op, dict) else None):
+        return _edit_ex(text, op, info)
+
+
+def _edit_ex(text: str, op: dict, info=None):
     """edit() -> (text, touched refs, how many ties went because their notes no longer meet). info (a dict) gets
     took: [{bar, beat, what, was, now, lyrics}] notes a longer rest took time from (now 0: gone), tookRefs: the
     shortened ones in the new score, said: [words] when a length picked was written another way by the meter."""
@@ -1525,6 +1562,11 @@ def _text_for(cf, it, body):
 
 @router.post('/items/{item_id}/editnotes/preview')
 def preview(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg)):
+    with using_part(body.get('part')):
+        return _preview(c, cf, item_id, body)
+
+
+def _preview(c, cf, item_id, body):
     it = must_item(c, item_id)
     text = _text_for(cf, it, body)
     root = ET.fromstring(text.encode('utf-8'))
@@ -1536,7 +1578,7 @@ def preview(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cf
     ro = ET.fromstring(out.encode('utf-8'))  # one parse for every answer (tidy_score last: it may drop repeated attributes)
     ns, inc, chk = notes(ro), incomplete_bars(ro), _check_of(ro)
     over = [num for _, num in tidy_score(ro)['overfull']]
-    return {'xml': out, 'notes': ns, 'moved': moved, 'part': k, 'hands': hands, 'overfull': over,
+    return {'xml': out, 'notes': ns, 'moved': moved, 'part': k, 'partId': part.get('id') or str(k), 'parts': parts_of(ro), 'hands': hands, 'overfull': over,
             'check': chk, 'sha': _sha(text), 'changed': bool(body.get('ops')), 'tiesGone': info['tiesGone'],
             'took': info.get('took', []), 'tookRefs': info.get('tookRefs', []), 'said': info.get('said', []),
             'incomplete': inc}
@@ -1549,7 +1591,8 @@ def clip(item_id: str, body: dict = Body(...), c=Depends(conn), cf=Depends(cfg))
     it = must_item(c, item_id)
     text = _text_for(cf, it, body)
     out, _ = apply_ops(text, body.get('ops') or [])
-    return {'clip': clip_of(out, body.get('start'), body.get('end'), body.get('staves'))}
+    with using_part(body.get('part')):
+        return {'clip': clip_of(out, body.get('start'), body.get('end'), body.get('staves'))}
 
 
 def keep(d, name):
