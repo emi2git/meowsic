@@ -4,6 +4,8 @@
 /* Lyrics mode: the note tools rest, the lyrics bar takes their place; the panel rides above the on-screen keyboard */
 /* one view: the note tools stay while typing words (iPhone: they rest, the keyboard is up) */
 :root[data-device="phone"] .notes-panel.lyrics .np-body > .np-acts { display: none; }
+.notes-panel .np-words { min-height: 34px; padding: 0 10px; font-weight: 700; flex: none; }
+.notes-panel .np-words.on { background: var(--acc-soft); border-color: var(--acc); }
 .viewer.noting svg .ly-word { cursor: text; }
 .viewer.noting svg .ly-word:hover { fill: var(--acc-text); }
 .notes-panel.lyrics { transform: translateY(calc(-1 * var(--kb, 0px))); }

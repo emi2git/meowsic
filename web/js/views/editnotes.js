@@ -374,6 +374,7 @@ export async function editNotes(view, it, host, opts = {}) {
     const pages = view.pages > 1;
     const off = (c) => (c ? '' : 'disabled');
     npBody.innerHTML = `<div class="np-row"><b class="np-title">${opts.title || 'Edit notes'}</b>
+      <button data-a="words" class="np-words ${lyr?.on ? 'on' : ''}" aria-pressed="${!!lyr?.on}" title="Words (Enter): type the syllable under the picked note — or click a word on the score; Esc back to the notes" aria-label="Words">Aa</button>
       ${view.voice ? '' : handsHtml(view.staves || [], view.muted || [], { id: 'np-hands', chords: { has: !!view.hasChords, on: !!view.chordPlay } })}
       <span class="np-count" id="np-count">${arcSel ? `${arcSel.kind === 'tie' ? 'Tie' : 'Slur'} picked · ⌫ or ✕ takes it away` : p.length ? `${plural(ns.length, 'note')}${rs.length ? ` · ${plural(rs.length, 'rest')}` : ''} ${rng ? 'in the range' : 'picked'}` : barPick ? `Bar ${barPick.bar + 1} picked (${staffName(barPick.staff, nst)})` : 'Pick notes on the score'}</span>
       ${midiCtl ? '<span class="np-midi-slot"></span>' : ''}<span class="grow"></span>
@@ -390,7 +391,6 @@ export async function editNotes(view, it, host, opts = {}) {
         <button data-a="fill" class="np-fill np-icon" ${off(ns.some((n) => n.fill))} title="Fill next rest (L): the note takes in the rest right after it — press again for the next one" aria-label="Fill next rest">→|</button>
         ${onlyRests ? '' : `<button data-a="tie" class="np-arc ${ns.length && ns.every((n) => n.tie) ? 'on' : ''}" ${off(ns.length)} title="Tie (T): to the next note of the same pitch (tied: takes it away)" aria-label="Tie">${TIE_IC}</button>
         <button data-a="slur" class="np-arc ${ns.length && ns.every((n) => n.slur) ? 'on' : ''}" ${off(ns.length)} title="Slur (S): over the picked notes; one note: to the next one (slurred: takes it away)" aria-label="Slur">${SLUR_IC}</button>`}
-        <button data-a="words" class="np-icon np-words" title="Words (Enter): type the syllable under the picked note — or click a word on the score" aria-label="Words">Aa</button>
         <button data-a="add" ${off(p.length)} title="${onlyRests ? 'Turn the rest into a note (N), then move it with ↑ ↓' : 'Add a note (N): a third above, or on a rest'}" aria-label="${onlyRests ? 'Note here' : 'Add a note'}">${onlyRests ? '+ Note here' : '+♪'}</button>
         <button data-a="del" class="np-icon" ${off(p.length)} title="${onlyRests ? 'Remove rest (⌫): what follows comes earlier' : 'Delete (⌫): a rest takes its place'}" aria-label="${onlyRests ? 'Remove rest' : 'Delete'}">${iconOn('bin')}</button>
       </div>
@@ -1120,7 +1120,7 @@ export async function editNotes(view, it, host, opts = {}) {
   view.keepBar?.(true);
   const add = () => need([...sel], (refs) => run({ op: 'add', refs, by: 4 }));
   // Words: type the syllable of the picked note (the words box under the tools; Esc back to the note keys)
-  const words = () => { const n = picked().filter((x) => !x.rest).sort((a, b) => a.bar - b.bar || a.on - b.on)[0]; lyr?.editAt(n?.ref); }; // nothing picked: from the first note
+  const words = () => { if (lyr?.on) return lyr.set(false); const n = picked().filter((x) => !x.rest).sort((a, b) => a.bar - b.bar || a.on - b.on)[0]; lyr?.editAt(n?.ref); }; // nothing picked: from the first note
   // ---- A–G typed: the picked note takes that letter (the octave nearest it), a picked rest becomes that note (the
   // octave nearest the note before it); the key's sharps / flats apply (then ↑ ↓, # + / - a semitone); nothing picked:
   // the next rest from the play start. Then the next note / rest of that staff and voice is picked, so "CDEFG" is a run.
